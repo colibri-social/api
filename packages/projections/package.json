@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/projections",
-	"version": "0.0.1",
+	"version": "1.0.0",
 	"description": "Materialises typed read models from synced space records",
 	"type": "module",
 	"private": true,
