@@ -24,7 +24,7 @@ describe("APPVIEW_DID", () => {
 	});
 
 	it("names the working alternative in the error, so the fix does not need a search", () => {
-		expect(() => load("did:web:127.0.0.1%3A8000")).toThrow(/did:web:localhost%3A8000/);
+		expect(() => load("did:web:127.0.0.1%3A8000")).toThrow(/did:web:spaces-api\.colibri\.social/);
 	});
 
 	it("still refuses a DID that is not a did:web at all", () => {

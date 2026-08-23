@@ -28,7 +28,7 @@ export const configSchema = z.object({
 		.startsWith("did:web:")
 		.refine((value) => !BARE_IP_DID_WEB.test(value), {
 			message:
-				"a did:web host must be a name, not an IP address: a PDS refuses a bare IP as a service-auth audience. Use did:web:localhost%3A8000 and keep listening on 127.0.0.1",
+				"a did:web host must be a name, not an IP address: a PDS refuses a bare IP as a service-auth audience. Use did:web:spaces-api.colibri.social and keep listening on 127.0.0.1",
 		}),
 	PUBLIC_URL: z.url(),
 	CORS_ORIGINS: optionalString,

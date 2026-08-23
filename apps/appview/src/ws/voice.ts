@@ -1,5 +1,6 @@
 import type { Server as HttpServer, IncomingHttpHeaders } from "node:http";
 import { canRead } from "@colibri-social/community";
+import { ServiceAuthError } from "@colibri-social/identity";
 import { asDid, asSpaceRef, SPACE_TYPES, social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import type { VoiceSfu } from "@colibri-social/voice";
@@ -109,7 +110,16 @@ export class VoiceServer {
 		if (!token) return null;
 		const caller = await this.ctx.serviceAuth
 			.verify(token, "social.colibri.beta.voice.subscribeSignals")
-			.catch(() => null);
+			.catch((error: unknown) => {
+				this.ctx.log.warn(
+					{
+						failure: error instanceof ServiceAuthError ? error.failure : "unknown",
+						reason: error instanceof Error ? error.message : String(error),
+					},
+					"ws.auth.rejected",
+				);
+				return null;
+			});
 		return caller?.did ?? null;
 	}
 

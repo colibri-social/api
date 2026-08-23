@@ -59,7 +59,7 @@ export class ServiceAuth {
 		if (typeof audience !== "string" || !this.accepts(audience)) {
 			throw new ServiceAuthError(
 				"wrongAudience",
-				`token audience ${String(audience)} is not one this service answers as`,
+				`token audience ${String(audience)} is not one this service answers as (${this.accepted().join(", ")})`,
 			);
 		}
 
@@ -76,8 +76,12 @@ export class ServiceAuth {
 	}
 
 	private accepts(audience: string): boolean {
-		const { audience: accepted } = this.options;
-		return typeof accepted === "string" ? accepted === audience : accepted.includes(audience);
+		return this.accepted().includes(audience);
+	}
+
+	private accepted(): readonly string[] {
+		const { audience } = this.options;
+		return typeof audience === "string" ? [audience] : audience;
 	}
 }
 

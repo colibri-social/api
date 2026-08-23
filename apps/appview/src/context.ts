@@ -59,6 +59,7 @@ export const createContext = async (config: Config) => {
 			config.APPVIEW_DID,
 			serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.appview),
 			serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.syncer),
+			serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.notifs),
 		],
 		maxLifetimeSeconds: config.SERVICE_AUTH_MAX_LIFETIME_SECONDS,
 		resolver: identity,

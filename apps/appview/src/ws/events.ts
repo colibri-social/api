@@ -1,5 +1,6 @@
 import type { Server as HttpServer, IncomingHttpHeaders } from "node:http";
 import { canRead } from "@colibri-social/community";
+import { ServiceAuthError } from "@colibri-social/identity";
 import { social } from "@colibri-social/lexicons";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { AppContext } from "../context.js";
@@ -84,7 +85,16 @@ export class EventServer {
 		if (!token) return null;
 		const caller = await this.ctx.serviceAuth
 			.verify(token, "social.colibri.beta.sync.subscribeEvents")
-			.catch(() => null);
+			.catch((error: unknown) => {
+				this.ctx.log.warn(
+					{
+						failure: error instanceof ServiceAuthError ? error.failure : "unknown",
+						reason: error instanceof Error ? error.message : String(error),
+					},
+					"ws.auth.rejected",
+				);
+				return null;
+			});
 		return caller?.did ?? null;
 	}
 
