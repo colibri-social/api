@@ -21,7 +21,7 @@ let emit: (change: RepoChange) => void;
 let disconnect: () => void;
 
 const framesOfType = (suffix: string) =>
-	published.filter((entry) => entry.frame.$type === `social.colibri.sync.defs#${suffix}`);
+	published.filter((entry) => entry.frame.$type === `social.colibri.beta.sync.defs#${suffix}`);
 
 const putMessageRow = async (rkey: string, text = "hello") => {
 	await database.db.insert(database.tables.messages).values({

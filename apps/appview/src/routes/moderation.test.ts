@@ -274,7 +274,7 @@ describe("permission checks", () => {
 		).rejects.toMatchObject({ customErrorName: "Forbidden" });
 
 		const space = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkchannel1");
-		const subject = { did: MEMBER, collection: "social.colibri.message", rkey: "3lkmsg1" };
+		const subject = { did: MEMBER, collection: "social.colibri.beta.message", rkey: "3lkmsg1" };
 		await expect(
 			handleApplyLabel(ctx, moderation, MEMBER, { space, subject, val: "hidden" }),
 		).rejects.toMatchObject({ customErrorName: "Forbidden" });
@@ -287,7 +287,7 @@ describe("permission checks", () => {
 describe("applyLabel", () => {
 	it("refuses a space belonging to a different community", async () => {
 		const foreignSpace = channelSpace(OTHER_COMMUNITY, SPACE_TYPES.channelText, "3lkchannel2");
-		const subject = { did: MEMBER, collection: "social.colibri.message", rkey: "3lkmsg1" };
+		const subject = { did: MEMBER, collection: "social.colibri.beta.message", rkey: "3lkmsg1" };
 
 		await expect(
 			handleApplyLabel(ctx, moderation, OWNER, { space: foreignSpace, subject, val: "hidden" }),

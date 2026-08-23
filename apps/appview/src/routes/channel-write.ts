@@ -338,7 +338,7 @@ export const registerChannelWriteRoutes = ({ server, ctx, auth }: RouteDeps): vo
 	const actors = new ActorViews(ctx);
 	const communities = new CommunityViews(ctx, actors);
 
-	route(server, social.colibri.channel.create, {
+	route(server, social.colibri.beta.channel.create, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -363,7 +363,7 @@ export const registerChannelWriteRoutes = ({ server, ctx, auth }: RouteDeps): vo
 		}),
 	});
 
-	route(server, social.colibri.channel.update, {
+	route(server, social.colibri.beta.channel.update, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -388,7 +388,7 @@ export const registerChannelWriteRoutes = ({ server, ctx, auth }: RouteDeps): vo
 		}),
 	});
 
-	route(server, social.colibri.channel.delete, {
+	route(server, social.colibri.beta.channel.delete, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -396,7 +396,7 @@ export const registerChannelWriteRoutes = ({ server, ctx, auth }: RouteDeps): vo
 		}),
 	});
 
-	route(server, social.colibri.channel.reorder, {
+	route(server, social.colibri.beta.channel.reorder, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,

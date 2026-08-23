@@ -27,11 +27,11 @@ const ensureCommunityRow = async (deps: ProjectionDeps, community: string) => {
 		.onConflictDoNothing();
 };
 
-export const communityProfile: Projector<social.colibri.community.Main> = {
+export const communityProfile: Projector<social.colibri.beta.community.Main> = {
 	collection: COLLECTIONS.community,
 	writer: "authority",
 	spaceTypes: [SPACE_TYPES.communityProfile],
-	schema: social.colibri.community,
+	schema: social.colibri.beta.community,
 	rkey: isSelf,
 	put: async (deps, ref, value) => {
 		const community = communityOf(ref.space);
@@ -54,11 +54,11 @@ export const communityProfile: Projector<social.colibri.community.Main> = {
 	},
 };
 
-export const communitySettings: Projector<social.colibri.community.settings.Main> = {
+export const communitySettings: Projector<social.colibri.beta.community.settings.Main> = {
 	collection: COLLECTIONS.communitySettings,
 	writer: "authority",
 	spaceTypes: [SPACE_TYPES.communityConfiguration],
-	schema: social.colibri.community.settings,
+	schema: social.colibri.beta.community.settings,
 	rkey: isSelf,
 	put: async (deps, ref, value) => {
 		const community = communityOf(ref.space);
@@ -96,11 +96,11 @@ export const communitySettings: Projector<social.colibri.community.settings.Main
 	},
 };
 
-export const category: Projector<social.colibri.category.Main> = {
+export const category: Projector<social.colibri.beta.category.Main> = {
 	collection: COLLECTIONS.category,
 	writer: "authority",
 	spaceTypes: [SPACE_TYPES.communityConfiguration],
-	schema: social.colibri.category,
+	schema: social.colibri.beta.category,
 	put: async (deps, ref, value) => {
 		const community = communityOf(ref.space);
 		await deps.db
@@ -149,11 +149,11 @@ export const category: Projector<social.colibri.category.Main> = {
 	},
 };
 
-export const role: Projector<social.colibri.role.Main> = {
+export const role: Projector<social.colibri.beta.role.Main> = {
 	collection: COLLECTIONS.role,
 	writer: "authority",
 	spaceTypes: [SPACE_TYPES.communityMembers],
-	schema: social.colibri.role,
+	schema: social.colibri.beta.role,
 	put: async (deps, ref, value) => {
 		const community = communityOf(ref.space);
 		const row = {
@@ -188,11 +188,11 @@ export const role: Projector<social.colibri.role.Main> = {
 	},
 };
 
-export const member: Projector<social.colibri.member.Main> = {
+export const member: Projector<social.colibri.beta.member.Main> = {
 	collection: COLLECTIONS.member,
 	writer: "authority",
 	spaceTypes: [SPACE_TYPES.communityMembers],
-	schema: social.colibri.member,
+	schema: social.colibri.beta.member,
 	rkey: (ref) => ref.rkey.startsWith("did:"),
 	put: async (deps, ref, value) => {
 		const community = communityOf(ref.space);
@@ -221,11 +221,11 @@ export const member: Projector<social.colibri.member.Main> = {
 	},
 };
 
-export const channel: Projector<social.colibri.channel.Main> = {
+export const channel: Projector<social.colibri.beta.channel.Main> = {
 	collection: COLLECTIONS.channel,
 	writer: "authority",
 	spaceTypes: [SPACE_TYPES.channelText, SPACE_TYPES.channelVoice],
-	schema: social.colibri.channel,
+	schema: social.colibri.beta.channel,
 	rkey: isSelf,
 	put: async (deps, ref, value) => {
 		const community = communityOf(ref.space);
@@ -252,11 +252,11 @@ export const channel: Projector<social.colibri.channel.Main> = {
 	},
 };
 
-export const moderation: Projector<social.colibri.moderation.Main> = {
+export const moderation: Projector<social.colibri.beta.moderation.Main> = {
 	collection: COLLECTIONS.moderation,
 	writer: "authority",
 	spaceTypes: [SPACE_TYPES.communityModeration],
-	schema: social.colibri.moderation,
+	schema: social.colibri.beta.moderation,
 	put: async (deps, ref, value) => {
 		const community = communityOf(ref.space);
 		const row = {

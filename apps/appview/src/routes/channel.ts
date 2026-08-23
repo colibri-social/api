@@ -27,7 +27,7 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 		return { channel, community, authz };
 	};
 
-	route(server, social.colibri.channel.getChannel, {
+	route(server, social.colibri.beta.channel.getChannel, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => {
 			const state = await communities.channelState(params.channel);
@@ -46,7 +46,7 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 		},
 	});
 
-	route(server, social.colibri.channel.listMessages, {
+	route(server, social.colibri.beta.channel.listMessages, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => {
 			await requireReadableChannel(params.channel, caller.credentials.did);
@@ -59,7 +59,7 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 		},
 	});
 
-	route(server, social.colibri.channel.listReactions, {
+	route(server, social.colibri.beta.channel.listReactions, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => {
 			await requireReadableChannel(params.channel, caller.credentials.did);
@@ -80,7 +80,7 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 		},
 	});
 
-	route(server, social.colibri.channel.listUnreadStatus, {
+	route(server, social.colibri.beta.channel.listUnreadStatus, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => {
 			const statuses = await channels.unreadStatus(caller.credentials.did, {
@@ -91,7 +91,7 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 		},
 	});
 
-	route(server, social.colibri.channel.putReadCursors, {
+	route(server, social.colibri.beta.channel.putReadCursors, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			const community = await ctx.loader.community(input.body.community);

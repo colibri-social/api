@@ -21,7 +21,10 @@
 		"lexicons:codegen": "pnpm --filter @colibri-social/lexicons codegen",
 		"db:generate": "pnpm --filter @colibri-social/appview-db generate",
 		"changeset": "changeset",
-		"changeset:version": "changeset version && pnpm install --lockfile-only --no-frozen-lockfile"
+		"changeset:version": "changeset version && pnpm install --lockfile-only --no-frozen-lockfile",
+		"lexicons:check-dns": "pnpm --filter @colibri-social/lexicons check-dns",
+		"lexicons:publish": "pnpm --filter @colibri-social/lexicons publish-lexicons",
+		"lexicons:renamespace": "pnpm --filter @colibri-social/lexicons renamespace"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.10",

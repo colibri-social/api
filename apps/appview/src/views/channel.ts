@@ -23,12 +23,12 @@ import { and, asc, desc, eq, gt, inArray, lt, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import type { ActorViews } from "./actor.js";
 
-export type MessageView = social.colibri.channel.defs.MessageView;
-export type AttachmentView = social.colibri.channel.defs.AttachmentView;
-export type ReactionView = social.colibri.channel.defs.ReactionView;
-export type UnreadStatus = social.colibri.channel.defs.UnreadStatus;
-export type DeletedMessageView = social.colibri.channel.defs.DeletedMessageView;
-type LabelView = social.colibri.community.defs.LabelView;
+export type MessageView = social.colibri.beta.channel.defs.MessageView;
+export type AttachmentView = social.colibri.beta.channel.defs.AttachmentView;
+export type ReactionView = social.colibri.beta.channel.defs.ReactionView;
+export type UnreadStatus = social.colibri.beta.channel.defs.UnreadStatus;
+export type DeletedMessageView = social.colibri.beta.channel.defs.DeletedMessageView;
+type LabelView = social.colibri.beta.community.defs.LabelView;
 
 type ChannelRow = Schema["channels"]["$inferSelect"];
 type MessageRow = Schema["messages"]["$inferSelect"];
@@ -58,7 +58,7 @@ export class ChannelViews {
 	) {}
 
 	private blobUrl(did: string, cid: string, space: string): string {
-		const url = new URL("/xrpc/social.colibri.blob.get", this.ctx.config.PUBLIC_URL);
+		const url = new URL("/xrpc/social.colibri.beta.blob.get", this.ctx.config.PUBLIC_URL);
 		url.searchParams.set("did", did);
 		url.searchParams.set("cid", cid);
 		url.searchParams.set("space", space);
@@ -120,7 +120,7 @@ export class ChannelViews {
 
 	private deletedView(space: string, key: MessageKey): DeletedMessageView {
 		return {
-			$type: "social.colibri.channel.defs#deletedMessageView",
+			$type: "social.colibri.beta.channel.defs#deletedMessageView",
 			uri: asAtUri(spaceRecordUri(space, key.author, COLLECTIONS.message, key.rkey)),
 			rkey: asRecordKey(key.rkey),
 			channel: asSpaceRef(space),
@@ -265,7 +265,7 @@ export class ChannelViews {
 				? parentRow && !withheld(parentRow)
 					? ({
 							...buildView(parentRow, false),
-							$type: "social.colibri.channel.defs#messageView",
+							$type: "social.colibri.beta.channel.defs#messageView",
 						} as MessageView)
 					: this.deletedView(space, parentKey)
 				: undefined;
@@ -276,7 +276,7 @@ export class ChannelViews {
 				channel: asSpaceRef(space),
 				author: profiles.get(row.author) as never,
 				text: row.text,
-				facets: (row.facets as social.colibri.richtext.facet.Main[] | null) ?? undefined,
+				facets: (row.facets as social.colibri.beta.richtext.facet.Main[] | null) ?? undefined,
 				createdAt: asDatetime(row.createdAt),
 				updatedAt: asDatetimeOrUndefined(row.updatedAt ?? undefined),
 				parent,

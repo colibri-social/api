@@ -6,9 +6,9 @@ import type { AppContext } from "../context.js";
 import { route } from "../route.js";
 import type { RouteDeps } from "./types.js";
 
-type LinkEmbedView = social.colibri.embed.defs.LinkEmbed;
-type GifViewOut = social.colibri.embed.defs.GifView;
-type GifCategoryOut = social.colibri.embed.defs.GifCategory;
+type LinkEmbedView = social.colibri.beta.embed.defs.LinkEmbed;
+type GifViewOut = social.colibri.beta.embed.defs.GifView;
+type GifCategoryOut = social.colibri.beta.embed.defs.GifCategory;
 
 const embedErrorToXrpc = (error: EmbedError): InvalidRequestError =>
 	new InvalidRequestError(error.reason, error.code);
@@ -113,7 +113,7 @@ export const handleGifCategories = async (
 };
 
 export const registerEmbedRoutes = ({ server, ctx, auth }: RouteDeps): void => {
-	route(server, social.colibri.embed.getMetadata, {
+	route(server, social.colibri.beta.embed.getMetadata, {
 		auth: auth.required,
 		handler: async ({ params }) => ({
 			encoding: "application/json" as const,
@@ -121,7 +121,7 @@ export const registerEmbedRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 		}),
 	});
 
-	route(server, social.colibri.embed.searchGifs, {
+	route(server, social.colibri.beta.embed.searchGifs, {
 		auth: auth.required,
 		handler: async ({ params }) => ({
 			encoding: "application/json" as const,
@@ -129,7 +129,7 @@ export const registerEmbedRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 		}),
 	});
 
-	route(server, social.colibri.embed.trendingGifs, {
+	route(server, social.colibri.beta.embed.trendingGifs, {
 		auth: auth.required,
 		handler: async ({ params }) => ({
 			encoding: "application/json" as const,
@@ -137,7 +137,7 @@ export const registerEmbedRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 		}),
 	});
 
-	route(server, social.colibri.embed.gifCategories, {
+	route(server, social.colibri.beta.embed.gifCategories, {
 		auth: auth.required,
 		handler: async () => ({
 			encoding: "application/json" as const,

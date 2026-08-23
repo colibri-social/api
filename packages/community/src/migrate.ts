@@ -91,7 +91,7 @@ export const migrateCommunity = async (
 		]);
 
 	if (!legacyCommunity) {
-		throw new Error(`${community} has no social.colibri.community record to migrate`);
+		throw new Error(`${community} has no social.colibri.beta.community record to migrate`);
 	}
 
 	if (deps.dryRun) {

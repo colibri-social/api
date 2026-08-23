@@ -26,7 +26,7 @@ const fakeWriter = (): CommunityWriter => {
 		put: async (community: string, write: RecordWrite) => {
 			writes.push({ community, write });
 			const rkey = write.rkey ?? `generated-${writes.length}`;
-			if (write.collection === "social.colibri.member") {
+			if (write.collection === "social.colibri.beta.member") {
 				const record = write.record as { subject: string; roles?: string[]; joinedAt: string };
 				await database.db
 					.insert(database.tables.members)
@@ -42,7 +42,7 @@ const fakeWriter = (): CommunityWriter => {
 						set: { roles: record.roles ?? [] },
 					});
 			}
-			if (write.collection === "social.colibri.moderation") {
+			if (write.collection === "social.colibri.beta.moderation") {
 				const record = write.record as {
 					action: "ban" | "unban" | "kick";
 					subject: string;
@@ -67,7 +67,7 @@ const fakeWriter = (): CommunityWriter => {
 			params: { space: string; collection: string; rkey: string },
 		) => {
 			removals.push({ community, collection: params.collection, rkey: params.rkey });
-			if (params.collection === "social.colibri.member") {
+			if (params.collection === "social.colibri.beta.member") {
 				const { and, eq } = await import("drizzle-orm");
 				await database.db
 					.delete(database.tables.members)
@@ -292,7 +292,7 @@ describe("banning", () => {
 
 	it("does not touch the banned member's own records", async () => {
 		await moderation.ban(COMMUNITY, OWNER, MEMBER);
-		expect(removals.every((entry) => entry.collection === "social.colibri.member")).toBe(true);
+		expect(removals.every((entry) => entry.collection === "social.colibri.beta.member")).toBe(true);
 	});
 
 	it("refuses banning twice", async () => {
@@ -345,14 +345,14 @@ describe("banning", () => {
 });
 
 describe("labels", () => {
-	const space = "at://did:plc:community/space/social.colibri.channel.text/3lkchan";
-	const subject = { did: MEMBER, collection: "social.colibri.message", rkey: "3lkmsg1" };
+	const space = "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchan";
+	const subject = { did: MEMBER, collection: "social.colibri.beta.message", rkey: "3lkmsg1" };
 
 	it("writes a label into the space the content lives in", async () => {
 		await moderation.applyLabel(COMMUNITY, space, subject, "hidden", { reason: "spam" });
 		const written = writes.at(-1);
 		expect(written?.write.space).toBe(space);
-		expect(written?.write.collection).toBe("social.colibri.label");
+		expect(written?.write.collection).toBe("social.colibri.beta.label");
 		expect(written?.write.record).toMatchObject({ val: "hidden", subject });
 	});
 

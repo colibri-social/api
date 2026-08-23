@@ -13,7 +13,7 @@ const asVariant = (value: unknown): Variant | undefined => {
 };
 
 export const mountBlobRoutes = (ctx: AppContext, app: Express): void => {
-	app.get("/xrpc/social.colibri.blob.get", async (req: Request, res: Response) => {
+	app.get("/xrpc/social.colibri.beta.blob.get", async (req: Request, res: Response) => {
 		const did = asString(req.query.did);
 		const cid = asString(req.query.cid);
 		if (!did || !cid) {

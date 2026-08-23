@@ -9,10 +9,10 @@ import { PdsClient } from "@colibri-social/space";
 import { inArray } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 
-export type ProfileView = social.colibri.actor.defs.ProfileView;
-export type Presence = social.colibri.actor.defs.Presence;
+export type ProfileView = social.colibri.beta.actor.defs.ProfileView;
+export type Presence = social.colibri.beta.actor.defs.Presence;
 
-type ColibriProfile = social.colibri.actor.profile.Main;
+type ColibriProfile = social.colibri.beta.actor.profile.Main;
 type BlueskyProfile = {
 	displayName?: string;
 	description?: string;
@@ -51,7 +51,7 @@ export class ActorViews {
 		variant: "avatar" | "banner",
 	): string | undefined {
 		if (!cid) return undefined;
-		const url = new URL("/xrpc/social.colibri.blob.get", this.ctx.config.PUBLIC_URL);
+		const url = new URL("/xrpc/social.colibri.beta.blob.get", this.ctx.config.PUBLIC_URL);
 		url.searchParams.set("did", did);
 		url.searchParams.set("cid", cid);
 		url.searchParams.set("variant", variant);

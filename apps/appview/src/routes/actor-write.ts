@@ -8,9 +8,9 @@ import { route } from "../route.js";
 import { findSoleOwnedCommunities, loadPreferences } from "./actor.js";
 import type { RouteDeps } from "./types.js";
 
-type Preferences = social.colibri.actor.defs.Preferences;
-type Presence = social.colibri.actor.defs.Presence;
-type Mute = social.colibri.actor.defs.Mute;
+type Preferences = social.colibri.beta.actor.defs.Preferences;
+type Presence = social.colibri.beta.actor.defs.Presence;
+type Mute = social.colibri.beta.actor.defs.Mute;
 
 const soleOwnerOfCommunity = () =>
 	new InvalidRequestError(
@@ -244,7 +244,7 @@ export const handleDeleteAccount = async (
 };
 
 export const registerActorWriteRoutes = ({ server, ctx, auth }: RouteDeps): void => {
-	route(server, social.colibri.actor.putSettings, {
+	route(server, social.colibri.beta.actor.putSettings, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -252,7 +252,7 @@ export const registerActorWriteRoutes = ({ server, ctx, auth }: RouteDeps): void
 		}),
 	});
 
-	route(server, social.colibri.actor.putMutes, {
+	route(server, social.colibri.beta.actor.putMutes, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -260,7 +260,7 @@ export const registerActorWriteRoutes = ({ server, ctx, auth }: RouteDeps): void
 		}),
 	});
 
-	route(server, social.colibri.actor.setStatus, {
+	route(server, social.colibri.beta.actor.setStatus, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -268,7 +268,7 @@ export const registerActorWriteRoutes = ({ server, ctx, auth }: RouteDeps): void
 		}),
 	});
 
-	route(server, social.colibri.actor.grantSpaceAccess, {
+	route(server, social.colibri.beta.actor.grantSpaceAccess, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -276,7 +276,7 @@ export const registerActorWriteRoutes = ({ server, ctx, auth }: RouteDeps): void
 		}),
 	});
 
-	route(server, social.colibri.actor.deleteAccount, {
+	route(server, social.colibri.beta.actor.deleteAccount, {
 		auth: auth.required,
 		handler: async ({ auth: caller }) => ({
 			encoding: "application/json" as const,

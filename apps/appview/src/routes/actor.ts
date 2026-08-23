@@ -8,8 +8,8 @@ import { type CommunityView, CommunityViews } from "../views/community.js";
 import { countMembers } from "./community.js";
 import type { RouteDeps } from "./types.js";
 
-type Preferences = social.colibri.actor.defs.Preferences;
-type ProfileView = social.colibri.actor.defs.ProfileView;
+type Preferences = social.colibri.beta.actor.defs.Preferences;
+type ProfileView = social.colibri.beta.actor.defs.ProfileView;
 
 const actorNotFound = () =>
 	new InvalidRequestError("no user matches the given DID or handle", "ActorNotFound");
@@ -177,7 +177,7 @@ export const registerActorRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 	const actors = new ActorViews(ctx);
 	const communities = new CommunityViews(ctx, actors);
 
-	route(server, social.colibri.actor.getProfile, {
+	route(server, social.colibri.beta.actor.getProfile, {
 		auth: auth.required,
 		handler: async ({ params }) => ({
 			encoding: "application/json" as const,
@@ -185,7 +185,7 @@ export const registerActorRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 		}),
 	});
 
-	route(server, social.colibri.actor.getPreferences, {
+	route(server, social.colibri.beta.actor.getPreferences, {
 		auth: auth.required,
 		handler: async ({ auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -193,7 +193,7 @@ export const registerActorRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 		}),
 	});
 
-	route(server, social.colibri.actor.listCommunities, {
+	route(server, social.colibri.beta.actor.listCommunities, {
 		auth: auth.required,
 		handler: async ({ auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -201,7 +201,7 @@ export const registerActorRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 		}),
 	});
 
-	route(server, social.colibri.actor.getDeletionStatus, {
+	route(server, social.colibri.beta.actor.getDeletionStatus, {
 		auth: auth.required,
 		handler: async ({ auth: caller }) => ({
 			encoding: "application/json" as const,

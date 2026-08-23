@@ -15,8 +15,8 @@ export type IndexMessageInput = {
 
 export type IndexedNotificationRow = Schema["notifications"]["$inferSelect"];
 
-const FACET_MENTION_TYPE = "social.colibri.richtext.facet#mention";
-const FACET_ROLE_TYPE = "social.colibri.richtext.facet#role";
+const FACET_MENTION_TYPE = "social.colibri.beta.richtext.facet#mention";
+const FACET_ROLE_TYPE = "social.colibri.beta.richtext.facet#role";
 const MENTION_ROLES_PERMISSION = "mention.roles";
 
 type FacetFeature = { $type?: unknown; did?: unknown; role?: unknown };

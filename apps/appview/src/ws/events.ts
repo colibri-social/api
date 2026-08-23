@@ -7,7 +7,7 @@ import { channelTopic, communityTopic, type Topic, TopicIndex, userTopic } from 
 
 export type ServerFrame = { $type: string } & Record<string, unknown>;
 
-const EVENTS_PATH = "/xrpc/social.colibri.sync.subscribeEvents";
+const EVENTS_PATH = "/xrpc/social.colibri.beta.sync.subscribeEvents";
 const HEARTBEAT_MS = 30_000;
 
 type Connection = {
@@ -17,12 +17,12 @@ type Connection = {
 };
 
 const clientFrames = {
-	subscribe: social.colibri.sync.defs.subscribe,
-	unsubscribe: social.colibri.sync.defs.unsubscribe,
-	heartbeat: social.colibri.sync.defs.heartbeat,
-	typing: social.colibri.sync.defs.typing,
-	viewChannel: social.colibri.sync.defs.viewChannel,
-	setPresence: social.colibri.sync.defs.setPresence,
+	subscribe: social.colibri.beta.sync.defs.subscribe,
+	unsubscribe: social.colibri.beta.sync.defs.unsubscribe,
+	heartbeat: social.colibri.beta.sync.defs.heartbeat,
+	typing: social.colibri.beta.sync.defs.typing,
+	viewChannel: social.colibri.beta.sync.defs.viewChannel,
+	setPresence: social.colibri.beta.sync.defs.setPresence,
 } as const;
 
 type ClientFrameName = keyof typeof clientFrames;
@@ -31,7 +31,7 @@ const frameName = (value: unknown): ClientFrameName | null => {
 	if (!value || typeof value !== "object") return null;
 	const type = (value as { $type?: unknown }).$type;
 	if (typeof type !== "string") return null;
-	const suffix = type.startsWith("social.colibri.sync.defs#")
+	const suffix = type.startsWith("social.colibri.beta.sync.defs#")
 		? type.slice(type.indexOf("#") + 1)
 		: null;
 	return suffix && suffix in clientFrames ? (suffix as ClientFrameName) : null;
@@ -81,7 +81,7 @@ export class EventServer {
 			: url.searchParams.get("auth");
 		if (!token) return null;
 		const caller = await this.ctx.serviceAuth
-			.verify(token, "social.colibri.sync.subscribeEvents")
+			.verify(token, "social.colibri.beta.sync.subscribeEvents")
 			.catch(() => null);
 		return caller?.did ?? null;
 	}
@@ -109,7 +109,7 @@ export class EventServer {
 
 	private error(connection: Connection, error: string, message: string): void {
 		this.send(connection, {
-			$type: "social.colibri.sync.defs#error",
+			$type: "social.colibri.beta.sync.defs#error",
 			error,
 			message,
 		});
@@ -138,7 +138,7 @@ export class EventServer {
 
 		switch (name) {
 			case "heartbeat":
-				this.send(connection, { $type: "social.colibri.sync.defs#ack" });
+				this.send(connection, { $type: "social.colibri.beta.sync.defs#ack" });
 				return;
 			case "subscribe":
 				await this.applySubscription(connection, result.value as never, "subscribe");
@@ -190,7 +190,7 @@ export class EventServer {
 		}
 
 		this.send(connection, {
-			$type: "social.colibri.sync.defs#subscribed",
+			$type: "social.colibri.beta.sync.defs#subscribed",
 			communities: this.subscribedCommunities(connection),
 			channels: this.subscribedChannels(connection),
 		});

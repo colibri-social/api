@@ -277,7 +277,7 @@ export const registerRoleRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 	const actors = new ActorViews(ctx);
 	const communities = new CommunityViews(ctx, actors);
 
-	route(server, social.colibri.role.create, {
+	route(server, social.colibri.beta.role.create, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -299,7 +299,7 @@ export const registerRoleRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 		}),
 	});
 
-	route(server, social.colibri.role.update, {
+	route(server, social.colibri.beta.role.update, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -323,7 +323,7 @@ export const registerRoleRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 		}),
 	});
 
-	route(server, social.colibri.role.delete, {
+	route(server, social.colibri.beta.role.delete, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,

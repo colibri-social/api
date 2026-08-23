@@ -9,7 +9,7 @@ const COMMUNITY = "did:plc:2hnjxkqm6bpuvvpjbztkxxxx";
 const MEMBER = "did:plc:7fkdlwjqmzcuvvpjbztkyyyy";
 const OUTSIDER = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
 const SPACES = communitySpaces(COMMUNITY);
-const TEXT_CHANNEL = channelSpace(COMMUNITY, "social.colibri.channel.text", "3lkchannel1");
+const TEXT_CHANNEL = channelSpace(COMMUNITY, "social.colibri.beta.channel.text", "3lkchannel1");
 const NOW = "2026-08-23T00:00:00.000Z";
 
 let database: TestDatabase;
@@ -48,8 +48,8 @@ describe("community projections", () => {
 	it("creates a community row from its profile record, deriving every space uri", async () => {
 		await applyChange(
 			deps,
-			put(SPACES.profile, COMMUNITY, "social.colibri.community", SELF, {
-				$type: "social.colibri.community",
+			put(SPACES.profile, COMMUNITY, "social.colibri.beta.community", SELF, {
+				$type: "social.colibri.beta.community",
 				name: "Protocol Nerds",
 				description: "a place",
 			}),
@@ -65,15 +65,15 @@ describe("community projections", () => {
 	it("merges settings into the same community row", async () => {
 		await applyChange(
 			deps,
-			put(SPACES.profile, COMMUNITY, "social.colibri.community", SELF, {
-				$type: "social.colibri.community",
+			put(SPACES.profile, COMMUNITY, "social.colibri.beta.community", SELF, {
+				$type: "social.colibri.beta.community",
 				name: "Protocol Nerds",
 			}),
 		);
 		await applyChange(
 			deps,
-			put(SPACES.configuration, COMMUNITY, "social.colibri.community.settings", SELF, {
-				$type: "social.colibri.community.settings",
+			put(SPACES.configuration, COMMUNITY, "social.colibri.beta.community.settings", SELF, {
+				$type: "social.colibri.beta.community.settings",
 				categoryOrder: [],
 				requiresApprovalToJoin: true,
 				labelers: ["did:plc:labeler"],
@@ -89,15 +89,15 @@ describe("community projections", () => {
 	it("orders channels from the category that lists them", async () => {
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.channel", SELF, {
-				$type: "social.colibri.channel",
+			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.channel", SELF, {
+				$type: "social.colibri.beta.channel",
 				name: "general",
 			}),
 		);
 		await applyChange(
 			deps,
-			put(SPACES.configuration, COMMUNITY, "social.colibri.category", "3lkcat1", {
-				$type: "social.colibri.category",
+			put(SPACES.configuration, COMMUNITY, "social.colibri.beta.category", "3lkcat1", {
+				$type: "social.colibri.beta.category",
 				name: "Text",
 				channelOrder: ["3lkchannel1"],
 			}),
@@ -114,8 +114,8 @@ describe("authority-written collections", () => {
 	it("refuses a role written by a member rather than by the community", async () => {
 		await applyChange(
 			deps,
-			put(SPACES.members, MEMBER, "social.colibri.role", "3lkrole1", {
-				$type: "social.colibri.role",
+			put(SPACES.members, MEMBER, "social.colibri.beta.role", "3lkrole1", {
+				$type: "social.colibri.beta.role",
 				name: "Definitely An Admin",
 				permissions: ["community.manage"],
 				position: 9999,
@@ -129,8 +129,8 @@ describe("authority-written collections", () => {
 	it("accepts the same role from the community itself", async () => {
 		await applyChange(
 			deps,
-			put(SPACES.members, COMMUNITY, "social.colibri.role", "3lkrole1", {
-				$type: "social.colibri.role",
+			put(SPACES.members, COMMUNITY, "social.colibri.beta.role", "3lkrole1", {
+				$type: "social.colibri.beta.role",
 				name: "Moderator",
 				permissions: ["member.kick"],
 				position: 10,
@@ -145,8 +145,8 @@ describe("authority-written collections", () => {
 	it("refuses a member record written by the member it names", async () => {
 		await applyChange(
 			deps,
-			put(SPACES.members, MEMBER, "social.colibri.member", MEMBER, {
-				$type: "social.colibri.member",
+			put(SPACES.members, MEMBER, "social.colibri.beta.member", MEMBER, {
+				$type: "social.colibri.beta.member",
 				subject: MEMBER,
 				joinedAt: NOW,
 				roles: [],
@@ -158,8 +158,8 @@ describe("authority-written collections", () => {
 	it("refuses a channel record written by an outsider", async () => {
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, OUTSIDER, "social.colibri.channel", SELF, {
-				$type: "social.colibri.channel",
+			put(TEXT_CHANNEL, OUTSIDER, "social.colibri.beta.channel", SELF, {
+				$type: "social.colibri.beta.channel",
 				name: "hijacked",
 			}),
 		);
@@ -171,8 +171,8 @@ describe("member-written collections", () => {
 	it("accepts a message from any member of the channel space", async () => {
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, MEMBER, "social.colibri.message", "3lkmsg1", {
-				$type: "social.colibri.message",
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3lkmsg1", {
+				$type: "social.colibri.beta.message",
 				text: "hello",
 				createdAt: NOW,
 			}),
@@ -187,8 +187,8 @@ describe("member-written collections", () => {
 	it("keeps a reply pointing at both the author and the key of its parent", async () => {
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, MEMBER, "social.colibri.message", "3lkmsg2", {
-				$type: "social.colibri.message",
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3lkmsg2", {
+				$type: "social.colibri.beta.message",
 				text: "replying",
 				createdAt: NOW,
 				parent: { did: OUTSIDER, rkey: "3lkmsg1" },
@@ -203,8 +203,8 @@ describe("member-written collections", () => {
 	it("refuses a message that does not match its lexicon", async () => {
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, MEMBER, "social.colibri.message", "3lkmsg3", {
-				$type: "social.colibri.message",
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3lkmsg3", {
+				$type: "social.colibri.beta.message",
 				createdAt: NOW,
 			}),
 		);
@@ -213,11 +213,11 @@ describe("member-written collections", () => {
 	});
 
 	it("refuses a message written into a voice channel space", async () => {
-		const voice = channelSpace(COMMUNITY, "social.colibri.channel.voice", "3lkvoice1");
+		const voice = channelSpace(COMMUNITY, "social.colibri.beta.channel.voice", "3lkvoice1");
 		await applyChange(
 			deps,
-			put(voice, MEMBER, "social.colibri.message", "3lkmsg4", {
-				$type: "social.colibri.message",
+			put(voice, MEMBER, "social.colibri.beta.message", "3lkmsg4", {
+				$type: "social.colibri.beta.message",
 				text: "nope",
 				createdAt: NOW,
 			}),
@@ -229,8 +229,8 @@ describe("member-written collections", () => {
 	it("removes a message on delete", async () => {
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, MEMBER, "social.colibri.message", "3lkmsg1", {
-				$type: "social.colibri.message",
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3lkmsg1", {
+				$type: "social.colibri.beta.message",
 				text: "hello",
 				createdAt: NOW,
 			}),
@@ -239,7 +239,7 @@ describe("member-written collections", () => {
 			space: TEXT_CHANNEL,
 			author: MEMBER,
 			puts: [],
-			deletes: [{ collection: "social.colibri.message", rkey: "3lkmsg1" }],
+			deletes: [{ collection: "social.colibri.beta.message", rkey: "3lkmsg1" }],
 		});
 		expect(await database.db.select().from(database.tables.messages)).toEqual([]);
 	});
@@ -249,9 +249,9 @@ describe("labels", () => {
 	it("records who applied a label so a reader can honour only trusted labelers", async () => {
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.label", "3lklabel1", {
-				$type: "social.colibri.label",
-				subject: { did: MEMBER, collection: "social.colibri.message", rkey: "3lkmsg1" },
+			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.label", "3lklabel1", {
+				$type: "social.colibri.beta.label",
+				subject: { did: MEMBER, collection: "social.colibri.beta.message", rkey: "3lkmsg1" },
 				val: "hidden",
 				createdAt: NOW,
 			}),
@@ -266,9 +266,9 @@ describe("labels", () => {
 	it("accepts a label from a third-party labeler, leaving trust to the reader", async () => {
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, OUTSIDER, "social.colibri.label", "3lklabel2", {
-				$type: "social.colibri.label",
-				subject: { did: MEMBER, collection: "social.colibri.message", rkey: "3lkmsg1" },
+			put(TEXT_CHANNEL, OUTSIDER, "social.colibri.beta.label", "3lklabel2", {
+				$type: "social.colibri.beta.label",
+				subject: { did: MEMBER, collection: "social.colibri.beta.message", rkey: "3lkmsg1" },
 				val: "spoiler",
 				createdAt: NOW,
 			}),
@@ -285,8 +285,8 @@ describe("personal spaces", () => {
 	it("projects a mute from the owner's own space", async () => {
 		await applyChange(
 			deps,
-			put(personal, MEMBER, "social.colibri.actor.mute", "3lkmute1", {
-				$type: "social.colibri.actor.mute",
+			put(personal, MEMBER, "social.colibri.beta.actor.mute", "3lkmute1", {
+				$type: "social.colibri.beta.actor.mute",
 				subject: OUTSIDER,
 				createdAt: NOW,
 			}),
@@ -299,8 +299,8 @@ describe("personal spaces", () => {
 	it("refuses a record written into someone else's personal space", async () => {
 		await applyChange(
 			deps,
-			put(personal, OUTSIDER, "social.colibri.actor.mute", "3lkmute2", {
-				$type: "social.colibri.actor.mute",
+			put(personal, OUTSIDER, "social.colibri.beta.actor.mute", "3lkmute2", {
+				$type: "social.colibri.beta.actor.mute",
 				subject: MEMBER,
 				createdAt: NOW,
 			}),
@@ -312,8 +312,8 @@ describe("personal spaces", () => {
 		const write = (cursors: Array<{ channel: string; cursor: string }>) =>
 			applyChange(
 				deps,
-				put(personal, MEMBER, "social.colibri.channel.read", COMMUNITY, {
-					$type: "social.colibri.channel.read",
+				put(personal, MEMBER, "social.colibri.beta.channel.read", COMMUNITY, {
+					$type: "social.colibri.beta.channel.read",
 					community: COMMUNITY,
 					cursors,
 				}),

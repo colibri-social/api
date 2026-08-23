@@ -22,11 +22,11 @@ import { and, asc, eq } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import type { ActorViews } from "./actor.js";
 
-export type CommunityView = social.colibri.community.defs.CommunityView;
-export type CategoryView = social.colibri.community.defs.CategoryView;
-export type ChannelView = social.colibri.community.defs.ChannelView;
-export type RoleView = social.colibri.community.defs.RoleView;
-export type MemberView = social.colibri.community.defs.MemberView;
+export type CommunityView = social.colibri.beta.community.defs.CommunityView;
+export type CategoryView = social.colibri.beta.community.defs.CategoryView;
+export type ChannelView = social.colibri.beta.community.defs.ChannelView;
+export type RoleView = social.colibri.beta.community.defs.RoleView;
+export type MemberView = social.colibri.beta.community.defs.MemberView;
 
 type CommunityRow = Schema["communities"]["$inferSelect"];
 type ChannelRow = Schema["channels"]["$inferSelect"];
@@ -54,7 +54,7 @@ export class CommunityViews {
 		variant: "avatar" | "banner",
 	): string | undefined {
 		if (!cid) return undefined;
-		const url = new URL("/xrpc/social.colibri.blob.get", this.ctx.config.PUBLIC_URL);
+		const url = new URL("/xrpc/social.colibri.beta.blob.get", this.ctx.config.PUBLIC_URL);
 		url.searchParams.set("did", did);
 		url.searchParams.set("cid", cid);
 		url.searchParams.set("variant", variant);

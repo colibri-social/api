@@ -6,7 +6,7 @@ import type { NotificationDeps } from "./deps.js";
 import { indexMessage } from "./index-message.js";
 
 const COMMUNITY = "did:plc:community0000000000000000";
-const CHANNEL = channelSpace(COMMUNITY, "social.colibri.channel.text", "3lkchannel1");
+const CHANNEL = channelSpace(COMMUNITY, "social.colibri.beta.channel.text", "3lkchannel1");
 const AUTHOR = "did:plc:author00000000000000000000";
 const NOW = "2026-08-23T00:00:00.000Z";
 
@@ -56,12 +56,12 @@ const rowsFor = async (recipient: string) =>
 
 const mentionFacet = (did: string) => ({
 	index: { byteStart: 0, byteEnd: 1 },
-	features: [{ $type: "social.colibri.richtext.facet#mention", did }],
+	features: [{ $type: "social.colibri.beta.richtext.facet#mention", did }],
 });
 
 const roleFacet = (roleKey: string) => ({
 	index: { byteStart: 0, byteEnd: 1 },
-	features: [{ $type: "social.colibri.richtext.facet#role", role: roleKey }],
+	features: [{ $type: "social.colibri.beta.richtext.facet#role", role: roleKey }],
 });
 
 beforeEach(async () => {

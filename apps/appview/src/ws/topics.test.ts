@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { channelTopic, communityTopic, TopicIndex, userTopic } from "./topics.js";
 
 const COMMUNITY = "did:plc:community";
-const CHANNEL = "at://did:plc:community/space/social.colibri.channel.text/3lkchan";
+const CHANNEL = "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchan";
 
 describe("topic fan-out", () => {
 	it("delivers only to subscribers of a topic", () => {

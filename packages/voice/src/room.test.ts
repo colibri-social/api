@@ -7,7 +7,7 @@ const webRtcTransportOptions = buildWebRtcTransportOptions({ listenIp: "0.0.0.0"
 async function createRoom(rawRouter = createFakeRouter()) {
 	const room = await VoiceRoom.create(
 		asRouter(rawRouter),
-		"at://did:plc:community/social.colibri.channel/vc",
+		"at://did:plc:community/social.colibri.beta.channel/vc",
 		{
 			webRtcTransportOptions,
 		},

@@ -69,6 +69,53 @@ pnpm typecheck          # sources and tests
 pnpm lint               # Biome
 ```
 
+## Lexicons
+
+Every Colibri schema lives under `social.colibri.beta.*` while the spaces work is
+unstable, so it cannot collide with the `social.colibri.*` schemas already
+published from the pre-spaces AppView. The vendored `com.atproto.space` and
+`com.atproto.simplespace` documents are upstream and are never republished from
+here.
+
+```sh
+pnpm lexicons:codegen      # regenerate the TypeScript types from the JSON
+pnpm lexicons:check-dns    # what DNS is missing before anything can be published
+pnpm lexicons:publish      # publish to com.atproto.lexicon.schema records
+```
+
+### DNS
+
+An NSID resolves through a `_lexicon` TXT record on its domain authority, which
+is every segment but the last, reversed. So `social.colibri.beta.channel.text`
+resolves through `_lexicon.channel.beta.colibri.social`. One record per
+authority, thirteen in total. `pnpm lexicons:check-dns` prints the exact set,
+and takes an optional DID to check that each record points where you expect:
+
+```sh
+pnpm lexicons:check-dns did:plc:mprdjqjluoswa7awzggaggj3
+```
+
+### Publishing
+
+```sh
+export LEXICON_PDS=https://colibri.social
+export LEXICON_IDENTIFIER=colibri.social
+export LEXICON_PASSWORD=<app password>
+
+pnpm lexicons:publish --dry-run
+pnpm lexicons:publish
+```
+
+### Renaming the namespace
+
+Promoting out of beta, or moving again:
+
+```sh
+pnpm lexicons:renamespace social.colibri.beta social.colibri --dry-run
+pnpm lexicons:renamespace social.colibri.beta social.colibri
+pnpm lexicons:codegen
+```
+
 ## Releasing
 
 Three packages are published from here: `@colibri-social/lexicons`,

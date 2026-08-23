@@ -17,7 +17,7 @@ const readPackageVersion = (): string => {
 const resolveVersion = (): string => process.env.VERSION || readPackageVersion();
 
 export const registerServerRoutes = ({ server, ctx }: RouteDeps): void => {
-	publicRoute(server, social.colibri.server.describeServer, {
+	publicRoute(server, social.colibri.beta.server.describeServer, {
 		handler: async () => {
 			const features: string[] = [];
 			if (ctx.config.VOICE_ENABLED) features.push("voice");

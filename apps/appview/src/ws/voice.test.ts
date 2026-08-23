@@ -9,7 +9,7 @@ import { asRouter, createFakeRouter } from "../../../../packages/voice/src/mock-
 import type { AppContext } from "../context.js";
 import { VoiceServer } from "./voice.js";
 
-const VOICE_PATH = "/xrpc/social.colibri.voice.subscribeSignals";
+const VOICE_PATH = "/xrpc/social.colibri.beta.voice.subscribeSignals";
 
 const COMMUNITY = "did:plc:community";
 const ALICE = "did:plc:alice";
@@ -150,10 +150,13 @@ describe("VoiceServer", () => {
 		const ws = connect("alice-token");
 		await waitForOpen(ws);
 
-		send(ws, { $type: "social.colibri.voice.defs#getRtpCapabilities" });
+		send(ws, { $type: "social.colibri.beta.voice.defs#getRtpCapabilities" });
 		const frame = await nextFrame(ws);
 
-		expect(frame).toMatchObject({ $type: "social.colibri.voice.defs#error", error: "NotJoined" });
+		expect(frame).toMatchObject({
+			$type: "social.colibri.beta.voice.defs#error",
+			error: "NotJoined",
+		});
 		ws.close();
 	});
 
@@ -161,11 +164,11 @@ describe("VoiceServer", () => {
 		const ws = connect("alice-token");
 		await waitForOpen(ws);
 
-		send(ws, { $type: "social.colibri.voice.defs#join", channel: TEXT_CHANNEL });
+		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: TEXT_CHANNEL });
 		const frame = await nextFrame(ws);
 
 		expect(frame).toMatchObject({
-			$type: "social.colibri.voice.defs#error",
+			$type: "social.colibri.beta.voice.defs#error",
 			error: "NotVoiceChannel",
 		});
 		ws.close();
@@ -175,10 +178,13 @@ describe("VoiceServer", () => {
 		const ws = connect("mallory-token");
 		await waitForOpen(ws);
 
-		send(ws, { $type: "social.colibri.voice.defs#join", channel: VOICE_CHANNEL });
+		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
 		const frame = await nextFrame(ws);
 
-		expect(frame).toMatchObject({ $type: "social.colibri.voice.defs#error", error: "Forbidden" });
+		expect(frame).toMatchObject({
+			$type: "social.colibri.beta.voice.defs#error",
+			error: "Forbidden",
+		});
 		ws.close();
 	});
 
@@ -186,23 +192,26 @@ describe("VoiceServer", () => {
 		const ws = connect("alice-token");
 		await waitForOpen(ws);
 
-		send(ws, { $type: "social.colibri.voice.defs#join", channel: VOICE_CHANNEL });
+		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
 		const joined = await nextFrame(ws);
-		expect(joined).toEqual({ $type: "social.colibri.voice.defs#joined", channel: VOICE_CHANNEL });
+		expect(joined).toEqual({
+			$type: "social.colibri.beta.voice.defs#joined",
+			channel: VOICE_CHANNEL,
+		});
 
-		send(ws, { $type: "social.colibri.voice.defs#createTransport", direction: "send" });
+		send(ws, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
 		const transport = await nextFrame(ws);
-		expect(transport.$type).toBe("social.colibri.voice.defs#transportOptions");
+		expect(transport.$type).toBe("social.colibri.beta.voice.defs#transportOptions");
 		expect(transport.direction).toBe("send");
 
 		send(ws, {
-			$type: "social.colibri.voice.defs#connectTransport",
+			$type: "social.colibri.beta.voice.defs#connectTransport",
 			transportId: transport.id,
 			dtlsParameters: {},
 		});
 
 		send(ws, {
-			$type: "social.colibri.voice.defs#produce",
+			$type: "social.colibri.beta.voice.defs#produce",
 			transportId: transport.id,
 			kind: "audio",
 			rtpParameters: {},
@@ -211,7 +220,7 @@ describe("VoiceServer", () => {
 		const produced = await nextFrame(ws);
 
 		expect(produced).toMatchObject({
-			$type: "social.colibri.voice.defs#producerInfo",
+			$type: "social.colibri.beta.voice.defs#producerInfo",
 			did: ALICE,
 			kind: "audio",
 			source: "microphone",
@@ -225,19 +234,19 @@ describe("VoiceServer", () => {
 		const bobWs = connect("bob-token");
 		await Promise.all([waitForOpen(aliceWs), waitForOpen(bobWs)]);
 
-		send(bobWs, { $type: "social.colibri.voice.defs#join", channel: VOICE_CHANNEL });
+		send(bobWs, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
 		await nextFrame(bobWs);
 
-		send(aliceWs, { $type: "social.colibri.voice.defs#join", channel: VOICE_CHANNEL });
+		send(aliceWs, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
 		await nextFrame(aliceWs);
 
-		send(aliceWs, { $type: "social.colibri.voice.defs#createTransport", direction: "send" });
+		send(aliceWs, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
 		const transport = await nextFrame(aliceWs);
 
 		const bobNotification = nextFrame(bobWs);
 
 		send(aliceWs, {
-			$type: "social.colibri.voice.defs#produce",
+			$type: "social.colibri.beta.voice.defs#produce",
 			transportId: transport.id,
 			kind: "audio",
 			rtpParameters: {},
@@ -247,7 +256,7 @@ describe("VoiceServer", () => {
 
 		const notification = await bobNotification;
 		expect(notification).toMatchObject({
-			$type: "social.colibri.voice.defs#producerInfo",
+			$type: "social.colibri.beta.voice.defs#producerInfo",
 			did: ALICE,
 			kind: "audio",
 			source: "microphone",
@@ -264,14 +273,14 @@ describe("VoiceServer", () => {
 		const ws = connect("alice-token");
 		await waitForOpen(ws);
 
-		send(ws, { $type: "social.colibri.voice.defs#join", channel: VOICE_CHANNEL });
+		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
 		await nextFrame(ws);
 
-		send(ws, { $type: "social.colibri.voice.defs#createTransport", direction: "send" });
+		send(ws, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
 		const transport = await nextFrame(ws);
 
 		send(ws, {
-			$type: "social.colibri.voice.defs#produce",
+			$type: "social.colibri.beta.voice.defs#produce",
 			transportId: transport.id,
 			kind: "audio",
 			rtpParameters: {},
@@ -279,7 +288,10 @@ describe("VoiceServer", () => {
 		});
 		const frame = await nextFrame(ws);
 
-		expect(frame).toMatchObject({ $type: "social.colibri.voice.defs#error", error: "Forbidden" });
+		expect(frame).toMatchObject({
+			$type: "social.colibri.beta.voice.defs#error",
+			error: "Forbidden",
+		});
 		ws.close();
 	});
 
@@ -287,10 +299,10 @@ describe("VoiceServer", () => {
 		const ws = connect("alice-token");
 		await waitForOpen(ws);
 
-		send(ws, { $type: "social.colibri.voice.defs#join", channel: VOICE_CHANNEL });
+		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
 		await nextFrame(ws);
 
-		send(ws, { $type: "social.colibri.voice.defs#createTransport", direction: "send" });
+		send(ws, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
 		await nextFrame(ws);
 
 		expect(sfu.presenceOf(ALICE)).toBe(VOICE_CHANNEL);

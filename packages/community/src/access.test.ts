@@ -44,7 +44,7 @@ const authz = (overrides: Partial<ActorAuthz> = {}): ActorAuthz => ({
 const stranger = () => authz({ member: null });
 
 const channel = (overrides: Partial<ChannelState> = {}): ChannelState => ({
-	space: "at://did:plc:community/space/social.colibri.channel.text/3lkchan",
+	space: "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchan",
 	skey: "3lkchan",
 	ownerOnly: false,
 	allowedRoles: [],

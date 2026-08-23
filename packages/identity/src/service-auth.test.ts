@@ -30,7 +30,7 @@ const mint = (overrides: { aud?: string; lxm?: string | null; lifetimeSeconds?: 
 	mintServiceAuth({
 		issuer: ISSUER,
 		audience: overrides.aud ?? AUDIENCE,
-		lxm: overrides.lxm === undefined ? "social.colibri.actor.getProfile" : overrides.lxm,
+		lxm: overrides.lxm === undefined ? "social.colibri.beta.actor.getProfile" : overrides.lxm,
 		keypair,
 		lifetimeSeconds: overrides.lifetimeSeconds ?? 60,
 	});
@@ -42,8 +42,8 @@ beforeAll(async () => {
 
 describe("service auth", () => {
 	it("accepts a token minted for this audience and method", async () => {
-		const caller = await authFor().verify(await mint(), "social.colibri.actor.getProfile");
-		expect(caller).toEqual({ did: ISSUER, lxm: "social.colibri.actor.getProfile" });
+		const caller = await authFor().verify(await mint(), "social.colibri.beta.actor.getProfile");
+		expect(caller).toEqual({ did: ISSUER, lxm: "social.colibri.beta.actor.getProfile" });
 	});
 
 	it("refuses a token minted for another audience", async () => {
@@ -70,10 +70,10 @@ describe("service auth", () => {
 	});
 
 	it("refuses a token minted for another method", async () => {
-		const token = await mint({ lxm: "social.colibri.actor.setStatus" });
-		await expect(authFor().verify(token, "social.colibri.actor.getProfile")).rejects.toBeInstanceOf(
-			ServiceAuthError,
-		);
+		const token = await mint({ lxm: "social.colibri.beta.actor.setStatus" });
+		await expect(
+			authFor().verify(token, "social.colibri.beta.actor.getProfile"),
+		).rejects.toBeInstanceOf(ServiceAuthError);
 	});
 
 	it("refuses a token signed by a different key", async () => {

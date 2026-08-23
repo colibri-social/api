@@ -4,11 +4,11 @@ import type { Projector } from "../projector.js";
 
 const PERSONAL = [SPACE_TYPES.actorPreferences] as const;
 
-export const mute: Projector<social.colibri.actor.mute.Main> = {
+export const mute: Projector<social.colibri.beta.actor.mute.Main> = {
 	collection: COLLECTIONS.mute,
 	writer: "authority",
 	spaceTypes: PERSONAL,
-	schema: social.colibri.actor.mute,
+	schema: social.colibri.beta.actor.mute,
 	put: async (deps, ref, value) => {
 		const row = {
 			did: ref.author,
@@ -31,11 +31,11 @@ export const mute: Projector<social.colibri.actor.mute.Main> = {
 	},
 };
 
-export const settings: Projector<social.colibri.actor.settings.Main> = {
+export const settings: Projector<social.colibri.beta.actor.settings.Main> = {
 	collection: COLLECTIONS.settings,
 	writer: "authority",
 	spaceTypes: PERSONAL,
-	schema: social.colibri.actor.settings,
+	schema: social.colibri.beta.actor.settings,
 	rkey: (ref) => ref.rkey === SELF,
 	put: async (deps, ref, value) => {
 		const row = {
@@ -56,11 +56,11 @@ export const settings: Projector<social.colibri.actor.settings.Main> = {
 	},
 };
 
-export const readCursors: Projector<social.colibri.channel.read.Main> = {
+export const readCursors: Projector<social.colibri.beta.channel.read.Main> = {
 	collection: COLLECTIONS.channelRead,
 	writer: "authority",
 	spaceTypes: PERSONAL,
-	schema: social.colibri.channel.read,
+	schema: social.colibri.beta.channel.read,
 	put: async (deps, ref, value) => {
 		await deps.db
 			.delete(deps.tables.readCursors)

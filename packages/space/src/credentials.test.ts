@@ -8,7 +8,7 @@ import { spaceRef } from "./space-ref.js";
 
 const AUTHORITY = "did:plc:2hnjxkqm6bpuvvpjbztkxxxx";
 const HOST = "https://pds.test";
-const SPACE = spaceRef(AUTHORITY, "social.colibri.channel.text", "3lkabcdefgh2k");
+const SPACE = spaceRef(AUTHORITY, "social.colibri.beta.channel.text", "3lkabcdefgh2k");
 
 type HostBehaviour = {
 	failWith?: { status: number; error: string };

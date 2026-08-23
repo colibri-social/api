@@ -6,10 +6,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { RepoSync } from "./repo-sync.js";
 import type { RepoChange, RepoCursor, SyncStore } from "./types.js";
 
-const SPACE = "at://did:plc:2hnjxkqm6bpuvvpjbztkxxxx/space/social.colibri.channel.text/3lkabc";
+const SPACE = "at://did:plc:2hnjxkqm6bpuvvpjbztkxxxx/space/social.colibri.beta.channel.text/3lkabc";
 const AUTHOR = "did:plc:7fkdlwjqmzcuvvpjbztkyyyy";
 const HOST = "https://pds.test";
-const MESSAGE = "social.colibri.message";
+const MESSAGE = "social.colibri.beta.message";
 
 type StoredRecord = {
 	collection: string;

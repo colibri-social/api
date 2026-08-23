@@ -196,7 +196,7 @@ export const registerNotificationRoutes = ({ server, ctx, auth }: RouteDeps): vo
 	const actors = new ActorViews(ctx);
 	const hydrateActors: ActorHydrator = (dids) => actors.hydrate(dids);
 
-	route(server, social.colibri.notification.listNotifications, {
+	route(server, social.colibri.beta.notification.listNotifications, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -207,7 +207,7 @@ export const registerNotificationRoutes = ({ server, ctx, auth }: RouteDeps): vo
 		}),
 	});
 
-	route(server, social.colibri.notification.getUnreadCount, {
+	route(server, social.colibri.beta.notification.getUnreadCount, {
 		auth: auth.required,
 		handler: async ({ auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -215,7 +215,7 @@ export const registerNotificationRoutes = ({ server, ctx, auth }: RouteDeps): vo
 		}),
 	});
 
-	route(server, social.colibri.notification.getUnseen, {
+	route(server, social.colibri.beta.notification.getUnseen, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -229,7 +229,7 @@ export const registerNotificationRoutes = ({ server, ctx, auth }: RouteDeps): vo
 		}),
 	});
 
-	route(server, social.colibri.notification.updateSeen, {
+	route(server, social.colibri.beta.notification.updateSeen, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -237,7 +237,7 @@ export const registerNotificationRoutes = ({ server, ctx, auth }: RouteDeps): vo
 		}),
 	});
 
-	route(server, social.colibri.notification.updateSeenForMessage, {
+	route(server, social.colibri.beta.notification.updateSeenForMessage, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -251,7 +251,7 @@ export const registerNotificationRoutes = ({ server, ctx, auth }: RouteDeps): vo
 		}),
 	});
 
-	route(server, social.colibri.notification.registerPush, {
+	route(server, social.colibri.beta.notification.registerPush, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			await handleRegisterPush(ctx, caller.credentials.did, input.body);
@@ -259,7 +259,7 @@ export const registerNotificationRoutes = ({ server, ctx, auth }: RouteDeps): vo
 		},
 	});
 
-	route(server, social.colibri.notification.unregisterPush, {
+	route(server, social.colibri.beta.notification.unregisterPush, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			await handleUnregisterPush(ctx, caller.credentials.did, input.body);

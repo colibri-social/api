@@ -169,7 +169,7 @@ export const registerCategoryRoutes = ({ server, ctx, auth }: RouteDeps): void =
 	const actors = new ActorViews(ctx);
 	const communities = new CommunityViews(ctx, actors);
 
-	route(server, social.colibri.category.create, {
+	route(server, social.colibri.beta.category.create, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -185,7 +185,7 @@ export const registerCategoryRoutes = ({ server, ctx, auth }: RouteDeps): void =
 		}),
 	});
 
-	route(server, social.colibri.category.update, {
+	route(server, social.colibri.beta.category.update, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -201,7 +201,7 @@ export const registerCategoryRoutes = ({ server, ctx, auth }: RouteDeps): void =
 		}),
 	});
 
-	route(server, social.colibri.category.delete, {
+	route(server, social.colibri.beta.category.delete, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,

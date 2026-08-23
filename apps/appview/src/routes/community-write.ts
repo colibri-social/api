@@ -34,8 +34,8 @@ import { credentialsUnavailable, membershipErrorToXrpc } from "./failures.js";
 import { writeCommunitySettings } from "./settings.js";
 import type { RouteDeps } from "./types.js";
 
-type InvitationView = social.colibri.community.defs.InvitationView;
-type MemberView = social.colibri.community.defs.MemberView;
+type InvitationView = social.colibri.beta.community.defs.InvitationView;
+type MemberView = social.colibri.beta.community.defs.MemberView;
 
 const communityNotFound = () =>
 	new InvalidRequestError("no community exists at that identifier", "CommunityNotFound");
@@ -521,7 +521,7 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 		writer: ctx.writer,
 	});
 
-	route(server, social.colibri.community.create, {
+	route(server, social.colibri.beta.community.create, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -529,7 +529,7 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 		}),
 	});
 
-	route(server, social.colibri.community.update, {
+	route(server, social.colibri.beta.community.update, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -537,7 +537,7 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 		}),
 	});
 
-	route(server, social.colibri.community.delete, {
+	route(server, social.colibri.beta.community.delete, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			await handleDeleteCommunity(ctx, caller.credentials.did, input.body.community);
@@ -545,7 +545,7 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 		},
 	});
 
-	route(server, social.colibri.community.join, {
+	route(server, social.colibri.beta.community.join, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -559,7 +559,7 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 		}),
 	});
 
-	route(server, social.colibri.community.leave, {
+	route(server, social.colibri.beta.community.leave, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			await handleLeaveCommunity(ctx, membership, caller.credentials.did, input.body.community);
@@ -567,7 +567,7 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 		},
 	});
 
-	route(server, social.colibri.community.setMemberRoles, {
+	route(server, social.colibri.beta.community.setMemberRoles, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -575,7 +575,7 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 		}),
 	});
 
-	route(server, social.colibri.community.reorderCategories, {
+	route(server, social.colibri.beta.community.reorderCategories, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			await handleReorderCategories(ctx, caller.credentials.did, input.body);
@@ -583,7 +583,7 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 		},
 	});
 
-	route(server, social.colibri.community.createInvitation, {
+	route(server, social.colibri.beta.community.createInvitation, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -591,7 +591,7 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 		}),
 	});
 
-	route(server, social.colibri.community.deleteInvitation, {
+	route(server, social.colibri.beta.community.deleteInvitation, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			await handleDeleteInvitation(
@@ -604,7 +604,7 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 		},
 	});
 
-	route(server, social.colibri.community.registerCredentials, {
+	route(server, social.colibri.beta.community.registerCredentials, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			await handleRegisterCredentials(ctx, caller.credentials.did, input.body);
@@ -612,7 +612,7 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 		},
 	});
 
-	route(server, social.colibri.community.migrate, {
+	route(server, social.colibri.beta.community.migrate, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,

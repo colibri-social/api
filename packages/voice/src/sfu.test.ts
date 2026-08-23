@@ -3,8 +3,8 @@ import { asRouter, createFakeRouter } from "./mock-mediasoup.js";
 import { VoiceSfu } from "./sfu.js";
 import type { WorkerPoolLike } from "./worker-pool.js";
 
-const CHANNEL_A = "at://did:plc:community/social.colibri.channel.voice/a";
-const CHANNEL_B = "at://did:plc:community/social.colibri.channel.voice/b";
+const CHANNEL_A = "at://did:plc:community/social.colibri.beta.channel.voice/a";
+const CHANNEL_B = "at://did:plc:community/social.colibri.beta.channel.voice/b";
 
 function fakeWorkerPool(): WorkerPoolLike & { createRouter: ReturnType<typeof vi.fn> } {
 	return {

@@ -9,7 +9,7 @@ import type { CommunityView } from "../views/community.js";
 import { CommunityViews } from "../views/community.js";
 import type { RouteDeps } from "./types.js";
 
-type InvitationView = social.colibri.community.defs.InvitationView;
+type InvitationView = social.colibri.beta.community.defs.InvitationView;
 
 const communityNotFound = () =>
 	new InvalidRequestError("no community exists at that identifier", "CommunityNotFound");
@@ -182,7 +182,7 @@ export const registerCommunityRoutes = ({ server, ctx, auth }: RouteDeps): void 
 	const actors = new ActorViews(ctx);
 	const communities = new CommunityViews(ctx, actors);
 
-	route(server, social.colibri.community.getCommunity, {
+	route(server, social.colibri.beta.community.getCommunity, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -190,7 +190,7 @@ export const registerCommunityRoutes = ({ server, ctx, auth }: RouteDeps): void 
 		}),
 	});
 
-	route(server, social.colibri.community.listCategories, {
+	route(server, social.colibri.beta.community.listCategories, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -198,7 +198,7 @@ export const registerCommunityRoutes = ({ server, ctx, auth }: RouteDeps): void 
 		}),
 	});
 
-	route(server, social.colibri.community.listChannels, {
+	route(server, social.colibri.beta.community.listChannels, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -206,7 +206,7 @@ export const registerCommunityRoutes = ({ server, ctx, auth }: RouteDeps): void 
 		}),
 	});
 
-	route(server, social.colibri.community.listRoles, {
+	route(server, social.colibri.beta.community.listRoles, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -214,7 +214,7 @@ export const registerCommunityRoutes = ({ server, ctx, auth }: RouteDeps): void 
 		}),
 	});
 
-	route(server, social.colibri.community.listMembers, {
+	route(server, social.colibri.beta.community.listMembers, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -226,14 +226,14 @@ export const registerCommunityRoutes = ({ server, ctx, auth }: RouteDeps): void 
 		}),
 	});
 
-	publicRoute(server, social.colibri.community.getInvitation, {
+	publicRoute(server, social.colibri.beta.community.getInvitation, {
 		handler: async ({ params }) => ({
 			encoding: "application/json" as const,
 			body: await handleGetInvitation(ctx, communities, params.code, null),
 		}),
 	});
 
-	route(server, social.colibri.community.listInvitations, {
+	route(server, social.colibri.beta.community.listInvitations, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => ({
 			encoding: "application/json" as const,

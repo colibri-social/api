@@ -1,11 +1,11 @@
 export const SPACE_TYPES = {
-	communityProfile: "social.colibri.community.profile",
-	communityConfiguration: "social.colibri.community.configuration",
-	communityMembers: "social.colibri.community.members",
-	communityModeration: "social.colibri.community.moderation",
-	channelText: "social.colibri.channel.text",
-	channelVoice: "social.colibri.channel.voice",
-	actorPreferences: "social.colibri.actor.preferences",
+	communityProfile: "social.colibri.beta.community.profile",
+	communityConfiguration: "social.colibri.beta.community.configuration",
+	communityMembers: "social.colibri.beta.community.members",
+	communityModeration: "social.colibri.beta.community.moderation",
+	channelText: "social.colibri.beta.channel.text",
+	channelVoice: "social.colibri.beta.channel.voice",
+	actorPreferences: "social.colibri.beta.actor.preferences",
 } as const;
 
 export type SpaceType = (typeof SPACE_TYPES)[keyof typeof SPACE_TYPES];
@@ -27,20 +27,20 @@ export const COMMUNITY_SPACE_TYPES = [
 ] as const;
 
 export const COLLECTIONS = {
-	category: "social.colibri.category",
-	channel: "social.colibri.channel",
-	channelRead: "social.colibri.channel.read",
-	community: "social.colibri.community",
-	communitySettings: "social.colibri.community.settings",
-	label: "social.colibri.label",
-	member: "social.colibri.member",
-	message: "social.colibri.message",
-	moderation: "social.colibri.moderation",
-	mute: "social.colibri.actor.mute",
-	reaction: "social.colibri.reaction",
-	role: "social.colibri.role",
-	settings: "social.colibri.actor.settings",
-	profile: "social.colibri.actor.profile",
+	category: "social.colibri.beta.category",
+	channel: "social.colibri.beta.channel",
+	channelRead: "social.colibri.beta.channel.read",
+	community: "social.colibri.beta.community",
+	communitySettings: "social.colibri.beta.community.settings",
+	label: "social.colibri.beta.label",
+	member: "social.colibri.beta.member",
+	message: "social.colibri.beta.message",
+	moderation: "social.colibri.beta.moderation",
+	mute: "social.colibri.beta.actor.mute",
+	reaction: "social.colibri.beta.reaction",
+	role: "social.colibri.beta.role",
+	settings: "social.colibri.beta.actor.settings",
+	profile: "social.colibri.beta.actor.profile",
 } as const;
 
 export type Collection = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SpaceSyncEngine } from "./engine.js";
 import type { RepoCursor, SyncStore } from "./types.js";
 
-const SPACE = "at://did:plc:community/space/social.colibri.channel.text/3lkchan";
+const SPACE = "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchan";
 const AUTHORITY = "did:plc:community";
 const ALICE = "did:plc:alice";
 const BOB = "did:plc:bob";

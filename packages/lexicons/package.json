@@ -29,7 +29,10 @@
 	"scripts": {
 		"build": "tsc --build",
 		"clean": "tsc --build --clean",
-		"codegen": "node scripts/codegen.mjs"
+		"codegen": "node scripts/codegen.mjs",
+		"check-dns": "node scripts/check-dns.mjs",
+		"publish-lexicons": "node scripts/publish.mjs",
+		"renamespace": "node scripts/renamespace.mjs"
 	},
 	"dependencies": {
 		"@atproto/lex": "catalog:",

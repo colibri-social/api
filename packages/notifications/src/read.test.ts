@@ -14,7 +14,7 @@ import {
 } from "./read.js";
 
 const COMMUNITY = "did:plc:community0000000000000000";
-const CHANNEL = channelSpace(COMMUNITY, "social.colibri.channel.text", "3lkchannel1");
+const CHANNEL = channelSpace(COMMUNITY, "social.colibri.beta.channel.text", "3lkchannel1");
 const AUTHOR = "did:plc:author00000000000000000000";
 const RECIPIENT = "did:plc:recipient000000000000000";
 

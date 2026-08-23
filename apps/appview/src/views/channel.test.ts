@@ -21,18 +21,18 @@ let database: TestDatabase;
 let ctx: AppContext;
 let views: ChannelViews;
 
-type Parent = social.colibri.channel.defs.MessageView["parent"];
+type Parent = social.colibri.beta.channel.defs.MessageView["parent"];
 
-const asMessageView = (parent: Parent): social.colibri.channel.defs.MessageView | undefined =>
-	parent?.$type === "social.colibri.channel.defs#messageView"
-		? (parent as social.colibri.channel.defs.MessageView)
+const asMessageView = (parent: Parent): social.colibri.beta.channel.defs.MessageView | undefined =>
+	parent?.$type === "social.colibri.beta.channel.defs#messageView"
+		? (parent as social.colibri.beta.channel.defs.MessageView)
 		: undefined;
 
 const asDeletedView = (
 	parent: Parent,
-): social.colibri.channel.defs.DeletedMessageView | undefined =>
-	parent?.$type === "social.colibri.channel.defs#deletedMessageView"
-		? (parent as social.colibri.channel.defs.DeletedMessageView)
+): social.colibri.beta.channel.defs.DeletedMessageView | undefined =>
+	parent?.$type === "social.colibri.beta.channel.defs#deletedMessageView"
+		? (parent as social.colibri.beta.channel.defs.DeletedMessageView)
 		: undefined;
 
 const putLabel = async (

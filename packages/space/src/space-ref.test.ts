@@ -11,7 +11,7 @@ import {
 
 const COMMUNITY = "did:plc:2hnjxkqm6bpuvvpjbztkxxxx";
 const AUTHOR = "did:plc:7fkdlwjqmzcuvvpjbztkyyyy";
-const CHANNEL = "social.colibri.channel.text";
+const CHANNEL = "social.colibri.beta.channel.text";
 const SKEY = "3lkabcdefgh2k";
 
 describe("space references", () => {
@@ -30,7 +30,7 @@ describe("space references", () => {
 	});
 
 	it("refuses a public record uri", () => {
-		expect(() => parseSpaceRef(`at://${COMMUNITY}/social.colibri.community/self`)).toThrow(
+		expect(() => parseSpaceRef(`at://${COMMUNITY}/social.colibri.beta.community/self`)).toThrow(
 			SpaceRefError,
 		);
 	});
@@ -52,26 +52,26 @@ describe("space record references", () => {
 	const space = spaceRef(COMMUNITY, CHANNEL, SKEY);
 
 	it("addresses a record by space, author, collection and key", () => {
-		expect(spaceRecordUri(space, AUTHOR, "social.colibri.message", "3lxyz")).toBe(
-			`at://${COMMUNITY}/space/${CHANNEL}/${SKEY}/${AUTHOR}/social.colibri.message/3lxyz`,
+		expect(spaceRecordUri(space, AUTHOR, "social.colibri.beta.message", "3lxyz")).toBe(
+			`at://${COMMUNITY}/space/${CHANNEL}/${SKEY}/${AUTHOR}/social.colibri.beta.message/3lxyz`,
 		);
 	});
 
 	it("round trips a record reference", () => {
-		const uri = spaceRecordUri(space, AUTHOR, "social.colibri.message", "3lxyz");
+		const uri = spaceRecordUri(space, AUTHOR, "social.colibri.beta.message", "3lxyz");
 		expect(parseSpaceRecordUri(uri)).toEqual({
 			authority: COMMUNITY,
 			spaceType: CHANNEL,
 			skey: SKEY,
 			uri: space,
 			author: AUTHOR,
-			collection: "social.colibri.message",
+			collection: "social.colibri.beta.message",
 			rkey: "3lxyz",
 		});
 	});
 
 	it("distinguishes the author from the space authority", () => {
-		const uri = spaceRecordUri(space, AUTHOR, "social.colibri.message", "3lxyz");
+		const uri = spaceRecordUri(space, AUTHOR, "social.colibri.beta.message", "3lxyz");
 		const parsed = parseSpaceRecordUri(uri);
 		expect(parsed.author).not.toBe(parsed.authority);
 	});
@@ -81,6 +81,8 @@ describe("space record references", () => {
 	});
 
 	it("formats the path the repo index and set hash both use", () => {
-		expect(recordPath("social.colibri.message", "3lxyz")).toBe("social.colibri.message/3lxyz");
+		expect(recordPath("social.colibri.beta.message", "3lxyz")).toBe(
+			"social.colibri.beta.message/3lxyz",
+		);
 	});
 });

@@ -24,14 +24,14 @@ const docs = files.map((path) => ({
 	doc: JSON.parse(readFileSync(path, "utf8")) as Doc,
 }));
 
-const isOurs = (id: string) => id.startsWith("social.colibri.");
+const isOurs = (id: string) => id.startsWith("social.colibri.beta.");
 const ours = docs.filter(({ doc }) => isOurs(doc.id));
 
 const byId = new Map(docs.map(({ doc }) => [doc.id, doc]));
 
 const METHOD_TYPES = new Set(["query", "procedure", "subscription"]);
 
-const METHODS_WITHOUT_ERRORS = new Set(["social.colibri.server.describeServer"]);
+const METHODS_WITHOUT_ERRORS = new Set(["social.colibri.beta.server.describeServer"]);
 
 const walkNodes = function* (
 	node: unknown,

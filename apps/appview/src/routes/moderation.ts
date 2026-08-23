@@ -29,11 +29,11 @@ import {
 } from "./failures.js";
 import type { RouteDeps } from "./types.js";
 
-type BannedActorView = social.colibri.community.defs.BannedActorView;
-type ApplicationView = social.colibri.community.defs.ApplicationView;
-type ModerationView = social.colibri.community.defs.ModerationView;
-type LabelView = social.colibri.community.defs.LabelView;
-type MemberView = social.colibri.community.defs.MemberView;
+type BannedActorView = social.colibri.beta.community.defs.BannedActorView;
+type ApplicationView = social.colibri.beta.community.defs.ApplicationView;
+type ModerationView = social.colibri.beta.community.defs.ModerationView;
+type LabelView = social.colibri.beta.community.defs.LabelView;
+type MemberView = social.colibri.beta.community.defs.MemberView;
 type LabelSubject = { did: string; collection: string; rkey: string };
 
 const CHANNEL_SPACE_TYPE_SET: ReadonlySet<string> = new Set(CHANNEL_SPACE_TYPES);
@@ -382,7 +382,7 @@ export const registerModerationRoutes = ({ server, ctx, auth }: RouteDeps): void
 		membership,
 	});
 
-	route(server, social.colibri.community.kick, {
+	route(server, social.colibri.beta.community.kick, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			await handleKick(
@@ -397,7 +397,7 @@ export const registerModerationRoutes = ({ server, ctx, auth }: RouteDeps): void
 		},
 	});
 
-	route(server, social.colibri.community.ban, {
+	route(server, social.colibri.beta.community.ban, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			await handleBan(
@@ -412,7 +412,7 @@ export const registerModerationRoutes = ({ server, ctx, auth }: RouteDeps): void
 		},
 	});
 
-	route(server, social.colibri.community.unban, {
+	route(server, social.colibri.beta.community.unban, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			await handleUnban(
@@ -427,7 +427,7 @@ export const registerModerationRoutes = ({ server, ctx, auth }: RouteDeps): void
 		},
 	});
 
-	route(server, social.colibri.community.listBans, {
+	route(server, social.colibri.beta.community.listBans, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -442,7 +442,7 @@ export const registerModerationRoutes = ({ server, ctx, auth }: RouteDeps): void
 		}),
 	});
 
-	route(server, social.colibri.community.listApplications, {
+	route(server, social.colibri.beta.community.listApplications, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -454,7 +454,7 @@ export const registerModerationRoutes = ({ server, ctx, auth }: RouteDeps): void
 		}),
 	});
 
-	route(server, social.colibri.community.approveApplication, {
+	route(server, social.colibri.beta.community.approveApplication, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -469,7 +469,7 @@ export const registerModerationRoutes = ({ server, ctx, auth }: RouteDeps): void
 		}),
 	});
 
-	route(server, social.colibri.community.dismissApplication, {
+	route(server, social.colibri.beta.community.dismissApplication, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			await handleDismissApplication(
@@ -483,7 +483,7 @@ export const registerModerationRoutes = ({ server, ctx, auth }: RouteDeps): void
 		},
 	});
 
-	route(server, social.colibri.community.undismissApplication, {
+	route(server, social.colibri.beta.community.undismissApplication, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			await handleUndismissApplication(
@@ -497,7 +497,7 @@ export const registerModerationRoutes = ({ server, ctx, auth }: RouteDeps): void
 		},
 	});
 
-	route(server, social.colibri.community.listModerationLog, {
+	route(server, social.colibri.beta.community.listModerationLog, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -508,7 +508,7 @@ export const registerModerationRoutes = ({ server, ctx, auth }: RouteDeps): void
 		}),
 	});
 
-	route(server, social.colibri.community.applyLabel, {
+	route(server, social.colibri.beta.community.applyLabel, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
@@ -516,7 +516,7 @@ export const registerModerationRoutes = ({ server, ctx, auth }: RouteDeps): void
 		}),
 	});
 
-	route(server, social.colibri.community.negateLabel, {
+	route(server, social.colibri.beta.community.negateLabel, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			await handleNegateLabel(ctx, moderation, caller.credentials.did, input.body);

@@ -32,7 +32,7 @@ const notification = {
 	recipient: ACTOR,
 	kind: "message",
 	mentionRole: null,
-	space: "at://did:plc:community/space/social.colibri.channel.text/3lkchannel1",
+	space: "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchannel1",
 	author: "did:plc:author00000000000000000000",
 	messageRkey: "3lkmsg1",
 };

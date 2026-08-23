@@ -54,7 +54,7 @@ export const handleModerateVoice = async (
 };
 
 export const registerVoiceRoutes = ({ server, ctx, auth }: RouteDeps): void => {
-	route(server, social.colibri.voice.moderate, {
+	route(server, social.colibri.beta.voice.moderate, {
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,

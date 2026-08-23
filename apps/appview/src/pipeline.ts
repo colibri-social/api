@@ -19,7 +19,7 @@ type LabelValue = {
 };
 
 const messageDeleted = (change: RepoChange, rkey: string) => ({
-	$type: "social.colibri.sync.defs#messageEvent",
+	$type: "social.colibri.beta.sync.defs#messageEvent",
 	event: "delete",
 	channel: change.space,
 	subject: { did: change.author, rkey },
@@ -31,7 +31,7 @@ const reactionFrame = (
 	value: Record<string, unknown>,
 	rkey: string,
 ) => ({
-	$type: "social.colibri.sync.defs#reactionEvent",
+	$type: "social.colibri.beta.sync.defs#reactionEvent",
 	event,
 	channel: change.space,
 	target: value.target ?? { did: change.author, rkey },
@@ -45,7 +45,7 @@ const labelFrame = (
 	src: string,
 	value: LabelValue,
 ): ServerFrame => ({
-	$type: "social.colibri.sync.defs#labelEvent",
+	$type: "social.colibri.beta.sync.defs#labelEvent",
 	event,
 	space,
 	subject: value.subject,
@@ -66,7 +66,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		const message = await channels.message(space, null, { author, rkey });
 		if (!message) return;
 		events.publishToChannel(space, {
-			$type: "social.colibri.sync.defs#messageEvent",
+			$type: "social.colibri.beta.sync.defs#messageEvent",
 			event: message.updatedAt ? "update" : "create",
 			channel: space,
 			message,
@@ -122,7 +122,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 
 			if (space.community && put.collection === COLLECTIONS.member) {
 				events.publishToCommunity(space.community, {
-					$type: "social.colibri.sync.defs#memberEvent",
+					$type: "social.colibri.beta.sync.defs#memberEvent",
 					event: "join",
 					community: space.community,
 					subject: put.rkey,
@@ -136,7 +136,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			}
 			if (space.community && entry.collection === COLLECTIONS.member) {
 				events.publishToCommunity(space.community, {
-					$type: "social.colibri.sync.defs#memberEvent",
+					$type: "social.colibri.beta.sync.defs#memberEvent",
 					event: "leave",
 					community: space.community,
 					subject: entry.rkey,

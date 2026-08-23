@@ -2,11 +2,11 @@ import { COLLECTIONS, SPACE_TYPES, social } from "@colibri-social/lexicons";
 import { and, eq } from "drizzle-orm";
 import { communityOf, type Projector } from "../projector.js";
 
-export const message: Projector<social.colibri.message.Main> = {
+export const message: Projector<social.colibri.beta.message.Main> = {
 	collection: COLLECTIONS.message,
 	writer: "any",
 	spaceTypes: [SPACE_TYPES.channelText],
-	schema: social.colibri.message,
+	schema: social.colibri.beta.message,
 	put: async (deps, ref, value) => {
 		const row = {
 			space: ref.space.uri,
@@ -49,11 +49,11 @@ export const message: Projector<social.colibri.message.Main> = {
 	},
 };
 
-export const reaction: Projector<social.colibri.reaction.Main> = {
+export const reaction: Projector<social.colibri.beta.reaction.Main> = {
 	collection: COLLECTIONS.reaction,
 	writer: "any",
 	spaceTypes: [SPACE_TYPES.channelText],
-	schema: social.colibri.reaction,
+	schema: social.colibri.beta.reaction,
 	put: async (deps, ref, value) => {
 		const row = {
 			space: ref.space.uri,
@@ -89,10 +89,10 @@ export const reaction: Projector<social.colibri.reaction.Main> = {
 	},
 };
 
-export const label: Projector<social.colibri.label.Main> = {
+export const label: Projector<social.colibri.beta.label.Main> = {
 	collection: COLLECTIONS.label,
 	writer: "any",
-	schema: social.colibri.label,
+	schema: social.colibri.beta.label,
 	put: async (deps, ref, value) => {
 		const row = {
 			space: ref.space.uri,

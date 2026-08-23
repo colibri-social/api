@@ -9,7 +9,8 @@ import { BlobService } from "./service.js";
 
 const DID = "did:plc:7fkdlwjqmzcuvvpjbztkyyyy";
 const HOST = "https://pds.test";
-const SPACE = "at://did:plc:2hnjxkqm6bpuvvpjbztkxxxx/social.colibri.channel.text/3lkabcdefgh2k";
+const SPACE =
+	"at://did:plc:2hnjxkqm6bpuvvpjbztkxxxx/social.colibri.beta.channel.text/3lkabcdefgh2k";
 
 const pngBytes = () =>
 	sharp({ create: { width: 40, height: 20, channels: 3, background: { r: 9, g: 8, b: 7 } } })

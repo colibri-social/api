@@ -8,7 +8,7 @@ import type { AppContext } from "../context.js";
 import type { ServerFrame } from "./events.js";
 import { channelTopic, TopicIndex } from "./topics.js";
 
-const VOICE_PATH = "/xrpc/social.colibri.voice.subscribeSignals";
+const VOICE_PATH = "/xrpc/social.colibri.beta.voice.subscribeSignals";
 const HEARTBEAT_MS = 30_000;
 
 type Connection = {
@@ -19,17 +19,17 @@ type Connection = {
 };
 
 const clientFrames = {
-	join: social.colibri.voice.defs.join,
-	leave: social.colibri.voice.defs.leave,
-	getRtpCapabilities: social.colibri.voice.defs.getRtpCapabilities,
-	createTransport: social.colibri.voice.defs.createTransport,
-	connectTransport: social.colibri.voice.defs.connectTransport,
-	produce: social.colibri.voice.defs.produce,
-	closeProducer: social.colibri.voice.defs.closeProducer,
-	consume: social.colibri.voice.defs.consume,
-	resumeConsumer: social.colibri.voice.defs.resumeConsumer,
-	setSelfState: social.colibri.voice.defs.setSelfState,
-	heartbeat: social.colibri.voice.defs.heartbeat,
+	join: social.colibri.beta.voice.defs.join,
+	leave: social.colibri.beta.voice.defs.leave,
+	getRtpCapabilities: social.colibri.beta.voice.defs.getRtpCapabilities,
+	createTransport: social.colibri.beta.voice.defs.createTransport,
+	connectTransport: social.colibri.beta.voice.defs.connectTransport,
+	produce: social.colibri.beta.voice.defs.produce,
+	closeProducer: social.colibri.beta.voice.defs.closeProducer,
+	consume: social.colibri.beta.voice.defs.consume,
+	resumeConsumer: social.colibri.beta.voice.defs.resumeConsumer,
+	setSelfState: social.colibri.beta.voice.defs.setSelfState,
+	heartbeat: social.colibri.beta.voice.defs.heartbeat,
 } as const;
 
 type ClientFrameName = keyof typeof clientFrames;
@@ -38,7 +38,7 @@ const frameName = (value: unknown): ClientFrameName | null => {
 	if (!value || typeof value !== "object") return null;
 	const type = (value as { $type?: unknown }).$type;
 	if (typeof type !== "string") return null;
-	const suffix = type.startsWith("social.colibri.voice.defs#")
+	const suffix = type.startsWith("social.colibri.beta.voice.defs#")
 		? type.slice(type.indexOf("#") + 1)
 		: null;
 	return suffix && suffix in clientFrames ? (suffix as ClientFrameName) : null;
@@ -102,7 +102,7 @@ export class VoiceServer {
 			: url.searchParams.get("auth");
 		if (!token) return null;
 		const caller = await this.ctx.serviceAuth
-			.verify(token, "social.colibri.voice.subscribeSignals")
+			.verify(token, "social.colibri.beta.voice.subscribeSignals")
 			.catch(() => null);
 		return caller?.did ?? null;
 	}
@@ -140,7 +140,7 @@ export class VoiceServer {
 
 	private error(connection: Connection, error: string, message: string): void {
 		this.send(connection, {
-			$type: "social.colibri.voice.defs#error",
+			$type: "social.colibri.beta.voice.defs#error",
 			error,
 			message,
 		});
@@ -190,7 +190,7 @@ export class VoiceServer {
 				await this.handleLeave(connection, voice);
 				return;
 			case "heartbeat":
-				this.send(connection, { $type: "social.colibri.voice.defs#ack" });
+				this.send(connection, { $type: "social.colibri.beta.voice.defs#ack" });
 				return;
 			case "getRtpCapabilities":
 				await this.handleGetRtpCapabilities(connection, voice);
@@ -249,13 +249,16 @@ export class VoiceServer {
 
 		connection.channel = frame.channel;
 		this.topics.subscribe(connection, [channelTopic(frame.channel)]);
-		this.send(connection, { $type: "social.colibri.voice.defs#joined", channel: frame.channel });
+		this.send(connection, {
+			$type: "social.colibri.beta.voice.defs#joined",
+			channel: frame.channel,
+		});
 
 		const producers = await voice.listProducers(frame.channel);
 		for (const producer of producers) {
 			if (producer.did === connection.did) continue;
 			this.send(connection, {
-				$type: "social.colibri.voice.defs#producerInfo",
+				$type: "social.colibri.beta.voice.defs#producerInfo",
 				producerId: producer.producerId,
 				did: producer.did,
 				kind: producer.kind,
@@ -272,7 +275,7 @@ export class VoiceServer {
 	private async handleGetRtpCapabilities(connection: Connection, voice: VoiceSfu): Promise<void> {
 		if (!connection.channel) return;
 		const payload = await voice.rtpCapabilities(connection.channel);
-		this.send(connection, { $type: "social.colibri.voice.defs#rtpCapabilities", payload });
+		this.send(connection, { $type: "social.colibri.beta.voice.defs#rtpCapabilities", payload });
 	}
 
 	private async handleCreateTransport(
@@ -293,7 +296,7 @@ export class VoiceServer {
 				frame.direction,
 			);
 			this.send(connection, {
-				$type: "social.colibri.voice.defs#transportOptions",
+				$type: "social.colibri.beta.voice.defs#transportOptions",
 				id: transport.id,
 				iceParameters: transport.iceParameters,
 				iceCandidates: transport.iceCandidates,
@@ -349,7 +352,7 @@ export class VoiceServer {
 				source,
 			});
 			this.send(connection, {
-				$type: "social.colibri.voice.defs#producerInfo",
+				$type: "social.colibri.beta.voice.defs#producerInfo",
 				producerId: producer.id,
 				did: connection.did,
 				kind: producer.kind,
@@ -382,7 +385,7 @@ export class VoiceServer {
 				rtpCapabilities: frame.rtpCapabilities as never,
 			});
 			this.send(connection, {
-				$type: "social.colibri.voice.defs#consumerOptions",
+				$type: "social.colibri.beta.voice.defs#consumerOptions",
 				id: consumer.id,
 				producerId: consumer.producerId,
 				kind: consumer.kind,
@@ -421,16 +424,16 @@ export class VoiceServer {
 
 	private wireVoiceEvents(voice: VoiceSfu): void {
 		voice.on("participant-joined", ({ channel, did }) => {
-			this.broadcast(channel, { $type: "social.colibri.voice.defs#peerJoined", did }, did);
+			this.broadcast(channel, { $type: "social.colibri.beta.voice.defs#peerJoined", did }, did);
 		});
 		voice.on("participant-left", ({ channel, did }) => {
-			this.broadcast(channel, { $type: "social.colibri.voice.defs#peerLeft", did }, did);
+			this.broadcast(channel, { $type: "social.colibri.beta.voice.defs#peerLeft", did }, did);
 		});
 		voice.on("producer-added", ({ channel, did, producerId, kind, source }) => {
 			this.broadcast(
 				channel,
 				{
-					$type: "social.colibri.voice.defs#producerInfo",
+					$type: "social.colibri.beta.voice.defs#producerInfo",
 					producerId,
 					did,
 					kind,
@@ -442,16 +445,20 @@ export class VoiceServer {
 		voice.on("producer-removed", ({ channel, did, producerId }) => {
 			this.broadcast(
 				channel,
-				{ $type: "social.colibri.voice.defs#producerRemoved", producerId, did },
+				{ $type: "social.colibri.beta.voice.defs#producerRemoved", producerId, did },
 				did,
 			);
 		});
 		voice.on("speaking-changed", ({ channel, did, speaking }) => {
-			this.broadcast(channel, { $type: "social.colibri.voice.defs#speakingUpdate", did, speaking });
+			this.broadcast(channel, {
+				$type: "social.colibri.beta.voice.defs#speakingUpdate",
+				did,
+				speaking,
+			});
 		});
 		voice.on("moderation-changed", ({ channel, did, muted, deafened }) => {
 			this.broadcast(channel, {
-				$type: "social.colibri.voice.defs#moderationChanged",
+				$type: "social.colibri.beta.voice.defs#moderationChanged",
 				did,
 				muted,
 				deafened,
