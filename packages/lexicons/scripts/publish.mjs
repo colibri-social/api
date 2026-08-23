@@ -72,10 +72,22 @@ const schemaBody = (doc, published) => {
 	return record;
 };
 
+const canonical = (value) => {
+	if (Array.isArray(value)) return value.map(canonical);
+	if (value && typeof value === "object") {
+		return Object.fromEntries(
+			Object.keys(value)
+				.sort()
+				.map((key) => [key, canonical(value[key])]),
+		);
+	}
+	return value;
+};
+
 const comparable = (record) => {
 	const { $type, ...rest } = record;
 	for (const field of CARRIED_OVER) delete rest[field];
-	return JSON.stringify(rest);
+	return JSON.stringify(canonical(rest));
 };
 
 const sameSchema = (published, next) =>

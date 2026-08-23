@@ -67,6 +67,11 @@
 						"social.colibri.beta.embed.gifCategories",
 						"social.colibri.beta.blob.get"
 					]
+				},
+				{
+					"type": "permission",
+					"resource": "blob",
+					"accept": ["image/*", "video/*"]
 				}
 			]
 		}

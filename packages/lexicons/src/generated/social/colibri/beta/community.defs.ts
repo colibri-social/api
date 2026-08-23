@@ -41,7 +41,7 @@ type Main = { $type: "social.colibri.beta.community";
 export type { Main };
 
 /** A community's public identity. Lives in the community's profile space, which is readable without membership unless the community is private. */
-const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256})),"picture":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.blob({"accept":["image/jpeg","image/png","image/gif","image/webp"]})),"banner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.blob({"accept":["image/jpeg","image/png","image/gif","image/webp"]})),"migratedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"}))}));
+const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256})),"picture":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.blob({"accept":["image/jpeg","image/png","image/gif","image/webp"],"maxSize":1048576})),"banner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.blob({"accept":["image/jpeg","image/png","image/gif","image/webp"],"maxSize":4194304})),"migratedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"}))}));
 
 export { main };
 

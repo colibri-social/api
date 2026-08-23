@@ -15,6 +15,13 @@ export type WriteDeps = {
 	};
 };
 
+export type BlobRef = {
+	$type: "blob";
+	ref: { $link: string };
+	mimeType: string;
+	size: number;
+};
+
 export type RecordWrite = {
 	space: string;
 	collection: string;
@@ -27,6 +34,35 @@ export class CommunityWriter {
 
 	spaces(community: string) {
 		return communitySpaces(community);
+	}
+
+	async uploadBlob(community: string, bytes: Uint8Array, mimeType: string): Promise<BlobRef> {
+		const session = await this.deps.credentials.session(community);
+		const { blob } = await this.deps.pds.uploadBlob(session, bytes, mimeType);
+		return blob as BlobRef;
+	}
+
+	async currentRecord(
+		community: string,
+		space: string,
+		collection: string,
+		rkey: string,
+	): Promise<Record<string, unknown> | null> {
+		const mirror = this.deps.mirror;
+		if (!mirror) return null;
+		const [row] = await mirror.db
+			.select({ value: mirror.tables.records.value })
+			.from(mirror.tables.records)
+			.where(
+				and(
+					eq(mirror.tables.records.space, space),
+					eq(mirror.tables.records.author, community),
+					eq(mirror.tables.records.collection, collection),
+					eq(mirror.tables.records.rkey, rkey),
+				),
+			)
+			.limit(1);
+		return row?.value ?? null;
 	}
 
 	async put(community: string, write: RecordWrite): Promise<{ uri: string; rkey: string }> {

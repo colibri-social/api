@@ -62,6 +62,8 @@
 					"lxm": [
 						"social.colibri.beta.community.create",
 						"social.colibri.beta.community.update",
+						"social.colibri.beta.community.putImage",
+						"social.colibri.beta.community.deleteImage",
 						"social.colibri.beta.community.delete",
 						"social.colibri.beta.community.migrate",
 						"social.colibri.beta.community.registerCredentials",
@@ -93,6 +95,11 @@
 						"social.colibri.beta.role.delete",
 						"social.colibri.beta.voice.moderate"
 					]
+				},
+				{
+					"type": "permission",
+					"resource": "blob",
+					"accept": ["image/*"]
 				}
 			]
 		}

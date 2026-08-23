@@ -24,12 +24,14 @@
 					"picture": {
 						"type": "blob",
 						"accept": ["image/jpeg", "image/png", "image/gif", "image/webp"],
-						"description": "Square image shown as the community's icon."
+						"description": "Square image shown as the community's icon.",
+						"maxSize": 1048576
 					},
 					"banner": {
 						"type": "blob",
 						"accept": ["image/jpeg", "image/png", "image/gif", "image/webp"],
-						"description": "Wide image shown at the top of the community."
+						"description": "Wide image shown at the top of the community.",
+						"maxSize": 4194304
 					},
 					"migratedFrom": {
 						"type": "string",

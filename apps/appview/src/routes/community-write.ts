@@ -1,5 +1,6 @@
 import { AtUri } from "@atproto/syntax";
 import { InvalidRequestError } from "@atproto/xrpc-server";
+import { sniffMimeType } from "@colibri-social/blobs";
 import {
 	CommunityCredentialError,
 	type CommunityProvisioner,
@@ -169,12 +170,20 @@ export const handleUpdateCommunity = async (
 		.where(eq(ctx.database.tables.categories.community, input.community))
 		.orderBy(asc(ctx.database.tables.categories.position));
 
+	const existing = await ctx.writer.currentRecord(
+		input.community,
+		spaces.profile,
+		COLLECTIONS.community,
+		SELF,
+	);
+
 	try {
 		await ctx.writer.put(input.community, {
 			space: spaces.profile,
 			collection: COLLECTIONS.community,
 			rkey: SELF,
 			record: {
+				...(existing ?? {}),
 				$type: COLLECTIONS.community,
 				name: nextName,
 				...(nextDescription ? { description: nextDescription } : {}),
@@ -203,6 +212,153 @@ export const handleUpdateCommunity = async (
 	const total = await countMembers(ctx, input.community);
 	return { community: communities.community(mergedRow, authz, total) };
 };
+
+const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
+const MAX_IMAGE_BYTES: Record<CommunityImageKind, number> = {
+	picture: 1024 * 1024,
+	banner: 4 * 1024 * 1024,
+};
+
+export type CommunityImageKind = "picture" | "banner";
+
+const unsupportedImage = (mimeType: string) =>
+	new InvalidRequestError(
+		`${mimeType} is not an accepted community image type`,
+		"UnsupportedImage",
+	);
+
+const imageTooLarge = (kind: CommunityImageKind) =>
+	new InvalidRequestError(
+		`a community ${kind} may not exceed ${MAX_IMAGE_BYTES[kind] / 1024 / 1024}MB`,
+		"ImageTooLarge",
+	);
+
+const readCappedBytes = async (
+	source: AsyncIterable<Uint8Array> | Uint8Array,
+	kind: CommunityImageKind,
+): Promise<Uint8Array> => {
+	if (source instanceof Uint8Array) {
+		if (source.byteLength > MAX_IMAGE_BYTES[kind]) throw imageTooLarge(kind);
+		return source;
+	}
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	for await (const chunk of source) {
+		total += chunk.byteLength;
+		if (total > MAX_IMAGE_BYTES[kind]) throw imageTooLarge(kind);
+		chunks.push(chunk);
+	}
+	const out = new Uint8Array(total);
+	let offset = 0;
+	for (const chunk of chunks) {
+		out.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return out;
+};
+
+const communityImageView = async (
+	ctx: AppContext,
+	community: string,
+	callerDid: string,
+	row: Awaited<ReturnType<typeof requireCommunity>>,
+	next: { pictureCid?: string | null; bannerCid?: string | null },
+): Promise<{ community: CommunityView }> => {
+	const actors = new ActorViews(ctx);
+	const communities = new CommunityViews(ctx, actors);
+	const authz = await ctx.loader.authz(community, callerDid);
+	const total = await countMembers(ctx, community);
+	return {
+		community: communities.community({ ...row, ...next }, authz, total),
+	};
+};
+
+const writeCommunityImage = async (
+	ctx: AppContext,
+	callerDid: string,
+	community: string,
+	kind: CommunityImageKind,
+	blob: { $type: "blob"; ref: { $link: string }; mimeType: string; size: number } | null,
+): Promise<{ community: CommunityView }> => {
+	const row = await requireCommunity(ctx, community);
+	const authz = await ctx.loader.authz(community, callerDid);
+	if (!has(authz, "community.manage")) throw forbidden("community.manage");
+
+	const spaces = communitySpaces(community);
+	const existing = await ctx.writer.currentRecord(
+		community,
+		spaces.profile,
+		COLLECTIONS.community,
+		SELF,
+	);
+
+	const record: Record<string, unknown> = {
+		...(existing ?? {}),
+		$type: COLLECTIONS.community,
+		name: row.name,
+		...(row.description ? { description: row.description } : {}),
+		...(row.migratedFrom ? { migratedFrom: row.migratedFrom } : {}),
+	};
+	if (blob) record[kind] = blob;
+	else delete record[kind];
+
+	try {
+		await ctx.writer.put(community, {
+			space: spaces.profile,
+			collection: COLLECTIONS.community,
+			rkey: SELF,
+			record,
+		});
+	} catch (error) {
+		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);
+		throw error;
+	}
+
+	const cid = blob ? blob.ref.$link : null;
+	return communityImageView(ctx, community, callerDid, row, {
+		[kind === "picture" ? "pictureCid" : "bannerCid"]: cid,
+	});
+};
+
+export const handlePutCommunityImage = async (
+	ctx: AppContext,
+	callerDid: string,
+	params: { community: string; kind: CommunityImageKind },
+	body: AsyncIterable<Uint8Array> | Uint8Array,
+): Promise<{ community: CommunityView }> => {
+	await requireCommunity(ctx, params.community);
+	const authz = await ctx.loader.authz(params.community, callerDid);
+	if (!has(authz, "community.manage")) throw forbidden("community.manage");
+
+	const bytes = await readCappedBytes(body, params.kind);
+	if (bytes.byteLength === 0) throw unsupportedImage("an empty body");
+
+	let mimeType: string;
+	try {
+		mimeType = await sniffMimeType(bytes);
+	} catch {
+		throw unsupportedImage("the supplied bytes");
+	}
+	if (!IMAGE_MIME_TYPES.has(mimeType)) throw unsupportedImage(mimeType);
+
+	let blob: Awaited<ReturnType<typeof ctx.writer.uploadBlob>>;
+	try {
+		blob = await ctx.writer.uploadBlob(params.community, bytes, mimeType);
+	} catch (error) {
+		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);
+		throw error;
+	}
+
+	return writeCommunityImage(ctx, callerDid, params.community, params.kind, blob);
+};
+
+export const handleDeleteCommunityImage = async (
+	ctx: AppContext,
+	callerDid: string,
+	params: { community: string; kind: CommunityImageKind },
+): Promise<{ community: CommunityView }> =>
+	writeCommunityImage(ctx, callerDid, params.community, params.kind, null);
 
 export const handleDeleteCommunity = async (
 	ctx: AppContext,
@@ -534,6 +690,30 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
 			body: await handleUpdateCommunity(ctx, communities, caller.credentials.did, input.body),
+		}),
+	});
+
+	route(server, social.colibri.beta.community.putImage, {
+		auth: auth.required,
+		handler: async ({ params, input, auth: caller }) => ({
+			encoding: "application/json" as const,
+			body: await handlePutCommunityImage(
+				ctx,
+				caller.credentials.did,
+				{ community: params.community, kind: params.kind as CommunityImageKind },
+				input.body as AsyncIterable<Uint8Array> | Uint8Array,
+			),
+		}),
+	});
+
+	route(server, social.colibri.beta.community.deleteImage, {
+		auth: auth.required,
+		handler: async ({ params, auth: caller }) => ({
+			encoding: "application/json" as const,
+			body: await handleDeleteCommunityImage(ctx, caller.credentials.did, {
+				community: params.community,
+				kind: params.kind as CommunityImageKind,
+			}),
 		}),
 	});
 
