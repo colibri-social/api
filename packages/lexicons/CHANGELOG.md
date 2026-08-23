@@ -1,5 +1,15 @@
 # @colibri-social/lexicons
 
+## 2.0.0
+
+### Major Changes
+
+- 229dde3: Make cross-AppView communities discoverable, and let a community bring its own DID
+
+### Minor Changes
+
+- a39c928: Give communities a working picture and banner write path
+
 ## 1.0.0
 
 ### Major Changes

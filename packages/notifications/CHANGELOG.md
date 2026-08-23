@@ -1,5 +1,15 @@
 # @colibri-social/notifications
 
+## 1.0.1
+
+### Patch Changes
+
+- Updated dependencies [a39c928]
+- Updated dependencies [229dde3]
+  - @colibri-social/lexicons@2.0.0
+  - @colibri-social/appview-db@0.1.0
+  - @colibri-social/projections@1.0.1
+
 ## 1.0.0
 
 ### Major Changes

@@ -1,5 +1,26 @@
 # @colibri-social/appview
 
+## 2.0.0
+
+### Major Changes
+
+- 229dde3: Close the `blob.get` authorization hole without breaking browser media, also fixes the cache headers
+- 229dde3: Make cross-AppView communities discoverable, and let a community bring its own DID
+
+### Minor Changes
+
+- a39c928: Give communities a working picture and banner write path
+
+### Patch Changes
+
+- Updated dependencies [a39c928]
+- Updated dependencies [229dde3]
+  - @colibri-social/lexicons@2.0.0
+  - @colibri-social/community@2.0.0
+  - @colibri-social/appview-db@0.1.0
+  - @colibri-social/notifications@1.0.1
+  - @colibri-social/projections@1.0.1
+
 ## 1.0.0
 
 ### Major Changes
