@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/appview",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "The Colibri AppView server.",
 	"type": "module",
 	"private": true,

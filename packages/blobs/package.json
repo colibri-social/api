@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/blobs",
-	"version": "0.0.0",
+	"version": "0.0.1",
 	"description": "CID-verified blob proxy for permissioned blobs, with MIME allowlisting, image variants and a size-bounded cache",
 	"type": "module",
 	"private": true,

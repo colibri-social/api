@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/community",
-	"version": "0.0.0",
+	"version": "0.0.1",
 	"description": "Community provisioning, credential custody, the role and permission model, access checks and moderation",
 	"type": "module",
 	"private": true,
