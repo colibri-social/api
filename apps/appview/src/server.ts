@@ -2,6 +2,7 @@ import { createServer, type Server } from "@atproto/xrpc-server";
 import type { Request, Response } from "express";
 import { authVerifiers } from "./auth.js";
 import type { AppContext } from "./context.js";
+import { corsMiddleware } from "./cors.js";
 import { registerActorRoutes } from "./routes/actor.js";
 import { registerActorWriteRoutes } from "./routes/actor-write.js";
 import { mountBlobRoutes } from "./routes/blob.js";
@@ -41,6 +42,9 @@ export const createAppServer = (ctx: AppContext): Server => {
 		catchall: undefined,
 	});
 
+	const app = server.routes;
+	app.use(corsMiddleware(ctx.config.corsOrigins));
+
 	const auth = authVerifiers(ctx);
 	const deps = { server, ctx, auth };
 
@@ -59,8 +63,6 @@ export const createAppServer = (ctx: AppContext): Server => {
 	registerNotificationRoutes(deps);
 	registerServerRoutes(deps);
 	// NOTE: Humming was dropped with the rebuild, implementation follows after reconsideration
-
-	const app = server.router;
 
 	app.get("/", (_req: Request, res: Response) => {
 		res.type("text/plain").send(BANNER);

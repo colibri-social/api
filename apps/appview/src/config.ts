@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEVELOPMENT_ORIGINS, parseOrigins } from "./cors.js";
 import { isLegacyJetstreamUrl, jetstreamEndpoint } from "./jetstream-url.js";
 
 const BARE_IP_DID_WEB = /^did:web:(\d{1,3}\.){3}\d{1,3}(%3A\d+)?$/i;
@@ -30,6 +31,7 @@ export const configSchema = z.object({
 				"a did:web host must be a name, not an IP address: a PDS refuses a bare IP as a service-auth audience. Use did:web:localhost%3A8000 and keep listening on 127.0.0.1",
 		}),
 	PUBLIC_URL: z.url(),
+	CORS_ORIGINS: optionalString,
 	SIGNING_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, "expected 64 hex characters"),
 	CREDENTIAL_ENCRYPTION_KEY: z.string(),
 
@@ -89,6 +91,7 @@ export type Config = RawConfig & {
 	canProvisionCommunities: boolean;
 	pushProviders: Array<"webpush" | "fcm">;
 	gifsEnabled: boolean;
+	corsOrigins: string[];
 };
 
 export class ConfigError extends Error {
@@ -112,11 +115,18 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): Config => {
 		pushProviders.push("webpush");
 	if (raw.FCM_SERVICE_ACCOUNT_JSON) pushProviders.push("fcm");
 
+	const corsOrigins = raw.CORS_ORIGINS
+		? parseOrigins(raw.CORS_ORIGINS)
+		: raw.NODE_ENV === "production"
+			? []
+			: DEVELOPMENT_ORIGINS;
+
 	return {
 		...raw,
 		canProvisionCommunities: Boolean(raw.PDS_ADMIN_PASSWORD),
 		pushProviders,
 		gifsEnabled: Boolean(raw.KLIPY_API_KEY),
+		corsOrigins,
 	};
 };
 
@@ -131,6 +141,7 @@ export const describeConfig = (config: Config): Record<string, string> => ({
 	push: config.pushProviders.length ? config.pushProviders.join(" and ") : "disabled",
 	gifs: config.gifsEnabled ? "enabled" : "disabled",
 	voice: config.VOICE_ENABLED ? "enabled" : "disabled",
+	cors: config.corsOrigins.length ? config.corsOrigins.join(" ") : "no browser origin allowed",
 	jetstream: config.JETSTREAM_ENABLED
 		? jetstreamEndpoint(config.JETSTREAM_URL).toString()
 		: "disabled",

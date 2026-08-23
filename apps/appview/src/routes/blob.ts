@@ -1,7 +1,7 @@
 import { BlobNotFoundError, BlobRejectedError, type Variant } from "@colibri-social/blobs";
 import { decideSpaceAccess } from "@colibri-social/community";
 import { tryParseSpaceRef } from "@colibri-social/space";
-import type { Express, Request, Response } from "express";
+import type { Request, Response, Router } from "express";
 import type { AppContext } from "../context.js";
 import { verifyMediaGrant } from "../media-token.js";
 
@@ -38,7 +38,7 @@ const unauthenticated = (message: string): SpaceViewer => ({
 	message,
 });
 
-export const mountBlobRoutes = (ctx: AppContext, app: Express): void => {
+export const mountBlobRoutes = (ctx: AppContext, app: Router): void => {
 	const viewerForSpace = async (
 		req: Request,
 		did: string,
