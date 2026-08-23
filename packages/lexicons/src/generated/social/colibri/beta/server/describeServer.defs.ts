@@ -14,7 +14,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $output = /*#__PURE__*/ l.jsonPayload({"did":/*#__PURE__*/ l.string({"format":"did"}),"version":/*#__PURE__*/ l.string(),"handleDomain":/*#__PURE__*/ l.string(),"pds":/*#__PURE__*/ l.string({"format":"uri"}),"contact":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"features":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string<{"knownValues":["voice","push","gifs","embeds"]}>(), )),"spaceTypes":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"nsid"}), ))});
+export const $output = /*#__PURE__*/ l.jsonPayload({"did":/*#__PURE__*/ l.string({"format":"did"}),"software":/*#__PURE__*/ l.string(),"flavor":/*#__PURE__*/ l.string(),"version":/*#__PURE__*/ l.string(),"handleDomain":/*#__PURE__*/ l.string(),"pds":/*#__PURE__*/ l.string({"format":"uri"}),"contact":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"features":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string<{"knownValues":["voice","push","gifs","embeds"]}>(), )),"spaceTypes":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"nsid"}), ))});
 
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;

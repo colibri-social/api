@@ -147,10 +147,10 @@
 				"gifFavorites": {
 					"type": "array",
 					"items": {
-						"type": "string",
-						"description": "A GIF identifier."
+						"type": "ref",
+						"ref": "social.colibri.beta.embed.defs#gifView"
 					},
-					"description": "GIFs saved from the picker."
+					"description": "GIFs saved from the picker, stored whole."
 				}
 			}
 		},

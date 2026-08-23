@@ -3,6 +3,7 @@
  */
 
 import { l } from "@atproto/lex";
+import * as EmbedDefs from "../embed/defs.defs.js";
 
 const $nsid = "social.colibri.beta.actor.settings";
 
@@ -24,14 +25,14 @@ type Main = { $type: "social.colibri.beta.actor.settings";
   "communityOrder"?:(l.DidString)[];
 
   /**
-   * GIFs the user saved from the picker.
+   * GIFs the user saved from the picker, stored whole. A saved GIF has to render without another lookup, and an identifier cannot be turned back into one: a GIF favourited from a chat message carries its own URL as the id rather than a provider key, so no provider can resolve it.
    */
-  "gifFavorites"?:(string)[] };
+  "gifFavorites"?:(EmbedDefs.GifView)[] };
 
 export type { Main };
 
 /** A user's Colibri settings. */
-const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"notificationLevel":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies"]}>(), "all")),"communityOrder":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"gifFavorites":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"maxLength":256}), ))}));
+const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"notificationLevel":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies"]}>(), "all")),"communityOrder":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"gifFavorites":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), ))}));
 
 export { main };
 

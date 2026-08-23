@@ -4,7 +4,12 @@ import { preferencesSpace } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AppContext } from "../context.js";
-import { handleDeleteAccount, handleGrantSpaceAccess, handlePutMutes } from "./actor-write.js";
+import {
+	handleDeleteAccount,
+	handleGrantSpaceAccess,
+	handlePutMutes,
+	handlePutSettings,
+} from "./actor-write.js";
 
 const NOW = "2026-08-23T00:00:00.000Z";
 
@@ -44,6 +49,51 @@ describe("grantSpaceAccess", () => {
 		await expect(
 			handleGrantSpaceAccess(ctx, CALLER, { space: otherSpace, delegationToken: "token" }),
 		).rejects.toMatchObject({ customErrorName: "NotAuthorized" });
+	});
+});
+
+const GIF = {
+	id: "https://cdn.test/from-a-chat-message.gif",
+	url: "https://cdn.test/from-a-chat-message.gif",
+	previewUrl: "https://cdn.test/from-a-chat-message-small.gif",
+	width: 320,
+	height: 240,
+	title: "a cat",
+} as const;
+
+describe("putSettings", () => {
+	it("stores a favourited GIF whole, so it renders without a provider lookup", async () => {
+		const result = await handlePutSettings(ctx, CALLER, { gifFavorites: [{ ...GIF }] });
+
+		expect(result.preferences.gifFavorites).toEqual([GIF]);
+
+		const [row] = await database.db
+			.select()
+			.from(database.tables.actorSettings)
+			.where(eq(database.tables.actorSettings.did, CALLER));
+		expect(row?.gifFavorites).toEqual([GIF]);
+	});
+
+	it("keeps the record's $type out of the stored favourite", async () => {
+		await handlePutSettings(ctx, CALLER, {
+			gifFavorites: [{ ...GIF, $type: "social.colibri.beta.embed.defs#gifView" as const }],
+		});
+
+		const [row] = await database.db
+			.select()
+			.from(database.tables.actorSettings)
+			.where(eq(database.tables.actorSettings.did, CALLER));
+		expect(row?.gifFavorites?.[0]).not.toHaveProperty("$type");
+	});
+
+	it("leaves the favourites alone when the field is absent", async () => {
+		await handlePutSettings(ctx, CALLER, { gifFavorites: [{ ...GIF }] });
+		const result = await handlePutSettings(ctx, CALLER, {
+			notificationLevel: "mentionsAndReplies",
+		});
+
+		expect(result.preferences.notificationLevel).toBe("mentionsAndReplies");
+		expect(result.preferences.gifFavorites).toEqual([GIF]);
 	});
 });
 

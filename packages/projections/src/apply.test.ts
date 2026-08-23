@@ -299,6 +299,38 @@ describe("personal spaces", () => {
 		expect(row?.subject).toBe(OUTSIDER);
 	});
 
+	it("projects a favourited GIF as the whole view the picker renders", async () => {
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.actor.settings", SELF, {
+				$type: "social.colibri.beta.actor.settings",
+				gifFavorites: [
+					{
+						$type: "social.colibri.beta.embed.defs#gifView",
+						id: "https://cdn.test/cat.gif",
+						url: "https://cdn.test/cat.gif",
+						previewUrl: "https://cdn.test/cat-small.gif",
+						width: 320,
+						height: 240,
+						title: "a cat",
+					},
+				],
+			}),
+		);
+
+		const [row] = await database.db.select().from(database.tables.actorSettings);
+		expect(row?.gifFavorites).toEqual([
+			{
+				id: "https://cdn.test/cat.gif",
+				url: "https://cdn.test/cat.gif",
+				previewUrl: "https://cdn.test/cat-small.gif",
+				width: 320,
+				height: 240,
+				title: "a cat",
+			},
+		]);
+	});
+
 	it("refuses a record written into someone else's personal space", async () => {
 		await applyChange(
 			deps,

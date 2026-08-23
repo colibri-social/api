@@ -69,6 +69,8 @@ export const configSchema = z.object({
 	SFU_RTC_MAX_PORT: z.coerce.number().int().positive().default(40100),
 	SFU_ICE_SERVERS: optionalString,
 
+	APPVIEW_FLAVOR: z.string().trim().min(1).default("vanilla"),
+
 	SENTRY_DSN: optionalString,
 	ADMIN_PASSWORD: optionalString,
 });
@@ -112,6 +114,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): Config => {
 
 export const describeConfig = (config: Config): Record<string, string> => ({
 	identity: config.APPVIEW_DID,
+	flavor: config.APPVIEW_FLAVOR,
 	database: config.DATABASE_URL.startsWith("postgres") ? "postgres" : "libsql",
 	pds: config.PDS_URL,
 	communities: config.canProvisionCommunities

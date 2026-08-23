@@ -9,12 +9,20 @@
 				"encoding": "application/json",
 				"schema": {
 					"type": "object",
-					"required": ["did", "version", "handleDomain", "pds"],
+					"required": ["did", "software", "flavor", "version", "handleDomain", "pds"],
 					"properties": {
 						"did": {
 							"type": "string",
 							"format": "did",
 							"description": "The AppView's own identity."
+						},
+						"software": {
+							"type": "string",
+							"description": "Stable software identifier, always 'colibri-appview'. Clients key on this to confirm a host is a Colibri AppView before pointing themselves at it."
+						},
+						"flavor": {
+							"type": "string",
+							"description": "Which build of the software this is. 'vanilla' for the stock AppView, and any string a fork or a customised deployment chooses for itself."
 						},
 						"version": {
 							"type": "string",

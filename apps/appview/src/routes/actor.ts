@@ -5,6 +5,7 @@ import type { AppContext } from "../context.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
 import { type CommunityView, CommunityViews } from "../views/community.js";
+import { toGifView } from "../views/gif.js";
 import { countMembers } from "./community.js";
 import type { RouteDeps } from "./types.js";
 
@@ -50,7 +51,7 @@ export const loadPreferences = async (ctx: AppContext, callerDid: string): Promi
 			subject: asDid(row.subject),
 			createdAt: asDatetime(row.createdAt),
 		})),
-		gifFavorites: settings?.gifFavorites ?? [],
+		gifFavorites: (settings?.gifFavorites ?? []).map(toGifView),
 	};
 };
 

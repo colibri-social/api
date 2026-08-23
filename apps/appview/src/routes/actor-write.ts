@@ -5,6 +5,7 @@ import { nextTid, parseSpaceRef, SpaceCredentialError } from "@colibri-social/sp
 import { eq } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
+import { toGifFavorite } from "../views/gif.js";
 import { findSoleOwnedCommunities, loadPreferences } from "./actor.js";
 import type { RouteDeps } from "./types.js";
 
@@ -41,7 +42,11 @@ const assertOnlineState = (value: string): OnlineState => {
 export const handlePutSettings = async (
 	ctx: AppContext,
 	callerDid: string,
-	input: { notificationLevel?: string; communityOrder?: string[]; gifFavorites?: string[] },
+	input: {
+		notificationLevel?: string;
+		communityOrder?: string[];
+		gifFavorites?: social.colibri.beta.embed.defs.GifView[];
+	},
 ): Promise<{ preferences: Preferences }> => {
 	const notificationLevel =
 		input.notificationLevel === undefined
@@ -58,7 +63,7 @@ export const handlePutSettings = async (
 		did: callerDid,
 		notificationLevel: notificationLevel ?? existing?.notificationLevel ?? ("all" as const),
 		communityOrder: input.communityOrder ?? existing?.communityOrder ?? [],
-		gifFavorites: input.gifFavorites ?? existing?.gifFavorites ?? [],
+		gifFavorites: input.gifFavorites?.map(toGifFavorite) ?? existing?.gifFavorites ?? [],
 	};
 
 	await ctx.database.db

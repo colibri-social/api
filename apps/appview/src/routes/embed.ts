@@ -1,9 +1,10 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
-import type { EmbedError, GifCategory, GifView, LinkEmbed, TtlCache } from "@colibri-social/embeds";
+import type { EmbedError, GifCategory, LinkEmbed, TtlCache } from "@colibri-social/embeds";
 import { fetchLinkPreview, gifsNotConfigured, isEmbedError } from "@colibri-social/embeds";
 import { asUri, asUriOrUndefined, social } from "@colibri-social/lexicons";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
+import { toGifView } from "../views/gif.js";
 import type { RouteDeps } from "./types.js";
 
 type LinkEmbedView = social.colibri.beta.embed.defs.LinkEmbed;
@@ -35,15 +36,6 @@ const toLinkEmbedView = (embed: LinkEmbed): LinkEmbedView => ({
 				duration: embed.video.duration,
 			}
 		: undefined,
-});
-
-const toGifView = (gif: GifView): GifViewOut => ({
-	id: gif.id,
-	url: asUri(gif.url),
-	previewUrl: asUri(gif.previewUrl),
-	width: gif.width,
-	height: gif.height,
-	title: gif.title,
 });
 
 const toGifCategory = (category: GifCategory): GifCategoryOut => ({

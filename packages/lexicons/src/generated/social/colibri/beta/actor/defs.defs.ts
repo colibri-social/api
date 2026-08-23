@@ -4,6 +4,7 @@
 
 import { l } from "@atproto/lex";
 import * as ActorProfile from "./profile.defs.js";
+import * as EmbedDefs from "../embed/defs.defs.js";
 
 const $nsid = "social.colibri.beta.actor.defs";
 
@@ -165,14 +166,14 @@ type Preferences = { $type?: "social.colibri.beta.actor.defs#preferences";
   "mutes":(Mute)[];
 
   /**
-   * GIFs saved from the picker.
+   * GIFs saved from the picker, stored whole.
    */
-  "gifFavorites":(string)[] };
+  "gifFavorites":(EmbedDefs.GifView)[] };
 
 export type { Preferences };
 
 /** The authenticated user's own settings, as the AppView currently holds them. */
-const preferences = /*#__PURE__*/ l.typedObject<Preferences>($nsid, "preferences", /*#__PURE__*/ l.object({"notificationLevel":/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies"]}>(),"communityOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"mutes":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Mute>((() => mute) as any), ),"gifFavorites":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), )}));
+const preferences = /*#__PURE__*/ l.typedObject<Preferences>($nsid, "preferences", /*#__PURE__*/ l.object({"notificationLevel":/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies"]}>(),"communityOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"mutes":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Mute>((() => mute) as any), ),"gifFavorites":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), )}));
 
 export { preferences };
 

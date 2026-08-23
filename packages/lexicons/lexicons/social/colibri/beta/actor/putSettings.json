@@ -26,11 +26,10 @@
 						},
 						"gifFavorites": {
 							"type": "array",
-							"description": "GIFs saved from the picker. Absent leaves the current value unchanged.",
+							"description": "GIFs saved from the picker, stored whole. Absent leaves the current value unchanged.",
 							"items": {
-								"type": "string",
-								"description": "A GIF identifier.",
-								"maxLength": 256
+								"type": "ref",
+								"ref": "social.colibri.beta.embed.defs#gifView"
 							}
 						}
 					}

@@ -1,8 +1,18 @@
+import type { GifFavorite } from "@colibri-social/appview-db";
 import { COLLECTIONS, SELF, SPACE_TYPES, social } from "@colibri-social/lexicons";
 import { and, eq } from "drizzle-orm";
 import type { Projector } from "../projector.js";
 
 const PERSONAL = [SPACE_TYPES.actorPreferences] as const;
+
+const toGifFavorite = (gif: social.colibri.beta.embed.defs.GifView): GifFavorite => ({
+	id: gif.id,
+	url: gif.url,
+	previewUrl: gif.previewUrl,
+	width: gif.width,
+	height: gif.height,
+	...(gif.title === undefined ? {} : { title: gif.title }),
+});
 
 export const mute: Projector<social.colibri.beta.actor.mute.Main> = {
 	collection: COLLECTIONS.mute,
@@ -42,7 +52,7 @@ export const settings: Projector<social.colibri.beta.actor.settings.Main> = {
 			did: ref.author,
 			notificationLevel: (value.notificationLevel ?? "all") as "all" | "mentionsAndReplies",
 			communityOrder: [...(value.communityOrder ?? [])],
-			gifFavorites: [...(value.gifFavorites ?? [])],
+			gifFavorites: (value.gifFavorites ?? []).map(toGifFavorite),
 		};
 		await deps.db
 			.insert(deps.tables.actorSettings)

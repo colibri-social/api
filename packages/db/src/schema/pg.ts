@@ -26,6 +26,14 @@ export type OnlineState = "online" | "away" | "dnd" | "offline";
 export type PushProvider = "webpush" | "fcm";
 export type PushPlatform = "web" | "ios" | "android";
 export type CredentialSource = "provisioned" | "registered";
+export type GifFavorite = {
+	id: string;
+	url: string;
+	previewUrl: string;
+	width: number;
+	height: number;
+	title?: string;
+};
 
 export const spaces = pgTable(
 	"spaces",
@@ -306,7 +314,7 @@ export const actorSettings = pgTable("actor_settings", {
 	communityOrder: json<string[]>("community_order")
 		.notNull()
 		.$defaultFn(() => []),
-	gifFavorites: json<string[]>("gif_favorites")
+	gifFavorites: json<GifFavorite[]>("gif_favorites")
 		.notNull()
 		.$defaultFn(() => []),
 });

@@ -3,6 +3,7 @@
  */
 
 import { l } from "@atproto/lex";
+import * as EmbedDefs from "../embed/defs.defs.js";
 import * as ActorDefs from "./defs.defs.js";
 
 const $nsid = "social.colibri.beta.actor.putSettings";
@@ -15,7 +16,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"notificationLevel":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies"]}>()),"communityOrder":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"gifFavorites":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"maxLength":256}), ))});
+export const $input = /*#__PURE__*/ l.jsonPayload({"notificationLevel":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies"]}>()),"communityOrder":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"gifFavorites":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), ))});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;
