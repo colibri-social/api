@@ -93,6 +93,7 @@ export const communities = sqliteTable(
 		handle: text("handle"),
 		name: text("name").notNull(),
 		description: text("description"),
+		managingApp: text("managing_app"),
 		pictureCid: text("picture_cid"),
 		bannerCid: text("banner_cid"),
 		requiresApproval: flag("requires_approval").notNull().default(false),

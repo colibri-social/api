@@ -1,8 +1,9 @@
-import type { Server as HttpServer } from "node:http";
+import type { Server as HttpServer, IncomingHttpHeaders } from "node:http";
 import { canRead } from "@colibri-social/community";
 import { social } from "@colibri-social/lexicons";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { AppContext } from "../context.js";
+import { bearerToken, selectSubprotocol } from "./auth.js";
 import { channelTopic, communityTopic, type Topic, TopicIndex, userTopic } from "./topics.js";
 
 export type ServerFrame = { $type: string } & Record<string, unknown>;
@@ -38,7 +39,10 @@ const frameName = (value: unknown): ClientFrameName | null => {
 };
 
 export class EventServer {
-	private readonly wss = new WebSocketServer({ noServer: true });
+	private readonly wss = new WebSocketServer({
+		noServer: true,
+		handleProtocols: (protocols) => selectSubprotocol(protocols),
+	});
 	private readonly topics = new TopicIndex<Connection>();
 	private readonly connections = new Set<Connection>();
 	private heartbeat: NodeJS.Timeout | null = null;
@@ -54,7 +58,7 @@ export class EventServer {
 			const url = new URL(request.url ?? "/", "http://localhost");
 			if (url.pathname !== EVENTS_PATH) return;
 
-			void this.authenticate(request.headers.authorization, url).then((did) => {
+			void this.authenticate(request.headers, url).then((did) => {
 				if (!did) {
 					socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
 					socket.destroy();
@@ -75,10 +79,8 @@ export class EventServer {
 		await new Promise<void>((resolve) => this.wss.close(() => resolve()));
 	}
 
-	private async authenticate(header: string | undefined, url: URL): Promise<string | null> {
-		const token = header?.startsWith("Bearer ")
-			? header.slice("Bearer ".length)
-			: url.searchParams.get("auth");
+	private async authenticate(headers: IncomingHttpHeaders, url: URL): Promise<string | null> {
+		const token = bearerToken(headers, url);
 		if (!token) return null;
 		const caller = await this.ctx.serviceAuth
 			.verify(token, "social.colibri.beta.sync.subscribeEvents")

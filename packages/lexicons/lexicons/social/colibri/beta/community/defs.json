@@ -5,7 +5,15 @@
 		"communityView": {
 			"type": "object",
 			"description": "A community as the AppView serves it.",
-			"required": ["did", "handle", "name", "requiresApprovalToJoin", "linkEmbeds", "viewer"],
+			"required": [
+				"did",
+				"handle",
+				"name",
+				"managingApp",
+				"requiresApprovalToJoin",
+				"linkEmbeds",
+				"viewer"
+			],
 			"properties": {
 				"did": {
 					"type": "string",
@@ -16,6 +24,11 @@
 					"type": "string",
 					"description": "The community's handle.",
 					"format": "handle"
+				},
+				"managingApp": {
+					"type": "string",
+					"format": "did",
+					"description": "The AppView that manages this community's spaces. When it is not the AppView that served this view, the client must talk to that AppView for this community's reads, writes, events and voice."
 				},
 				"name": {
 					"type": "string",

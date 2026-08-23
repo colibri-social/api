@@ -30,12 +30,6 @@ const forbidden = (message: string) => new InvalidRequestError(message, "Forbidd
 
 const invalidRequest = (message: string) => new InvalidRequestError(message, "InvalidRequest");
 
-const credentialsUnavailable = () =>
-	new InvalidRequestError(
-		"this AppView cannot act as the community because no provisioner is configured",
-		"CredentialsUnavailable",
-	);
-
 const requireCommunity = async (ctx: AppContext, community: string) => {
 	const row = await ctx.loader.community(community);
 	if (!row) throw communityNotFound();
@@ -139,10 +133,9 @@ export const handleCreateChannel = async (
 
 		await assertVisibilityHierarchy(ctx, community, authz, input.visibleToRoles);
 
-		if (!ctx.provisioner) throw credentialsUnavailable();
-		const session = await ctx.credentials.session(community);
+		const host = await ctx.credentials.connect(community);
 
-		const space = await ctx.provisioner.createChannel(session, community, {
+		const space = await ctx.provisioner.createChannel(host, community, {
 			type: input.type,
 			name: input.name,
 			description: input.description,
@@ -289,9 +282,8 @@ export const handleDeleteChannel = async (
 		const community = parseSpaceRef(space).authority;
 		await requirePermission(ctx, community, actor, "channel.delete");
 
-		if (!ctx.provisioner) throw credentialsUnavailable();
-		const session = await ctx.credentials.session(community);
-		await ctx.provisioner.deleteChannel(session, space);
+		const host = await ctx.credentials.connect(community);
+		await ctx.provisioner.deleteChannel(host, space);
 
 		return {};
 	} catch (error) {

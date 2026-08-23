@@ -51,12 +51,14 @@ describe("community projections", () => {
 			put(SPACES.profile, COMMUNITY, "social.colibri.beta.community", SELF, {
 				$type: "social.colibri.beta.community",
 				name: "Protocol Nerds",
+				managingApp: "did:web:appview.test",
 				description: "a place",
 			}),
 		);
 
 		const [row] = await database.db.select().from(database.tables.communities);
 		expect(row?.name).toBe("Protocol Nerds");
+		expect(row?.managingApp).toBe("did:web:appview.test");
 		expect(row?.profileSpace).toBe(SPACES.profile);
 		expect(row?.membersSpace).toBe(SPACES.members);
 		expect(row?.moderationSpace).toBe(SPACES.moderation);
@@ -68,6 +70,7 @@ describe("community projections", () => {
 			put(SPACES.profile, COMMUNITY, "social.colibri.beta.community", SELF, {
 				$type: "social.colibri.beta.community",
 				name: "Protocol Nerds",
+				managingApp: "did:web:appview.test",
 			}),
 		);
 		await applyChange(

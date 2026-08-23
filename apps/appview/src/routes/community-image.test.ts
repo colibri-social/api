@@ -93,7 +93,7 @@ beforeEach(async () => {
 
 	const loader = new CommunityLoader({ db: database.db, tables: database.tables });
 	ctx = {
-		config: { PUBLIC_URL: "https://appview.test" },
+		config: { PUBLIC_URL: "https://appview.test", APPVIEW_DID: "did:web:appview.test" },
 		database,
 		loader,
 		identity: {

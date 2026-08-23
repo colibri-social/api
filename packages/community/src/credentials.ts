@@ -1,6 +1,6 @@
 import type { Queryable, Schema } from "@colibri-social/appview-db";
-import type { PdsAdmin, PdsClient, PdsSession } from "@colibri-social/space";
-import { XrpcError } from "@colibri-social/space";
+import type { PdsAdmin, PdsSession } from "@colibri-social/space";
+import { PdsClient, XrpcError } from "@colibri-social/space";
 import { eq } from "drizzle-orm";
 import { generatePassword, type SecretBox } from "./crypto.js";
 
@@ -28,8 +28,14 @@ export type CredentialStoreDeps = {
 	secrets: SecretBox;
 	pds: PdsClient;
 	admin: PdsAdmin | null;
+	clientFor?: (endpoint: string) => PdsClient;
 	now?: () => Date;
 	log?: (event: string, detail: Record<string, unknown>) => void;
+};
+
+export type CommunityHost = {
+	pds: PdsClient;
+	session: PdsSession;
 };
 
 export type StoredCredentials = {
@@ -43,7 +49,7 @@ export type StoredCredentials = {
 const RECOVERY_COOLDOWN_MS = 30_000;
 const UNRECOVERABLE_BACKOFF_MS = 10 * 60 * 1000;
 
-const isCredentialRejection = (error: unknown): boolean =>
+export const isCredentialRejection = (error: unknown): boolean =>
 	error instanceof XrpcError &&
 	[
 		"AuthenticationRequired",
@@ -53,12 +59,22 @@ const isCredentialRejection = (error: unknown): boolean =>
 	].includes(error.code);
 
 export class CommunityCredentials {
-	private readonly sessions = new Map<string, Promise<PdsSession>>();
+	private readonly hosts = new Map<string, Promise<CommunityHost>>();
+	private readonly clients = new Map<string, PdsClient>();
 	private readonly nextAttemptAt = new Map<string, number>();
 	private readonly now: () => Date;
 
 	constructor(private readonly deps: CredentialStoreDeps) {
 		this.now = deps.now ?? (() => new Date());
+	}
+
+	clientFor(endpoint: string): PdsClient {
+		if (endpoint === this.deps.pds.service) return this.deps.pds;
+		const existing = this.clients.get(endpoint);
+		if (existing) return existing;
+		const client = this.deps.clientFor?.(endpoint) ?? new PdsClient({ service: endpoint });
+		this.clients.set(endpoint, client);
+		return client;
 	}
 
 	async store(credentials: StoredCredentials): Promise<void> {
@@ -76,7 +92,7 @@ export class CommunityCredentials {
 			.insert(this.deps.tables.communityCredentials)
 			.values(row)
 			.onConflictDoUpdate({ target: this.deps.tables.communityCredentials.community, set: row });
-		this.sessions.delete(credentials.community);
+		this.hosts.delete(credentials.community);
 	}
 
 	async load(community: string): Promise<StoredCredentials | null> {
@@ -103,50 +119,58 @@ export class CommunityCredentials {
 	}
 
 	async forget(community: string): Promise<void> {
-		this.sessions.delete(community);
+		this.hosts.delete(community);
 		await this.deps.db
 			.delete(this.deps.tables.communityCredentials)
 			.where(eq(this.deps.tables.communityCredentials.community, community));
 	}
 
-	session(community: string): Promise<PdsSession> {
-		const existing = this.sessions.get(community);
+	connect(community: string): Promise<CommunityHost> {
+		const existing = this.hosts.get(community);
 		if (existing) return existing;
-		const pending = this.openSession(community).catch((error: unknown) => {
-			this.sessions.delete(community);
+		const pending = this.openHost(community).catch((error: unknown) => {
+			this.hosts.delete(community);
 			throw error;
 		});
-		this.sessions.set(community, pending);
+		this.hosts.set(community, pending);
 		return pending;
 	}
 
-	private async openSession(community: string): Promise<PdsSession> {
+	async session(community: string): Promise<PdsSession> {
+		return (await this.connect(community)).session;
+	}
+
+	private async login(credentials: StoredCredentials): Promise<CommunityHost> {
+		const pds = this.clientFor(credentials.pdsEndpoint);
+		const session = await pds.login({
+			identifier: credentials.identifier,
+			password: credentials.password,
+		});
+		return { pds, session };
+	}
+
+	private async openHost(community: string): Promise<CommunityHost> {
 		const stored = await this.load(community);
-		if (!stored) {
-			const recovered = await this.recover(community);
-			return this.deps.pds.login({
-				identifier: recovered.identifier,
-				password: recovered.password,
-			});
-		}
+		if (!stored) return this.login(await this.recover(community));
 
 		try {
-			return await this.deps.pds.login({
-				identifier: stored.identifier,
-				password: stored.password,
-			});
+			return await this.login(stored);
 		} catch (error) {
 			if (!isCredentialRejection(error)) throw error;
 			this.deps.log?.("credentials.rejected", { community });
-			const recovered = await this.recover(community, stored);
-			return this.deps.pds.login({
-				identifier: recovered.identifier,
-				password: recovered.password,
-			});
+			return this.login(await this.recover(community, stored));
 		}
 	}
 
 	async recover(community: string, stored?: StoredCredentials): Promise<StoredCredentials> {
+		if (stored && stored.pdsEndpoint !== this.deps.pds.service) {
+			throw new CommunityCredentialError(
+				community,
+				"recoveryUnavailable",
+				`${community} is hosted on ${stored.pdsEndpoint}, so this AppView cannot reset its password`,
+			);
+		}
+
 		if (!this.deps.admin) {
 			throw new CommunityCredentialError(
 				community,

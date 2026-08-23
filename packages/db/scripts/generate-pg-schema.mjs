@@ -32,10 +32,11 @@ const REWRITES = [
 		"const flag = (name: string) => boolean(name)",
 	],
 	[
-		/^import \{ (.+) \} from "drizzle-orm\/pg-core"$/m,
+		/^import \{([\s\S]+?)\} from "drizzle-orm\/pg-core";?$/m,
 		(_match, names) => {
-			const imported = new Set([...names.split(", "), "pgTable", "boolean", "jsonb"]);
-			return `import { ${[...imported].sort().join(", ")} } from "drizzle-orm/pg-core"`;
+			const named = names.split(/[\s,]+/).filter(Boolean);
+			const imported = new Set([...named, "pgTable", "boolean", "jsonb"]);
+			return `import { ${[...imported].sort().join(", ")} } from "drizzle-orm/pg-core";`;
 		},
 	],
 ];

@@ -3,13 +3,15 @@ import { InvalidRequestError } from "@atproto/xrpc-server";
 import { sniffMimeType } from "@colibri-social/blobs";
 import {
 	CommunityCredentialError,
-	type CommunityProvisioner,
 	generatePassword,
 	has,
 	isAdmin,
+	isCredentialRejection,
 	Membership,
 	MembershipError,
 	migrateCommunity,
+	type ProvisionedCommunity,
+	ProvisioningRefused,
 } from "@colibri-social/community";
 import { SERVICE_FRAGMENTS, serviceId } from "@colibri-social/identity";
 import {
@@ -23,7 +25,7 @@ import {
 	SELF,
 	social,
 } from "@colibri-social/lexicons";
-import { PdsClient, XrpcError } from "@colibri-social/space";
+import { XrpcError } from "@colibri-social/space";
 import { and, asc, eq } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
@@ -68,43 +70,20 @@ const invitationView = (row: {
 	maxUses: row.maxUses ?? undefined,
 });
 
-export const handleCreateCommunity = async (
-	ctx: AppContext,
+const provisionedView = (
 	communities: CommunityViews,
 	callerDid: string,
-	input: { name: string; description?: string; handlePrefix?: string },
-): Promise<{ community: CommunityView }> => {
-	if (!ctx.provisioner) {
-		throw new InvalidRequestError(
-			"no PDS admin password is configured, so communities cannot be provisioned",
-			"PdsUnavailable",
-		);
-	}
-
-	let provisioned: Awaited<ReturnType<CommunityProvisioner["create"]>>;
-	try {
-		provisioned = await ctx.provisioner.create({
-			name: input.name,
-			description: input.description,
-			handlePrefix: input.handlePrefix,
-			creator: callerDid,
-		});
-	} catch (error) {
-		if (error instanceof XrpcError) {
-			if (/exists|available|taken/i.test(error.code)) {
-				throw new InvalidRequestError(error.message, "AlreadyExists");
-			}
-			throw new InvalidRequestError(error.message, "UpstreamFailure");
-		}
-		throw error;
-	}
-
+	provisioned: ProvisionedCommunity,
+	input: { name: string; description?: string },
+	managingApp: string,
+): { community: CommunityView } => {
 	const now = new Date().toISOString();
 	const row = {
 		did: provisioned.did,
 		handle: provisioned.handle,
 		name: input.name,
 		description: input.description ?? null,
+		managingApp,
 		pictureCid: null,
 		bannerCid: null,
 		requiresApproval: false,
@@ -138,6 +117,110 @@ export const handleCreateCommunity = async (
 	};
 
 	return { community: communities.community(row, authz, 1) };
+};
+
+const provisioningFailure = (error: unknown): never => {
+	if (error instanceof ProvisioningRefused) {
+		switch (error.reason) {
+			case "identityMismatch":
+				throw new InvalidRequestError(error.message, "IdentityMismatch");
+			case "alreadyASpaceCommunity":
+				throw new InvalidRequestError(error.message, "AlreadyExists");
+			case "adminUnavailable":
+				throw new InvalidRequestError(error.message, "PdsUnavailable");
+		}
+	}
+	if (error instanceof XrpcError) {
+		if (/exists|available|taken/i.test(error.code)) {
+			throw new InvalidRequestError(error.message, "AlreadyExists");
+		}
+		if (error.status === 501 || error.code === "MethodNotImplemented") {
+			throw new InvalidRequestError(
+				`${error.message} (does that PDS implement com.atproto.simplespace?)`,
+				"SpacesUnsupported",
+			);
+		}
+		throw new InvalidRequestError(error.message, "UpstreamFailure");
+	}
+	throw error;
+};
+
+export const handleCreateCommunity = async (
+	ctx: AppContext,
+	communities: CommunityViews,
+	callerDid: string,
+	input: { name: string; description?: string; handlePrefix?: string },
+): Promise<{ community: CommunityView }> => {
+	let provisioned: ProvisionedCommunity;
+	try {
+		provisioned = await ctx.provisioner.create({
+			name: input.name,
+			description: input.description,
+			handlePrefix: input.handlePrefix,
+			creator: callerDid,
+		});
+	} catch (error) {
+		return provisioningFailure(error);
+	}
+
+	return provisionedView(communities, callerDid, provisioned, input, ctx.config.APPVIEW_DID);
+};
+
+export const handleAdoptCommunity = async (
+	ctx: AppContext,
+	communities: CommunityViews,
+	callerDid: string,
+	input: {
+		did: string;
+		identifier: string;
+		password: string;
+		name: string;
+		description?: string;
+	},
+): Promise<{ community: CommunityView }> => {
+	const [existing] = await ctx.database.db
+		.select({ did: ctx.database.tables.communities.did })
+		.from(ctx.database.tables.communities)
+		.where(eq(ctx.database.tables.communities.did, input.did))
+		.limit(1);
+	if (existing) {
+		throw new InvalidRequestError(`${input.did} is already a community here`, "AlreadyExists");
+	}
+
+	let pdsEndpoint: string;
+	try {
+		pdsEndpoint = await ctx.hosts.hostFor(input.did);
+	} catch (error) {
+		throw new InvalidRequestError(
+			error instanceof Error ? error.message : `could not resolve the PDS for ${input.did}`,
+			"UpstreamFailure",
+		);
+	}
+
+	let provisioned: ProvisionedCommunity;
+	try {
+		provisioned = await ctx.provisioner.adopt({
+			did: input.did,
+			pdsEndpoint,
+			identifier: input.identifier,
+			password: input.password,
+			name: input.name,
+			description: input.description,
+			creator: callerDid,
+		});
+	} catch (error) {
+		if (isCredentialRejection(error)) {
+			await ctx.credentials.forget(input.did);
+			throw new InvalidRequestError(
+				"the PDS refused the given identifier and password",
+				"CredentialsRejected",
+			);
+		}
+		await ctx.credentials.forget(input.did);
+		return provisioningFailure(error);
+	}
+
+	return provisionedView(communities, callerDid, provisioned, input, ctx.config.APPVIEW_DID);
 };
 
 export const handleUpdateCommunity = async (
@@ -186,6 +269,7 @@ export const handleUpdateCommunity = async (
 				...(existing ?? {}),
 				$type: COLLECTIONS.community,
 				name: nextName,
+				managingApp: row.managingApp ?? ctx.config.APPVIEW_DID,
 				...(nextDescription ? { description: nextDescription } : {}),
 				...(row.migratedFrom ? { migratedFrom: row.migratedFrom } : {}),
 			},
@@ -297,6 +381,7 @@ const writeCommunityImage = async (
 		...(existing ?? {}),
 		$type: COLLECTIONS.community,
 		name: row.name,
+		managingApp: row.managingApp ?? ctx.config.APPVIEW_DID,
 		...(row.description ? { description: row.description } : {}),
 		...(row.migratedFrom ? { migratedFrom: row.migratedFrom } : {}),
 	};
@@ -369,16 +454,9 @@ export const handleDeleteCommunity = async (
 	const authz = await ctx.loader.authz(community, callerDid);
 	if (!has(authz, "community.delete")) throw forbidden("community.delete");
 
-	if (!ctx.provisioner) {
-		throw new InvalidRequestError(
-			"no PDS admin password is configured, so this community cannot be deleted",
-			"CredentialsUnavailable",
-		);
-	}
-
 	try {
-		const session = await ctx.credentials.session(community);
-		await ctx.provisioner.destroy(community, session, communitySpaces(community));
+		const host = await ctx.credentials.connect(community);
+		await ctx.provisioner.destroy(community, host, communitySpaces(community));
 	} catch (error) {
 		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);
 		throw error;
@@ -569,7 +647,7 @@ export const handleRegisterCredentials = async (
 		);
 	}
 
-	const client = new PdsClient({ service: pdsEndpoint });
+	const client = ctx.credentials.clientFor(pdsEndpoint);
 	try {
 		await client.login({ identifier: input.identifier, password: input.password });
 	} catch {
@@ -608,7 +686,8 @@ export const handleMigrateCommunity = async (
 		);
 	}
 
-	const legacyRecord = await ctx.pds
+	const legacyRepo = ctx.credentials.clientFor(await ctx.hosts.hostFor(legacyDid));
+	const legacyRecord = await legacyRepo
 		.getPublicRecord<{ value: { name?: string; description?: string } }>(
 			legacyDid,
 			COLLECTIONS.community,
@@ -630,7 +709,7 @@ export const handleMigrateCommunity = async (
 		report = await migrateCommunity(
 			{
 				database: ctx.database,
-				pds: ctx.pds,
+				hostFor: (did) => ctx.hosts.hostFor(did),
 				credentials: ctx.credentials,
 				writer: ctx.writer,
 				appviewService: serviceId(ctx.config.APPVIEW_DID, SERVICE_FRAGMENTS.appview),
@@ -651,6 +730,7 @@ export const handleMigrateCommunity = async (
 		handle: null,
 		name: legacyRecord.value.name ?? "Migrated community",
 		description: legacyRecord.value.description ?? null,
+		managingApp: ctx.config.APPVIEW_DID,
 		pictureCid: null,
 		bannerCid: null,
 		requiresApproval: false,
@@ -782,6 +862,14 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 			);
 			return { encoding: "application/json" as const, body: {} };
 		},
+	});
+
+	route(server, social.colibri.beta.community.adopt, {
+		auth: auth.required,
+		handler: async ({ input, auth: caller }) => ({
+			encoding: "application/json" as const,
+			body: await handleAdoptCommunity(ctx, communities, caller.credentials.did, input.body),
+		}),
 	});
 
 	route(server, social.colibri.beta.community.registerCredentials, {

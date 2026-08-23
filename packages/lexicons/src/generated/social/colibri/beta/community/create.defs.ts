@@ -26,7 +26,7 @@ export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
 /** Provisions a new community: an account on the AppView's PDS, its four spaces, an owner role, and a starter layout of two categories holding one text channel and one voice channel between them. This call runs long enough that progress is also emitted over social.colibri.beta.sync.subscribeEvents. */
-const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","InvalidRequest","AlreadyExists","PdsUnavailable","UpstreamFailure"]);
+const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","InvalidRequest","AlreadyExists","PdsUnavailable","SpacesUnsupported","UpstreamFailure"]);
 
 export { main };
 

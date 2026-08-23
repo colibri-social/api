@@ -65,6 +65,7 @@ export class CommunityViews {
 		return {
 			did: asDid(row.did),
 			handle: asHandleOrUndefined(row.handle) ?? undefined,
+			managingApp: asDid(row.managingApp ?? this.ctx.config.APPVIEW_DID),
 			name: row.name,
 			description: row.description ?? undefined,
 			picture: asUriOrUndefined(this.blobUrl(row.did, row.pictureCid, "avatar")),

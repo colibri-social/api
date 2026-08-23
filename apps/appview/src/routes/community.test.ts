@@ -6,7 +6,7 @@ import type { AppContext } from "../context.js";
 import { ActorViews } from "../views/actor.js";
 import { CommunityViews } from "../views/community.js";
 import { handleListCommunities } from "./actor.js";
-import { handleGetInvitation, handleListChannels } from "./community.js";
+import { handleGetCommunity, handleGetInvitation, handleListChannels } from "./community.js";
 
 const NOW = "2026-08-23T00:00:00.000Z";
 
@@ -18,13 +18,14 @@ let database: TestDatabase;
 let ctx: AppContext;
 let communities: CommunityViews;
 
-const insertCommunity = async (did: string, name: string) => {
+const insertCommunity = async (did: string, name: string, managingApp: string | null = null) => {
 	const spaces = communitySpaces(did);
 	await database.db.insert(database.tables.communities).values({
 		did,
 		handle: null,
 		name,
 		description: null,
+		managingApp,
 		pictureCid: null,
 		bannerCid: null,
 		requiresApproval: false,
@@ -54,7 +55,7 @@ beforeEach(async () => {
 
 	const loader = new CommunityLoader({ db: database.db, tables: database.tables });
 	ctx = {
-		config: { PUBLIC_URL: "https://appview.test" },
+		config: { PUBLIC_URL: "https://appview.test", APPVIEW_DID: "did:web:appview.test" },
 		database,
 		loader,
 	} as unknown as AppContext;
@@ -123,6 +124,22 @@ describe("getInvitation", () => {
 		await expect(handleGetInvitation(ctx, communities, "nope", null)).rejects.toMatchObject({
 			customErrorName: "InvitationNotFound",
 		});
+	});
+});
+
+describe("managingApp", () => {
+	it("names this AppView when the synced record has not said otherwise", async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+
+		const result = await handleGetCommunity(ctx, communities, COMMUNITY, OUTSIDER);
+		expect(result.community.managingApp).toBe("did:web:appview.test");
+	});
+
+	it("names the hub the record points at, so a client can dial it", async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds", "did:web:hub.example");
+
+		const result = await handleGetCommunity(ctx, communities, COMMUNITY, OUTSIDER);
+		expect(result.community.managingApp).toBe("did:web:hub.example");
 	});
 });
 

@@ -216,14 +216,14 @@ export const createHarness = async () => {
 			const authority = space.slice("at://".length).split("/")[0] as string;
 			const stored = await credentials.load(authority);
 			if (!stored) return null;
-			const session = await credentials.session(authority);
-			return pds.getDelegationToken(session, space);
+			const host = await credentials.connect(authority);
+			return host.pds.getDelegationToken(host.session, space);
 		},
 	});
 
 	const spaceClient = new SpaceClient({ hosts, credentials: spaceCredentials });
 	const loader = new CommunityLoader({ db: database.db, tables: database.tables });
-	const writer = new CommunityWriter({ pds, credentials });
+	const writer = new CommunityWriter({ credentials });
 
 	const membership = new Membership({
 		db: database.db,

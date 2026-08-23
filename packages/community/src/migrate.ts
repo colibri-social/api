@@ -29,7 +29,7 @@ export type MigrationReport = {
 
 export type MigrateDeps = {
 	database: Database;
-	pds: PdsClient;
+	hostFor: (did: string) => Promise<string>;
 	credentials: CommunityCredentials;
 	writer: CommunityWriter;
 	appviewService: string;
@@ -60,6 +60,9 @@ const listAll = async <T>(
 
 const rkeyOf = (uri: string) => uri.split("/").pop() as string;
 
+const repoFor = async (deps: MigrateDeps, did: string): Promise<PdsClient> =>
+	deps.credentials.clientFor(await deps.hostFor(did));
+
 export const migrateCommunity = async (
 	deps: MigrateDeps,
 	community: string,
@@ -76,18 +79,21 @@ export const migrateCommunity = async (
 	};
 
 	const spaces = communitySpaces(community);
-	const session = await deps.credentials.session(community);
+	const host = await deps.credentials.connect(community);
+	const session = host.session;
+	const repoOf = async (did: string) => deps.credentials.clientFor(await deps.hostFor(did));
+	const legacyRepo = await repoOf(community);
 
-	deps.log("reading the legacy repo", { community });
+	deps.log("reading the legacy repo", { community, pds: legacyRepo.service });
 	const [legacyCommunity, legacyCategories, legacyChannels, legacyRoles, legacyMembers] =
 		await Promise.all([
-			deps.pds
+			legacyRepo
 				.getPublicRecord<LegacyRecord>(community, COLLECTIONS.community, SELF)
 				.catch(() => null),
-			listAll<Record<string, unknown>>(deps.pds, community, COLLECTIONS.category),
-			listAll<Record<string, unknown>>(deps.pds, community, COLLECTIONS.channel),
-			listAll<Record<string, unknown>>(deps.pds, community, COLLECTIONS.role),
-			listAll<Record<string, unknown>>(deps.pds, community, COLLECTIONS.member),
+			listAll<Record<string, unknown>>(legacyRepo, community, COLLECTIONS.category),
+			listAll<Record<string, unknown>>(legacyRepo, community, COLLECTIONS.channel),
+			listAll<Record<string, unknown>>(legacyRepo, community, COLLECTIONS.role),
+			listAll<Record<string, unknown>>(legacyRepo, community, COLLECTIONS.member),
 		]);
 
 	if (!legacyCommunity) {
@@ -106,7 +112,7 @@ export const migrateCommunity = async (
 	const isPrivate = false;
 	const createSpace = async (type: string, skey: string) => {
 		if (deps.dryRun) return;
-		await deps.pds
+		await host.pds
 			.createSpace(session, {
 				type,
 				skey,
@@ -157,6 +163,7 @@ export const migrateCommunity = async (
 	await put(spaces.profile, COLLECTIONS.community, SELF, {
 		$type: COLLECTIONS.community,
 		name: legacy.name ?? "Migrated community",
+		managingApp: deps.appviewService.split("#")[0],
 		...(legacy.description ? { description: legacy.description } : {}),
 		...(legacy.picture ? { picture: legacy.picture } : {}),
 		...(legacy.banner ? { banner: legacy.banner } : {}),
@@ -259,7 +266,7 @@ export const migrateCommunity = async (
 	});
 
 	deps.log("mirroring legacy message history");
-	report.legacyMessages = await mirrorLegacyMessages(deps, community, legacyMembers);
+	report.legacyMessages = await mirrorLegacyMessages(deps, community, legacyMembers, report);
 
 	return report;
 };
@@ -268,6 +275,7 @@ const mirrorLegacyMessages = async (
 	deps: MigrateDeps,
 	community: string,
 	members: LegacyRecord[],
+	report: MigrationReport,
 ): Promise<number> => {
 	let mirrored = 0;
 	const authors = new Set<string>([community]);
@@ -277,11 +285,14 @@ const mirrorLegacyMessages = async (
 	}
 
 	for (const author of authors) {
-		const records = await listAll<Record<string, unknown>>(
-			deps.pds,
-			author,
-			COLLECTIONS.message,
-		).catch(() => []);
+		const records = await repoFor(deps, author)
+			.then((repo) => listAll<Record<string, unknown>>(repo, author, COLLECTIONS.message))
+			.catch((error: unknown) => {
+				report.warnings.push(
+					`could not read ${author}'s legacy messages: ${error instanceof Error ? error.message : String(error)}`,
+				);
+				return [];
+			});
 
 		for (const record of records) {
 			if (deps.dryRun) {

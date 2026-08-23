@@ -1,0 +1,1 @@
+ALTER TABLE `communities` ADD `managing_app` text;

@@ -61,6 +61,7 @@
 					"inheritAud": true,
 					"lxm": [
 						"social.colibri.beta.community.create",
+						"social.colibri.beta.community.adopt",
 						"social.colibri.beta.community.update",
 						"social.colibri.beta.community.putImage",
 						"social.colibri.beta.community.deleteImage",

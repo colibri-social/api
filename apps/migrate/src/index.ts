@@ -19,15 +19,12 @@ const main = async (): Promise<void> => {
 
 	const config = loadConfig();
 	const ctx = await createContext(config);
-	const writer = new CommunityWriter({
-		pds: ctx.pds,
-		credentials: ctx.credentials,
-	});
+	const writer = new CommunityWriter({ credentials: ctx.credentials });
 
 	const report = await migrateCommunity(
 		{
 			database: ctx.database,
-			pds: ctx.pds,
+			hostFor: (did) => ctx.hosts.hostFor(did),
 			credentials: ctx.credentials,
 			writer,
 			appviewService: serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.appview),

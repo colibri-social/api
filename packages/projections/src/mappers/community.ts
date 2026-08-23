@@ -41,6 +41,7 @@ export const communityProfile: Projector<social.colibri.beta.community.Main> = {
 			.set({
 				name: value.name,
 				description: value.description ?? null,
+				managingApp: value.managingApp,
 				pictureCid: blobCid(value.picture),
 				bannerCid: blobCid(value.banner),
 				migratedFrom: value.migratedFrom ?? null,

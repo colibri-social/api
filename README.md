@@ -116,6 +116,30 @@ pnpm lexicons:renamespace social.colibri.beta social.colibri
 pnpm lexicons:codegen
 ```
 
+## Communities on other AppViews and other PDSes
+
+A community record names its `managingApp`. That AppView holds the community's
+credentials and answers `checkUserAccess` for every one of its spaces, so it is
+the only one that can serve the community. A client that finds a community whose
+`managingApp` is not the AppView it is talking to must talk to that AppView
+instead, for reads, writes, events and voice alike. The field lives on the record
+rather than being read from the space policy because
+`com.atproto.simplespace.getSpace` only serves a policy to a caller already
+authorized for that space, and a prospective member is not. The profile space is
+public, so the record can be read before joining.
+
+`social.colibri.beta.community.create` provisions an account on this AppView's
+PDS and needs `PDS_ADMIN_PASSWORD`.
+`social.colibri.beta.community.adopt` takes a DID that already exists, along with
+its password, and builds the community's spaces on whichever PDS already hosts
+it. The account keeps its DID, handle and PDS, and needs no admin password here.
+Its PDS does have to implement `com.atproto.simplespace`.
+
+A password, not an app password: `com.atproto.space.getDelegationToken` requires
+full access. Passwords are stored AES-256-GCM encrypted under
+`CREDENTIAL_ENCRYPTION_KEY`. For a community hosted elsewhere there is no
+recovery path yet, because resetting the password needs that PDS's admin API.
+
 ## Releasing
 
 Three packages are published from here: `@colibri-social/lexicons`,

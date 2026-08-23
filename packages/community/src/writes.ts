@@ -6,7 +6,6 @@ import { and, eq } from "drizzle-orm";
 import type { CommunityCredentials } from "./credentials.js";
 
 export type WriteDeps = {
-	pds: PdsClient;
 	credentials: CommunityCredentials;
 	mirror?: {
 		db: Queryable;
@@ -37,8 +36,8 @@ export class CommunityWriter {
 	}
 
 	async uploadBlob(community: string, bytes: Uint8Array, mimeType: string): Promise<BlobRef> {
-		const session = await this.deps.credentials.session(community);
-		const { blob } = await this.deps.pds.uploadBlob(session, bytes, mimeType);
+		const { pds, session } = await this.deps.credentials.connect(community);
+		const { blob } = await pds.uploadBlob(session, bytes, mimeType);
 		return blob as BlobRef;
 	}
 
@@ -66,9 +65,9 @@ export class CommunityWriter {
 	}
 
 	async put(community: string, write: RecordWrite): Promise<{ uri: string; rkey: string }> {
-		const session = await this.deps.credentials.session(community);
+		const { pds, session } = await this.deps.credentials.connect(community);
 		const rkey = write.rkey ?? nextTid();
-		const result = await this.deps.pds.putRecord(session, { ...write, rkey });
+		const result = await pds.putRecord(session, { ...write, rkey });
 		await this.mirrorPut(community, { ...write, rkey }, result.cid);
 		return { uri: result.uri, rkey };
 	}
@@ -77,8 +76,8 @@ export class CommunityWriter {
 		community: string,
 		params: { space: string; collection: string; rkey: string },
 	): Promise<void> {
-		const session = await this.deps.credentials.session(community);
-		await this.deps.pds.deleteRecord(session, params);
+		const { pds, session } = await this.deps.credentials.connect(community);
+		await pds.deleteRecord(session, params);
 		await this.mirrorRemove(community, params);
 	}
 
@@ -86,13 +85,13 @@ export class CommunityWriter {
 		community: string,
 		params: Parameters<PdsClient["createSpace"]>[1],
 	): Promise<{ uri: string }> {
-		const session = await this.deps.credentials.session(community);
-		return this.deps.pds.createSpace(session, params);
+		const { pds, session } = await this.deps.credentials.connect(community);
+		return pds.createSpace(session, params);
 	}
 
 	async deleteSpaceFor(community: string, space: string): Promise<void> {
-		const session = await this.deps.credentials.session(community);
-		await this.deps.pds.deleteSpace(session, space);
+		const { pds, session } = await this.deps.credentials.connect(community);
+		await pds.deleteSpace(session, space);
 	}
 
 	private async mirrorPut(

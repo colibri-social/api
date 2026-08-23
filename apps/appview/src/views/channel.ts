@@ -21,6 +21,7 @@ import {
 import { parseSpaceRef, spaceRecordUri } from "@colibri-social/space";
 import { and, asc, desc, eq, gt, inArray, lt, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
+import { signMediaGrant } from "../media-token.js";
 import type { ActorViews } from "./actor.js";
 
 export type MessageView = social.colibri.beta.channel.defs.MessageView;
@@ -57,15 +58,25 @@ export class ChannelViews {
 		private readonly actors: ActorViews,
 	) {}
 
-	private blobUrl(did: string, cid: string, space: string): string {
+	private blobUrl(did: string, cid: string, space: string, viewer: string | null): string {
 		const url = new URL("/xrpc/social.colibri.beta.blob.get", this.ctx.config.PUBLIC_URL);
 		url.searchParams.set("did", did);
 		url.searchParams.set("cid", cid);
 		url.searchParams.set("space", space);
+		if (viewer) {
+			const { expiresAt, signature } = signMediaGrant(
+				this.ctx.config.SIGNING_KEY,
+				{ did, cid, space, viewer },
+				Math.floor(Date.now() / 1000),
+			);
+			url.searchParams.set("viewer", viewer);
+			url.searchParams.set("exp", String(expiresAt));
+			url.searchParams.set("sig", signature);
+		}
 		return url.toString();
 	}
 
-	private attachments(space: string, row: MessageRow): AttachmentView[] {
+	private attachments(space: string, row: MessageRow, viewer: string | null): AttachmentView[] {
 		const raw = (row.attachments as RawAttachment[] | null) ?? [];
 		const out: AttachmentView[] = [];
 		for (const item of raw) {
@@ -73,7 +84,7 @@ export class ChannelViews {
 			const mimeType = item.blob?.mimeType;
 			if (!cid || !mimeType) continue;
 			out.push({
-				url: asUri(this.blobUrl(row.author, cid, space)),
+				url: asUri(this.blobUrl(row.author, cid, space, viewer)),
 				name: item.name,
 				mimeType,
 				size: item.blob?.size,
@@ -280,7 +291,7 @@ export class ChannelViews {
 				createdAt: asDatetime(row.createdAt),
 				updatedAt: asDatetimeOrUndefined(row.updatedAt ?? undefined),
 				parent,
-				attachments: this.attachments(space, row),
+				attachments: this.attachments(space, row, viewer),
 				reactions: this.aggregateReactions(
 					reactionRows.filter(
 						(reaction) => reaction.targetAuthor === row.author && reaction.targetRkey === row.rkey,

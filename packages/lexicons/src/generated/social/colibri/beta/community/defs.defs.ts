@@ -25,6 +25,11 @@ type CommunityView = { $type?: "social.colibri.beta.community.defs#communityView
   "handle":l.HandleString;
 
   /**
+   * The AppView that manages this community's spaces. When it is not the AppView that served this view, the client must talk to that AppView for this community's reads, writes, events and voice.
+   */
+  "managingApp":l.DidString;
+
+  /**
    * The community's name.
    */
   "name":string;
@@ -77,7 +82,7 @@ type CommunityView = { $type?: "social.colibri.beta.community.defs#communityView
 export type { CommunityView };
 
 /** A community as the AppView serves it. */
-const communityView = /*#__PURE__*/ l.typedObject<CommunityView>($nsid, "communityView", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"handle":/*#__PURE__*/ l.string({"format":"handle"}),"name":/*#__PURE__*/ l.string(),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"picture":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"banner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"requiresApprovalToJoin":/*#__PURE__*/ l.boolean(),"linkEmbeds":/*#__PURE__*/ l.boolean(),"labelers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"migratedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"viewer":/*#__PURE__*/ l.ref<ViewerState>((() => viewerState) as any)}));
+const communityView = /*#__PURE__*/ l.typedObject<CommunityView>($nsid, "communityView", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"handle":/*#__PURE__*/ l.string({"format":"handle"}),"managingApp":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string(),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"picture":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"banner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"requiresApprovalToJoin":/*#__PURE__*/ l.boolean(),"linkEmbeds":/*#__PURE__*/ l.boolean(),"labelers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"migratedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"viewer":/*#__PURE__*/ l.ref<ViewerState>((() => viewerState) as any)}));
 
 export { communityView };
 

@@ -61,6 +61,10 @@
 					"description": "The AppView's PDS could not be reached to provision the account."
 				},
 				{
+					"name": "SpacesUnsupported",
+					"description": "The AppView's PDS does not implement com.atproto.simplespace, so it cannot host community spaces."
+				},
+				{
 					"name": "UpstreamFailure",
 					"description": "A PDS or third-party call the AppView depends on failed."
 				}

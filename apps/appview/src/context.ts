@@ -93,17 +93,15 @@ export const createContext = async (config: Config) => {
 		tables: database.tables,
 	});
 
-	const provisioner = admin
-		? new CommunityProvisioner({
-				pds,
-				admin,
-				credentials,
-				handleDomain: config.COMMUNITY_HANDLE_DOMAIN,
-				appviewService: serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.appview),
-				requiresInviteCode: config.PDS_REQUIRES_INVITE,
-				...(config.COMMUNITY_EMAIL_DOMAIN ? { emailDomain: config.COMMUNITY_EMAIL_DOMAIN } : {}),
-			})
-		: null;
+	const provisioner = new CommunityProvisioner({
+		pds,
+		admin,
+		credentials,
+		handleDomain: config.COMMUNITY_HANDLE_DOMAIN,
+		appviewService: serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.appview),
+		requiresInviteCode: config.PDS_REQUIRES_INVITE,
+		...(config.COMMUNITY_EMAIL_DOMAIN ? { emailDomain: config.COMMUNITY_EMAIL_DOMAIN } : {}),
+	});
 
 	const projections: ProjectionDeps = {
 		db: database.db,
@@ -114,7 +112,6 @@ export const createContext = async (config: Config) => {
 	};
 
 	const writer = new CommunityWriter({
-		pds,
 		credentials,
 		mirror: { db: database.db, tables: database.tables, projections },
 	});
@@ -158,8 +155,8 @@ export const createContext = async (config: Config) => {
 		if (!authority) return null;
 		const stored = await credentials.load(authority);
 		if (!stored) return null;
-		const session = await credentials.session(authority);
-		return pds.getDelegationToken(session, space);
+		const host = await credentials.connect(authority);
+		return host.pds.getDelegationToken(host.session, space);
 	}
 
 	return {

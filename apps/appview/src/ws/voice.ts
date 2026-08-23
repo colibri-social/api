@@ -1,10 +1,11 @@
-import type { Server as HttpServer } from "node:http";
+import type { Server as HttpServer, IncomingHttpHeaders } from "node:http";
 import { canRead } from "@colibri-social/community";
 import { SPACE_TYPES, social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import type { VoiceSfu } from "@colibri-social/voice";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { AppContext } from "../context.js";
+import { bearerToken, selectSubprotocol } from "./auth.js";
 import type { ServerFrame } from "./events.js";
 import { channelTopic, TopicIndex } from "./topics.js";
 
@@ -51,7 +52,10 @@ const messageOf = (cause: unknown): string =>
 	cause instanceof Error ? cause.message : "the sfu rejected this request";
 
 export class VoiceServer {
-	private readonly wss = new WebSocketServer({ noServer: true });
+	private readonly wss = new WebSocketServer({
+		noServer: true,
+		handleProtocols: (protocols) => selectSubprotocol(protocols),
+	});
 	private readonly topics = new TopicIndex<Connection>();
 	private readonly connections = new Set<Connection>();
 	private heartbeat: NodeJS.Timeout | null = null;
@@ -75,7 +79,7 @@ export class VoiceServer {
 				return;
 			}
 
-			void this.authenticate(request.headers.authorization, url).then((did) => {
+			void this.authenticate(request.headers, url).then((did) => {
 				if (!did) {
 					socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
 					socket.destroy();
@@ -96,10 +100,8 @@ export class VoiceServer {
 		await new Promise<void>((resolve) => this.wss.close(() => resolve()));
 	}
 
-	private async authenticate(header: string | undefined, url: URL): Promise<string | null> {
-		const token = header?.startsWith("Bearer ")
-			? header.slice("Bearer ".length)
-			: url.searchParams.get("auth");
+	private async authenticate(headers: IncomingHttpHeaders, url: URL): Promise<string | null> {
+		const token = bearerToken(headers, url);
 		if (!token) return null;
 		const caller = await this.ctx.serviceAuth
 			.verify(token, "social.colibri.beta.voice.subscribeSignals")
