@@ -1,5 +1,18 @@
 # @colibri-social/projections
 
+## 1.1.0
+
+### Minor Changes
+
+- 396e6ef: Store a favourited GIF as the whole `embed.defs#gifView`, because an identifier cannot be turned back into one
+
+### Patch Changes
+
+- Updated dependencies [396e6ef]
+- Updated dependencies [396e6ef]
+  - @colibri-social/lexicons@2.1.0
+  - @colibri-social/appview-db@0.2.0
+
 ## 1.0.1
 
 ### Patch Changes
