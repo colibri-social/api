@@ -15,7 +15,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"legacy":/*#__PURE__*/ l.string({"format":"at-uri"})});
+export const $input = /*#__PURE__*/ l.jsonPayload({"community":/*#__PURE__*/ l.string({"format":"at-identifier"})});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;

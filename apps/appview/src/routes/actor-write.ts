@@ -1,11 +1,12 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
 import type { NotificationLevel, OnlineState } from "@colibri-social/appview-db";
-import { asDatetime, social } from "@colibri-social/lexicons";
+import { asDatetime, encodeMuteSubject, social } from "@colibri-social/lexicons";
 import { nextTid, parseSpaceRef, SpaceCredentialError } from "@colibri-social/space";
 import { eq } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
 import { toGifFavorite } from "../views/gif.js";
+import { liveVoiceState } from "../views/voice-state.js";
 import { findSoleOwnedCommunities, loadPreferences } from "./actor.js";
 import type { RouteDeps } from "./types.js";
 
@@ -86,7 +87,7 @@ export const handlePutMutes = async (
 			mutes.map((mute) => ({
 				did: callerDid,
 				rkey: nextTid(),
-				subject: mute.subject,
+				subject: encodeMuteSubject(mute.subject),
 				createdAt: mute.createdAt,
 			})),
 		);
@@ -115,9 +116,6 @@ export const handleSetStatus = async (
 		requestedState: onlineState ?? existing?.requestedState ?? null,
 		statusText: input.text ?? existing?.statusText ?? null,
 		statusEmoji: input.emoji ?? existing?.statusEmoji ?? null,
-		voiceChannel: existing?.voiceChannel ?? null,
-		voiceMuted: existing?.voiceMuted ?? null,
-		voiceDeafened: existing?.voiceDeafened ?? null,
 		viewingChannel: existing?.viewingChannel ?? null,
 		updatedAt: new Date().toISOString(),
 	};
@@ -132,13 +130,7 @@ export const handleSetStatus = async (
 		status: row.statusText
 			? { text: row.statusText, emoji: row.statusEmoji ?? undefined }
 			: undefined,
-		voice: row.voiceChannel
-			? {
-					channel: row.voiceChannel as never,
-					muted: row.voiceMuted ?? undefined,
-					deafened: row.voiceDeafened ?? undefined,
-				}
-			: undefined,
+		voice: liveVoiceState(ctx.voice, callerDid),
 	} as Presence;
 
 	return { presence };

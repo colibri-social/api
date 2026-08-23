@@ -109,11 +109,19 @@
 				},
 				"muted": {
 					"type": "boolean",
-					"description": "Whether the user has muted their microphone."
+					"description": "Whether the user's microphone is muted, for any reason."
 				},
 				"deafened": {
 					"type": "boolean",
-					"description": "Whether the user has deafened themselves."
+					"description": "Whether the user has incoming audio silenced, for any reason."
+				},
+				"serverMuted": {
+					"type": "boolean",
+					"description": "Whether a moderator muted them. When this is true they cannot unmute themselves, and a client must not offer them the control."
+				},
+				"serverDeafened": {
+					"type": "boolean",
+					"description": "Whether a moderator deafened them. When this is true they cannot undeafen themselves."
 				}
 			}
 		},
@@ -160,14 +168,39 @@
 			"required": ["subject", "createdAt"],
 			"properties": {
 				"subject": {
-					"type": "string",
-					"format": "did",
-					"description": "The muted user or community."
+					"type": "union",
+					"refs": ["#mutedActor", "#mutedChannel"],
+					"closed": true,
+					"description": "What is muted. A user or a community is named by DID, a channel by its space."
 				},
 				"createdAt": {
 					"type": "string",
 					"format": "datetime",
 					"description": "When the mute was created."
+				}
+			}
+		},
+		"mutedActor": {
+			"type": "object",
+			"description": "A muted user or community.",
+			"required": ["did"],
+			"properties": {
+				"did": {
+					"type": "string",
+					"format": "did",
+					"description": "The muted user or community."
+				}
+			}
+		},
+		"mutedChannel": {
+			"type": "object",
+			"description": "A muted channel. Muting a channel silences it without leaving the community it belongs to.",
+			"required": ["channel"],
+			"properties": {
+				"channel": {
+					"type": "string",
+					"format": "space-ref",
+					"description": "The muted channel's space."
 				}
 			}
 		}

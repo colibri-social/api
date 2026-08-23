@@ -1,7 +1,19 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
-import { anonymousAuthz, has, isMember } from "@colibri-social/community";
-import { asDatetime, asDatetimeOrUndefined, asDid, social } from "@colibri-social/lexicons";
-import { and, asc, count, eq, gt } from "drizzle-orm";
+import {
+	anonymousAuthz,
+	has,
+	isMember,
+	legacyCandidates,
+	readLegacyCommunity,
+} from "@colibri-social/community";
+import {
+	asDatetime,
+	asDatetimeOrUndefined,
+	asDid,
+	asHandleOrUndefined,
+	social,
+} from "@colibri-social/lexicons";
+import { and, asc, count, eq, gt, inArray } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { publicRoute, route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
@@ -178,6 +190,64 @@ export const handleListInvitations = async (
 	};
 };
 
+type MigratableList = social.colibri.beta.community.listMigratable.$OutputBody;
+type LegacyCommunityView = social.colibri.beta.community.defs.LegacyCommunityView;
+
+export const handleListMigratable = async (
+	ctx: AppContext,
+	callerDid: string,
+	includeUnadministered: boolean,
+): Promise<MigratableList> => {
+	const deps = {
+		hostFor: (did: string) => ctx.hosts.hostFor(did),
+		clientFor: (endpoint: string) => ctx.credentials.clientFor(endpoint),
+	};
+
+	const candidates = await legacyCandidates(deps, callerDid).catch((cause) => {
+		throw new InvalidRequestError(
+			`could not read ${callerDid}'s repo: ${cause instanceof Error ? cause.message : String(cause)}`,
+			"UpstreamFailure",
+		);
+	});
+	if (candidates.length === 0) return { communities: [] };
+
+	const migrated = new Set(
+		(
+			await ctx.database.db
+				.select({ did: ctx.database.tables.communities.did })
+				.from(ctx.database.tables.communities)
+				.where(inArray(ctx.database.tables.communities.did, candidates))
+		).map((row) => row.did),
+	);
+
+	const communities: LegacyCommunityView[] = [];
+	const unreadable: string[] = [];
+
+	for (const did of candidates) {
+		if (migrated.has(did)) continue;
+		const legacy = await readLegacyCommunity(deps, did, callerDid).catch(() => null);
+		if (!legacy) {
+			unreadable.push(did);
+			continue;
+		}
+		if (legacy.migratedTo) continue;
+		if (!legacy.viewerIsAdmin && !includeUnadministered) continue;
+
+		const handle = await ctx.identity.resolveVerifiedHandle(did).catch(() => null);
+		communities.push({
+			did: asDid(did),
+			handle: asHandleOrUndefined(handle),
+			name: legacy.name,
+			description: legacy.description,
+			memberCount: legacy.memberCount,
+			channelCount: legacy.channelCount,
+			viewerIsAdmin: legacy.viewerIsAdmin,
+		});
+	}
+
+	return { communities, ...(unreadable.length > 0 ? { unreadable: unreadable.map(asDid) } : {}) };
+};
+
 export const registerCommunityRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 	const actors = new ActorViews(ctx);
 	const communities = new CommunityViews(ctx, actors);
@@ -241,6 +311,18 @@ export const registerCommunityRoutes = ({ server, ctx, auth }: RouteDeps): void 
 				limit: params.limit,
 				cursor: params.cursor,
 			}),
+		}),
+	});
+
+	route(server, social.colibri.beta.community.listMigratable, {
+		auth: auth.required,
+		handler: async ({ params, auth: caller }) => ({
+			encoding: "application/json" as const,
+			body: await handleListMigratable(
+				ctx,
+				caller.credentials.did,
+				params.includeUnadministered ?? false,
+			),
 		}),
 	});
 };

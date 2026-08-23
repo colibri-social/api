@@ -16,6 +16,9 @@ const NOW = "2026-08-23T00:00:00.000Z";
 const CALLER = "did:plc:callerxxxxxxxxxxxxxxxxxxxxxx";
 const OTHER = "did:plc:otherxxxxxxxxxxxxxxxxxxxxxxx";
 const COMMUNITY = "did:plc:communityxxxxxxxxxxxxxxxxxxx";
+const CHANNEL = `at://${COMMUNITY}/space/social.colibri.beta.channel.text/3lkchannel001` as const;
+const MUTED_ACTOR = "social.colibri.beta.actor.defs#mutedActor" as const;
+const MUTED_CHANNEL = "social.colibri.beta.actor.defs#mutedChannel" as const;
 
 let database: TestDatabase;
 let ctx: AppContext;
@@ -106,14 +109,31 @@ describe("putMutes", () => {
 			createdAt: NOW,
 		});
 
-		const result = await handlePutMutes(ctx, CALLER, [{ subject: COMMUNITY, createdAt: NOW }]);
+		const result = await handlePutMutes(ctx, CALLER, [
+			{ subject: { $type: MUTED_ACTOR, did: COMMUNITY }, createdAt: NOW },
+		]);
 
 		expect(result.preferences.mutes).toHaveLength(1);
-		expect(result.preferences.mutes[0]?.subject).toBe(COMMUNITY);
+		expect(result.preferences.mutes[0]?.subject).toEqual({ $type: MUTED_ACTOR, did: COMMUNITY });
 
 		const allRows = await database.db.select().from(database.tables.mutes);
 		expect(allRows.filter((row) => row.did === OTHER)).toHaveLength(1);
 		expect(allRows.filter((row) => row.did === CALLER)).toHaveLength(1);
+	});
+
+	it("stores a channel mute as its space reference and reads it back as one", async () => {
+		const result = await handlePutMutes(ctx, CALLER, [
+			{ subject: { $type: MUTED_CHANNEL, channel: CHANNEL }, createdAt: NOW },
+			{ subject: { $type: MUTED_ACTOR, did: COMMUNITY }, createdAt: NOW },
+		]);
+
+		expect(result.preferences.mutes.map((mute) => mute.subject)).toEqual([
+			{ $type: MUTED_CHANNEL, channel: CHANNEL },
+			{ $type: MUTED_ACTOR, did: COMMUNITY },
+		]);
+
+		const rows = await database.db.select().from(database.tables.mutes);
+		expect(rows.map((row) => row.subject).sort()).toEqual([CHANNEL, COMMUNITY].sort());
 	});
 });
 

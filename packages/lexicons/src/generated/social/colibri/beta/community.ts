@@ -25,6 +25,7 @@ export * as listCategories from "./community/listCategories.js";
 export * as listChannels from "./community/listChannels.js";
 export * as listInvitations from "./community/listInvitations.js";
 export * as listMembers from "./community/listMembers.js";
+export * as listMigratable from "./community/listMigratable.js";
 export * as listModerationLog from "./community/listModerationLog.js";
 export * as listRoles from "./community/listRoles.js";
 export * as members from "./community/members.js";

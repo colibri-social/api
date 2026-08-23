@@ -545,3 +545,48 @@ export type { BannedActorView };
 const bannedActorView = /*#__PURE__*/ l.typedObject<BannedActorView>($nsid, "bannedActorView", /*#__PURE__*/ l.object({"actor":/*#__PURE__*/ l.ref<ActorDefs.ProfileView>((() => ActorDefs.profileView) as any),"reason":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":512})),"bannedBy":/*#__PURE__*/ l.string({"format":"did"}),"bannedAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
 
 export { bannedActorView };
+
+/** A repo-backed community that has not been migrated onto spaces yet, as read live from its own public repo. This is not an indexed view: the AppView holds nothing about a community until it is migrated. */
+type LegacyCommunityView = { $type?: "social.colibri.beta.community.defs#legacyCommunityView";
+
+  /**
+   * The legacy community's DID, which becomes the authority for its spaces once migrated.
+   */
+  "did":l.DidString;
+
+  /**
+   * The community's handle, when its DID document still resolves one.
+   */
+  "handle"?:l.HandleString;
+
+  /**
+   * The community's name.
+   */
+  "name":string;
+
+  /**
+   * The community's description.
+   */
+  "description"?:string;
+
+  /**
+   * How many member records the legacy repo holds.
+   */
+  "memberCount"?:number;
+
+  /**
+   * How many channel records the legacy repo holds. Migration recreates one space per channel.
+   */
+  "channelCount"?:number;
+
+  /**
+   * Whether the requesting user may migrate this community. Only an administrator of the legacy community can.
+   */
+  "viewerIsAdmin"?:boolean };
+
+export type { LegacyCommunityView };
+
+/** A repo-backed community that has not been migrated onto spaces yet, as read live from its own public repo. This is not an indexed view: the AppView holds nothing about a community until it is migrated. */
+const legacyCommunityView = /*#__PURE__*/ l.typedObject<LegacyCommunityView>($nsid, "legacyCommunityView", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"handle":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"handle"})),"name":/*#__PURE__*/ l.string(),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"channelCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"viewerIsAdmin":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
+
+export { legacyCommunityView };

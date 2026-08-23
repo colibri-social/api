@@ -1,5 +1,11 @@
 import type { GifFavorite } from "@colibri-social/appview-db";
-import { COLLECTIONS, SELF, SPACE_TYPES, social } from "@colibri-social/lexicons";
+import {
+	COLLECTIONS,
+	encodeMuteSubject,
+	SELF,
+	SPACE_TYPES,
+	social,
+} from "@colibri-social/lexicons";
 import { and, eq } from "drizzle-orm";
 import type { Projector } from "../projector.js";
 
@@ -23,7 +29,7 @@ export const mute: Projector<social.colibri.beta.actor.mute.Main> = {
 		const row = {
 			did: ref.author,
 			rkey: ref.rkey,
-			subject: value.subject,
+			subject: encodeMuteSubject(value.subject),
 			createdAt: value.createdAt,
 		};
 		await deps.db

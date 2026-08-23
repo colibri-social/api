@@ -11,9 +11,13 @@
 				"required": ["subject", "createdAt"],
 				"properties": {
 					"subject": {
-						"type": "string",
-						"format": "did",
-						"description": "The muted user or community."
+						"type": "union",
+						"refs": [
+							"social.colibri.beta.actor.defs#mutedActor",
+							"social.colibri.beta.actor.defs#mutedChannel"
+						],
+						"closed": true,
+						"description": "What is muted. A user or a community is named by DID, a channel by its space."
 					},
 					"createdAt": {
 						"type": "string",

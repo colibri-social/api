@@ -1,5 +1,5 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
-import { asDatetime, asDid, social } from "@colibri-social/lexicons";
+import { asDatetime, asDid, decodeMuteSubject, social } from "@colibri-social/lexicons";
 import { and, asc, count, eq, ne } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
@@ -48,7 +48,7 @@ export const loadPreferences = async (ctx: AppContext, callerDid: string): Promi
 		notificationLevel: settings?.notificationLevel ?? "all",
 		communityOrder: (settings?.communityOrder ?? []).map(asDid),
 		mutes: muteRows.map((row) => ({
-			subject: asDid(row.subject),
+			subject: decodeMuteSubject(row.subject),
 			createdAt: asDatetime(row.createdAt),
 		})),
 		gifFavorites: (settings?.gifFavorites ?? []).map(toGifView),

@@ -1,4 +1,3 @@
-import { AtUri } from "@atproto/syntax";
 import { InvalidRequestError } from "@atproto/xrpc-server";
 import { sniffMimeType } from "@colibri-social/blobs";
 import {
@@ -7,6 +6,7 @@ import {
 	has,
 	isAdmin,
 	isCredentialRejection,
+	legacyAdmin,
 	Membership,
 	MembershipError,
 	migrateCommunity,
@@ -20,6 +20,7 @@ import {
 	asRecordKey,
 	COLLECTIONS,
 	communitySpaces,
+	LEGACY_COLLECTIONS,
 	PERMISSIONS,
 	type Permission,
 	SELF,
@@ -666,18 +667,30 @@ export const handleRegisterCredentials = async (
 	});
 };
 
+const legacyUri = (community: string) =>
+	`at://${community}/${LEGACY_COLLECTIONS.community}/${SELF}`;
+
+export const legacyDeps = (ctx: AppContext) => ({
+	hostFor: (did: string) => ctx.hosts.hostFor(did),
+	clientFor: (endpoint: string) => ctx.credentials.clientFor(endpoint),
+});
+
 export const handleMigrateCommunity = async (
 	ctx: AppContext,
 	communities: CommunityViews,
 	callerDid: string,
-	legacy: string,
+	identifier: string,
 ): Promise<{ community: CommunityView }> => {
-	const legacyDid = new AtUri(legacy).hostname;
+	const legacyDid = await ctx.identity
+		.resolveAtIdentifier(identifier)
+		.then((identity) => identity.did)
+		.catch(() => null);
+	if (!legacyDid) throw communityNotFound();
 
 	const already = await ctx.database.db
 		.select({ did: ctx.database.tables.communities.did })
 		.from(ctx.database.tables.communities)
-		.where(eq(ctx.database.tables.communities.migratedFrom, legacy))
+		.where(eq(ctx.database.tables.communities.did, legacyDid))
 		.limit(1);
 	if (already.length > 0) {
 		throw new InvalidRequestError(
@@ -690,14 +703,13 @@ export const handleMigrateCommunity = async (
 	const legacyRecord = await legacyRepo
 		.getPublicRecord<{ value: { name?: string; description?: string } }>(
 			legacyDid,
-			COLLECTIONS.community,
+			LEGACY_COLLECTIONS.community,
 			SELF,
 		)
 		.catch(() => null);
 	if (!legacyRecord) throw communityNotFound();
 
-	const authz = await ctx.loader.authz(legacyDid, callerDid);
-	if (!isAdmin(authz)) {
+	if (!(await legacyAdmin(legacyDeps(ctx), legacyDid, callerDid))) {
 		throw new InvalidRequestError(
 			"only an administrator of the legacy community may migrate it",
 			"Forbidden",
@@ -736,7 +748,7 @@ export const handleMigrateCommunity = async (
 		requiresApproval: false,
 		linkEmbeds: true,
 		labelers: [] as string[],
-		migratedFrom: legacy,
+		migratedFrom: legacyUri(legacyDid),
 		profileSpace: spaces.profile,
 		configSpace: spaces.configuration,
 		membersSpace: spaces.members,
@@ -744,6 +756,7 @@ export const handleMigrateCommunity = async (
 		indexedAt: new Date().toISOString(),
 	};
 
+	const authz = await ctx.loader.authz(legacyDid, callerDid);
 	return { community: communities.community(row, authz, report.members) };
 };
 
@@ -888,7 +901,7 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 				ctx,
 				communities,
 				caller.credentials.did,
-				input.body.legacy,
+				input.body.community,
 			),
 		}),
 	});

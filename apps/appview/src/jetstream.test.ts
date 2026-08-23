@@ -46,6 +46,45 @@ const accountFrame = (seq: number, active: boolean, status?: string) =>
 		},
 	});
 
+const commitFrame = (
+	seq: number,
+	collection: string,
+	operation: "create" | "update" | "delete",
+	record?: Record<string, unknown>,
+	did = DID,
+) =>
+	JSON.stringify({
+		$type: "message",
+		payload: {
+			$type: "network.bsky.jetstream.subscribeEvents#commit",
+			did,
+			collection,
+			operation,
+			rkey: "self",
+			rev: "3lkrevxxxxxxx",
+			...(record ? { record } : {}),
+			seq,
+			time: "2026-08-23T01:17:44.164880Z",
+		},
+	});
+
+const cacheProfile = async (colibri: unknown, bsky: unknown, did = DID) => {
+	await database.db.insert(database.tables.profileCache).values({
+		did,
+		colibri: colibri as Record<string, unknown>,
+		bsky: bsky as Record<string, unknown>,
+		fetchedAt: "2020-01-01T00:00:00.000Z",
+	});
+};
+
+const cachedProfile = async (did = DID) => {
+	const [row] = await database.db
+		.select()
+		.from(database.tables.profileCache)
+		.where(eq(database.tables.profileCache.did, did));
+	return row ?? null;
+};
+
 const contextFor = (url: string): AppContext =>
 	({
 		config: { JETSTREAM_ENABLED: true, JETSTREAM_URL: url },
@@ -114,12 +153,16 @@ describe("endpoint", () => {
 });
 
 describe("subscription", () => {
-	it("asks only for identity and account events", async () => {
+	it("asks for identity, account and profile commits only", async () => {
 		await startAgainstServer();
 		const request = requests[0] as URL;
 
 		expect(request.pathname).toBe("/xrpc/network.bsky.jetstream.subscribeEvents");
-		expect(request.searchParams.getAll("kinds")).toEqual(["identity", "account"]);
+		expect(request.searchParams.getAll("kinds")).toEqual(["commit", "identity", "account"]);
+		expect(request.searchParams.getAll("collections")).toEqual([
+			"social.colibri.beta.actor.profile",
+			"app.bsky.actor.profile",
+		]);
 		expect(request.searchParams.has("wantedCollections")).toBe(false);
 	});
 
@@ -243,5 +286,78 @@ describe("events", () => {
 
 		await jetstream.stop();
 		expect(await storedCursor()).toBe("24990989099");
+	});
+});
+
+describe("profile commits", () => {
+	const COLIBRI = "social.colibri.beta.actor.profile";
+	const BSKY = "app.bsky.actor.profile";
+
+	it("replaces the cached colibri profile in place, leaving the bluesky one alone", async () => {
+		await cacheProfile({ displayName: "old" }, { displayName: "bsky" });
+		const socket = await startAgainstServer();
+
+		socket.send(commitFrame(1, COLIBRI, "update", { $type: COLIBRI, displayName: "new" }));
+		await settle();
+
+		const row = await cachedProfile();
+		expect(row?.colibri).toMatchObject({ displayName: "new" });
+		expect(row?.bsky).toMatchObject({ displayName: "bsky" });
+		expect(row?.fetchedAt).not.toBe("2020-01-01T00:00:00.000Z");
+	});
+
+	it("replaces the cached bluesky profile without touching the colibri one", async () => {
+		await cacheProfile({ displayName: "colibri" }, { displayName: "old" });
+		const socket = await startAgainstServer();
+
+		socket.send(commitFrame(1, BSKY, "update", { $type: BSKY, displayName: "new" }));
+		await settle();
+
+		const row = await cachedProfile();
+		expect(row?.colibri).toMatchObject({ displayName: "colibri" });
+		expect(row?.bsky).toMatchObject({ displayName: "new" });
+	});
+
+	it("clears the column a delete removed", async () => {
+		await cacheProfile({ displayName: "colibri" }, { displayName: "bsky" });
+		const socket = await startAgainstServer();
+
+		socket.send(commitFrame(1, COLIBRI, "delete"));
+		await settle();
+
+		const row = await cachedProfile();
+		expect(row?.colibri).toBeNull();
+		expect(row?.bsky).toMatchObject({ displayName: "bsky" });
+	});
+
+	it("does not start caching a profile for someone it holds no row for", async () => {
+		const socket = await startAgainstServer();
+
+		socket.send(commitFrame(1, COLIBRI, "create", { $type: COLIBRI, displayName: "stranger" }));
+		await settle();
+
+		expect(await cachedProfile()).toBeNull();
+	});
+
+	it("ignores a commit in a collection it did not ask for", async () => {
+		await cacheProfile({ displayName: "colibri" }, { displayName: "bsky" });
+		const socket = await startAgainstServer();
+
+		socket.send(commitFrame(1, "app.bsky.feed.post", "create", { text: "hello" }));
+		await settle();
+
+		const row = await cachedProfile();
+		expect(row?.colibri).toMatchObject({ displayName: "colibri" });
+		expect(row?.fetchedAt).toBe("2020-01-01T00:00:00.000Z");
+	});
+
+	it("still advances the cursor over a profile commit", async () => {
+		const socket = await startAgainstServer();
+
+		socket.send(commitFrame(24990989093, COLIBRI, "update", { $type: COLIBRI }));
+		await settle();
+
+		await jetstream.stop();
+		expect(await storedCursor()).toBe("24990989093");
 	});
 });

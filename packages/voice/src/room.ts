@@ -21,12 +21,37 @@ import { TypedEmitter } from "./typed-emitter.js";
 
 export type TransportDirection = "send" | "recv";
 
-export type ModerationState = {
+export type VoiceState = {
 	muted: boolean;
 	deafened: boolean;
+	serverMuted: boolean;
+	serverDeafened: boolean;
 };
 
-export type ModerationPatch = Partial<ModerationState>;
+export type VoicePatch = { muted?: boolean; deafened?: boolean };
+
+export type VoiceStateOrigin = "self" | "server";
+
+type ParticipantVoice = {
+	selfMuted: boolean;
+	selfDeafened: boolean;
+	serverMuted: boolean;
+	serverDeafened: boolean;
+};
+
+const effectiveVoice = (voice: ParticipantVoice): VoiceState => ({
+	muted: voice.selfMuted || voice.serverMuted,
+	deafened: voice.selfDeafened || voice.serverDeafened,
+	serverMuted: voice.serverMuted,
+	serverDeafened: voice.serverDeafened,
+});
+
+const SILENT: ParticipantVoice = {
+	selfMuted: false,
+	selfDeafened: false,
+	serverMuted: false,
+	serverDeafened: false,
+};
 
 export type ProducerSnapshot = {
 	did: string;
@@ -41,7 +66,7 @@ export type VoiceRoomEvents = {
 	"producer-added": [{ did: string; producerId: string; kind: MediaKind; source: string }];
 	"producer-removed": [{ did: string; producerId: string }];
 	"speaking-changed": [{ did: string; speaking: boolean }];
-	"moderation-changed": [{ did: string; muted: boolean; deafened: boolean }];
+	"voice-state-changed": [{ did: string; origin: VoiceStateOrigin } & VoiceState];
 };
 
 export type WebRtcListenOptions = {
@@ -60,7 +85,7 @@ type ParticipantRecord = {
 	transports: Map<string, WebRtcTransport>;
 	producers: Map<string, { producer: Producer; source: string }>;
 	consumers: Map<string, Consumer>;
-	moderation: ModerationState;
+	voice: ParticipantVoice;
 };
 
 const AUDIO_LEVEL_OBSERVER_OPTIONS = {
@@ -197,8 +222,8 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		return this.participants.has(did);
 	}
 
-	getModeration(did: string): ModerationState {
-		return this.participants.get(did)?.moderation ?? { muted: false, deafened: false };
+	getVoiceState(did: string): VoiceState {
+		return effectiveVoice(this.participants.get(did)?.voice ?? SILENT);
 	}
 
 	snapshotProducers(): ProducerSnapshot[] {
@@ -244,7 +269,8 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		this.assertOpen();
 		const participant = this.ensureParticipant(did);
 		const transport = this.getTransport(did, transportId);
-		const startPaused = isMicProducer(options.kind, options.source) && participant.moderation.muted;
+		const startPaused =
+			isMicProducer(options.kind, options.source) && effectiveVoice(participant.voice).muted;
 
 		const producer = await transport.produce({
 			kind: options.kind,
@@ -306,7 +332,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 
 	async resumeConsumer(did: string, consumerId: string): Promise<void> {
 		const participant = this.getParticipant(did);
-		if (participant.moderation.deafened) {
+		if (effectiveVoice(participant.voice).deafened) {
 			return;
 		}
 		const consumer = participant.consumers.get(consumerId);
@@ -316,30 +342,48 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		await consumer.resume();
 	}
 
-	async setModeration(did: string, patch: ModerationPatch): Promise<void> {
+	async setSelfState(did: string, patch: VoicePatch): Promise<void> {
+		await this.applyVoiceState(did, "self", patch);
+	}
+
+	async setServerState(did: string, patch: VoicePatch): Promise<void> {
+		await this.applyVoiceState(did, "server", patch);
+	}
+
+	private async applyVoiceState(
+		did: string,
+		origin: VoiceStateOrigin,
+		patch: VoicePatch,
+	): Promise<void> {
 		const participant = this.ensureParticipant(did);
+		const before = effectiveVoice(participant.voice);
 
 		if (patch.muted !== undefined) {
-			participant.moderation.muted = patch.muted;
+			if (origin === "self") participant.voice.selfMuted = patch.muted;
+			else participant.voice.serverMuted = patch.muted;
+		}
+		if (patch.deafened !== undefined) {
+			if (origin === "self") participant.voice.selfDeafened = patch.deafened;
+			else participant.voice.serverDeafened = patch.deafened;
+		}
+
+		const after = effectiveVoice(participant.voice);
+
+		if (after.muted !== before.muted) {
 			for (const { producer, source } of participant.producers.values()) {
 				if (isMicProducer(producer.kind, source)) {
-					await (patch.muted ? producer.pause() : producer.resume());
+					await (after.muted ? producer.pause() : producer.resume());
 				}
 			}
 		}
 
-		if (patch.deafened !== undefined) {
-			participant.moderation.deafened = patch.deafened;
+		if (after.deafened !== before.deafened) {
 			for (const consumer of participant.consumers.values()) {
-				await (patch.deafened ? consumer.pause() : consumer.resume());
+				await (after.deafened ? consumer.pause() : consumer.resume());
 			}
 		}
 
-		this.emit("moderation-changed", {
-			did,
-			muted: participant.moderation.muted,
-			deafened: participant.moderation.deafened,
-		});
+		this.emit("voice-state-changed", { did, origin, ...after });
 	}
 
 	async leave(did: string): Promise<void> {
@@ -383,7 +427,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 				transports: new Map(),
 				producers: new Map(),
 				consumers: new Map(),
-				moderation: { muted: false, deafened: false },
+				voice: { ...SILENT },
 			};
 			this.participants.set(did, participant);
 			this.emit("participant-joined", { did });

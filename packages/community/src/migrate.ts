@@ -1,5 +1,12 @@
 import type { Database } from "@colibri-social/appview-db";
-import { COLLECTIONS, communitySpaces, SELF, SPACE_TYPES } from "@colibri-social/lexicons";
+import {
+	COLLECTIONS,
+	communitySpaces,
+	LEGACY_CHANNEL_TYPES,
+	LEGACY_COLLECTIONS,
+	SELF,
+	SPACE_TYPES,
+} from "@colibri-social/lexicons";
 import {
 	managingAppPolicy,
 	nextTid,
@@ -88,16 +95,16 @@ export const migrateCommunity = async (
 	const [legacyCommunity, legacyCategories, legacyChannels, legacyRoles, legacyMembers] =
 		await Promise.all([
 			legacyRepo
-				.getPublicRecord<LegacyRecord>(community, COLLECTIONS.community, SELF)
+				.getPublicRecord<LegacyRecord>(community, LEGACY_COLLECTIONS.community, SELF)
 				.catch(() => null),
-			listAll<Record<string, unknown>>(legacyRepo, community, COLLECTIONS.category),
-			listAll<Record<string, unknown>>(legacyRepo, community, COLLECTIONS.channel),
-			listAll<Record<string, unknown>>(legacyRepo, community, COLLECTIONS.role),
-			listAll<Record<string, unknown>>(legacyRepo, community, COLLECTIONS.member),
+			listAll<Record<string, unknown>>(legacyRepo, community, LEGACY_COLLECTIONS.category),
+			listAll<Record<string, unknown>>(legacyRepo, community, LEGACY_COLLECTIONS.channel),
+			listAll<Record<string, unknown>>(legacyRepo, community, LEGACY_COLLECTIONS.role),
+			listAll<Record<string, unknown>>(legacyRepo, community, LEGACY_COLLECTIONS.member),
 		]);
 
 	if (!legacyCommunity) {
-		throw new Error(`${community} has no social.colibri.beta.community record to migrate`);
+		throw new Error(`${community} has no ${LEGACY_COLLECTIONS.community} record to migrate`);
 	}
 
 	if (deps.dryRun) {
@@ -167,7 +174,7 @@ export const migrateCommunity = async (
 		...(legacy.description ? { description: legacy.description } : {}),
 		...(legacy.picture ? { picture: legacy.picture } : {}),
 		...(legacy.banner ? { banner: legacy.banner } : {}),
-		migratedFrom: legacyUri(community, COLLECTIONS.community, SELF),
+		migratedFrom: legacyUri(community, LEGACY_COLLECTIONS.community, SELF),
 	});
 
 	deps.log("writing roles");
@@ -221,7 +228,14 @@ export const migrateCommunity = async (
 			linkEmbeds?: boolean;
 		};
 		const spaceType =
-			value.type === SPACE_TYPES.channelVoice ? SPACE_TYPES.channelVoice : SPACE_TYPES.channelText;
+			value.type === LEGACY_CHANNEL_TYPES.voice
+				? SPACE_TYPES.channelVoice
+				: SPACE_TYPES.channelText;
+		if (value.type === LEGACY_CHANNEL_TYPES.forum || value.type === LEGACY_CHANNEL_TYPES.link) {
+			report.warnings.push(
+				`migrated ${channel.uri} as a text channel: ${value.type} has no space type`,
+			);
+		}
 		const skey = nextTid();
 		const space = `at://${community}/space/${spaceType}/${skey}`;
 
@@ -286,7 +300,7 @@ const mirrorLegacyMessages = async (
 
 	for (const author of authors) {
 		const records = await repoFor(deps, author)
-			.then((repo) => listAll<Record<string, unknown>>(repo, author, COLLECTIONS.message))
+			.then((repo) => listAll<Record<string, unknown>>(repo, author, LEGACY_COLLECTIONS.message))
 			.catch((error: unknown) => {
 				report.warnings.push(
 					`could not read ${author}'s legacy messages: ${error instanceof Error ? error.message : String(error)}`,
@@ -301,7 +315,7 @@ const mirrorLegacyMessages = async (
 			}
 			const row = {
 				did: author,
-				collection: COLLECTIONS.message,
+				collection: LEGACY_COLLECTIONS.message,
 				rkey: rkeyOf(record.uri),
 				value: record.value,
 				indexedAt: new Date().toISOString(),

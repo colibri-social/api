@@ -290,13 +290,28 @@ describe("personal spaces", () => {
 			deps,
 			put(personal, MEMBER, "social.colibri.beta.actor.mute", "3lkmute1", {
 				$type: "social.colibri.beta.actor.mute",
-				subject: OUTSIDER,
+				subject: { $type: "social.colibri.beta.actor.defs#mutedActor", did: OUTSIDER },
 				createdAt: NOW,
 			}),
 		);
 
 		const [row] = await database.db.select().from(database.tables.mutes);
 		expect(row?.subject).toBe(OUTSIDER);
+	});
+
+	it("projects a channel mute as its space reference", async () => {
+		const channel = `at://${COMMUNITY}/space/social.colibri.beta.channel.text/3lkchan1`;
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.actor.mute", "3lkmute2", {
+				$type: "social.colibri.beta.actor.mute",
+				subject: { $type: "social.colibri.beta.actor.defs#mutedChannel", channel },
+				createdAt: NOW,
+			}),
+		);
+
+		const [row] = await database.db.select().from(database.tables.mutes);
+		expect(row?.subject).toBe(channel);
 	});
 
 	it("projects a favourited GIF as the whole view the picker renders", async () => {

@@ -8,6 +8,7 @@ import {
 import { PdsClient } from "@colibri-social/space";
 import { inArray } from "drizzle-orm";
 import type { AppContext } from "../context.js";
+import { liveVoiceState } from "./voice-state.js";
 
 export type ProfileView = social.colibri.beta.actor.defs.ProfileView;
 export type Presence = social.colibri.beta.actor.defs.Presence;
@@ -157,13 +158,7 @@ export class ActorViews {
 			status: row.statusText
 				? { text: row.statusText, emoji: row.statusEmoji ?? undefined }
 				: undefined,
-			voice: row.voiceChannel
-				? {
-						channel: row.voiceChannel as never,
-						muted: row.voiceMuted ?? undefined,
-						deafened: row.voiceDeafened ?? undefined,
-					}
-				: undefined,
+			voice: liveVoiceState(this.ctx.voice, did),
 		} as Presence;
 	}
 }

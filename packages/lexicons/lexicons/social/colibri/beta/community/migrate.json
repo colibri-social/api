@@ -9,12 +9,12 @@
 				"encoding": "application/json",
 				"schema": {
 					"type": "object",
-					"required": ["legacy"],
+					"required": ["community"],
 					"properties": {
-						"legacy": {
+						"community": {
 							"type": "string",
-							"format": "at-uri",
-							"description": "The legacy social.colibri.beta.community record to migrate."
+							"format": "at-identifier",
+							"description": "The legacy community to migrate, by handle or DID. Only a community that holds its own DID can be migrated, so the DID is the whole address: the record to read is always social.colibri.community at self in that repo."
 						}
 					}
 				}

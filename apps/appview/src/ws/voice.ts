@@ -1,12 +1,13 @@
 import type { Server as HttpServer, IncomingHttpHeaders } from "node:http";
 import { canRead } from "@colibri-social/community";
-import { SPACE_TYPES, social } from "@colibri-social/lexicons";
+import { asDid, asSpaceRef, SPACE_TYPES, social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import type { VoiceSfu } from "@colibri-social/voice";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { AppContext } from "../context.js";
+import { voiceStateIn } from "../views/voice-state.js";
 import { bearerToken, selectSubprotocol } from "./auth.js";
-import type { ServerFrame } from "./events.js";
+import type { EventServer, ServerFrame } from "./events.js";
 import { channelTopic, TopicIndex } from "./topics.js";
 
 const VOICE_PATH = "/xrpc/social.colibri.beta.voice.subscribeSignals";
@@ -60,7 +61,10 @@ export class VoiceServer {
 	private readonly connections = new Set<Connection>();
 	private heartbeat: NodeJS.Timeout | null = null;
 
-	constructor(private readonly ctx: AppContext) {
+	constructor(
+		private readonly ctx: AppContext,
+		private readonly events: EventServer | null = null,
+	) {
 		if (ctx.voice) this.wireVoiceEvents(ctx.voice);
 	}
 
@@ -341,8 +345,7 @@ export class VoiceServer {
 		}
 
 		const source = toInternalSource(frame.source);
-		const moderation = voice.getModeration(connection.channel, connection.did);
-		if (kind === "audio" && moderation.muted) {
+		if (kind === "audio" && voice.getVoiceState(connection.channel, connection.did).serverMuted) {
 			this.error(connection, "Forbidden", "you are server-muted");
 			return;
 		}
@@ -418,7 +421,7 @@ export class VoiceServer {
 	): Promise<void> {
 		if (!connection.channel) return;
 		if (frame.muted === undefined && frame.deafened === undefined) return;
-		await voice.moderate(connection.channel, connection.did, {
+		await voice.setSelfState(connection.channel, connection.did, {
 			...(frame.muted === undefined ? {} : { muted: frame.muted }),
 			...(frame.deafened === undefined ? {} : { deafened: frame.deafened }),
 		});
@@ -427,9 +430,11 @@ export class VoiceServer {
 	private wireVoiceEvents(voice: VoiceSfu): void {
 		voice.on("participant-joined", ({ channel, did }) => {
 			this.broadcast(channel, { $type: "social.colibri.beta.voice.defs#peerJoined", did }, did);
+			this.announce(channel, did, "join", voiceStateIn(voice, channel, did));
 		});
 		voice.on("participant-left", ({ channel, did }) => {
 			this.broadcast(channel, { $type: "social.colibri.beta.voice.defs#peerLeft", did }, did);
+			this.announce(channel, did, "leave");
 		});
 		voice.on("producer-added", ({ channel, did, producerId, kind, source }) => {
 			this.broadcast(
@@ -458,13 +463,38 @@ export class VoiceServer {
 				speaking,
 			});
 		});
-		voice.on("moderation-changed", ({ channel, did, muted, deafened }) => {
+		voice.on("voice-state-changed", ({ channel, did, muted, deafened, ...server }) => {
 			this.broadcast(channel, {
 				$type: "social.colibri.beta.voice.defs#moderationChanged",
 				did,
 				muted,
 				deafened,
+				serverMuted: server.serverMuted,
+				serverDeafened: server.serverDeafened,
 			});
+			this.announce(channel, did, "update", {
+				channel: asSpaceRef(channel),
+				muted,
+				deafened,
+				serverMuted: server.serverMuted,
+				serverDeafened: server.serverDeafened,
+			});
+		});
+	}
+
+	private announce(
+		channel: string,
+		did: string,
+		event: "join" | "leave" | "update",
+		voice?: social.colibri.beta.actor.defs.VoiceState,
+	): void {
+		if (!this.events) return;
+		this.events.publishToCommunity(parseSpaceRef(channel).authority, {
+			$type: "social.colibri.beta.sync.defs#voiceEvent",
+			event,
+			channel: asSpaceRef(channel),
+			did: asDid(did),
+			...(voice ? { voice } : {}),
 		});
 	}
 

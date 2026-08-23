@@ -45,6 +45,26 @@ export const COLLECTIONS = {
 
 export type Collection = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
 
+export const LEGACY_COLLECTIONS = {
+	actorData: "social.colibri.actor.data",
+	category: "social.colibri.category",
+	channel: "social.colibri.channel",
+	community: "social.colibri.community",
+	member: "social.colibri.member",
+	membership: "social.colibri.membership",
+	message: "social.colibri.message",
+	role: "social.colibri.role",
+} as const;
+
+export type LegacyCollection = (typeof LEGACY_COLLECTIONS)[keyof typeof LEGACY_COLLECTIONS];
+
+export const LEGACY_CHANNEL_TYPES = {
+	text: "social.colibri.channel.text",
+	voice: "social.colibri.channel.voice",
+	forum: "social.colibri.channel.forum",
+	link: "social.colibri.channel.link",
+} as const;
+
 export const SELF = "self";
 
 export const LABEL_VALUES = {

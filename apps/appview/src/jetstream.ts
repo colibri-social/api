@@ -1,3 +1,4 @@
+import { COLLECTIONS } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import { WebSocket } from "ws";
 import type { AppContext } from "./context.js";
@@ -9,7 +10,9 @@ const RECONNECT_MAX_MS = 60_000;
 const EVENTS_PER_CURSOR_SAVE = 500;
 
 const EVENT_TYPE_PREFIX = "network.bsky.jetstream.subscribeEvents#";
-const WANTED_KINDS = ["identity", "account"] as const;
+const WANTED_KINDS = ["commit", "identity", "account"] as const;
+const BSKY_PROFILE = "app.bsky.actor.profile";
+const WANTED_COLLECTIONS = [COLLECTIONS.profile, BSKY_PROFILE] as const;
 
 type IdentityPayload = {
 	seq: number;
@@ -23,10 +26,19 @@ type AccountPayload = {
 	account?: { active: boolean; status?: string; seq?: number; time?: string };
 };
 
+type CommitPayload = {
+	seq: number;
+	did: string;
+	operation?: string;
+	collection?: string;
+	rkey?: string;
+	record?: Record<string, unknown>;
+};
+
 type InfoPayload = { name: string; message?: string };
 
 type Payload = { $type?: string; seq?: number; did?: string } & Partial<
-	IdentityPayload & AccountPayload & InfoPayload
+	IdentityPayload & AccountPayload & CommitPayload & InfoPayload
 >;
 
 type Frame = {
@@ -113,6 +125,7 @@ export class Jetstream {
 	private url(): string {
 		const url = jetstreamEndpoint(this.ctx.config.JETSTREAM_URL);
 		for (const kind of WANTED_KINDS) url.searchParams.append("kinds", kind);
+		for (const collection of WANTED_COLLECTIONS) url.searchParams.append("collections", collection);
 		if (this.cursor !== null) url.searchParams.set("cursor", String(this.cursor));
 		return url.toString();
 	}
@@ -185,6 +198,11 @@ export class Jetstream {
 			return;
 		}
 
+		if (kind === "commit") {
+			await this.refreshProfile(payload);
+			return;
+		}
+
 		if (kind === "account" && payload.account && !payload.account.active) {
 			this.ctx.log.info(
 				{ did: payload.did, status: payload.account.status },
@@ -198,6 +216,23 @@ export class Jetstream {
 		this.cursor = seq;
 		this.sinceSave += 1;
 		if (this.sinceSave >= EVENTS_PER_CURSOR_SAVE) await this.flushCursor();
+	}
+
+	private async refreshProfile(payload: Payload): Promise<void> {
+		const did = payload.did as string;
+		if (payload.collection !== COLLECTIONS.profile && payload.collection !== BSKY_PROFILE) return;
+
+		const deleted = payload.operation === "delete";
+		if (!deleted && !payload.record) return;
+		const value = deleted ? null : (payload.record as Record<string, unknown>);
+
+		await this.ctx.database.db
+			.update(this.ctx.database.tables.profileCache)
+			.set({
+				...(payload.collection === COLLECTIONS.profile ? { colibri: value } : { bsky: value }),
+				fetchedAt: new Date().toISOString(),
+			})
+			.where(eq(this.ctx.database.tables.profileCache.did, did));
 	}
 
 	private async forgetIdentity(did: string): Promise<void> {

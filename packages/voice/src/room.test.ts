@@ -145,11 +145,11 @@ describe("VoiceRoom", () => {
 	});
 });
 
-describe("VoiceRoom moderation", () => {
+describe("VoiceRoom voice state", () => {
 	it("starts a mic producer paused when the participant is already muted", async () => {
 		const { room } = await createRoom();
 		const transport = await room.createTransport("did:plc:a", "send");
-		await room.setModeration("did:plc:a", { muted: true });
+		await room.setServerState("did:plc:a", { muted: true });
 
 		const producer = await room.produce("did:plc:a", transport.id, {
 			kind: "audio",
@@ -169,10 +169,10 @@ describe("VoiceRoom moderation", () => {
 			source: "mic",
 		});
 
-		await room.setModeration("did:plc:a", { muted: true });
+		await room.setServerState("did:plc:a", { muted: true });
 		expect(producer.paused).toBe(true);
 
-		await room.setModeration("did:plc:a", { muted: false });
+		await room.setServerState("did:plc:a", { muted: false });
 		expect(producer.paused).toBe(false);
 	});
 
@@ -185,7 +185,7 @@ describe("VoiceRoom moderation", () => {
 			source: "screen",
 		});
 
-		await room.setModeration("did:plc:a", { muted: true });
+		await room.setServerState("did:plc:a", { muted: true });
 		expect(producer.paused).toBe(false);
 	});
 
@@ -204,36 +204,93 @@ describe("VoiceRoom moderation", () => {
 			rtpCapabilities: {},
 		});
 
-		await room.setModeration("did:plc:listener", { deafened: true });
+		await room.setServerState("did:plc:listener", { deafened: true });
 		expect(consumer.paused).toBe(true);
 
 		await room.resumeConsumer("did:plc:listener", consumer.id);
 		expect(consumer.paused).toBe(true);
 
-		await room.setModeration("did:plc:listener", { deafened: false });
+		await room.setServerState("did:plc:listener", { deafened: false });
 		await room.resumeConsumer("did:plc:listener", consumer.id);
 		expect(consumer.paused).toBe(false);
 	});
 
-	it("emits moderation-changed with the resulting state", async () => {
+	it("emits voice-state-changed with the resulting state and its origin", async () => {
 		const { room } = await createRoom();
 		const changes: unknown[] = [];
-		room.on("moderation-changed", (event) => changes.push(event));
+		room.on("voice-state-changed", (event) => changes.push(event));
 
 		await room.createTransport("did:plc:a", "send");
-		await room.setModeration("did:plc:a", { muted: true });
-		await room.setModeration("did:plc:a", { deafened: true });
+		await room.setServerState("did:plc:a", { muted: true });
+		await room.setSelfState("did:plc:a", { deafened: true });
 
 		expect(changes).toEqual([
-			{ did: "did:plc:a", muted: true, deafened: false },
-			{ did: "did:plc:a", muted: true, deafened: true },
+			{
+				did: "did:plc:a",
+				origin: "server",
+				muted: true,
+				deafened: false,
+				serverMuted: true,
+				serverDeafened: false,
+			},
+			{
+				did: "did:plc:a",
+				origin: "self",
+				muted: true,
+				deafened: true,
+				serverMuted: true,
+				serverDeafened: false,
+			},
 		]);
-		expect(room.getModeration("did:plc:a")).toEqual({ muted: true, deafened: true });
+		expect(room.getVoiceState("did:plc:a")).toEqual({
+			muted: true,
+			deafened: true,
+			serverMuted: true,
+			serverDeafened: false,
+		});
 	});
 
-	it("reports an unmoderated default for a did that never joined", async () => {
+	it("reports a silent default for a did that never joined", async () => {
 		const { room } = await createRoom();
-		expect(room.getModeration("did:plc:unknown")).toEqual({ muted: false, deafened: false });
+		expect(room.getVoiceState("did:plc:unknown")).toEqual({
+			muted: false,
+			deafened: false,
+			serverMuted: false,
+			serverDeafened: false,
+		});
+	});
+
+	it("does not let a participant unmute themselves out of a server mute", async () => {
+		const { room } = await createRoom();
+		const transport = await room.createTransport("did:plc:a", "send");
+		const producer = await room.produce("did:plc:a", transport.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "mic",
+		});
+
+		await room.setServerState("did:plc:a", { muted: true });
+		await room.setSelfState("did:plc:a", { muted: false });
+
+		expect(producer.paused).toBe(true);
+		expect(room.getVoiceState("did:plc:a")).toMatchObject({ muted: true, serverMuted: true });
+	});
+
+	it("keeps a self mute after a moderator lifts a server mute", async () => {
+		const { room } = await createRoom();
+		const transport = await room.createTransport("did:plc:a", "send");
+		const producer = await room.produce("did:plc:a", transport.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "mic",
+		});
+
+		await room.setSelfState("did:plc:a", { muted: true });
+		await room.setServerState("did:plc:a", { muted: true });
+		await room.setServerState("did:plc:a", { muted: false });
+
+		expect(producer.paused).toBe(true);
+		expect(room.getVoiceState("did:plc:a")).toMatchObject({ muted: true, serverMuted: false });
 	});
 });
 

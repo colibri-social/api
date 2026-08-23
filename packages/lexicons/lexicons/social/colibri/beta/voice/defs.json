@@ -26,8 +26,12 @@
 					"description": "The opaque mediasoup ICE parameters blob."
 				},
 				"iceCandidates": {
-					"type": "unknown",
-					"description": "The opaque mediasoup ICE candidates blob."
+					"type": "array",
+					"description": "The mediasoup ICE candidates, one opaque blob per candidate. This is an array, not a single object, because that is what a WebRTC transport hands back.",
+					"items": {
+						"type": "unknown",
+						"description": "One opaque mediasoup ICE candidate."
+					}
 				},
 				"dtlsParameters": {
 					"type": "unknown",
@@ -335,7 +339,7 @@
 		},
 		"moderationChanged": {
 			"type": "object",
-			"description": "A peer's server-enforced mute or deafen state changed.",
+			"description": "A peer's mute or deafen state changed, whether they did it themselves or a moderator did it to them.",
 			"required": ["did", "muted", "deafened"],
 			"properties": {
 				"did": {
@@ -345,11 +349,19 @@
 				},
 				"muted": {
 					"type": "boolean",
-					"description": "Whether the microphone is server-muted."
+					"description": "Whether the microphone is muted, for any reason."
 				},
 				"deafened": {
 					"type": "boolean",
-					"description": "Whether incoming audio is server-silenced."
+					"description": "Whether incoming audio is silenced, for any reason."
+				},
+				"serverMuted": {
+					"type": "boolean",
+					"description": "Whether a moderator muted them. When this is true the peer cannot unmute themselves."
+				},
+				"serverDeafened": {
+					"type": "boolean",
+					"description": "Whether a moderator deafened them. When this is true the peer cannot undeafen themselves."
 				}
 			}
 		}

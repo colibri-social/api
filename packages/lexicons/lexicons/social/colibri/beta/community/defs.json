@@ -529,6 +529,43 @@
 					"description": "When the ban took effect."
 				}
 			}
+		},
+		"legacyCommunityView": {
+			"type": "object",
+			"description": "A repo-backed community that has not been migrated onto spaces yet, as read live from its own public repo. This is not an indexed view: the AppView holds nothing about a community until it is migrated.",
+			"required": ["did", "name"],
+			"properties": {
+				"did": {
+					"type": "string",
+					"format": "did",
+					"description": "The legacy community's DID, which becomes the authority for its spaces once migrated."
+				},
+				"handle": {
+					"type": "string",
+					"format": "handle",
+					"description": "The community's handle, when its DID document still resolves one."
+				},
+				"name": {
+					"type": "string",
+					"description": "The community's name."
+				},
+				"description": {
+					"type": "string",
+					"description": "The community's description."
+				},
+				"memberCount": {
+					"type": "integer",
+					"description": "How many member records the legacy repo holds."
+				},
+				"channelCount": {
+					"type": "integer",
+					"description": "How many channel records the legacy repo holds. Migration recreates one space per channel."
+				},
+				"viewerIsAdmin": {
+					"type": "boolean",
+					"description": "Whether the requesting user may migrate this community. Only an administrator of the legacy community can."
+				}
+			}
 		}
 	}
 }

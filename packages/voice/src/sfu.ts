@@ -10,12 +10,13 @@ import type {
 import { parseVoiceSfuConfig, type VoiceSfuConfig, type VoiceSfuConfigInput } from "./config.js";
 import {
 	buildWebRtcTransportOptions,
-	type ModerationPatch,
-	type ModerationState,
 	mediaCodecs,
 	type ProducerSnapshot,
 	type TransportDirection,
+	type VoicePatch,
 	VoiceRoom,
+	type VoiceState,
+	type VoiceStateOrigin,
 } from "./room.js";
 import { TypedEmitter } from "./typed-emitter.js";
 import { WorkerPool, type WorkerPoolLike } from "./worker-pool.js";
@@ -32,7 +33,7 @@ export type VoiceSfuEvents = {
 	];
 	"producer-removed": [{ channel: string; did: string; producerId: string }];
 	"speaking-changed": [{ channel: string; did: string; speaking: boolean }];
-	"moderation-changed": [{ channel: string; did: string; muted: boolean; deafened: boolean }];
+	"voice-state-changed": [{ channel: string; did: string; origin: VoiceStateOrigin } & VoiceState];
 };
 
 export type VoiceSfuDependencies = {
@@ -85,9 +86,11 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 		return room ? room.snapshotProducers() : [];
 	}
 
-	getModeration(channel: string, did: string): ModerationState {
+	getVoiceState(channel: string, did: string): VoiceState {
 		const room = this.rooms.get(channel);
-		return room ? room.getModeration(did) : { muted: false, deafened: false };
+		return room
+			? room.getVoiceState(did)
+			: { muted: false, deafened: false, serverMuted: false, serverDeafened: false };
 	}
 
 	async createTransport(
@@ -139,9 +142,14 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 		await room.resumeConsumer(did, consumerId);
 	}
 
-	async moderate(channel: string, did: string, patch: ModerationPatch): Promise<void> {
+	async moderate(channel: string, did: string, patch: VoicePatch): Promise<void> {
 		const room = this.requireRoom(channel);
-		await room.setModeration(did, patch);
+		await room.setServerState(did, patch);
+	}
+
+	async setSelfState(channel: string, did: string, patch: VoicePatch): Promise<void> {
+		const room = this.requireRoom(channel);
+		await room.setSelfState(did, patch);
 	}
 
 	async leave(channel: string, did: string): Promise<void> {
@@ -223,8 +231,8 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 		room.on("producer-added", (event) => this.emit("producer-added", { channel, ...event }));
 		room.on("producer-removed", (event) => this.emit("producer-removed", { channel, ...event }));
 		room.on("speaking-changed", (event) => this.emit("speaking-changed", { channel, ...event }));
-		room.on("moderation-changed", (event) =>
-			this.emit("moderation-changed", { channel, ...event }),
+		room.on("voice-state-changed", (event) =>
+			this.emit("voice-state-changed", { channel, ...event }),
 		);
 	}
 

@@ -16,7 +16,7 @@ const main = async (): Promise<void> => {
 
 	const server = createAppServer(ctx);
 	const events = new EventServer(ctx);
-	const voice = new VoiceServer(ctx);
+	const voice = new VoiceServer(ctx, events);
 	const disconnectPipeline = connectPipeline({ ctx, events });
 
 	const jetstream = new Jetstream(ctx);

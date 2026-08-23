@@ -66,6 +66,7 @@
 						"social.colibri.beta.community.putImage",
 						"social.colibri.beta.community.deleteImage",
 						"social.colibri.beta.community.delete",
+						"social.colibri.beta.community.listMigratable",
 						"social.colibri.beta.community.migrate",
 						"social.colibri.beta.community.registerCredentials",
 						"social.colibri.beta.community.setMemberRoles",

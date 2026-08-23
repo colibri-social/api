@@ -131,19 +131,29 @@ type VoiceState = { $type?: "social.colibri.beta.actor.defs#voiceState";
   "channel":l.SpaceRefString;
 
   /**
-   * Whether the user has muted their microphone.
+   * Whether the user's microphone is muted, for any reason.
    */
   "muted"?:boolean;
 
   /**
-   * Whether the user has deafened themselves.
+   * Whether the user has incoming audio silenced, for any reason.
    */
-  "deafened"?:boolean };
+  "deafened"?:boolean;
+
+  /**
+   * Whether a moderator muted them. When this is true they cannot unmute themselves, and a client must not offer them the control.
+   */
+  "serverMuted"?:boolean;
+
+  /**
+   * Whether a moderator deafened them. When this is true they cannot undeafen themselves.
+   */
+  "serverDeafened"?:boolean };
 
 export type { VoiceState };
 
 /** A user's voice connection. */
-const voiceState = /*#__PURE__*/ l.typedObject<VoiceState>($nsid, "voiceState", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"muted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"deafened":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
+const voiceState = /*#__PURE__*/ l.typedObject<VoiceState>($nsid, "voiceState", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"muted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"deafened":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"serverMuted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"serverDeafened":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
 
 export { voiceState };
 
@@ -181,9 +191,9 @@ export { preferences };
 type Mute = { $type?: "social.colibri.beta.actor.defs#mute";
 
   /**
-   * The muted user or community.
+   * What is muted. A user or a community is named by DID, a channel by its space.
    */
-  "subject":l.DidString;
+  "subject":l.$Typed<MutedActor> | l.$Typed<MutedChannel>;
 
   /**
    * When the mute was created.
@@ -193,6 +203,36 @@ type Mute = { $type?: "social.colibri.beta.actor.defs#mute";
 export type { Mute };
 
 /** A muted subject. */
-const mute = /*#__PURE__*/ l.typedObject<Mute>($nsid, "mute", /*#__PURE__*/ l.object({"subject":/*#__PURE__*/ l.string({"format":"did"}),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
+const mute = /*#__PURE__*/ l.typedObject<Mute>($nsid, "mute", /*#__PURE__*/ l.object({"subject":/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<MutedActor>((() => mutedActor) as any),/*#__PURE__*/ l.typedRef<MutedChannel>((() => mutedChannel) as any)], true),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
 
 export { mute };
+
+/** A muted user or community. */
+type MutedActor = { $type?: "social.colibri.beta.actor.defs#mutedActor";
+
+  /**
+   * The muted user or community.
+   */
+  "did":l.DidString };
+
+export type { MutedActor };
+
+/** A muted user or community. */
+const mutedActor = /*#__PURE__*/ l.typedObject<MutedActor>($nsid, "mutedActor", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"})}));
+
+export { mutedActor };
+
+/** A muted channel. Muting a channel silences it without leaving the community it belongs to. */
+type MutedChannel = { $type?: "social.colibri.beta.actor.defs#mutedChannel";
+
+  /**
+   * The muted channel's space.
+   */
+  "channel":l.SpaceRefString };
+
+export type { MutedChannel };
+
+/** A muted channel. Muting a channel silences it without leaving the community it belongs to. */
+const mutedChannel = /*#__PURE__*/ l.typedObject<MutedChannel>($nsid, "mutedChannel", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"})}));
+
+export { mutedChannel };

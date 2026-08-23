@@ -39,9 +39,9 @@ type TransportOptions = { $type?: "social.colibri.beta.voice.defs#transportOptio
   "iceParameters":l.LexMap;
 
   /**
-   * The opaque mediasoup ICE candidates blob.
+   * The mediasoup ICE candidates, one opaque blob per candidate. This is an array, not a single object, because that is what a WebRTC transport hands back.
    */
-  "iceCandidates":l.LexMap;
+  "iceCandidates":(l.LexMap)[];
 
   /**
    * The opaque mediasoup DTLS parameters blob.
@@ -56,7 +56,7 @@ type TransportOptions = { $type?: "social.colibri.beta.voice.defs#transportOptio
 export type { TransportOptions };
 
 /** Parameters for creating one side of a WebRTC transport. */
-const transportOptions = /*#__PURE__*/ l.typedObject<TransportOptions>($nsid, "transportOptions", /*#__PURE__*/ l.object({"id":/*#__PURE__*/ l.string(),"iceParameters":/*#__PURE__*/ l.lexMap(),"iceCandidates":/*#__PURE__*/ l.lexMap(),"dtlsParameters":/*#__PURE__*/ l.lexMap(),"direction":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["send","recv"]}>())}));
+const transportOptions = /*#__PURE__*/ l.typedObject<TransportOptions>($nsid, "transportOptions", /*#__PURE__*/ l.object({"id":/*#__PURE__*/ l.string(),"iceParameters":/*#__PURE__*/ l.lexMap(),"iceCandidates":/*#__PURE__*/ l.array(/*#__PURE__*/ l.lexMap(), ),"dtlsParameters":/*#__PURE__*/ l.lexMap(),"direction":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["send","recv"]}>())}));
 
 export { transportOptions };
 
@@ -430,7 +430,7 @@ const producerRemoved = /*#__PURE__*/ l.typedObject<ProducerRemoved>($nsid, "pro
 
 export { producerRemoved };
 
-/** A peer's server-enforced mute or deafen state changed. */
+/** A peer's mute or deafen state changed, whether they did it themselves or a moderator did it to them. */
 type ModerationChanged = { $type?: "social.colibri.beta.voice.defs#moderationChanged";
 
   /**
@@ -439,18 +439,28 @@ type ModerationChanged = { $type?: "social.colibri.beta.voice.defs#moderationCha
   "did":l.DidString;
 
   /**
-   * Whether the microphone is server-muted.
+   * Whether the microphone is muted, for any reason.
    */
   "muted":boolean;
 
   /**
-   * Whether incoming audio is server-silenced.
+   * Whether incoming audio is silenced, for any reason.
    */
-  "deafened":boolean };
+  "deafened":boolean;
+
+  /**
+   * Whether a moderator muted them. When this is true the peer cannot unmute themselves.
+   */
+  "serverMuted"?:boolean;
+
+  /**
+   * Whether a moderator deafened them. When this is true the peer cannot undeafen themselves.
+   */
+  "serverDeafened"?:boolean };
 
 export type { ModerationChanged };
 
-/** A peer's server-enforced mute or deafen state changed. */
-const moderationChanged = /*#__PURE__*/ l.typedObject<ModerationChanged>($nsid, "moderationChanged", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"muted":/*#__PURE__*/ l.boolean(),"deafened":/*#__PURE__*/ l.boolean()}));
+/** A peer's mute or deafen state changed, whether they did it themselves or a moderator did it to them. */
+const moderationChanged = /*#__PURE__*/ l.typedObject<ModerationChanged>($nsid, "moderationChanged", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"muted":/*#__PURE__*/ l.boolean(),"deafened":/*#__PURE__*/ l.boolean(),"serverMuted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"serverDeafened":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
 
 export { moderationChanged };
