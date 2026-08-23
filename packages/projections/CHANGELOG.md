@@ -1,5 +1,19 @@
 # @colibri-social/projections
 
+## 1.2.0
+
+### Minor Changes
+
+- efcadc8: Let a mute name a channel
+
+### Patch Changes
+
+- Updated dependencies [efcadc8]
+- Updated dependencies [efcadc8]
+- Updated dependencies [efcadc8]
+- Updated dependencies [efcadc8]
+  - @colibri-social/lexicons@2.2.0
+
 ## 1.1.0
 
 ### Minor Changes

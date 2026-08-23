@@ -1,5 +1,30 @@
 # @colibri-social/appview
 
+## 2.2.0
+
+### Minor Changes
+
+- efcadc8: Make community migration work against a real legacy repo, and give it a picker
+- efcadc8: Let a mute name a channel
+- efcadc8: Follow profile records on Jetstream
+- 0e3df75: Record every space in the `spaces` table at the moment it is created, so the sync
+  engine can find it
+- efcadc8: Refuse to boot on a bare-IP `did:web`
+- efcadc8: Separate a peer's own mute from a moderator's
+
+### Patch Changes
+
+- Updated dependencies [efcadc8]
+- Updated dependencies [efcadc8]
+- Updated dependencies [efcadc8]
+- Updated dependencies [0e3df75]
+- Updated dependencies [efcadc8]
+  - @colibri-social/lexicons@2.2.0
+  - @colibri-social/community@2.1.0
+  - @colibri-social/projections@1.2.0
+  - @colibri-social/voice@0.1.0
+  - @colibri-social/notifications@1.0.3
+
 ## 2.1.0
 
 ### Minor Changes

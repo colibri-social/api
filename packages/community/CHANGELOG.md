@@ -1,5 +1,22 @@
 # @colibri-social/community
 
+## 2.1.0
+
+### Minor Changes
+
+- efcadc8: Make community migration work against a real legacy repo, and give it a picker
+- 0e3df75: Record every space in the `spaces` table at the moment it is created, so the sync
+  engine can find it
+
+### Patch Changes
+
+- Updated dependencies [efcadc8]
+- Updated dependencies [efcadc8]
+- Updated dependencies [efcadc8]
+- Updated dependencies [efcadc8]
+  - @colibri-social/lexicons@2.2.0
+  - @colibri-social/projections@1.2.0
+
 ## 2.0.1
 
 ### Patch Changes

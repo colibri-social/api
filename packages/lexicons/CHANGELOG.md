@@ -1,5 +1,14 @@
 # @colibri-social/lexicons
 
+## 2.2.0
+
+### Minor Changes
+
+- efcadc8: Type `voice.defs#transportOptions.iceCandidates` as an array of unknown
+- efcadc8: Make community migration work against a real legacy repo, and give it a picker
+- efcadc8: Let a mute name a channel
+- efcadc8: Separate a peer's own mute from a moderator's
+
 ## 2.1.0
 
 ### Minor Changes
