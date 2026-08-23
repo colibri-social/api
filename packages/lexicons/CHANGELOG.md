@@ -1,5 +1,12 @@
 # @colibri-social/lexicons
 
+## 2.1.0
+
+### Minor Changes
+
+- 396e6ef: Report `software` and `flavor` from `server.describeServer` again, so a client can tell a Colibri AppView from any other host
+- 396e6ef: Store a favourited GIF as the whole `embed.defs#gifView`, because an identifier cannot be turned back into one
+
 ## 2.0.0
 
 ### Major Changes
