@@ -19,7 +19,7 @@ export const $output = /*#__PURE__*/ l.jsonPayload({"cursor":/*#__PURE__*/ l.opt
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** List the spaces the authenticated user holds a repo in (i.e. spaces the user has written data to), optionally filtered by type and/or authority DID. Note this is not 'spaces I'm a member of', a member's PDS only tracks spaces its user has written to. Requires auth, implemented by PDS. */
+/** List the spaces the authenticated user holds a repo in (i.e. spaces the user has written data to), optionally filtered by type and/or authority DID. Note this is not 'spaces I'm a member of' — a member's PDS only tracks spaces its user has written to. Requires auth, implemented by PDS. */
 const main = /*#__PURE__*/ l.query($nsid, $params, $output);
 
 export { main };

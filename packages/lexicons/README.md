@@ -7,8 +7,28 @@ from them.
 
 - `lexicons/social/colibri/**`: Colibri's own schemas
 - `lexicons/com/atproto/{space,simplespace}/**`: vendored from `bluesky-social/atproto`,
-  pinned to one commit. See the README in that directory. Do not edit them!
+  pinned to the commit in `lexicons/com/atproto/PINNED_COMMIT`. Do not edit them!
 - `src/generated/**`: produced by `pnpm codegen`, verified by CI
+
+## The atproto space lexicons
+
+`lexicons/com/atproto/PINNED_COMMIT` holds a commit hash, and CI
+fetches every vendored file from `bluesky-social/atproto` at that commit and
+fails if a single byte differs.
+
+To move the pin:
+
+```sh
+ref=<new commit sha>
+for f in packages/lexicons/lexicons/com/atproto/{space,simplespace}/*.json; do
+  rel="lexicons/com/atproto/${f#packages/lexicons/lexicons/com/atproto/}"
+  curl -sfL "https://raw.githubusercontent.com/bluesky-social/atproto/$ref/$rel" -o "$f"
+done
+printf '%s\n' "$ref" > packages/lexicons/lexicons/com/atproto/PINNED_COMMIT
+pnpm codegen
+```
+
+Then read the diff. A re-vendor is a protocol change and needs a changeset.
 
 ## Space types
 

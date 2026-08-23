@@ -74,7 +74,12 @@ jobs:
       - name: Check the vendored atproto lexicons are unmodified
         run: |
           set -euo pipefail
-          ref=$(grep -oE '[0-9a-f]{40}' packages/lexicons/lexicons/com/atproto/README.md | head -1)
+          pin=packages/lexicons/lexicons/com/atproto/PINNED_COMMIT
+          ref=$(tr -d '[:space:]' < "$pin")
+          if ! [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error file=$pin::expected a 40 character commit hash, got '$ref'"
+            exit 1
+          fi
           echo "pinned at $ref"
           fail=0
           for file in packages/lexicons/lexicons/com/atproto/{space,simplespace}/*.json; do
