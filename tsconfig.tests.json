@@ -1,0 +1,30 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"composite": false,
+		"declaration": false,
+		"declarationMap": false,
+		"incremental": false,
+		"types": ["node", "vitest/globals"],
+		"paths": {
+			"@colibri-social/appview-db": ["./packages/db/src/index.ts"],
+			"@colibri-social/lexicons": ["./packages/lexicons/src/index.ts"],
+			"@colibri-social/space": ["./packages/space/src/index.ts"],
+			"@colibri-social/space-sync": ["./packages/space-sync/src/index.ts"],
+			"@colibri-social/identity": ["./packages/identity/src/index.ts"],
+			"@colibri-social/projections": ["./packages/projections/src/index.ts"],
+			"@colibri-social/community": ["./packages/community/src/index.ts"],
+			"@colibri-social/notifications": ["./packages/notifications/src/index.ts"],
+			"@colibri-social/blobs": ["./packages/blobs/src/index.ts"],
+			"@colibri-social/embeds": ["./packages/embeds/src/index.ts"],
+			"@colibri-social/voice": ["./packages/voice/src/index.ts"]
+		}
+	},
+	"include": [
+		"packages/*/src/**/*.test.ts",
+		"apps/*/src/**/*.test.ts",
+		"packages/*/test/**/*.ts",
+		"apps/*/test/**/*.ts"
+	]
+}

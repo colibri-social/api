@@ -1,0 +1,66 @@
+{
+	"name": "@colibri-social/appview",
+	"version": "0.0.0",
+	"description": "The Colibri AppView server.",
+	"type": "module",
+	"private": true,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		},
+		"./config": {
+			"types": "./dist/config.d.ts",
+			"colibri-source": "./src/config.ts",
+			"default": "./dist/config.js"
+		},
+		"./context": {
+			"types": "./dist/context.d.ts",
+			"colibri-source": "./src/context.ts",
+			"default": "./dist/context.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"bin": {
+		"colibri-appview": "./dist/index.js"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc --build",
+		"clean": "tsc --build --clean",
+		"dev": "tsx watch --conditions=colibri-source --env-file-if-exists=../../.env src/index.ts",
+		"start": "node dist/index.js"
+	},
+	"dependencies": {
+		"@atproto/crypto": "catalog:",
+		"@atproto/lex-schema": "catalog:",
+		"@atproto/syntax": "catalog:",
+		"@atproto/xrpc-server": "catalog:",
+		"@colibri-social/appview-db": "workspace:*",
+		"@colibri-social/blobs": "workspace:*",
+		"@colibri-social/community": "workspace:*",
+		"@colibri-social/embeds": "workspace:*",
+		"@colibri-social/identity": "workspace:*",
+		"@colibri-social/lexicons": "workspace:*",
+		"@colibri-social/notifications": "workspace:*",
+		"@colibri-social/projections": "workspace:*",
+		"@colibri-social/space": "workspace:*",
+		"@colibri-social/space-sync": "workspace:*",
+		"@colibri-social/voice": "workspace:*",
+		"@sentry/node": "catalog:",
+		"drizzle-orm": "catalog:",
+		"hono": "catalog:",
+		"pino": "catalog:",
+		"ws": "catalog:",
+		"zod": "catalog:"
+	},
+	"devDependencies": {
+		"@types/ws": "catalog:",
+		"pino-pretty": "catalog:",
+		"@types/express": "^5.0.0"
+	}
+}

@@ -1,0 +1,31 @@
+{
+	"name": "@colibri-social/blobs",
+	"version": "0.0.0",
+	"description": "CID-verified blob proxy for permissioned blobs, with MIME allowlisting, image variants and a size-bounded cache",
+	"type": "module",
+	"private": true,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc --build",
+		"clean": "tsc --build --clean"
+	},
+	"dependencies": {
+		"@atproto/lex-data": "catalog:",
+		"@colibri-social/space": "workspace:*",
+		"file-type": "catalog:",
+		"lru-cache": "catalog:",
+		"sharp": "catalog:",
+		"undici": "catalog:"
+	}
+}

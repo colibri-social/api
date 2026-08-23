@@ -1,0 +1,41 @@
+{
+	"lexicon": 1,
+	"id": "social.colibri.actor.settings",
+	"defs": {
+		"main": {
+			"type": "record",
+			"description": "A user's Colibri settings.",
+			"key": "literal:self",
+			"record": {
+				"type": "object",
+				"required": [],
+				"properties": {
+					"notificationLevel": {
+						"type": "string",
+						"knownValues": ["all", "mentionsAndReplies"],
+						"default": "all",
+						"description": "Which messages produce a notification."
+					},
+					"communityOrder": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"format": "did",
+							"description": "A community."
+						},
+						"description": "The user's communities in their preferred sidebar order."
+					},
+					"gifFavorites": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"maxLength": 256,
+							"description": "A GIF identifier."
+						},
+						"description": "GIFs the user saved from the picker."
+					}
+				}
+			}
+		}
+	}
+}

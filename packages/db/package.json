@@ -1,0 +1,35 @@
+{
+	"name": "@colibri-social/appview-db",
+	"version": "0.0.0",
+	"description": "Drizzle schema, migrations and query helpers for the Colibri AppView",
+	"type": "module",
+	"private": true,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "node scripts/generate-pg-schema.mjs && tsc --build",
+		"clean": "tsc --build --clean",
+		"generate:pg": "node scripts/generate-pg-schema.mjs",
+		"generate:migrations": "drizzle-kit generate --config drizzle.sqlite.config.ts && drizzle-kit generate --config drizzle.pg.config.ts"
+	},
+	"dependencies": {
+		"@libsql/client": "catalog:",
+		"drizzle-orm": "catalog:",
+		"pg": "catalog:",
+		"zod": "catalog:"
+	},
+	"devDependencies": {
+		"@types/pg": "catalog:",
+		"drizzle-kit": "catalog:"
+	}
+}

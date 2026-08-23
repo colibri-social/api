@@ -1,0 +1,29 @@
+{
+	"name": "@colibri-social/projections",
+	"version": "0.0.0",
+	"description": "Materialises typed read models from synced space records",
+	"type": "module",
+	"private": true,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc --build",
+		"clean": "tsc --build --clean"
+	},
+	"dependencies": {
+		"@colibri-social/appview-db": "workspace:*",
+		"@colibri-social/lexicons": "workspace:*",
+		"@colibri-social/space": "workspace:*",
+		"drizzle-orm": "catalog:"
+	}
+}

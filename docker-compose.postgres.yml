@@ -1,0 +1,28 @@
+# Overlay swapping libSQL for Postgres
+#
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up
+services:
+  appview:
+    environment:
+      DATABASE_URL: postgres://colibri:${POSTGRES_PASSWORD:-colibri}@postgres:5432/colibri
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: colibri
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-colibri}
+      POSTGRES_DB: colibri
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U colibri -d colibri"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    volumes:
+      - postgres-data:/var/lib/postgresql
+
+volumes:
+  postgres-data:

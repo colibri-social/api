@@ -1,0 +1,18 @@
+{
+	"files": [],
+	"references": [
+		{ "path": "./packages/lexicons" },
+		{ "path": "./packages/space" },
+		{ "path": "./packages/space-sync" },
+		{ "path": "./packages/db" },
+		{ "path": "./packages/identity" },
+		{ "path": "./packages/projections" },
+		{ "path": "./packages/community" },
+		{ "path": "./packages/notifications" },
+		{ "path": "./packages/blobs" },
+		{ "path": "./packages/embeds" },
+		{ "path": "./packages/voice" },
+		{ "path": "./apps/appview" },
+		{ "path": "./apps/migrate" }
+	]
+}

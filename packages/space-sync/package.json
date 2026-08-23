@@ -1,0 +1,40 @@
+{
+	"name": "@colibri-social/space-sync",
+	"version": "0.0.0",
+	"description": "Keeps a local copy of an atproto space in sync: writer set discovery, operation log replay, LtHash reconciliation and CAR recovery",
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/colibri-social/appview.git",
+		"directory": "packages/space-sync"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsc --build",
+		"clean": "tsc --build --clean"
+	},
+	"dependencies": {
+		"@atproto/space": "catalog:",
+		"@atproto/syntax": "catalog:",
+		"@colibri-social/space": "workspace:*"
+	},
+	"devDependencies": {
+		"@atproto/crypto": "catalog:",
+		"@atproto/lex-data": "catalog:"
+	}
+}

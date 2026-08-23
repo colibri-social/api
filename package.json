@@ -1,0 +1,34 @@
+{
+	"name": "colibri-appview",
+	"private": true,
+	"type": "module",
+	"packageManager": "pnpm@10.33.3",
+	"engines": {
+		"node": ">=24.19.0"
+	},
+	"scripts": {
+		"build": "pnpm lexicons:codegen && tsc --build",
+		"clean": "tsc --build --clean && rm -rf packages/*/dist apps/*/dist",
+		"dev": "pnpm --filter @colibri-social/appview dev",
+		"typecheck": "tsc --build && tsc -p tsconfig.tests.json",
+		"test": "vitest run --project unit",
+		"test:watch": "vitest --project unit",
+		"test:integration": "vitest run --project integration",
+		"lint": "biome check .",
+		"lint:fix": "biome check . --write",
+		"format": "biome format . --write",
+		"biome": "biome",
+		"lexicons:codegen": "pnpm --filter @colibri-social/lexicons codegen",
+		"db:generate": "pnpm --filter @colibri-social/appview-db generate",
+		"changeset": "changeset",
+		"changeset:version": "changeset version && pnpm install --lockfile-only --no-frozen-lockfile"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.10",
+		"@changesets/cli": "^3.0.1",
+		"@types/node": "catalog:",
+		"tsx": "^4.23.12",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	}
+}

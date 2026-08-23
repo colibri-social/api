@@ -1,0 +1,42 @@
+{
+	"name": "@colibri-social/space",
+	"version": "0.0.0",
+	"description": "Client for com.atproto.space and com.atproto.simplespace: delegation tokens, DPoP-bound space credentials, and verified repo reads",
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/colibri-social/appview.git",
+		"directory": "packages/space"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsc --build",
+		"clean": "tsc --build --clean"
+	},
+	"dependencies": {
+		"@atproto/common": "catalog:",
+		"@atproto/crypto": "catalog:",
+		"@atproto/identity": "catalog:",
+		"@atproto/jwk": "catalog:",
+		"@atproto/jwk-jose": "catalog:",
+		"@atproto/lex-data": "catalog:",
+		"@atproto/space": "catalog:",
+		"@atproto/syntax": "catalog:",
+		"undici": "catalog:"
+	}
+}

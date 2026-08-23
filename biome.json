@@ -1,0 +1,60 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
+	"files": {
+		"includes": [
+			"apps/**",
+			"packages/**",
+			"*.json",
+			"*.ts",
+			"!**/dist",
+			"!**/generated",
+			"!**/*.tsbuildinfo",
+			"!packages/lexicons/lexicons/com/atproto"
+		]
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"lineWidth": 100
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended",
+			"suspicious": {
+				"noConsole": "error"
+			},
+			"style": {
+				"useConst": "error",
+				"useImportType": "error",
+				"noNonNullAssertion": "off"
+			}
+		}
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double",
+			"semicolons": "always"
+		}
+	},
+	"assist": {
+		"enabled": true,
+		"actions": {
+			"source": {
+				"organizeImports": "on"
+			}
+		}
+	},
+	"overrides": [
+		{
+			"includes": ["**/*.test.ts", "**/scripts/**", "apps/migrate/**"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noConsole": "off"
+					}
+				}
+			}
+		}
+	]
+}

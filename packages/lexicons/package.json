@@ -1,0 +1,38 @@
+{
+	"name": "@colibri-social/lexicons",
+	"version": "0.0.0",
+	"description": "Colibri lexicon schemas and the types generated from them",
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		},
+		"./lexicons/*": "./lexicons/*"
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist",
+		"lexicons"
+	],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/colibri-social/appview.git",
+		"directory": "packages/lexicons"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsc --build",
+		"clean": "tsc --build --clean",
+		"codegen": "node scripts/codegen.mjs"
+	},
+	"dependencies": {
+		"@atproto/lex": "catalog:",
+		"@atproto/lex-data": "catalog:"
+	}
+}

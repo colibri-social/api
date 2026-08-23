@@ -1,0 +1,56 @@
+# A spaces-alpha PDS with its own PLC directory
+services:
+  pds:
+    image: ghcr.io/bluesky-social/atproto:pds-spaces-alpha
+    platform: linux/amd64
+    environment:
+      PDS_HOSTNAME: localhost
+      PDS_PORT: "3001"
+      PDS_DEV_MODE: "true"
+      PDS_DATA_DIRECTORY: /pds
+      PDS_BLOBSTORE_DISK_LOCATION: /pds/blocks
+      PDS_JWT_SECRET: integrationsecretintegrationsecret
+      PDS_ADMIN_PASSWORD: admin
+      PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX: 3ee68e4a1c4c1b0f5e0a37b4bb2f9a35c8e59e8a3a2a2b8f8e6a5c4d3b2a1908
+      PDS_DID_PLC_URL: http://plc:2582
+      PDS_INVITE_REQUIRED: "false"
+      LOG_ENABLED: "true"
+      LOG_LEVEL: warn
+    tmpfs:
+      - /pds
+    ports:
+      - "127.0.0.1:3001:3001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      plc:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/xrpc/_health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  plc:
+    build: ./docker/plc
+    environment:
+      PORT: "2582"
+    ports:
+      - "127.0.0.1:2582:2582"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:2582/_health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 20

@@ -1,0 +1,35 @@
+name: Integration
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  integration:
+    name: Against the spaces alpha PDS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Start the alpha PDS
+        run: docker compose -f docker-compose.integration.yml up -d --wait --build
+      - name: Run the integration suite
+        run: pnpm test:integration
+        env:
+          PDS_URL: http://127.0.0.1:3001
+          PDS_ADMIN_PASSWORD: admin
+          PLC_URL: http://127.0.0.1:2582
+      - name: PDS logs
+        if: failure()
+        run: docker compose -f docker-compose.integration.yml logs --no-color
+      - if: always()
+        run: docker compose -f docker-compose.integration.yml down -v

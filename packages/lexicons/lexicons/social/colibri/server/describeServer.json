@@ -1,0 +1,59 @@
+{
+	"lexicon": 1,
+	"id": "social.colibri.server.describeServer",
+	"defs": {
+		"main": {
+			"type": "query",
+			"description": "Gets information about this AppView.",
+			"output": {
+				"encoding": "application/json",
+				"schema": {
+					"type": "object",
+					"required": ["did", "version", "handleDomain", "pds"],
+					"properties": {
+						"did": {
+							"type": "string",
+							"format": "did",
+							"description": "The AppView's own identity."
+						},
+						"version": {
+							"type": "string",
+							"description": "The running software version."
+						},
+						"handleDomain": {
+							"type": "string",
+							"description": "The domain community handles are minted under."
+						},
+						"pds": {
+							"type": "string",
+							"format": "uri",
+							"description": "The PDS communities are created on."
+						},
+						"contact": {
+							"type": "string",
+							"description": "How to reach the operator."
+						},
+						"features": {
+							"type": "array",
+							"description": "Optional features this AppView supports.",
+							"items": {
+								"type": "string",
+								"description": "A feature identifier.",
+								"knownValues": ["voice", "push", "gifs", "embeds"]
+							}
+						},
+						"spaceTypes": {
+							"type": "array",
+							"description": "The space types this AppView understands.",
+							"items": {
+								"type": "string",
+								"format": "nsid",
+								"description": "A space type."
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}

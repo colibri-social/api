@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+      id-token: write
+    steps:
+      - name: Mint release token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout Repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Create Release Pull Request or Publish
+        id: changesets
+        uses: changesets/action@v1.9.0
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          version: pnpm run changeset:version
+          publish: pnpm changeset publish
+          commit: "[ci] release"
+          title: "[ci] release"
+
+      - name: Detect version bump
+        id: bump
+        run: |
+          CURR=$(node -p "require('./apps/appview/package.json').version")
+          PREV=""
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            PREV=$(git show HEAD~1:apps/appview/package.json 2>/dev/null | node -p "(()=>{try{return JSON.parse(require('fs').readFileSync(0,'utf8')).version}catch(e){return ''}})()" || true)
+          fi
+          echo "version=$CURR" >> "$GITHUB_OUTPUT"
+          [ "$CURR" != "$PREV" ] && echo "changed=true" >> "$GITHUB_OUTPUT" || echo "changed=false" >> "$GITHUB_OUTPUT"
+
+      - name: Publish workflow
+        if: steps.changesets.outputs.hasChangesets == 'false' && steps.bump.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run publish.yml --ref main -f version="${{ steps.bump.outputs.version }}"

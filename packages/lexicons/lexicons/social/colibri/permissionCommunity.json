@@ -1,0 +1,100 @@
+{
+	"lexicon": 1,
+	"id": "social.colibri.permissionCommunity",
+	"defs": {
+		"main": {
+			"type": "permission-set",
+			"title": "Manage Colibri communities",
+			"detail": "Create and administer Colibri communities, including their channels, roles, members and moderation.",
+			"permissions": [
+				{
+					"type": "permission",
+					"resource": "space",
+					"spaceType": "social.colibri.community.profile",
+					"authority": "*",
+					"action": ["read"],
+					"manage": ["create", "update", "delete"]
+				},
+				{
+					"type": "permission",
+					"resource": "space",
+					"spaceType": "social.colibri.community.configuration",
+					"authority": "*",
+					"action": ["read"],
+					"manage": ["create", "update", "delete"]
+				},
+				{
+					"type": "permission",
+					"resource": "space",
+					"spaceType": "social.colibri.community.members",
+					"authority": "*",
+					"action": ["read"],
+					"manage": ["create", "update", "delete"]
+				},
+				{
+					"type": "permission",
+					"resource": "space",
+					"spaceType": "social.colibri.community.moderation",
+					"authority": "*",
+					"action": ["read"],
+					"manage": ["create", "update", "delete"]
+				},
+				{
+					"type": "permission",
+					"resource": "space",
+					"spaceType": "social.colibri.channel.text",
+					"authority": "*",
+					"action": ["read"],
+					"manage": ["create", "update", "delete"]
+				},
+				{
+					"type": "permission",
+					"resource": "space",
+					"spaceType": "social.colibri.channel.voice",
+					"authority": "*",
+					"action": ["read"],
+					"manage": ["create", "update", "delete"]
+				},
+				{
+					"type": "permission",
+					"resource": "rpc",
+					"inheritAud": true,
+					"lxm": [
+						"social.colibri.community.create",
+						"social.colibri.community.update",
+						"social.colibri.community.delete",
+						"social.colibri.community.migrate",
+						"social.colibri.community.registerCredentials",
+						"social.colibri.community.setMemberRoles",
+						"social.colibri.community.reorderCategories",
+						"social.colibri.community.createInvitation",
+						"social.colibri.community.listInvitations",
+						"social.colibri.community.deleteInvitation",
+						"social.colibri.community.kick",
+						"social.colibri.community.ban",
+						"social.colibri.community.unban",
+						"social.colibri.community.listBans",
+						"social.colibri.community.listApplications",
+						"social.colibri.community.approveApplication",
+						"social.colibri.community.dismissApplication",
+						"social.colibri.community.undismissApplication",
+						"social.colibri.community.listModerationLog",
+						"social.colibri.community.applyLabel",
+						"social.colibri.community.negateLabel",
+						"social.colibri.category.create",
+						"social.colibri.category.update",
+						"social.colibri.category.delete",
+						"social.colibri.channel.create",
+						"social.colibri.channel.update",
+						"social.colibri.channel.delete",
+						"social.colibri.channel.reorder",
+						"social.colibri.role.create",
+						"social.colibri.role.update",
+						"social.colibri.role.delete",
+						"social.colibri.voice.moderate"
+					]
+				}
+			]
+		}
+	}
+}

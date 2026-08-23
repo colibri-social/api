@@ -1,0 +1,27 @@
+{
+	"name": "@colibri-social/voice",
+	"version": "0.0.0",
+	"description": "mediasoup-backed voice SFU for Colibri voice channels.",
+	"type": "module",
+	"private": true,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc --build",
+		"clean": "tsc --build --clean"
+	},
+	"dependencies": {
+		"mediasoup": "catalog:",
+		"zod": "catalog:"
+	}
+}

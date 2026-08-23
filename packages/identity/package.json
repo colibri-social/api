@@ -1,0 +1,31 @@
+{
+	"name": "@colibri-social/identity",
+	"version": "0.0.0",
+	"description": "atproto service auth, DID document publication and handle resolution for the Colibri AppView",
+	"type": "module",
+	"private": true,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc --build",
+		"clean": "tsc --build --clean"
+	},
+	"dependencies": {
+		"@atproto/crypto": "catalog:",
+		"@atproto/identity": "catalog:",
+		"@atproto/syntax": "catalog:",
+		"@atproto/xrpc-server": "catalog:",
+		"lru-cache": "catalog:",
+		"zod": "catalog:"
+	}
+}

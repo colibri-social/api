@@ -1,0 +1,36 @@
+{
+	"name": "@colibri-social/notifications",
+	"version": "0.0.0",
+	"description": "Notification indexing and delivery over Web Push and FCM",
+	"type": "module",
+	"private": true,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc --build",
+		"clean": "tsc --build --clean"
+	},
+	"dependencies": {
+		"@colibri-social/appview-db": "workspace:*",
+		"@colibri-social/lexicons": "workspace:*",
+		"@colibri-social/projections": "workspace:*",
+		"@colibri-social/space": "workspace:*",
+		"drizzle-orm": "catalog:",
+		"firebase-admin": "catalog:",
+		"web-push": "catalog:",
+		"zod": "catalog:"
+	},
+	"devDependencies": {
+		"@types/web-push": "catalog:"
+	}
+}

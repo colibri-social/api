@@ -1,0 +1,28 @@
+{
+	"name": "@colibri-social/embeds",
+	"version": "0.0.0",
+	"description": "SSRF-guarded outbound fetching, OpenGraph extraction, video probing and the GIF picker proxy",
+	"type": "module",
+	"private": true,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc --build",
+		"clean": "tsc --build --clean"
+	},
+	"dependencies": {
+		"lru-cache": "catalog:",
+		"undici": "catalog:",
+		"zod": "catalog:"
+	}
+}

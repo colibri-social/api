@@ -1,0 +1,35 @@
+{
+	"name": "@colibri-social/migrate",
+	"version": "0.0.0",
+	"description": "One-shot migration of DID-repo communities onto spaces.",
+	"type": "module",
+	"private": true,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"bin": {
+		"colibri-migrate": "./dist/index.js"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc --build",
+		"clean": "tsc --build --clean"
+	},
+	"dependencies": {
+		"@colibri-social/appview": "workspace:*",
+		"@colibri-social/appview-db": "workspace:*",
+		"@colibri-social/community": "workspace:*",
+		"@colibri-social/identity": "workspace:*",
+		"@colibri-social/lexicons": "workspace:*",
+		"@colibri-social/space": "workspace:*",
+		"drizzle-orm": "catalog:"
+	}
+}

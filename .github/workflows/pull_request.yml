@@ -1,0 +1,89 @@
+name: Code Quality
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm biome ci . --reporter=github
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test
+
+  lexicons:
+    name: Lexicons
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check the generated lexicon types are current
+        run: |
+          pnpm lexicons:codegen
+          if ! git diff --exit-code --stat; then
+            echo "::error::Generated lexicon types are stale. Run 'pnpm lexicons:codegen' and commit the result."
+            exit 1
+          fi
+
+      - name: Check the vendored atproto lexicons are unmodified
+        run: |
+          set -euo pipefail
+          ref=$(grep -oE '[0-9a-f]{40}' packages/lexicons/lexicons/com/atproto/README.md | head -1)
+          echo "pinned at $ref"
+          fail=0
+          for file in packages/lexicons/lexicons/com/atproto/{space,simplespace}/*.json; do
+            rel="lexicons/com/atproto/${file#packages/lexicons/lexicons/com/atproto/}"
+            if ! curl -sfL "https://raw.githubusercontent.com/bluesky-social/atproto/$ref/$rel" -o /tmp/upstream.json; then
+              echo "::error::could not fetch upstream $rel"; fail=1; continue
+            fi
+            if ! diff -q "$file" /tmp/upstream.json > /dev/null; then
+              echo "::error file=$file::differs from upstream at $ref"; fail=1
+            fi
+          done
+          exit $fail

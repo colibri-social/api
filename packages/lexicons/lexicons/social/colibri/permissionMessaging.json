@@ -1,0 +1,74 @@
+{
+	"lexicon": 1,
+	"id": "social.colibri.permissionMessaging",
+	"defs": {
+		"main": {
+			"type": "permission-set",
+			"title": "Colibri messages",
+			"detail": "Read and post in the Colibri communities you belong to.",
+			"permissions": [
+				{
+					"type": "permission",
+					"resource": "space",
+					"spaceType": "social.colibri.channel.text",
+					"authority": "*",
+					"collection": ["social.colibri.message", "social.colibri.reaction"],
+					"action": ["read", "create", "update", "delete"]
+				},
+				{
+					"type": "permission",
+					"resource": "space",
+					"spaceType": "social.colibri.channel.voice",
+					"authority": "*",
+					"action": ["read"]
+				},
+				{
+					"type": "permission",
+					"resource": "space",
+					"spaceType": "social.colibri.community.profile",
+					"authority": "*",
+					"action": ["read"]
+				},
+				{
+					"type": "permission",
+					"resource": "space",
+					"spaceType": "social.colibri.community.configuration",
+					"authority": "*",
+					"action": ["read"]
+				},
+				{
+					"type": "permission",
+					"resource": "space",
+					"spaceType": "social.colibri.community.members",
+					"authority": "*",
+					"action": ["read"]
+				},
+				{
+					"type": "permission",
+					"resource": "rpc",
+					"inheritAud": true,
+					"lxm": [
+						"social.colibri.community.getCommunity",
+						"social.colibri.community.join",
+						"social.colibri.community.leave",
+						"social.colibri.community.listCategories",
+						"social.colibri.community.listChannels",
+						"social.colibri.community.listMembers",
+						"social.colibri.community.listRoles",
+						"social.colibri.community.getInvitation",
+						"social.colibri.channel.getChannel",
+						"social.colibri.channel.listMessages",
+						"social.colibri.channel.listReactions",
+						"social.colibri.channel.listUnreadStatus",
+						"social.colibri.channel.putReadCursors",
+						"social.colibri.embed.getMetadata",
+						"social.colibri.embed.searchGifs",
+						"social.colibri.embed.trendingGifs",
+						"social.colibri.embed.gifCategories",
+						"social.colibri.blob.get"
+					]
+				}
+			]
+		}
+	}
+}
