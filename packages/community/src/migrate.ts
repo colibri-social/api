@@ -6,6 +6,7 @@ import {
 	LEGACY_COLLECTIONS,
 	SELF,
 	SPACE_TYPES,
+	spaceUri,
 } from "@colibri-social/lexicons";
 import {
 	managingAppPolicy,
@@ -15,6 +16,7 @@ import {
 	publicPolicy,
 } from "@colibri-social/space";
 import type { CommunityCredentials } from "./credentials.js";
+import type { SpaceRegistry } from "./spaces.js";
 import type { CommunityWriter } from "./writes.js";
 
 export type LegacyRecord<T = Record<string, unknown>> = {
@@ -39,6 +41,7 @@ export type MigrateDeps = {
 	hostFor: (did: string) => Promise<string>;
 	credentials: CommunityCredentials;
 	writer: CommunityWriter;
+	spaces: SpaceRegistry;
 	appviewService: string;
 	log: (message: string, detail?: Record<string, unknown>) => void;
 	dryRun?: boolean;
@@ -133,6 +136,11 @@ export const migrateCommunity = async (
 				const message = error instanceof Error ? error.message : String(error);
 				if (!message.includes("SpaceAlreadyExists")) throw error;
 			});
+		await deps.spaces.register({
+			uri: spaceUri(community, type, skey),
+			community,
+			host: host.pds.service,
+		});
 	};
 
 	deps.log("creating the community's spaces");

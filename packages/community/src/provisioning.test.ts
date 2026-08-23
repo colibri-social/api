@@ -3,6 +3,7 @@ import type { PdsClient, PdsSession } from "@colibri-social/space";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { CommunityCredentials, StoredCredentials } from "./credentials.js";
 import { CommunityProvisioner, ProvisioningRefused } from "./provisioning.js";
+import type { SpaceRegistry } from "./spaces.js";
 
 const APPVIEW = "did:web:appview.test";
 const APPVIEW_SERVICE = `${APPVIEW}#colibri_appview`;
@@ -23,7 +24,10 @@ let createdSpaces: Array<{ service: string; type: string; skey: string; policy: 
 let stored: StoredCredentials[];
 let forgotten: string[];
 let existingSpaces: string[];
+let deletedSpaces: string[];
 let sessionDid: string;
+let registered: Array<{ uri: string; community: string | null; host: string }>;
+let forgottenSpaces: string[];
 
 const fakeClient = (service: string): PdsClient =>
 	({
@@ -36,6 +40,9 @@ const fakeClient = (service: string): PdsClient =>
 		) => {
 			createdSpaces.push({ service, ...params });
 			return { uri: `at://${COMMUNITY}/${params.type}/${params.skey}` };
+		},
+		deleteSpace: async (_session: PdsSession, space: string) => {
+			deletedSpaces.push(space);
 		},
 		putRecord: async (
 			_session: PdsSession,
@@ -55,6 +62,15 @@ const clientFor = (endpoint: string): PdsClient => {
 	return client;
 };
 
+const fakeSpaces = (): SpaceRegistry => ({
+	register: async (space) => {
+		registered.push(space);
+	},
+	forget: async (uri) => {
+		forgottenSpaces.push(uri);
+	},
+});
+
 const fakeCredentials = (): CommunityCredentials =>
 	({
 		clientFor,
@@ -71,6 +87,7 @@ const provisioner = () =>
 		pds: clientFor(OURS),
 		admin: null,
 		credentials: fakeCredentials(),
+		spaces: fakeSpaces(),
 		handleDomain: "colibri.test",
 		appviewService: APPVIEW_SERVICE,
 		now: () => new Date("2026-08-23T00:00:00.000Z"),
@@ -92,7 +109,10 @@ beforeEach(() => {
 	stored = [];
 	forgotten = [];
 	existingSpaces = [];
+	deletedSpaces = [];
 	sessionDid = COMMUNITY;
+	registered = [];
+	forgottenSpaces = [];
 	clients.clear();
 });
 
@@ -147,6 +167,28 @@ describe("adopting an existing account", () => {
 		expect(collections).toContain("social.colibri.beta.community.settings");
 	});
 
+	it("records every space it creates, so the sync engine can find them", async () => {
+		const provisioned = await adopt();
+
+		expect(registered.map((space) => space.uri).sort()).toEqual(
+			[
+				...Object.values(communitySpaces(COMMUNITY)),
+				provisioned.channels.text,
+				provisioned.channels.voice,
+			].sort(),
+		);
+		for (const space of registered) {
+			expect(space.community).toBe(COMMUNITY);
+			expect(space.host).toBe(THEIRS);
+		}
+	});
+
+	it("records a space only after the PDS accepted it", async () => {
+		await adopt();
+
+		expect(registered).toHaveLength(createdSpaces.length);
+	});
+
 	it("refuses credentials that authenticate a different account", async () => {
 		sessionDid = "did:plc:someone-else";
 
@@ -168,5 +210,26 @@ describe("adopting an existing account", () => {
 		await expect(provisioner().create({ name: "Nope", creator: CREATOR })).rejects.toMatchObject({
 			reason: "adminUnavailable",
 		});
+	});
+});
+
+describe("channel spaces", () => {
+	it("forgets a channel space when the channel is deleted", async () => {
+		const provisioned = await adopt();
+		const host = { pds: clientFor(THEIRS), session: {} as never };
+
+		await provisioner().deleteChannel(host, provisioned.channels.text);
+
+		expect(forgottenSpaces).toEqual([provisioned.channels.text]);
+	});
+
+	it("forgets every community space when the community is destroyed", async () => {
+		await adopt();
+		const host = { pds: clientFor(THEIRS), session: {} as never };
+		const spaces = communitySpaces(COMMUNITY);
+
+		await provisioner().destroy(COMMUNITY, host, spaces);
+
+		expect(forgottenSpaces.sort()).toEqual(Object.values(spaces).sort());
 	});
 });

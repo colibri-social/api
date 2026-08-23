@@ -6,6 +6,7 @@ import {
 	PERMISSIONS,
 	SELF,
 	SPACE_TYPES,
+	spaceUri,
 } from "@colibri-social/lexicons";
 import {
 	managingAppPolicy,
@@ -18,6 +19,7 @@ import {
 } from "@colibri-social/space";
 import type { CommunityCredentials, CommunityHost } from "./credentials.js";
 import { generatePassword } from "./crypto.js";
+import type { SpaceRegistry } from "./spaces.js";
 
 export type ProvisionStep =
 	| "verifyingCredentials"
@@ -68,6 +70,7 @@ export type ProvisionerDeps = {
 	pds: PdsClient;
 	admin: PdsAdmin | null;
 	credentials: CommunityCredentials;
+	spaces: SpaceRegistry;
 	handleDomain: string;
 	appviewService: string;
 	requiresInviteCode?: boolean;
@@ -228,6 +231,11 @@ export class CommunityProvisioner {
 				policy: this.policyFor(spaceType, isPrivate),
 				appAccess: openAppAccess(),
 			});
+			await this.deps.spaces.register({
+				uri: spaceUri(community, spaceType, SELF),
+				community,
+				host: host.pds.service,
+			});
 		}
 
 		report("writingProfile", completed + 1, community);
@@ -356,6 +364,7 @@ export class CommunityProvisioner {
 			policy: managingAppPolicy(this.deps.appviewService),
 			appAccess: openAppAccess(),
 		});
+		await this.deps.spaces.register({ uri: space, community, host: host.pds.service });
 
 		await host.pds.putRecord(host.session, {
 			space,
@@ -378,11 +387,13 @@ export class CommunityProvisioner {
 
 	async deleteChannel(host: CommunityHost, space: string): Promise<void> {
 		await host.pds.deleteSpace(host.session, space);
+		await this.deps.spaces.forget(space);
 	}
 
 	async destroy(community: string, host: CommunityHost, spaces: CommunitySpaces): Promise<void> {
 		for (const space of Object.values(spaces)) {
 			await host.pds.deleteSpace(host.session, space).catch(() => undefined);
+			await this.deps.spaces.forget(space);
 		}
 		if (this.deps.admin && host.pds.service === this.deps.pds.service) {
 			await this.deps.admin.deleteAccount(community);

@@ -1,14 +1,7 @@
 import { COLLECTIONS, communitySpaces, SELF, SPACE_TYPES } from "@colibri-social/lexicons";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-	createHarness,
-	type Harness,
-	registerSpace,
-	type UserFixture,
-	unique,
-	waitForPds,
-} from "./harness.js";
+import { createHarness, type Harness, type UserFixture, unique, waitForPds } from "./harness.js";
 
 let harness: Harness;
 let founder: UserFixture;
@@ -31,15 +24,6 @@ beforeAll(async () => {
 	community = provisioned.did;
 	textChannel = provisioned.channels.text;
 	voiceChannel = provisioned.channels.voice;
-
-	const spaces = communitySpaces(community);
-	for (const space of [
-		...Object.values(spaces),
-		provisioned.channels.text,
-		provisioned.channels.voice,
-	]) {
-		await registerSpace(harness.database, space, community, community, harness.pds.service);
-	}
 }, 180_000);
 
 afterAll(async () => {
@@ -259,7 +243,7 @@ describe("a personal space", () => {
 			},
 		});
 
-		await registerSpace(harness.database, space, user.did, null, harness.pds.service);
+		await harness.spaces.register({ uri: space, community: null, host: harness.pds.service });
 
 		const token = await harness.pds.getDelegationToken(user.session, space);
 		expect(typeof token).toBe("string");

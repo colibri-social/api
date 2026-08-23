@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { isLegacyJetstreamUrl, jetstreamEndpoint } from "./jetstream-url.js";
 
+const BARE_IP_DID_WEB = /^did:web:(\d{1,3}\.){3}\d{1,3}(%3A\d+)?$/i;
+
 const optionalString = z
 	.string()
 	.trim()
@@ -20,7 +22,13 @@ export const configSchema = z.object({
 	HOST: z.string().default("0.0.0.0"),
 	LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 
-	APPVIEW_DID: z.string().startsWith("did:web:"),
+	APPVIEW_DID: z
+		.string()
+		.startsWith("did:web:")
+		.refine((value) => !BARE_IP_DID_WEB.test(value), {
+			message:
+				"a did:web host must be a name, not an IP address: a PDS refuses a bare IP as a service-auth audience. Use did:web:localhost%3A8000 and keep listening on 127.0.0.1",
+		}),
 	PUBLIC_URL: z.url(),
 	SIGNING_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, "expected 64 hex characters"),
 	CREDENTIAL_ENCRYPTION_KEY: z.string(),

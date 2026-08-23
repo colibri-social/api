@@ -724,6 +724,7 @@ export const handleMigrateCommunity = async (
 				hostFor: (did) => ctx.hosts.hostFor(did),
 				credentials: ctx.credentials,
 				writer: ctx.writer,
+				spaces: ctx.spaces,
 				appviewService: serviceId(ctx.config.APPVIEW_DID, SERVICE_FRAGMENTS.appview),
 				log: (message, detail) => ctx.log.info(detail ?? {}, message),
 				dryRun: false,

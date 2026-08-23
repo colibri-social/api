@@ -12,6 +12,7 @@ import {
 	Membership,
 	Moderation,
 	SecretBox,
+	spaceRegistry,
 } from "@colibri-social/community";
 import {
 	IdentityResolver,
@@ -258,10 +259,13 @@ export const createHarness = async () => {
 	registerProtocolRoutes({ server: protocolServer, ctx: protocolCtx, auth: protocolAuth });
 	httpServer.on("request", protocolServer.router);
 
+	const spaces = spaceRegistry({ database });
+
 	const provisioner = new CommunityProvisioner({
 		pds,
 		admin,
 		credentials,
+		spaces,
 		handleDomain: "test",
 		emailDomain: "communities.test.invalid",
 		appviewService: serviceId(appviewDid, SERVICE_FRAGMENTS.appview),
@@ -324,6 +328,7 @@ export const createHarness = async () => {
 		writer,
 		membership,
 		moderation,
+		spaces,
 		provisioner,
 		projections,
 		repoSync,
@@ -407,27 +412,6 @@ const upsertCursor = async (
 		.insert(tables.spaceRepos)
 		.values(row)
 		.onConflictDoUpdate({ target: [tables.spaceRepos.space, tables.spaceRepos.author], set: row });
-};
-
-export const registerSpace = async (
-	{ db, tables }: Database,
-	space: string,
-	authority: string,
-	community: string | null,
-	host: string,
-) => {
-	await db
-		.insert(tables.spaces)
-		.values({
-			uri: space,
-			authority,
-			spaceType: space.split("/")[4] as string,
-			skey: space.split("/").pop() as string,
-			community,
-			host,
-			createdAt: new Date().toISOString(),
-		})
-		.onConflictDoNothing();
 };
 
 export type UserFixture = { did: string; handle: string; password: string; session: PdsSession };

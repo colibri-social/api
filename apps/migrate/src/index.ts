@@ -27,6 +27,7 @@ const main = async (): Promise<void> => {
 			hostFor: (did) => ctx.hosts.hostFor(did),
 			credentials: ctx.credentials,
 			writer,
+			spaces: ctx.spaces,
 			appviewService: serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.appview),
 			log: (message, detail) => ctx.log.info(detail ?? {}, message),
 			dryRun: values["dry-run"],

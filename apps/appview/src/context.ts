@@ -7,6 +7,7 @@ import {
 	CommunityProvisioner,
 	CommunityWriter,
 	SecretBox,
+	spaceRegistry,
 } from "@colibri-social/community";
 import { createGifsClient, createPreviewCache } from "@colibri-social/embeds";
 import {
@@ -93,16 +94,6 @@ export const createContext = async (config: Config) => {
 		tables: database.tables,
 	});
 
-	const provisioner = new CommunityProvisioner({
-		pds,
-		admin,
-		credentials,
-		handleDomain: config.COMMUNITY_HANDLE_DOMAIN,
-		appviewService: serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.appview),
-		requiresInviteCode: config.PDS_REQUIRES_INVITE,
-		...(config.COMMUNITY_EMAIL_DOMAIN ? { emailDomain: config.COMMUNITY_EMAIL_DOMAIN } : {}),
-	});
-
 	const projections: ProjectionDeps = {
 		db: database.db,
 		tables: database.tables,
@@ -130,6 +121,24 @@ export const createContext = async (config: Config) => {
 		concurrency: config.SYNC_WORKERS,
 		sweepIntervalMs: config.SYNC_SWEEP_SECONDS * 1000,
 		log: (event, detail) => log.warn(detail, event),
+	});
+
+	const spaces = spaceRegistry({
+		database,
+		onRegistered: (uri) => {
+			void sync.sweepSpace(uri).catch((error) => log.warn({ space: uri, error }, "sweep.failed"));
+		},
+	});
+
+	const provisioner = new CommunityProvisioner({
+		pds,
+		admin,
+		credentials,
+		spaces,
+		handleDomain: config.COMMUNITY_HANDLE_DOMAIN,
+		appviewService: serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.appview),
+		requiresInviteCode: config.PDS_REQUIRES_INVITE,
+		...(config.COMMUNITY_EMAIL_DOMAIN ? { emailDomain: config.COMMUNITY_EMAIL_DOMAIN } : {}),
 	});
 
 	const blobs = new BlobService({
@@ -174,6 +183,7 @@ export const createContext = async (config: Config) => {
 		spaceClient,
 		loader,
 		writer,
+		spaces,
 		provisioner,
 		projections,
 		sync,

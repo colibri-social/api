@@ -185,25 +185,11 @@ export const handleGrantSpaceAccess = async (
 		throw grantErrorFor(cause);
 	}
 
-	const host = await ctx.hosts.hostFor(ref.authority);
-
-	const spaceRow = {
+	await ctx.spaces.register({
 		uri: ref.uri,
-		authority: ref.authority,
-		spaceType: ref.spaceType,
-		skey: ref.skey,
 		community: null,
-		host,
-		createdAt: new Date().toISOString(),
-	};
-
-	await ctx.database.db
-		.insert(ctx.database.tables.spaces)
-		.values(spaceRow)
-		.onConflictDoUpdate({
-			target: ctx.database.tables.spaces.uri,
-			set: { spaceType: spaceRow.spaceType, skey: spaceRow.skey, host: spaceRow.host },
-		});
+		host: await ctx.hosts.hostFor(ref.authority),
+	});
 
 	ctx.sync.notifyWrite(ref.uri, ref.authority);
 
