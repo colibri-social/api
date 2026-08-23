@@ -1,7 +1,6 @@
 services:
   appview:
     build: .
-    image: ghcr.io/colibri-social/appview:latest
     restart: unless-stopped
     env_file:
       - path: .env

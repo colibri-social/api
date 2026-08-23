@@ -14,7 +14,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      actions: write
       id-token: write
     steps:
       - name: Mint release token
@@ -54,20 +53,3 @@ jobs:
           publish: pnpm changeset publish
           commit: "[ci] release"
           title: "[ci] release"
-
-      - name: Detect version bump
-        id: bump
-        run: |
-          CURR=$(node -p "require('./apps/appview/package.json').version")
-          PREV=""
-          if git rev-parse HEAD~1 >/dev/null 2>&1; then
-            PREV=$(git show HEAD~1:apps/appview/package.json 2>/dev/null | node -p "(()=>{try{return JSON.parse(require('fs').readFileSync(0,'utf8')).version}catch(e){return ''}})()" || true)
-          fi
-          echo "version=$CURR" >> "$GITHUB_OUTPUT"
-          [ "$CURR" != "$PREV" ] && echo "changed=true" >> "$GITHUB_OUTPUT" || echo "changed=false" >> "$GITHUB_OUTPUT"
-
-      - name: Publish workflow
-        if: steps.changesets.outputs.hasChangesets == 'false' && steps.bump.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run publish.yml --ref main -f version="${{ steps.bump.outputs.version }}"

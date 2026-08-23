@@ -40,11 +40,9 @@ carries the `openssl` lines that generate the two secrets.
 | `apps/appview`           | The server                                                                                                                   |
 | `apps/migrate`           | One-shot migration of repo-backed communities onto spaces                                                                    |
 
-## Running it with Docker
-
 ```sh
 cp .env.example .env    # required, see Getting started
-docker compose up
+docker compose up --build
 ```
 
 That runs the AppView alone on libSQL against the `appview-data` volume, pointed
@@ -71,4 +69,16 @@ pnpm typecheck          # sources and tests
 pnpm lint               # Biome
 ```
 
-A change to a published package needs a changeset. See `.changeset/README.md`.
+## Releasing
+
+Three packages are published from here: `@colibri-social/lexicons`,
+`@colibri-social/space` and `@colibri-social/space-sync`.
+
+A change to any of them needs a changeset:
+
+```sh
+pnpm changeset
+```
+
+A change to `packages/lexicons` is a protocol change. Treat it as a minor bump
+at least, because the client and the AppView both validate against it.
