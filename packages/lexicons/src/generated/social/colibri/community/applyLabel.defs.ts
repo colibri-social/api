@@ -26,7 +26,7 @@ export const $output = /*#__PURE__*/ l.jsonPayload({"label":/*#__PURE__*/ l.ref<
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Applies a label to a record in one of the community's spaces. This is how content is hidden, marked as a spoiler, or has its link previews suppressed. The record itself is untouched, since it lives in its author's own repo, so the label is advisory and readers honour it according to the labelers the community names. */
+/** Applies a label to a record in one of the community's spaces. This is how content is hidden, marked as a spoiler, or has its link previews suppressed. The record itself is untouched, since it lives in its author's own repo, but a `hidden` label stops this AppView serving the record: it is withheld from reads and from the events socket, and replies to it see a deletedMessageView in its place. Moderators holding `label.apply` and the record's own author still see it. */
 const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","Forbidden","CommunityNotFound","SpaceNotFound","InvalidRequest","CredentialsUnavailable"]);
 
 export { main };

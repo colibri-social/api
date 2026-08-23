@@ -60,9 +60,9 @@
 					"description": "When it was last edited. Absent means never edited."
 				},
 				"parent": {
-					"type": "ref",
-					"ref": "#messageView",
-					"description": "The message being replied to. Never itself nested."
+					"type": "union",
+					"refs": ["#messageView", "#deletedMessageView"],
+					"description": "The message being replied to, or a stand-in when it can no longer be served. Never itself nested."
 				},
 				"attachments": {
 					"type": "array",
@@ -86,7 +86,7 @@
 						"type": "ref",
 						"ref": "social.colibri.community.defs#labelView"
 					},
-					"description": "Labels from labelers this community honours. Hiding is advisory: the record still exists in its author's repo."
+					"description": "Labels from labelers this community honours. `src` says who applied each one. A `hidden` label is enforced by the AppView, which withholds the message rather than serving it, so a message that reaches you carries only labels you are meant to act on for display, such as `spoiler`."
 				},
 				"suppressedEmbeds": {
 					"type": "array",
@@ -108,6 +108,28 @@
 				"legacy": {
 					"type": "boolean",
 					"description": "Whether this message comes from the repo-backed community this channel was migrated from, and is therefore immutable."
+				}
+			}
+		},
+		"deletedMessageView": {
+			"type": "object",
+			"description": "Stands in for a message the AppView will not serve: deleted by its author, or hidden by a moderator. The two cases are deliberately indistinguishable, so hiding does not leak what was hidden. Render it as an unavailable message.",
+			"required": ["uri", "rkey", "channel"],
+			"properties": {
+				"uri": {
+					"type": "string",
+					"format": "at-uri",
+					"description": "The message's full space AT-URI."
+				},
+				"rkey": {
+					"type": "string",
+					"format": "record-key",
+					"description": "The message's record key."
+				},
+				"channel": {
+					"type": "string",
+					"format": "space-ref",
+					"description": "The channel space it lived in."
 				}
 			}
 		},

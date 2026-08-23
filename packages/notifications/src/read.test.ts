@@ -1,5 +1,5 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
-import { channelSpace } from "@colibri-social/lexicons";
+import { COLLECTIONS, channelSpace } from "@colibri-social/lexicons";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { NotificationDeps } from "./deps.js";
 import { nextId } from "./id.js";
@@ -20,6 +20,33 @@ const RECIPIENT = "did:plc:recipient000000000000000";
 
 let database: TestDatabase;
 let deps: NotificationDeps;
+
+const insertMessage = async (rkey: string, text = "hello world") => {
+	await database.db.insert(database.tables.messages).values({
+		space: CHANNEL,
+		author: AUTHOR,
+		rkey,
+		community: COMMUNITY,
+		text,
+		facets: null,
+		createdAt: "2026-08-23T00:00:00.000Z",
+		indexedAt: "2026-08-23T00:00:00.000Z",
+	});
+};
+
+const insertLabel = async (subjectRkey: string, val: string, negated = false) => {
+	await database.db.insert(database.tables.labels).values({
+		space: CHANNEL,
+		src: COMMUNITY,
+		rkey: nextId(),
+		subjectDid: AUTHOR,
+		subjectCollection: COLLECTIONS.message,
+		subjectRkey,
+		val,
+		negated,
+		createdAt: "2026-08-23T00:00:00.000Z",
+	});
+};
 
 const insertNotification = async (
 	overrides: Partial<{
@@ -128,6 +155,49 @@ describe("listNotifications", () => {
 		expect(second.notifications.map((row) => row.id)).not.toEqual(
 			first.notifications.map((row) => row.id),
 		);
+	});
+});
+
+describe("hidden messages", () => {
+	it("drops a notification whose message an honoured labeler hid", async () => {
+		await insertMessage("3lkmsg1");
+		await insertNotification({ kind: "mention", messageRkey: "3lkmsg1" });
+
+		expect(await unreadCount(deps, RECIPIENT)).toBe(1);
+		expect(await unseenForChannel(deps, RECIPIENT, CHANNEL)).toHaveLength(1);
+		expect((await listNotifications(deps, RECIPIENT)).notifications).toHaveLength(1);
+
+		await insertLabel("3lkmsg1", "hidden");
+
+		expect(await unreadCount(deps, RECIPIENT)).toBe(0);
+		expect(await unseenForChannel(deps, RECIPIENT, CHANNEL)).toHaveLength(0);
+		expect((await listNotifications(deps, RECIPIENT)).notifications).toHaveLength(0);
+
+		const rows = await database.db.select().from(database.tables.notifications);
+		expect(await hydrateNotifications(deps, rows, async () => new Map())).toHaveLength(0);
+	});
+
+	it("brings the notification back when the hidden label is retracted", async () => {
+		await insertMessage("3lkmsg1");
+		await insertNotification({ kind: "mention", messageRkey: "3lkmsg1" });
+		await insertLabel("3lkmsg1", "hidden");
+		expect(await unreadCount(deps, RECIPIENT)).toBe(0);
+
+		await insertLabel("3lkmsg1", "hidden", true);
+		expect(await unreadCount(deps, RECIPIENT)).toBe(1);
+	});
+
+	it("keeps a spoilered message and carries its labels on the view", async () => {
+		await insertMessage("3lkmsg1");
+		await insertNotification({ kind: "mention", messageRkey: "3lkmsg1" });
+		await insertLabel("3lkmsg1", "spoiler");
+
+		const rows = await database.db.select().from(database.tables.notifications);
+		const [view] = await hydrateNotifications(deps, rows, async () => new Map());
+		expect(view?.message?.text).toBe("hello world");
+		expect(view?.message?.labels).toEqual([
+			expect.objectContaining({ src: COMMUNITY, val: "spoiler" }),
+		]);
 	});
 });
 

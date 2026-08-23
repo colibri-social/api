@@ -1,6 +1,6 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { CommunityLoader } from "@colibri-social/community";
-import { COLLECTIONS, channelSpace, SPACE_TYPES } from "@colibri-social/lexicons";
+import { COLLECTIONS, channelSpace, SPACE_TYPES, type social } from "@colibri-social/lexicons";
 import { nextTid } from "@colibri-social/space";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -20,6 +20,38 @@ const NOW = "2026-08-23T00:00:00.000Z";
 let database: TestDatabase;
 let ctx: AppContext;
 let views: ChannelViews;
+
+type Parent = social.colibri.channel.defs.MessageView["parent"];
+
+const asMessageView = (parent: Parent): social.colibri.channel.defs.MessageView | undefined =>
+	parent?.$type === "social.colibri.channel.defs#messageView"
+		? (parent as social.colibri.channel.defs.MessageView)
+		: undefined;
+
+const asDeletedView = (
+	parent: Parent,
+): social.colibri.channel.defs.DeletedMessageView | undefined =>
+	parent?.$type === "social.colibri.channel.defs#deletedMessageView"
+		? (parent as social.colibri.channel.defs.DeletedMessageView)
+		: undefined;
+
+const putLabel = async (
+	subjectRkey: string,
+	val: string,
+	overrides: { src?: string; negated?: boolean; subjectDid?: string } = {},
+) => {
+	await database.db.insert(database.tables.labels).values({
+		space: SPACE,
+		src: overrides.src ?? LABELER,
+		rkey: nextTid(),
+		subjectDid: overrides.subjectDid ?? AUTHOR_A,
+		subjectCollection: COLLECTIONS.message,
+		subjectRkey,
+		val,
+		negated: overrides.negated ?? false,
+		createdAt: NOW,
+	});
+};
 
 const putMessage = async (
 	rkey: string,
@@ -248,9 +280,130 @@ describe("ChannelViews.messages", () => {
 
 		const page = await views.messages(SPACE, null, { limit: 10 });
 		const child = page.messages.find((message) => message.rkey === childRkey);
+		const parent = asMessageView(child?.parent);
 
-		expect(child?.parent?.rkey).toBe(parentRkey);
-		expect(child?.parent?.parent).toBeUndefined();
+		expect(parent?.rkey).toBe(parentRkey);
+		expect(parent?.parent).toBeUndefined();
+	});
+
+	it("withholds a message an honoured labeler hid", async () => {
+		const visible = nextTid();
+		const withheld = nextTid();
+		await putMessage(visible, { text: "fine" });
+		await putMessage(withheld, { text: "spam" });
+		await putLabel(withheld, "hidden");
+
+		const page = await views.messages(SPACE, AUTHOR_B, { limit: 10 });
+		expect(page.messages.map((message) => message.rkey)).toEqual([visible]);
+	});
+
+	it("ignores a hidden label from a labeler the community does not name", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey);
+		await putLabel(rkey, "hidden", { src: OTHER_LABELER });
+
+		const page = await views.messages(SPACE, AUTHOR_B, { limit: 10 });
+		expect(page.messages.map((message) => message.rkey)).toEqual([rkey]);
+	});
+
+	it("serves a hidden message back once the label is retracted", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey);
+		await putLabel(rkey, "hidden");
+
+		expect((await views.messages(SPACE, AUTHOR_B, { limit: 10 })).messages).toEqual([]);
+
+		await putLabel(rkey, "hidden", { negated: true });
+
+		const page = await views.messages(SPACE, AUTHOR_B, { limit: 10 });
+		expect(page.messages.map((message) => message.rkey)).toEqual([rkey]);
+	});
+
+	it("still shows a hidden message to its own author, with the label attached", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey);
+		await putLabel(rkey, "hidden", { negated: false });
+
+		const page = await views.messages(SPACE, AUTHOR_A, { limit: 10 });
+		expect(page.messages.map((message) => message.rkey)).toEqual([rkey]);
+		expect(page.messages[0]?.labels).toEqual([
+			expect.objectContaining({ src: LABELER, val: "hidden" }),
+		]);
+	});
+
+	it("still shows a hidden message to a moderator holding label.apply", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey);
+		await putLabel(rkey, "hidden");
+
+		await database.db.insert(database.tables.roles).values({
+			community: COMMUNITY,
+			rkey: "3lkmoderator00",
+			name: "Moderator",
+			position: 1,
+			permissions: ["label.apply"],
+			channelOverrides: [],
+			protected: false,
+		});
+		await database.db.insert(database.tables.members).values({
+			community: COMMUNITY,
+			did: AUTHOR_B,
+			roles: ["3lkmoderator00"],
+			joinedAt: NOW,
+		});
+
+		const page = await views.messages(SPACE, AUTHOR_B, { limit: 10 });
+		expect(page.messages.map((message) => message.rkey)).toEqual([rkey]);
+	});
+
+	it("keeps spoiler labels on the messages it does serve", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey);
+		await putLabel(rkey, "spoiler");
+
+		const page = await views.messages(SPACE, AUTHOR_B, { limit: 10 });
+		expect(page.messages[0]?.labels).toEqual([
+			expect.objectContaining({ src: LABELER, val: "spoiler" }),
+		]);
+	});
+
+	it("stands a withheld parent in as a deleted message", async () => {
+		const parentRkey = nextTid();
+		const childRkey = nextTid();
+		await putMessage(parentRkey, { text: "hidden parent" });
+		await putMessage(childRkey, { text: "reply", parentAuthor: AUTHOR_A, parentRkey });
+		await putLabel(parentRkey, "hidden");
+
+		const page = await views.messages(SPACE, AUTHOR_B, { limit: 10 });
+		expect(page.messages.map((message) => message.rkey)).toEqual([childRkey]);
+
+		const child = page.messages[0];
+		expect(asMessageView(child?.parent)).toBeUndefined();
+		expect(asDeletedView(child?.parent)).toMatchObject({ rkey: parentRkey, channel: SPACE });
+	});
+
+	it("stands a parent that no longer exists in as a deleted message", async () => {
+		const childRkey = nextTid();
+		await putMessage(childRkey, {
+			text: "orphan",
+			parentAuthor: AUTHOR_A,
+			parentRkey: nextTid(),
+		});
+
+		const page = await views.messages(SPACE, AUTHOR_B, { limit: 10 });
+		expect(asDeletedView(page.messages[0]?.parent)).toBeDefined();
+	});
+
+	it("shows a moderator the real parent where others see a stand-in", async () => {
+		const parentRkey = nextTid();
+		const childRkey = nextTid();
+		await putMessage(parentRkey, { text: "hidden parent" });
+		await putMessage(childRkey, { text: "reply", parentAuthor: AUTHOR_A, parentRkey });
+		await putLabel(parentRkey, "hidden");
+
+		const page = await views.messages(SPACE, AUTHOR_A, { limit: 10 });
+		const child = page.messages.find((message) => message.rkey === childRkey);
+		expect(asMessageView(child?.parent)).toMatchObject({ text: "hidden parent" });
 	});
 
 	it("marks messages from a migrated legacy repo", async () => {
@@ -316,5 +469,29 @@ describe("ChannelViews.unreadStatus", () => {
 
 		const afterReadingAll = await views.unreadStatus(AUTHOR_B, { community: COMMUNITY });
 		expect(afterReadingAll[0]).toMatchObject({ hasUnread: false, unreadMentions: 0 });
+	});
+
+	it("does not count a hidden message as unread, nor its mention", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey);
+		await database.db.insert(database.tables.notifications).values({
+			id: nextTid(),
+			recipient: AUTHOR_B,
+			kind: "mention",
+			community: COMMUNITY,
+			space: SPACE,
+			author: AUTHOR_A,
+			messageAuthor: AUTHOR_A,
+			messageRkey: rkey,
+			indexedAt: NOW,
+		});
+
+		const before = await views.unreadStatus(AUTHOR_B, { community: COMMUNITY });
+		expect(before[0]).toMatchObject({ hasUnread: true, unreadMentions: 1 });
+
+		await putLabel(rkey, "hidden");
+
+		const after = await views.unreadStatus(AUTHOR_B, { community: COMMUNITY });
+		expect(after[0]).toMatchObject({ hasUnread: false, unreadMentions: 0 });
 	});
 });

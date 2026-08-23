@@ -19,7 +19,7 @@
 						"type": "string",
 						"maxLength": 128,
 						"knownValues": ["hidden", "spoiler", "embeds-suppressed"],
-						"description": "The label value."
+						"description": "The label value. `hidden` is enforced: the AppView withholds a hidden record instead of serving it. `spoiler` and `embeds-suppressed` are display hints the AppView passes through for the client to honour."
 					},
 					"scope": {
 						"type": "array",

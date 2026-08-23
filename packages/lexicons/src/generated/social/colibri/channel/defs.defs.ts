@@ -58,9 +58,9 @@ type MessageView = { $type?: "social.colibri.channel.defs#messageView";
   "updatedAt"?:l.DatetimeString;
 
   /**
-   * The message being replied to. Never itself nested.
+   * The message being replied to, or a stand-in when it can no longer be served. Never itself nested.
    */
-  "parent"?:MessageView;
+  "parent"?:l.$Typed<MessageView> | l.$Typed<DeletedMessageView> | l.Unknown$TypedObject;
 
   /**
    * Attached files.
@@ -73,7 +73,7 @@ type MessageView = { $type?: "social.colibri.channel.defs#messageView";
   "reactions":(ReactionView)[];
 
   /**
-   * Labels from labelers this community honours. Hiding is advisory: the record still exists in its author's repo.
+   * Labels from labelers this community honours. `src` says who applied each one. A `hidden` label is enforced by the AppView, which withholds the message rather than serving it, so a message that reaches you carries only labels you are meant to act on for display, such as `spoiler`.
    */
   "labels":(CommunityDefs.LabelView)[];
 
@@ -95,9 +95,34 @@ type MessageView = { $type?: "social.colibri.channel.defs#messageView";
 export type { MessageView };
 
 /** A message as the AppView serves it, with its author, reactions and labels resolved. */
-const messageView = /*#__PURE__*/ l.typedObject<MessageView>($nsid, "messageView", /*#__PURE__*/ l.object({"uri":/*#__PURE__*/ l.string({"format":"at-uri"}),"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"author":/*#__PURE__*/ l.ref<ActorDefs.ProfileView>((() => ActorDefs.profileView) as any),"text":/*#__PURE__*/ l.string(),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"updatedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"parent":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<MessageView>((() => messageView) as any)),"attachments":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<AttachmentView>((() => attachmentView) as any), ),"reactions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ReactionView>((() => reactionView) as any), ),"labels":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<CommunityDefs.LabelView>((() => CommunityDefs.labelView) as any), ),"suppressedEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"uri"}), )),"embeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.LinkEmbed>((() => EmbedDefs.linkEmbed) as any), )),"legacy":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
+const messageView = /*#__PURE__*/ l.typedObject<MessageView>($nsid, "messageView", /*#__PURE__*/ l.object({"uri":/*#__PURE__*/ l.string({"format":"at-uri"}),"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"author":/*#__PURE__*/ l.ref<ActorDefs.ProfileView>((() => ActorDefs.profileView) as any),"text":/*#__PURE__*/ l.string(),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"updatedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"parent":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<MessageView>((() => messageView) as any),/*#__PURE__*/ l.typedRef<DeletedMessageView>((() => deletedMessageView) as any)], false)),"attachments":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<AttachmentView>((() => attachmentView) as any), ),"reactions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ReactionView>((() => reactionView) as any), ),"labels":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<CommunityDefs.LabelView>((() => CommunityDefs.labelView) as any), ),"suppressedEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"uri"}), )),"embeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.LinkEmbed>((() => EmbedDefs.linkEmbed) as any), )),"legacy":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
 
 export { messageView };
+
+/** Stands in for a message the AppView will not serve: deleted by its author, or hidden by a moderator. The two cases are deliberately indistinguishable, so hiding does not leak what was hidden. Render it as an unavailable message. */
+type DeletedMessageView = { $type?: "social.colibri.channel.defs#deletedMessageView";
+
+  /**
+   * The message's full space AT-URI.
+   */
+  "uri":l.AtUriString;
+
+  /**
+   * The message's record key.
+   */
+  "rkey":l.RecordKeyString;
+
+  /**
+   * The channel space it lived in.
+   */
+  "channel":l.SpaceRefString };
+
+export type { DeletedMessageView };
+
+/** Stands in for a message the AppView will not serve: deleted by its author, or hidden by a moderator. The two cases are deliberately indistinguishable, so hiding does not leak what was hidden. Render it as an unavailable message. */
+const deletedMessageView = /*#__PURE__*/ l.typedObject<DeletedMessageView>($nsid, "deletedMessageView", /*#__PURE__*/ l.object({"uri":/*#__PURE__*/ l.string({"format":"at-uri"}),"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"})}));
+
+export { deletedMessageView };
 
 /** A file attached to a message. */
 type AttachmentView = { $type?: "social.colibri.channel.defs#attachmentView";

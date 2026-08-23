@@ -4,7 +4,7 @@
 	"defs": {
 		"main": {
 			"type": "procedure",
-			"description": "Applies a label to a record in one of the community's spaces. This is how content is hidden, marked as a spoiler, or has its link previews suppressed. The record itself is untouched, since it lives in its author's own repo, so the label is advisory and readers honour it according to the labelers the community names.",
+			"description": "Applies a label to a record in one of the community's spaces. This is how content is hidden, marked as a spoiler, or has its link previews suppressed. The record itself is untouched, since it lives in its author's own repo, but a `hidden` label stops this AppView serving the record: it is withheld from reads and from the events socket, and replies to it see a deletedMessageView in its place. Moderators holding `label.apply` and the record's own author still see it.",
 			"input": {
 				"encoding": "application/json",
 				"schema": {
@@ -25,7 +25,7 @@
 							"type": "string",
 							"maxLength": 128,
 							"knownValues": ["hidden", "spoiler", "embeds-suppressed"],
-							"description": "The label value."
+							"description": "The label value. `hidden` withholds the record from reads. `spoiler` and `embeds-suppressed` are display hints."
 						},
 						"scope": {
 							"type": "array",
