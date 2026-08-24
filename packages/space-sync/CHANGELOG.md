@@ -1,5 +1,15 @@
 # @colibri-social/space-sync
 
+## 0.3.0
+
+### Minor Changes
+
+- 324a3e6: Move commit verification and repo recovery onto worker threads, so a large repo no longer stalls message delivery for every other channel. Set SYNC_WORKER_THREADS to turn it on
+
+### Patch Changes
+
+- 321e7dc: Tell every member when a community is deleted and drop its data straight away, so it stops being listed and stops being served the moment its owner deletes it instead of lingering until its PDS reports the deletion. Deleting a community now also deletes its channel spaces, and a community whose profile space disappears out of band is reconciled the same way.
+
 ## 0.2.1
 
 ### Patch Changes

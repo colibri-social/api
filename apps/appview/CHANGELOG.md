@@ -1,5 +1,47 @@
 # @colibri-social/appview
 
+## 2.5.0
+
+### Minor Changes
+
+- b1bbb1a: Scope channel events and live delivery to the people who may read the channel
+- 321e7dc: Tell every member when a community is deleted and drop its data straight away, so it stops being listed and stops being served the moment its owner deletes it instead of lingering until its PDS reports the deletion. Deleting a community now also deletes its channel spaces, and a community whose profile space disappears out of band is reconciled the same way.
+
+### Patch Changes
+
+- 38dc331: Sign an attachment's media link for each recipient of a live message event, so a blob in a permissioned space loads without waiting for a reload. Declare the viewer, exp and sig params on social.colibri.beta.blob.get
+- dc9ea5c: Reconcile a mute by its subject rather than its record key, so the immediate `actor.putMutes` push and the later repo sync of the same mute no longer collide on the one-mute-per-subject index and strand the user's preferences space with an unapplied cursor
+- b1e2b73: Run each actor's presence transitions in order, so a socket that opens and closes in quick succession can no longer swallow the offline broadcast and leave that member listed as online for everyone else
+- dc9ea5c: Default the SFU's RTC port range to 40000-40100, the range the compose file publishes. With neither `SFU_RTC_MIN_PORT` nor `SFU_RTC_MAX_PORT` set, transports took a port from mediasoup's own 10000-59999 default, so almost every candidate pointed at a port nothing forwarded and calls failed to connect.
+- f29b7d4: Publish the SFU's media port range for TCP as well as UDP, so the ICE over TCP fallback the SFU advertises can be reached. A port Docker does not forward drops the connection attempt without a reply, which fails ICE and leaves callers in silence.
+- 324a3e6: Move commit verification and repo recovery onto worker threads, so a large repo no longer stalls message delivery for every other channel. Set SYNC_WORKER_THREADS to turn it on
+- 07d1508: Give each account a single voice session. Joining a voice channel now retires that account's other voice sockets with a `superseded` reason, so a second device takes the call over instead of running alongside it, and nobody can sit in two channels at once. A handover within the same channel keeps the participant record, so the rest of the room sees the media move rather than a leave followed by a rejoin.
+  
+  Along with it, a set of voice fixes:
+  
+  - A frame the SFU cannot serve is answered with an error instead of rejecting unhandled, which could take the process down when Sentry was not configured.
+  - A server mute now pauses every audio producer rather than only the one declaring `mic`, survives the muted account reconnecting, and can be applied before that account carries any media.
+  - Voice connections release their topic subscriptions when they close, and frames from one socket are handled in order, so a socket can no longer leave a channel claiming it forever.
+  - A transport mediasoup reports as closed or failed is closed rather than only forgotten, releasing its ports and its producers instead of replaying dead producers to everyone who joins.
+  - The speaking indicator settles after the debounce window even when no further audio arrives, and clears when a speaker leaves mid-word.
+  - A room whose worker died is torn down, so presence stops reporting its participants as being in a call.
+  - `produce`, `consume` and `setSelfState` no longer conjure a participant from a frame naming an unknown transport, which used to announce a phantom join to the whole community.
+  - Joining replays who is already in the room and what moderation applies to them, and producer frames carry `paused`.
+  - Presence is claimed before the room is created, so two devices racing to create transports cannot leave one of them live in an untracked room.
+  - `SFU_ICE_SERVERS` reaches clients through `transportOptions`, so configured STUN and TURN servers are used instead of silently dropped.
+- Updated dependencies [321e7dc]
+- Updated dependencies [38dc331]
+- Updated dependencies [dc9ea5c]
+- Updated dependencies [dc9ea5c]
+- Updated dependencies [324a3e6]
+- Updated dependencies [07d1508]
+  - @colibri-social/community@2.3.0
+  - @colibri-social/space-sync@0.3.0
+  - @colibri-social/lexicons@2.5.0
+  - @colibri-social/projections@1.3.1
+  - @colibri-social/voice@0.1.1
+  - @colibri-social/notifications@1.1.2
+
 ## 2.4.0
 
 ### Minor Changes
