@@ -1,5 +1,16 @@
 # @colibri-social/space-sync
 
+## 0.2.0
+
+### Minor Changes
+
+- 152a8fb: Let a store name the repos a space expects, so a sweep keeps a member's repo even when the authority's writer set leaves it out
+
+### Patch Changes
+
+- Updated dependencies [152a8fb]
+  - @colibri-social/space@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes

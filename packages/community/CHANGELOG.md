@@ -1,5 +1,22 @@
 # @colibri-social/community
 
+## 2.2.0
+
+### Minor Changes
+
+- 152a8fb: Report progress while migrating a legacy community, find one from read cursors and message history when nothing else names it, and honor a role's per-channel overrides when checking `label.apply`
+
+### Patch Changes
+
+- Updated dependencies [152a8fb]
+- Updated dependencies [152a8fb]
+- Updated dependencies [152a8fb]
+- Updated dependencies [152a8fb]
+  - @colibri-social/space@0.2.0
+  - @colibri-social/identity@0.0.1
+  - @colibri-social/projections@1.2.1
+  - @colibri-social/lexicons@2.3.0
+
 ## 2.1.0
 
 ### Minor Changes

@@ -1,5 +1,11 @@
 # @colibri-social/lexicons
 
+## 2.3.0
+
+### Minor Changes
+
+- 152a8fb: Publish the `sync.defs#preferencesEvent` and `voice.defs#disconnected` frames, which shipped in the AppView but never reached the package
+
 ## 2.2.0
 
 ### Minor Changes
