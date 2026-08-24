@@ -16,9 +16,10 @@ import {
 	type PdsClient,
 	publicPolicy,
 	type SpacePolicy,
+	XrpcError,
 } from "@colibri-social/space";
 import type { CommunityCredentials, CommunityHost } from "./credentials.js";
-import { generatePassword } from "./crypto.js";
+import { generateHandlePrefix, generatePassword } from "./crypto.js";
 import type { SpaceRegistry } from "./spaces.js";
 
 export type ProvisionStep =
@@ -42,7 +43,6 @@ export type ProvisionProgress = {
 export type ProvisionRequest = {
 	name: string;
 	description?: string;
-	handlePrefix?: string;
 	creator: string;
 	isPrivate?: boolean;
 };
@@ -97,12 +97,10 @@ const COMMUNITY_SPACE_TYPES = [
 	SPACE_TYPES.communityModeration,
 ] as const;
 
-const slugify = (value: string): string =>
-	value
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "")
-		.slice(0, 24);
+const HANDLE_ATTEMPTS = 5;
+
+const isHandleUnavailable = (error: unknown): boolean =>
+	error instanceof XrpcError && error.code === "HandleNotAvailable";
 
 export class CommunityProvisioner {
 	private readonly now: () => Date;
@@ -135,7 +133,6 @@ export class CommunityProvisioner {
 		const report = (step: ProvisionStep, completed: number, community?: string) =>
 			onProgress?.({ step, completed, total: TOTAL_STEPS, ...(community ? { community } : {}) });
 
-		const handle = this.handleFor(request);
 		const password = generatePassword();
 
 		report("creatingAccount", 0);
@@ -143,12 +140,7 @@ export class CommunityProvisioner {
 			? (await admin.createInviteCode(1)).code
 			: undefined;
 
-		const account = await admin.createAccount({
-			handle,
-			email: `${handle.split(".")[0]}@${this.deps.emailDomain ?? this.deps.handleDomain}`,
-			password,
-			...(inviteCode ? { inviteCode } : {}),
-		});
+		const { account, handle } = await this.createAccount(admin, password, inviteCode);
 
 		await this.deps.credentials.store({
 			community: account.did,
@@ -285,9 +277,32 @@ export class CommunityProvisioner {
 		return { spaces, ownerRole, channels };
 	}
 
-	private handleFor(request: ProvisionRequest): string {
-		const prefix = slugify(request.handlePrefix ?? request.name) || nextTid();
-		return `${prefix}.${this.deps.handleDomain}`;
+	private handleFor(): string {
+		return `${generateHandlePrefix()}.${this.deps.handleDomain}`;
+	}
+
+	private async createAccount(
+		admin: PdsAdmin,
+		password: string,
+		inviteCode: string | undefined,
+	): Promise<{ account: Awaited<ReturnType<PdsAdmin["createAccount"]>>; handle: string }> {
+		let taken: unknown;
+		for (let attempt = 0; attempt < HANDLE_ATTEMPTS; attempt++) {
+			const handle = this.handleFor();
+			try {
+				const account = await admin.createAccount({
+					handle,
+					email: `${handle.split(".")[0]}@${this.deps.emailDomain ?? this.deps.handleDomain}`,
+					password,
+					...(inviteCode ? { inviteCode } : {}),
+				});
+				return { account, handle };
+			} catch (error) {
+				if (!isHandleUnavailable(error)) throw error;
+				taken = error;
+			}
+		}
+		throw taken;
 	}
 
 	private async seedLayout(

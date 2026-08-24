@@ -1,5 +1,5 @@
 import { communitySpaces } from "@colibri-social/lexicons";
-import type { PdsClient, PdsSession } from "@colibri-social/space";
+import { type PdsAdmin, type PdsClient, type PdsSession, XrpcError } from "@colibri-social/space";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { CommunityCredentials, StoredCredentials } from "./credentials.js";
 import { CommunityProvisioner, ProvisioningRefused } from "./provisioning.js";
@@ -82,6 +82,37 @@ const fakeCredentials = (): CommunityCredentials =>
 		},
 	}) as unknown as CommunityCredentials;
 
+let attempted: string[];
+let rejectFirst: number;
+
+const fakeAdmin = (): PdsAdmin =>
+	({
+		createInviteCode: async () => ({ code: "invite-1" }),
+		createAccount: async (params: { handle: string }) => {
+			attempted.push(params.handle);
+			if (attempted.length <= rejectFirst) {
+				throw new XrpcError(
+					400,
+					"HandleNotAvailable",
+					`Handle already taken: ${params.handle}`,
+					"com.atproto.server.createAccount",
+				);
+			}
+			return { did: COMMUNITY, handle: params.handle };
+		},
+	}) as unknown as PdsAdmin;
+
+const create = (name: string) =>
+	new CommunityProvisioner({
+		pds: clientFor(OURS),
+		admin: fakeAdmin(),
+		credentials: fakeCredentials(),
+		spaces: fakeSpaces(),
+		handleDomain: "colibri.test",
+		appviewService: APPVIEW_SERVICE,
+		now: () => new Date("2026-08-23T00:00:00.000Z"),
+	}).create({ name, creator: CREATOR });
+
 const provisioner = () =>
 	new CommunityProvisioner({
 		pds: clientFor(OURS),
@@ -113,7 +144,73 @@ beforeEach(() => {
 	sessionDid = COMMUNITY;
 	registered = [];
 	forgottenSpaces = [];
+	attempted = [];
+	rejectFirst = 0;
 	clients.clear();
+});
+
+describe("minting a handle", () => {
+	it("mints a random prefix rather than one derived from the name", async () => {
+		const first = await create("The Best Gaming Community");
+		const second = await create("The Best Gaming Community");
+
+		expect(first.handle).not.toBe(second.handle);
+		expect(first.handle).not.toContain("gaming");
+	});
+
+	it("stays inside the three to eighteen characters a PDS accepts", async () => {
+		for (const name of ["Hi", "The Best Gaming Community", "!!!"]) {
+			const result = await create(name);
+			const prefix = result.handle.split(".")[0] ?? "";
+
+			expect(prefix.length).toBeGreaterThanOrEqual(3);
+			expect(prefix.length).toBeLessThanOrEqual(18);
+		}
+	});
+
+	it("mints a prefix a handle validator accepts", async () => {
+		const result = await create("Gaming");
+
+		expect(result.handle.split(".")[0]).toMatch(/^[a-z][a-z0-9]*$/);
+	});
+
+	it("retries with a fresh handle when the first one is taken", async () => {
+		rejectFirst = 1;
+
+		const result = await create("Gaming");
+
+		expect(attempted).toHaveLength(2);
+		expect(attempted[0]).not.toBe(attempted[1]);
+		expect(result.handle).toBe(attempted[1]);
+	});
+
+	it("gives up after five attempts and reports the collision", async () => {
+		const admin = {
+			createInviteCode: async () => ({ code: "invite-1" }),
+			createAccount: async (params: { handle: string }) => {
+				attempted.push(params.handle);
+				throw new XrpcError(
+					400,
+					"HandleNotAvailable",
+					`Handle already taken: ${params.handle}`,
+					"com.atproto.server.createAccount",
+				);
+			},
+		} as unknown as PdsAdmin;
+
+		await expect(
+			new CommunityProvisioner({
+				pds: clientFor(OURS),
+				admin,
+				credentials: fakeCredentials(),
+				spaces: fakeSpaces(),
+				handleDomain: "colibri.test",
+				appviewService: APPVIEW_SERVICE,
+				now: () => new Date("2026-08-23T00:00:00.000Z"),
+			}).create({ name: "Gaming", creator: CREATOR }),
+		).rejects.toMatchObject({ code: "HandleNotAvailable" });
+		expect(attempted).toHaveLength(5);
+	});
 });
 
 describe("adopting an existing account", () => {

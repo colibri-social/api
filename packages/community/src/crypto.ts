@@ -79,3 +79,15 @@ export const generatePassword = (length = 40): string => {
 	for (const byte of bytes) out += PASSWORD_ALPHABET[byte % PASSWORD_ALPHABET.length];
 	return out;
 };
+
+const HANDLE_LETTERS = "abcdefghijkmnopqrstuvwxyz";
+const HANDLE_ALPHABET = `${HANDLE_LETTERS}23456789`;
+
+export const generateHandlePrefix = (length = 16): string => {
+	const bytes = randomBytes(length);
+	let out = HANDLE_LETTERS[(bytes[0] as number) % HANDLE_LETTERS.length] as string;
+	for (let i = 1; i < length; i++) {
+		out += HANDLE_ALPHABET[(bytes[i] as number) % HANDLE_ALPHABET.length];
+	}
+	return out;
+};

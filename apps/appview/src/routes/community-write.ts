@@ -167,7 +167,7 @@ export const handleCreateCommunity = async (
 	ctx: AppContext,
 	communities: CommunityViews,
 	callerDid: string,
-	input: { name: string; description?: string; handlePrefix?: string },
+	input: { name: string; description?: string },
 ): Promise<{ community: CommunityView }> => {
 	let provisioned: ProvisionedCommunity;
 	try {
@@ -175,7 +175,6 @@ export const handleCreateCommunity = async (
 			{
 				name: input.name,
 				description: input.description,
-				handlePrefix: input.handlePrefix,
 				creator: callerDid,
 			},
 			(progress) => ctx.announce.toUser(callerDid, communityProgressEvent(progress)),

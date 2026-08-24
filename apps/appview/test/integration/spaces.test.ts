@@ -17,7 +17,6 @@ beforeAll(async () => {
 	const provisioned = await harness.provisioner.create({
 		name: "Integration community",
 		description: "created by the integration suite",
-		handlePrefix: unique("comm"),
 		creator: founder.did,
 	});
 
