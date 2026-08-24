@@ -2,7 +2,7 @@ import { InvalidRequestError } from "@atproto/xrpc-server";
 import type { NotificationLevel, OnlineState } from "@colibri-social/appview-db";
 import { asDatetime, encodeMuteSubject, social } from "@colibri-social/lexicons";
 import { nextTid, parseSpaceRef, SpaceCredentialError } from "@colibri-social/space";
-import { eq } from "drizzle-orm";
+import { and, eq, notInArray } from "drizzle-orm";
 import { announceToCommunities, preferencesEvent, presenceEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { effectiveOnlineState, isOnlineState } from "../presence.js";
@@ -85,17 +85,33 @@ export const handlePutMutes = async (
 	callerDid: string,
 	mutes: readonly Mute[],
 ): Promise<{ preferences: Preferences }> => {
+	const rows = mutes.map((mute) => ({
+		did: callerDid,
+		rkey: nextTid(),
+		subject: encodeMuteSubject(mute.subject),
+		createdAt: mute.createdAt,
+	}));
+
 	await ctx.database.db.transaction(async (tx) => {
-		await tx.delete(ctx.database.tables.mutes).where(eq(ctx.database.tables.mutes.did, callerDid));
-		if (mutes.length === 0) return;
-		await tx.insert(ctx.database.tables.mutes).values(
-			mutes.map((mute) => ({
-				did: callerDid,
-				rkey: nextTid(),
-				subject: encodeMuteSubject(mute.subject),
-				createdAt: mute.createdAt,
-			})),
-		);
+		const table = ctx.database.tables.mutes;
+		const keep = rows.map((row) => row.subject);
+		await tx
+			.delete(table)
+			.where(
+				keep.length === 0
+					? eq(table.did, callerDid)
+					: and(eq(table.did, callerDid), notInArray(table.subject, keep)),
+			);
+		if (rows.length === 0) return;
+		for (const row of rows) {
+			await tx
+				.insert(table)
+				.values(row)
+				.onConflictDoUpdate({
+					target: [table.did, table.subject],
+					set: { createdAt: row.createdAt },
+				});
+		}
 	});
 
 	return { preferences: await announcePreferences(ctx, callerDid) };

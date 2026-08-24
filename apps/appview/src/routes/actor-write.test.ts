@@ -137,6 +137,48 @@ describe("putMutes", () => {
 		const rows = await database.db.select().from(database.tables.mutes);
 		expect(rows.map((row) => row.subject).sort()).toEqual([CHANNEL, COMMUNITY].sort());
 	});
+
+	it("keeps the rkey a repo sync already recorded for a subject", async () => {
+		await database.db.insert(database.tables.mutes).values({
+			did: CALLER,
+			rkey: "3lkfromrepo01",
+			subject: COMMUNITY,
+			createdAt: NOW,
+		});
+
+		await handlePutMutes(ctx, CALLER, [
+			{ subject: { $type: MUTED_ACTOR, did: COMMUNITY }, createdAt: NOW },
+			{ subject: { $type: MUTED_CHANNEL, channel: CHANNEL }, createdAt: NOW },
+		]);
+
+		const rows = await database.db
+			.select()
+			.from(database.tables.mutes)
+			.where(eq(database.tables.mutes.did, CALLER));
+		expect(rows).toHaveLength(2);
+		expect(rows.find((row) => row.subject === COMMUNITY)?.rkey).toBe("3lkfromrepo01");
+	});
+
+	it("drops subjects the caller no longer mutes", async () => {
+		await handlePutMutes(ctx, CALLER, [
+			{ subject: { $type: MUTED_ACTOR, did: COMMUNITY }, createdAt: NOW },
+			{ subject: { $type: MUTED_CHANNEL, channel: CHANNEL }, createdAt: NOW },
+		]);
+
+		const result = await handlePutMutes(ctx, CALLER, [
+			{ subject: { $type: MUTED_CHANNEL, channel: CHANNEL }, createdAt: NOW },
+		]);
+
+		expect(result.preferences.mutes.map((mute) => mute.subject)).toEqual([
+			{ $type: MUTED_CHANNEL, channel: CHANNEL },
+		]);
+
+		const rows = await database.db
+			.select()
+			.from(database.tables.mutes)
+			.where(eq(database.tables.mutes.did, CALLER));
+		expect(rows.map((row) => row.subject)).toEqual([CHANNEL]);
+	});
 });
 
 describe("deleteAccount", () => {

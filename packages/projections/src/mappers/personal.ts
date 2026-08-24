@@ -36,7 +36,7 @@ export const mute: Projector<social.colibri.beta.actor.mute.Main> = {
 			.insert(deps.tables.mutes)
 			.values(row)
 			.onConflictDoUpdate({
-				target: [deps.tables.mutes.did, deps.tables.mutes.rkey],
+				target: [deps.tables.mutes.did, deps.tables.mutes.subject],
 				set: row,
 			});
 	},

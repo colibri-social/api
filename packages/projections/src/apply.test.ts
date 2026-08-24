@@ -373,6 +373,28 @@ describe("personal spaces", () => {
 		expect(row?.subject).toBe(channel);
 	});
 
+	it("adopts the repo's rkey for a subject an immediate push already inserted", async () => {
+		await database.db.insert(database.tables.mutes).values({
+			did: MEMBER,
+			rkey: "3lkpushed0001",
+			subject: OUTSIDER,
+			createdAt: NOW,
+		});
+
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.actor.mute", "3lkfromrepo1", {
+				$type: "social.colibri.beta.actor.mute",
+				subject: { $type: "social.colibri.beta.actor.defs#mutedActor", did: OUTSIDER },
+				createdAt: NOW,
+			}),
+		);
+
+		const rows = await database.db.select().from(database.tables.mutes);
+		expect(rows).toHaveLength(1);
+		expect(rows[0]?.rkey).toBe("3lkfromrepo1");
+	});
+
 	it("projects a favourited GIF as the whole view the picker renders", async () => {
 		await applyChange(
 			deps,

@@ -9,6 +9,8 @@ describe("parseVoiceSfuConfig", () => {
 		expect(config).toEqual({
 			workerCount: availableParallelism(),
 			listenIp: "0.0.0.0",
+			rtcMinPort: 40_000,
+			rtcMaxPort: 40_100,
 			iceServers: [],
 			roomGraceMs: 30_000,
 			speakingDebounceMs: 1_000,
@@ -30,16 +32,16 @@ describe("parseVoiceSfuConfig", () => {
 		expect(config.rtcMaxPort).toBe(40_100);
 	});
 
-	it("drops an inverted rtc port range", () => {
+	it("falls back to the default range when the range is inverted", () => {
 		const config = parseVoiceSfuConfig({ rtcMinPort: 40_100, rtcMaxPort: 40_000 });
-		expect(config.rtcMinPort).toBeUndefined();
-		expect(config.rtcMaxPort).toBeUndefined();
+		expect(config.rtcMinPort).toBe(40_000);
+		expect(config.rtcMaxPort).toBe(40_100);
 	});
 
-	it("drops a one sided rtc port range", () => {
-		const config = parseVoiceSfuConfig({ rtcMinPort: 40_000 });
-		expect(config.rtcMinPort).toBeUndefined();
-		expect(config.rtcMaxPort).toBeUndefined();
+	it("fills the open end of a one sided range from the defaults", () => {
+		const config = parseVoiceSfuConfig({ rtcMinPort: 40_050 });
+		expect(config.rtcMinPort).toBe(40_050);
+		expect(config.rtcMaxPort).toBe(40_100);
 	});
 
 	it("keeps an announced ip when given", () => {
@@ -106,6 +108,12 @@ describe("voiceSfuConfigFromEnv", () => {
 		expect(config.listenIp).toBe("0.0.0.0");
 		expect(config.announcedIp).toBeUndefined();
 		expect(config.workerCount).toBe(availableParallelism());
+	});
+
+	it("carries the default port range when the env names no range", () => {
+		const config = voiceSfuConfigFromEnv({ SFU_ANNOUNCED_IP: "203.0.113.1" });
+		expect(config.rtcMinPort).toBe(40_000);
+		expect(config.rtcMaxPort).toBe(40_100);
 	});
 
 	it("ignores a garbage worker count instead of throwing", () => {
