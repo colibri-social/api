@@ -1,15 +1,5 @@
 import type { SignedCommit } from "@atproto/space";
-import {
-	applyRecordToSetHash,
-	type RepoOp,
-	readVerifiedRepoCar,
-	type SpaceClient,
-	setHashFromBase64,
-	setHashMatchesCommit,
-	setHashToBase64,
-	verifyRepoCommit,
-	XrpcError,
-} from "@colibri-social/space";
+import { type SpaceClient, XrpcError } from "@colibri-social/space";
 import type {
 	CommittedCursor,
 	RecordDelete,
@@ -20,6 +10,8 @@ import type {
 	SigningKeyResolver,
 	SyncStore,
 } from "./types.js";
+import type { HashOp } from "./verify-jobs.js";
+import { inlineVerifier, type Verifier } from "./verify-pool.js";
 
 export type RepoSyncOutcome =
 	| { kind: "unchanged"; appliedRev: string | null }
@@ -33,6 +25,7 @@ export type RepoSyncDeps = {
 	hosts: RepoHostResolver;
 	keys: SigningKeyResolver;
 	pageLimit?: number;
+	verifier?: Verifier;
 };
 
 const OPLOG_UNUSABLE = new Set(["InvalidRequest", "CursorNotFound", "RevNotFound"]);
@@ -44,8 +37,29 @@ const isGone = (error: unknown): boolean =>
 const needsRecovery = (error: unknown): boolean =>
 	error instanceof XrpcError && OPLOG_UNUSABLE.has(error.code);
 
+const collectCar = async (car: AsyncIterable<Uint8Array>): Promise<Uint8Array> => {
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	for await (const chunk of car) {
+		chunks.push(chunk);
+		total += chunk.byteLength;
+	}
+
+	const bytes = new Uint8Array(total);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return bytes;
+};
+
 export class RepoSync {
-	constructor(private readonly deps: RepoSyncDeps) {}
+	private readonly verifier: Verifier;
+
+	constructor(private readonly deps: RepoSyncDeps) {
+		this.verifier = deps.verifier ?? inlineVerifier();
+	}
 
 	async sync(space: string, author: string): Promise<RepoSyncOutcome> {
 		const cursor = (await this.deps.store.loadCursor(space, author)) ?? blankCursor(space, author);
@@ -73,7 +87,7 @@ export class RepoSync {
 	): Promise<RepoSyncOutcome> {
 		const puts: RecordWrite[] = [];
 		const deletes: RecordDelete[] = [];
-		let hash = setHashFromBase64(cursor.setHashBase64);
+		const ops: HashOp[] = [];
 		let rev = cursor.appliedRev;
 		let commit: SignedCommit | null = null;
 		let pageCursor: string | undefined;
@@ -86,7 +100,7 @@ export class RepoSync {
 			});
 
 			for (const op of page.ops) {
-				hash = applyOpToHash(hash, op);
+				ops.push({ collection: op.collection, rkey: op.rkey, cid: op.cid, prev: op.prev });
 				if (op.cid === null) {
 					deletes.push({ collection: op.collection, rkey: op.rkey });
 				} else if (op.value) {
@@ -108,15 +122,18 @@ export class RepoSync {
 			return { kind: "unchanged", appliedRev: cursor.appliedRev };
 		}
 
+		const verified = await this.verifier.advance({
+			space,
+			author,
+			didKey: commit ? await this.deps.keys.signingKeyFor(author) : "",
+			setHashBase64: cursor.setHashBase64,
+			ops,
+			commit,
+		});
+
 		if (commit) {
-			const authentic = await verifyRepoCommit(
-				commit,
-				space,
-				author,
-				await this.deps.keys.signingKeyFor(author),
-			);
-			if (!authentic) throw new Error(`commit for ${author} in ${space} did not verify`);
-			if (!setHashMatchesCommit(hash, commit)) return this.recover(space, author, host);
+			if (!verified.authentic) throw new Error(`commit for ${author} in ${space} did not verify`);
+			if (!verified.matches) return this.recover(space, author, host);
 			rev = commit.rev;
 		}
 
@@ -125,7 +142,7 @@ export class RepoSync {
 			space,
 			author,
 			appliedRev: rev,
-			setHashBase64: setHashToBase64(hash),
+			setHashBase64: verified.setHashBase64,
 			state: "active",
 		});
 		return { kind: "advanced", change, appliedRev: rev };
@@ -143,29 +160,19 @@ export class RepoSync {
 			throw error;
 		}
 
-		const didKey = await this.deps.keys.signingKeyFor(author);
-		const verified = await readVerifiedRepoCar(car, { space, author, didKey });
+		const verified = await this.verifier.repo({
+			space,
+			author,
+			didKey: await this.deps.keys.signingKeyFor(author),
+			car: await collectCar(car),
+		});
 
-		const puts: RecordWrite[] = [];
-		for await (const record of verified.records) {
-			puts.push({
-				collection: record.collection,
-				rkey: record.rkey,
-				cid: record.cid,
-				value: record.value,
-			});
-		}
-
-		let hash = setHashFromBase64(null);
-		for (const record of puts) {
-			hash = applyRecordToSetHash(hash, record, "add");
-		}
-
+		const puts = verified.records;
 		const cursor: CommittedCursor = {
 			space,
 			author,
 			appliedRev: verified.commit.rev,
-			setHashBase64: setHashToBase64(hash),
+			setHashBase64: verified.setHashBase64,
 			state: "active",
 		};
 		await this.deps.store.replace({ space, author, puts }, cursor);
@@ -186,22 +193,3 @@ const blankCursor = (space: string, author: string): RepoCursor => ({
 	consecutiveFailures: 0,
 	retryAfter: null,
 });
-
-const applyOpToHash = (hash: ReturnType<typeof setHashFromBase64>, op: RepoOp) => {
-	let next = hash;
-	if (op.prev) {
-		next = applyRecordToSetHash(
-			next,
-			{ collection: op.collection, rkey: op.rkey, cid: op.prev },
-			"remove",
-		);
-	}
-	if (op.cid) {
-		next = applyRecordToSetHash(
-			next,
-			{ collection: op.collection, rkey: op.rkey, cid: op.cid },
-			"add",
-		);
-	}
-	return next;
-};

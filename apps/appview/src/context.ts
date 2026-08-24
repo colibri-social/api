@@ -131,6 +131,7 @@ export const createContext = async (config: Config) => {
 		},
 		syncerService: serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.syncer),
 		concurrency: config.SYNC_WORKERS,
+		workerThreads: config.SYNC_WORKER_THREADS,
 		sweepIntervalMs: config.SYNC_SWEEP_SECONDS * 1000,
 		log: (event, detail, level = "warn") => log[level](detail, event),
 	});

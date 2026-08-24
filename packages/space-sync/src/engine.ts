@@ -13,6 +13,7 @@ import type {
 	SyncStore,
 	SyncTrigger,
 } from "./types.js";
+import { inlineVerifier, type Verifier, VerifierPool } from "./verify-pool.js";
 
 export type NotifyWriteHint = {
 	rev?: string;
@@ -34,6 +35,8 @@ export type SyncEngineOptions = {
 	pageLimit?: number;
 	registrationRenewMarginMs?: number;
 	maxChaseAttempts?: number;
+	workerThreads?: number;
+	verifier?: Verifier;
 	repos?: Pick<RepoSync, "sync">;
 	now?: () => Date;
 	log?: SyncLog;
@@ -78,6 +81,8 @@ type RegistrationState = {
 
 export class SpaceSyncEngine {
 	private readonly repos: Pick<RepoSync, "sync">;
+	private readonly verifier: Verifier;
+	private readonly ownsVerifier: boolean;
 	private readonly queue: KeyedWorkQueue;
 	private readonly events = new Emitter<SyncEvents>();
 	private readonly targets = new Map<string, PendingTarget>();
@@ -91,6 +96,15 @@ export class SpaceSyncEngine {
 
 	constructor(private readonly options: SyncEngineOptions) {
 		this.now = options.now ?? (() => new Date());
+		this.ownsVerifier = options.verifier === undefined;
+		this.verifier =
+			options.verifier ??
+			(options.workerThreads
+				? new VerifierPool({
+						size: options.workerThreads,
+						onWorkerDied: (error) => this.log("verify.workerDied", { error }),
+					})
+				: inlineVerifier());
 		this.repos =
 			options.repos ??
 			new RepoSync({
@@ -98,6 +112,7 @@ export class SpaceSyncEngine {
 				store: options.store,
 				hosts: options.hosts,
 				keys: options.keys,
+				verifier: this.verifier,
 				...(options.pageLimit === undefined ? {} : { pageLimit: options.pageLimit }),
 			});
 		this.queue = new KeyedWorkQueue((key) => this.syncOne(key), {
@@ -147,6 +162,7 @@ export class SpaceSyncEngine {
 		if (this.registrationTimer) clearInterval(this.registrationTimer);
 		this.registrationTimer = null;
 		this.queue.stop();
+		if (this.ownsVerifier) await this.verifier.close();
 	}
 
 	notifyWrite(space: string, author: string, hint: NotifyWriteHint = {}): void {
