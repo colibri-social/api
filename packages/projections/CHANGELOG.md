@@ -1,5 +1,21 @@
 # @colibri-social/projections
 
+## 1.3.0
+
+### Minor Changes
+
+- d2c8938: Gate voice joins on the same permission as posting, and disconnect a participant whose access changes mid-call
+
+### Patch Changes
+
+- 1c863c7: Keep a community picture, banner and message attachment after it is saved, by converting blob references between their json and lexicon forms at every boundary
+- Updated dependencies [1c863c7]
+- Updated dependencies [d175422]
+- Updated dependencies [132dd5a]
+- Updated dependencies [d2c8938]
+  - @colibri-social/lexicons@2.4.0
+  - @colibri-social/space@0.2.1
+
 ## 1.2.1
 
 ### Patch Changes

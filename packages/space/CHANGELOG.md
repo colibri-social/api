@@ -1,5 +1,11 @@
 # @colibri-social/space
 
+## 0.2.1
+
+### Patch Changes
+
+- 132dd5a: Send the repo parameter com.atproto.space.getBlob requires, so a message attachment in a permissioned space is served instead of failing with UpstreamFailure
+
 ## 0.2.0
 
 ### Minor Changes

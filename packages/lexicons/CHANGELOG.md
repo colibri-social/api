@@ -1,5 +1,13 @@
 # @colibri-social/lexicons
 
+## 2.4.0
+
+### Minor Changes
+
+- 1c863c7: Keep a community picture, banner and message attachment after it is saved, by converting blob references between their json and lexicon forms at every boundary
+- d175422: Deliver messages as soon as they are written instead of sometimes waiting for the next sweep, by no longer dropping a write notification that arrives while a sync is already running, renewing the notify registration on its own schedule, and publishing a message before its notifications are indexed
+- d2c8938: Gate voice joins on the same permission as posting, and disconnect a participant whose access changes mid-call
+
 ## 2.3.0
 
 ### Minor Changes
