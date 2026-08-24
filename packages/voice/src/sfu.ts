@@ -107,6 +107,15 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 			: { muted: false, deafened: false, serverMuted: false, serverDeafened: false };
 	}
 
+	async join(channel: string, did: string): Promise<void> {
+		const previousChannel = this.claimPresence(channel, did);
+		const room = await this.getOrCreateRoom(channel);
+		if (previousChannel) {
+			await this.rooms.get(previousChannel)?.leave(did, "superseded");
+		}
+		room.admit(did);
+	}
+
 	async createTransport(
 		channel: string,
 		did: string,

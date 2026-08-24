@@ -268,6 +268,11 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		return snapshot;
 	}
 
+	admit(did: string): void {
+		this.assertOpen();
+		this.ensureParticipant(did);
+	}
+
 	async createTransport(did: string, direction: TransportDirection): Promise<WebRtcTransport> {
 		this.assertOpen();
 		const participant = this.ensureParticipant(did);

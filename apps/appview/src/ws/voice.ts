@@ -362,6 +362,7 @@ export class VoiceServer {
 
 		connection.channel = frame.channel;
 		this.topics.subscribe(connection, [channelTopic(frame.channel)]);
+		await voice.join(frame.channel, connection.did);
 		this.send(connection, {
 			$type: "social.colibri.beta.voice.defs#joined",
 			channel: frame.channel,

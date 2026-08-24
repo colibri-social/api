@@ -352,7 +352,7 @@ describe("VoiceServer", () => {
 		await nextFrame(aliceWs);
 
 		send(aliceWs, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
-		const transport = await nextFrame(aliceWs);
+		const transport = await nextFrameOfType(aliceWs, "transportOptions");
 
 		const bobNotification = nextFrameOfType(bobWs, "producerInfo");
 
@@ -623,6 +623,60 @@ describe("VoiceServer", () => {
 		ws.close();
 	});
 
+	it("tells the room and the community about a peer that has not created a transport", async () => {
+		const bobWs = connect("bob-token");
+		await waitForOpen(bobWs);
+
+		send(bobWs, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrameOfType(bobWs, "joined");
+
+		announced.length = 0;
+		const bobSeesAlice = nextFrameOfType(bobWs, "peerJoined");
+
+		const aliceWs = connect("alice-token");
+		await waitForOpen(aliceWs);
+		send(aliceWs, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrameOfType(aliceWs, "joined");
+
+		expect(await bobSeesAlice).toMatchObject({
+			$type: "social.colibri.beta.voice.defs#peerJoined",
+			did: ALICE,
+		});
+
+		expect(announced).toContainEqual({
+			community: COMMUNITY,
+			frame: expect.objectContaining({
+				$type: "social.colibri.beta.sync.defs#voiceEvent",
+				event: "join",
+				did: ALICE,
+				channel: VOICE_CHANNEL,
+			}),
+		});
+
+		aliceWs.close();
+		bobWs.close();
+	});
+
+	it("hands a joining peer the roster of peers without transports", async () => {
+		const bobWs = connect("bob-token");
+		await waitForOpen(bobWs);
+		send(bobWs, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrameOfType(bobWs, "joined");
+
+		const aliceWs = connect("alice-token");
+		await waitForOpen(aliceWs);
+		send(aliceWs, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrameOfType(aliceWs, "joined");
+
+		expect(await nextFrameOfType(aliceWs, "peerJoined")).toMatchObject({
+			$type: "social.colibri.beta.voice.defs#peerJoined",
+			did: BOB,
+		});
+
+		aliceWs.close();
+		bobWs.close();
+	});
+
 	it("disconnects a peer that joined but never created a transport", async () => {
 		const ws = connect("alice-token");
 		await waitForOpen(ws);
@@ -630,7 +684,7 @@ describe("VoiceServer", () => {
 		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
 		await nextFrame(ws);
 
-		expect(sfu.presenceOf(ALICE)).toBeUndefined();
+		expect(sfu.presenceOf(ALICE)).toBe(VOICE_CHANNEL);
 		expect(voiceServer.isJoined(VOICE_CHANNEL, ALICE)).toBe(true);
 
 		await voiceServer.disconnect(VOICE_CHANNEL, ALICE);
@@ -748,9 +802,10 @@ describe("VoiceServer", () => {
 
 		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
 		await nextFrame(ws);
+		await sfu.leave(VOICE_CHANNEL, ALICE);
 		send(ws, { $type: "social.colibri.beta.voice.defs#setSelfState", muted: true });
 
-		expect(await nextFrame(ws)).toMatchObject({
+		expect(await nextFrameOfType(ws, "error")).toMatchObject({
 			$type: "social.colibri.beta.voice.defs#error",
 		});
 
