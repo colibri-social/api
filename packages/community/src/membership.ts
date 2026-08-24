@@ -205,7 +205,7 @@ export class Membership {
 			this.deps.loader.authz(community, subject),
 		]);
 		if (!target.member) throw new MembershipError("notMember", `${subject} is not a member`);
-		if (!outranks(acting, target)) {
+		if (subject !== actor && !outranks(acting, target)) {
 			throw new MembershipError("hierarchy", "you do not outrank that member");
 		}
 

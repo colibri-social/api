@@ -278,6 +278,29 @@ describe("hierarchy", () => {
 			membership.setRoles(COMMUNITY, OWNER, MEMBER, ["nosuchrole"]),
 		).rejects.toMatchObject({ failure: "roleNotFound" });
 	});
+
+	it("lets you grant yourself a role below your own", async () => {
+		await membership.setRoles(COMMUNITY, OWNER, OWNER, ["owner", "mod"]);
+		expect((await loader.authz(COMMUNITY, OWNER)).member?.roles).toEqual(["owner", "mod"]);
+	});
+
+	it("lets you revoke a role below your own from yourself", async () => {
+		await membership.setRoles(COMMUNITY, OWNER, OWNER, ["owner", "mod"]);
+		await membership.setRoles(COMMUNITY, OWNER, OWNER, ["owner"]);
+		expect((await loader.authz(COMMUNITY, OWNER)).member?.roles).toEqual(["owner"]);
+	});
+
+	it("refuses granting yourself a role above your own", async () => {
+		await expect(membership.setRoles(COMMUNITY, MOD, MOD, ["mod", "owner"])).rejects.toMatchObject({
+			failure: "hierarchy",
+		});
+	});
+
+	it("refuses dropping your own highest role", async () => {
+		await expect(membership.setRoles(COMMUNITY, MOD, MOD, [])).rejects.toMatchObject({
+			failure: "hierarchy",
+		});
+	});
 });
 
 describe("banning", () => {
