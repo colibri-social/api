@@ -2,7 +2,16 @@
  * Generated from sqlite.ts by scripts/generate-pg-schema.mjs. Do not edit.
  */
 
-import { boolean, index, integer, jsonb, pgTable, primaryKey, text, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+	boolean,
+	index,
+	integer,
+	jsonb,
+	pgTable,
+	primaryKey,
+	text,
+	uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 const timestamp = (name: string) => text(name);
 const json = <T>(name: string) => jsonb(name).$type<T>();

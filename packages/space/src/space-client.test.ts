@@ -61,22 +61,13 @@ describe("SpaceClient request parameters", () => {
 		await client.listBlobs(SPACE, HOST, REPO);
 		await client.listRecords(SPACE, HOST, REPO);
 		await client.listRepoOps(SPACE, HOST, REPO);
-		await client.getRecord(
-			SPACE,
-			HOST,
-			REPO,
-			"social.colibri.beta.message",
-			"3lkmsg1",
-		);
+		await client.getRecord(SPACE, HOST, REPO, "social.colibri.beta.message", "3lkmsg1");
 
 		for (const raw of urls) {
 			const url = new URL(raw);
 			const nsid = url.pathname.replace("/xrpc/", "");
 			for (const name of requiredParamsOf(nsid)) {
-				expect(
-					url.searchParams.get(name),
-					`${nsid} is missing ${name}`,
-				).not.toBeNull();
+				expect(url.searchParams.get(name), `${nsid} is missing ${name}`).not.toBeNull();
 			}
 		}
 	});
