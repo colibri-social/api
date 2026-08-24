@@ -1,5 +1,19 @@
 # @colibri-social/community
 
+## 2.2.1
+
+### Patch Changes
+
+- a9cea8f: Give a new community a random handle, so provisioning no longer fails on the PDS handle length limit
+- a35adfc: Let members with role.manage edit their own roles, granting and revoking any role below their own position
+- Updated dependencies [1c863c7]
+- Updated dependencies [d175422]
+- Updated dependencies [132dd5a]
+- Updated dependencies [d2c8938]
+  - @colibri-social/lexicons@2.4.0
+  - @colibri-social/projections@1.3.0
+  - @colibri-social/space@0.2.1
+
 ## 2.2.0
 
 ### Minor Changes

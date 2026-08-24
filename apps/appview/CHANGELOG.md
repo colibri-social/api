@@ -1,5 +1,31 @@
 # @colibri-social/appview
 
+## 2.4.0
+
+### Minor Changes
+
+- d2c8938: Gate voice joins on the same permission as posting, and disconnect a participant whose access changes mid-call
+
+### Patch Changes
+
+- a9cea8f: Give a new community a random handle, so provisioning no longer fails on the PDS handle length limit
+- 1c863c7: Keep a community picture, banner and message attachment after it is saved, by converting blob references between their json and lexicon forms at every boundary
+- d175422: Deliver messages as soon as they are written instead of sometimes waiting for the next sweep, by no longer dropping a write notification that arrives while a sync is already running, renewing the notify registration on its own schedule, and publishing a message before its notifications are indexed
+- 88810f6: Serve your own profile straight from your PDS, so a change you just saved comes back instead of the cached one
+- Updated dependencies [a9cea8f]
+- Updated dependencies [1c863c7]
+- Updated dependencies [d175422]
+- Updated dependencies [a35adfc]
+- Updated dependencies [132dd5a]
+- Updated dependencies [d2c8938]
+  - @colibri-social/community@2.2.1
+  - @colibri-social/lexicons@2.4.0
+  - @colibri-social/projections@1.3.0
+  - @colibri-social/space-sync@0.2.1
+  - @colibri-social/space@0.2.1
+  - @colibri-social/notifications@1.1.1
+  - @colibri-social/blobs@0.0.4
+
 ## 2.3.1
 
 ### Patch Changes

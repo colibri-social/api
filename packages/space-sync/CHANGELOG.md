@@ -1,5 +1,13 @@
 # @colibri-social/space-sync
 
+## 0.2.1
+
+### Patch Changes
+
+- d175422: Deliver messages as soon as they are written instead of sometimes waiting for the next sweep, by no longer dropping a write notification that arrives while a sync is already running, renewing the notify registration on its own schedule, and publishing a message before its notifications are indexed
+- Updated dependencies [132dd5a]
+  - @colibri-social/space@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes
