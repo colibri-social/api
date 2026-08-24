@@ -25,10 +25,12 @@ export const handleGetProfile = async (
 	ctx: AppContext,
 	actors: ActorViews,
 	identifier: string,
+	callerDid?: string,
 ): Promise<{ profile: ProfileView }> => {
 	const did = await resolveActorDid(ctx, identifier);
 	if (!did) throw actorNotFound();
-	return { profile: await actors.one(did) };
+	const refresh = did === callerDid ? new Set([did]) : undefined;
+	return { profile: await actors.one(did, { refresh }) };
 };
 
 export const loadPreferences = async (ctx: AppContext, callerDid: string): Promise<Preferences> => {
@@ -180,9 +182,9 @@ export const registerActorRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 
 	route(server, social.colibri.beta.actor.getProfile, {
 		auth: auth.required,
-		handler: async ({ params }) => ({
+		handler: async ({ params, auth: caller }) => ({
 			encoding: "application/json" as const,
-			body: await handleGetProfile(ctx, actors, params.actor),
+			body: await handleGetProfile(ctx, actors, params.actor, caller.credentials.did),
 		}),
 	});
 

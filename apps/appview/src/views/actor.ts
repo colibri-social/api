@@ -23,6 +23,8 @@ type BlueskyProfile = {
 };
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
+
+export type HydrateOptions = { refresh?: ReadonlySet<string> };
 const BSKY_PROFILE = "app.bsky.actor.profile";
 
 const blobCid = (blob: unknown): string | null => {
@@ -103,10 +105,14 @@ export class ActorViews {
 		return { colibri, bsky };
 	}
 
-	async hydrate(dids: readonly string[]): Promise<Map<string, ProfileView>> {
+	async hydrate(
+		dids: readonly string[],
+		options: HydrateOptions = {},
+	): Promise<Map<string, ProfileView>> {
 		const unique = [...new Set(dids)];
 		const cached = await this.cachedProfiles(unique);
 		const stale = unique.filter((did) => {
+			if (options.refresh?.has(did)) return true;
 			const row = cached.get(did);
 			return !row || Date.now() - new Date(row.fetchedAt).getTime() > CACHE_TTL_MS;
 		});
@@ -142,8 +148,8 @@ export class ActorViews {
 		return out;
 	}
 
-	async one(did: string): Promise<ProfileView> {
-		const map = await this.hydrate([did]);
+	async one(did: string, options: HydrateOptions = {}): Promise<ProfileView> {
+		const map = await this.hydrate([did], options);
 		return map.get(did) as ProfileView;
 	}
 
