@@ -16,13 +16,28 @@ export interface WorkerPoolLike extends RouterProvider {
 export type WorkerPoolEvents = {
 	"worker-died": [{ pid: number; error: Error }];
 	"worker-restarted": [{ pid: number }];
+	"worker-close-timeout": [{ pid: number }];
 };
 
 export type WorkerPoolOptions = {
 	workerCount?: number;
 	workerSettings?: WorkerSettings;
 	createWorker?: WorkerFactory;
+	subprocessExitTimeoutMs?: number;
 };
+
+export const DEFAULT_SUBPROCESS_EXIT_TIMEOUT_MS = 5_000;
+
+function killSubprocess(pid: number): void {
+	if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) {
+		return;
+	}
+	try {
+		process.kill(pid, "SIGKILL");
+	} catch {
+		return;
+	}
+}
 
 export class WorkerPool extends TypedEmitter<WorkerPoolEvents> implements WorkerPoolLike {
 	private workers: Worker[];
@@ -31,16 +46,19 @@ export class WorkerPool extends TypedEmitter<WorkerPoolEvents> implements Worker
 
 	private readonly workerSettings: WorkerSettings;
 	private readonly createWorkerFn: WorkerFactory;
+	private readonly subprocessExitTimeoutMs: number;
 
 	private constructor(
 		workers: Worker[],
 		workerSettings: WorkerSettings,
 		createWorkerFn: WorkerFactory,
+		subprocessExitTimeoutMs: number,
 	) {
 		super();
 		this.workers = workers;
 		this.workerSettings = workerSettings;
 		this.createWorkerFn = createWorkerFn;
+		this.subprocessExitTimeoutMs = subprocessExitTimeoutMs;
 		for (const worker of workers) {
 			this.attachWorkerListeners(worker);
 		}
@@ -50,10 +68,12 @@ export class WorkerPool extends TypedEmitter<WorkerPoolEvents> implements Worker
 		const count = options.workerCount ?? availableParallelism();
 		const workerSettings = options.workerSettings ?? {};
 		const createWorkerFn = options.createWorker ?? createWorker;
+		const subprocessExitTimeoutMs =
+			options.subprocessExitTimeoutMs ?? DEFAULT_SUBPROCESS_EXIT_TIMEOUT_MS;
 		const workers = await Promise.all(
 			Array.from({ length: count }, () => createWorkerFn(workerSettings)),
 		);
-		return new WorkerPool(workers, workerSettings, createWorkerFn);
+		return new WorkerPool(workers, workerSettings, createWorkerFn, subprocessExitTimeoutMs);
 	}
 
 	get size(): number {
@@ -73,10 +93,38 @@ export class WorkerPool extends TypedEmitter<WorkerPoolEvents> implements Worker
 			return;
 		}
 		this.closed = true;
-		for (const worker of this.workers) {
-			worker.close();
-		}
+		const workers = this.workers;
 		this.workers = [];
+		await Promise.all(workers.map((worker) => this.terminate(worker)));
+	}
+
+	private async terminate(worker: Worker): Promise<void> {
+		const exited = this.subprocessExit(worker);
+		worker.close();
+		await exited;
+	}
+
+	private subprocessExit(worker: Worker): Promise<void> {
+		if (worker.subprocessClosed) {
+			return Promise.resolve();
+		}
+
+		return new Promise<void>((resolve) => {
+			const settle = () => {
+				clearTimeout(timer);
+				resolve();
+			};
+
+			const timer = setTimeout(() => {
+				worker.off("subprocessclose", settle);
+				this.emit("worker-close-timeout", { pid: worker.pid });
+				killSubprocess(worker.pid);
+				resolve();
+			}, this.subprocessExitTimeoutMs);
+			timer.unref?.();
+
+			worker.once("subprocessclose", settle);
+		});
 	}
 
 	private pickWorker(): Worker {
