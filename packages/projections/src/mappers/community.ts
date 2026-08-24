@@ -1,13 +1,14 @@
-import { COLLECTIONS, communitySpaces, SELF, SPACE_TYPES, social } from "@colibri-social/lexicons";
+import {
+	blobCid,
+	COLLECTIONS,
+	communitySpaces,
+	SELF,
+	SPACE_TYPES,
+	social,
+} from "@colibri-social/lexicons";
 import { and, eq } from "drizzle-orm";
 import type { ProjectionDeps, RecordRef } from "../context.js";
 import { communityOf, type Projector } from "../projector.js";
-
-const blobCid = (blob: unknown): string | null => {
-	if (!blob || typeof blob !== "object") return null;
-	const ref = (blob as { ref?: { $link?: string } }).ref;
-	return typeof ref?.$link === "string" ? ref.$link : null;
-};
 
 const isSelf = (ref: RecordRef) => ref.rkey === SELF;
 

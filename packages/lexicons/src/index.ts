@@ -1,3 +1,4 @@
+export * from "./blob.js";
 export * from "./branded.js";
 export { com, social } from "./generated/index.js";
 export * from "./mute-subject.js";

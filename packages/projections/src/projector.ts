@@ -1,3 +1,4 @@
+import { toLexForm } from "@colibri-social/lexicons";
 import type { ProjectionDeps, RecordRef, SpaceContext } from "./context.js";
 
 export type Parsed<T> = { success: true; value: T } | { success?: false; message?: string };
@@ -36,7 +37,7 @@ export const erase = <T>(projector: Projector<T>): ErasedProjector => ({
 	rkey: projector.rkey,
 	remove: projector.remove,
 	apply: async (deps, ref, value) => {
-		const parsed = projector.schema.$safeParse(value);
+		const parsed = projector.schema.$safeParse(toLexForm(value));
 		if (!parsed.success) {
 			return { applied: false, reason: parsed.message ?? "record does not match its lexicon" };
 		}

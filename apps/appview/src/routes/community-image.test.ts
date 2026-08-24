@@ -1,6 +1,7 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
-import { CommunityLoader } from "@colibri-social/community";
+import { CommunityLoader, CommunityWriter } from "@colibri-social/community";
 import { COLLECTIONS, communitySpaces, SELF } from "@colibri-social/lexicons";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { silentAnnouncer } from "../announce.js";
 import type { AppContext } from "../context.js";
@@ -24,6 +25,8 @@ const PNG = new Uint8Array([
 	0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
 	0x42, 0x60, 0x82,
 ]);
+
+const UPLOADED_CID = "bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiibsojllbf5xhqzy6a";
 
 let database: TestDatabase;
 let ctx: AppContext;
@@ -130,6 +133,53 @@ beforeEach(async () => {
 		},
 	} as unknown as AppContext;
 });
+
+const useRealWriter = () => {
+	const pds = {
+		uploadBlob: async (_session: unknown, bytes: Uint8Array, mimeType: string) => {
+			uploads.push({ bytes, mimeType });
+			return {
+				blob: {
+					$type: "blob" as const,
+					ref: { $link: UPLOADED_CID },
+					mimeType,
+					size: bytes.byteLength,
+				},
+			};
+		},
+		putRecord: async (_session: unknown, write: { record: Record<string, unknown> }) => {
+			writes.push({ record: write.record });
+			return { uri: "at://x", cid: "bafyreirecord" };
+		},
+		deleteRecord: async () => {},
+	};
+
+	ctx = {
+		...ctx,
+		writer: new CommunityWriter({
+			credentials: {
+				connect: async () => ({ pds, session: {} }),
+			} as never,
+			mirror: {
+				db: database.db,
+				tables: database.tables,
+				projections: {
+					db: database.db,
+					tables: database.tables,
+					now: () => NOW,
+				},
+			},
+		}),
+	} as AppContext;
+};
+
+const communityRow = async () => {
+	const [row] = await database.db
+		.select()
+		.from(database.tables.communities)
+		.where(eq(database.tables.communities.did, COMMUNITY));
+	return row;
+};
 
 afterEach(async () => {
 	await database.destroy();
@@ -241,5 +291,49 @@ describe("community images", () => {
 		expect(record?.name).toBe("Renamed");
 		expect(record?.picture).toEqual(picture);
 		expect(record?.banner).toEqual(banner);
+	});
+});
+
+describe("community images, projected through the real writer", () => {
+	beforeEach(() => {
+		useRealWriter();
+	});
+
+	it("lands the uploaded cid on the community row, not only on the response view", async () => {
+		await setRecord({ $type: COLLECTIONS.community, name: "Test Community" });
+
+		const result = await handlePutCommunityImage(
+			ctx,
+			OWNER,
+			{ community: COMMUNITY, kind: "picture" },
+			PNG,
+		);
+
+		expect(result.community.picture).toContain(`cid=${UPLOADED_CID}`);
+		expect((await communityRow())?.pictureCid).toBe(UPLOADED_CID);
+	});
+
+	it("keeps the cid on the row when the community is renamed afterwards", async () => {
+		await setRecord({ $type: COLLECTIONS.community, name: "Test Community" });
+		await handlePutCommunityImage(ctx, OWNER, { community: COMMUNITY, kind: "picture" }, PNG);
+
+		const communities = new CommunityViews(ctx, new ActorViews(ctx));
+		await handleUpdateCommunity(ctx, communities, OWNER, {
+			community: COMMUNITY,
+			name: "Renamed",
+		});
+
+		const row = await communityRow();
+		expect(row?.name).toBe("Renamed");
+		expect(row?.pictureCid).toBe(UPLOADED_CID);
+	});
+
+	it("clears the cid from the row when the image is deleted", async () => {
+		await setRecord({ $type: COLLECTIONS.community, name: "Test Community" });
+		await handlePutCommunityImage(ctx, OWNER, { community: COMMUNITY, kind: "banner" }, PNG);
+		expect((await communityRow())?.bannerCid).toBe(UPLOADED_CID);
+
+		await handleDeleteCommunityImage(ctx, OWNER, { community: COMMUNITY, kind: "banner" });
+		expect((await communityRow())?.bannerCid).toBeNull();
 	});
 });

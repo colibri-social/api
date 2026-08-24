@@ -110,7 +110,7 @@ export const createContext = async (config: Config) => {
 		tables: database.tables,
 		now: () => new Date().toISOString(),
 		onSkipped: (ref, reason) =>
-			log.debug({ space: ref.space.uri, collection: ref.collection, reason }, "record.skipped"),
+			log.warn({ space: ref.space.uri, collection: ref.collection, reason }, "record.skipped"),
 		onAuthzChanged: (change) => authzChanges.publish(change),
 	};
 

@@ -1,4 +1,4 @@
-import { COLLECTIONS, SPACE_TYPES, social } from "@colibri-social/lexicons";
+import { COLLECTIONS, SPACE_TYPES, social, toJsonForm } from "@colibri-social/lexicons";
 import { and, eq } from "drizzle-orm";
 import { communityOf, type Projector } from "../projector.js";
 
@@ -19,7 +19,7 @@ export const message: Projector<social.colibri.beta.message.Main> = {
 			updatedAt: value.updatedAt ?? null,
 			parentAuthor: value.parent?.did ?? null,
 			parentRkey: value.parent?.rkey ?? null,
-			attachments: value.attachments ? [...value.attachments] : null,
+			attachments: value.attachments ? toJsonForm([...value.attachments]) : null,
 			suppressedEmbeds: value.suppressedEmbeds ? [...value.suppressedEmbeds] : null,
 			fromLegacyRepo: false,
 			indexedAt: deps.now(),

@@ -16,6 +16,7 @@ const OTHER_LABELER = "did:plc:notallowednotallowednota";
 const CHANNEL_SKEY = "3lkchanneltest0";
 const SPACE = channelSpace(COMMUNITY, SPACE_TYPES.channelText, CHANNEL_SKEY);
 const NOW = "2026-08-23T00:00:00.000Z";
+const ATTACHMENT_CID = "bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiibsojllbf5xhqzy6a";
 
 let database: TestDatabase;
 let ctx: AppContext;
@@ -412,6 +413,32 @@ describe("ChannelViews.messages", () => {
 
 		const page = await views.messages(SPACE, null, { limit: 10 });
 		expect(page.messages[0]?.legacy).toBe(true);
+	});
+});
+
+describe("ChannelViews attachments", () => {
+	it("builds a blob url from an attachment stored in json form", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey, {
+			attachments: [
+				{
+					name: "shot.png",
+					blob: {
+						$type: "blob",
+						ref: { $link: ATTACHMENT_CID },
+						mimeType: "image/png",
+						size: 1234,
+					},
+				},
+			],
+		});
+
+		const { messages } = await views.messages(SPACE, null, { limit: 1 });
+		const [attachment] = messages[0]?.attachments ?? [];
+		expect(attachment?.name).toBe("shot.png");
+		expect(attachment?.mimeType).toBe("image/png");
+		expect(attachment?.url).toContain(`cid=${ATTACHMENT_CID}`);
+		expect(attachment?.url).toContain(`space=${encodeURIComponent(SPACE)}`);
 	});
 });
 

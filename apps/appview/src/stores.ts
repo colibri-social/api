@@ -1,5 +1,5 @@
 import type { Database, Queryable } from "@colibri-social/appview-db";
-import { isChannelSpaceType } from "@colibri-social/lexicons";
+import { isChannelSpaceType, toJsonForm } from "@colibri-social/lexicons";
 import { applyChange, type ProjectionDeps } from "@colibri-social/projections";
 import type { CredentialStorage } from "@colibri-social/space";
 import type { RepoChange, RepoCursor, SyncStore } from "@colibri-social/space-sync";
@@ -174,7 +174,7 @@ export const drizzleSyncStore = (database: Database, projections: ProjectionDeps
 						collection: put.collection,
 						rkey: put.rkey,
 						cid: put.cid,
-						value: put.value,
+						value: toJsonForm(put.value),
 						indexedAt: now(),
 					};
 					await tx
@@ -228,7 +228,7 @@ export const drizzleSyncStore = (database: Database, projections: ProjectionDeps
 						collection: put.collection,
 						rkey: put.rkey,
 						cid: put.cid,
-						value: put.value,
+						value: toJsonForm(put.value),
 						indexedAt: now(),
 					});
 				}

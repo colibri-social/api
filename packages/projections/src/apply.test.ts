@@ -1,5 +1,11 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
-import { channelSpace, communitySpaces, preferencesSpace, SELF } from "@colibri-social/lexicons";
+import {
+	channelSpace,
+	communitySpaces,
+	preferencesSpace,
+	SELF,
+	toLexForm,
+} from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { applyChange, type SpaceChange } from "./apply.js";
@@ -11,6 +17,14 @@ const OUTSIDER = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
 const SPACES = communitySpaces(COMMUNITY);
 const TEXT_CHANNEL = channelSpace(COMMUNITY, "social.colibri.beta.channel.text", "3lkchannel1");
 const NOW = "2026-08-23T00:00:00.000Z";
+const PICTURE_CID = "bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiibsojllbf5xhqzy6a";
+
+const jsonBlob = (cid: string, mimeType = "image/png") => ({
+	$type: "blob",
+	ref: { $link: cid },
+	mimeType,
+	size: 1234,
+});
 
 let database: TestDatabase;
 let deps: ProjectionDeps;
@@ -90,6 +104,32 @@ describe("community projections", () => {
 		expect(row?.name).toBe("Protocol Nerds");
 		expect(row?.requiresApproval).toBe(true);
 		expect(row?.labelers).toEqual(["did:plc:labeler"]);
+	});
+
+	it("keeps the picture cid whether the record arrives as json or as lex", async () => {
+		const record = {
+			$type: "social.colibri.beta.community",
+			name: "Protocol Nerds",
+			managingApp: "did:web:appview.test",
+			picture: jsonBlob(PICTURE_CID),
+		};
+
+		await applyChange(
+			deps,
+			put(SPACES.profile, COMMUNITY, "social.colibri.beta.community", SELF, record),
+		);
+		expect(skipped).toEqual([]);
+		const [fromJson] = await database.db.select().from(database.tables.communities);
+		expect(fromJson?.pictureCid).toBe(PICTURE_CID);
+
+		await database.db.delete(database.tables.communities);
+		await applyChange(
+			deps,
+			put(SPACES.profile, COMMUNITY, "social.colibri.beta.community", SELF, toLexForm(record)),
+		);
+		expect(skipped).toEqual([]);
+		const [fromLex] = await database.db.select().from(database.tables.communities);
+		expect(fromLex?.pictureCid).toBe(PICTURE_CID);
 	});
 
 	it("orders channels from the category that lists them", async () => {
@@ -188,6 +228,22 @@ describe("member-written collections", () => {
 		expect(row?.text).toBe("hello");
 		expect(row?.author).toBe(MEMBER);
 		expect(row?.community).toBe(COMMUNITY);
+	});
+
+	it("stores a message attachment as a json blob the views can read", async () => {
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3lkmsgblob", {
+				$type: "social.colibri.beta.message",
+				text: "with a picture",
+				createdAt: NOW,
+				attachments: [{ name: "shot.png", blob: jsonBlob(PICTURE_CID) }],
+			}),
+		);
+
+		expect(skipped).toEqual([]);
+		const [row] = await database.db.select().from(database.tables.messages);
+		expect(row?.attachments).toEqual([{ name: "shot.png", blob: jsonBlob(PICTURE_CID) }]);
 	});
 
 	it("keeps a reply pointing at both the author and the key of its parent", async () => {

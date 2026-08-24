@@ -2,6 +2,7 @@ import {
 	asDid,
 	asHandle,
 	asUriOrUndefined,
+	blobCid,
 	COLLECTIONS,
 	type social,
 } from "@colibri-social/lexicons";
@@ -26,12 +27,6 @@ const CACHE_TTL_MS = 15 * 60 * 1000;
 
 export type HydrateOptions = { refresh?: ReadonlySet<string> };
 const BSKY_PROFILE = "app.bsky.actor.profile";
-
-const blobCid = (blob: unknown): string | null => {
-	if (!blob || typeof blob !== "object") return null;
-	const ref = (blob as { ref?: { $link?: string } }).ref;
-	return typeof ref?.$link === "string" ? ref.$link : null;
-};
 
 const resolve = (colibri: ColibriProfile | null, bsky: BlueskyProfile | null) => {
 	const synced = colibri?.syncBluesky ?? colibri === null;
