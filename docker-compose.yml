@@ -11,6 +11,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-file:/data/colibri.db}
     ports:
       - "${SFU_RTC_MIN_PORT:-40000}-${SFU_RTC_MAX_PORT:-40100}:${SFU_RTC_MIN_PORT:-40000}-${SFU_RTC_MAX_PORT:-40100}/udp"
+      - "${SFU_RTC_MIN_PORT:-40000}-${SFU_RTC_MAX_PORT:-40100}:${SFU_RTC_MIN_PORT:-40000}-${SFU_RTC_MAX_PORT:-40100}/tcp"
     volumes:
       - appview-data:/data
     healthcheck:
