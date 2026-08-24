@@ -1,5 +1,25 @@
 # @colibri-social/appview
 
+## 2.3.1
+
+### Patch Changes
+
+- Updated dependencies [152a8fb]
+- Updated dependencies [152a8fb]
+- Updated dependencies [152a8fb]
+- Updated dependencies [152a8fb]
+- Updated dependencies [152a8fb]
+- Updated dependencies [152a8fb]
+- Updated dependencies [152a8fb]
+  - @colibri-social/community@2.2.0
+  - @colibri-social/space@0.2.0
+  - @colibri-social/identity@0.0.1
+  - @colibri-social/projections@1.2.1
+  - @colibri-social/lexicons@2.3.0
+  - @colibri-social/notifications@1.1.0
+  - @colibri-social/space-sync@0.2.0
+  - @colibri-social/blobs@0.0.3
+
 ## 2.3.0
 
 ### Minor Changes

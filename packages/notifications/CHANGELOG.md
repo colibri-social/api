@@ -1,5 +1,20 @@
 # @colibri-social/notifications
 
+## 1.1.0
+
+### Minor Changes
+
+- 152a8fb: Honor a muted channel, and stay quiet for someone who is already reading the channel the message landed in
+
+### Patch Changes
+
+- Updated dependencies [152a8fb]
+- Updated dependencies [152a8fb]
+- Updated dependencies [152a8fb]
+  - @colibri-social/space@0.2.0
+  - @colibri-social/projections@1.2.1
+  - @colibri-social/lexicons@2.3.0
+
 ## 1.0.3
 
 ### Patch Changes

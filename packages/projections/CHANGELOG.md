@@ -1,5 +1,15 @@
 # @colibri-social/projections
 
+## 1.2.1
+
+### Patch Changes
+
+- 152a8fb: Keep a channel's `visibleToRoles` and `visibleToMembers` when projecting its record
+- Updated dependencies [152a8fb]
+- Updated dependencies [152a8fb]
+  - @colibri-social/space@0.2.0
+  - @colibri-social/lexicons@2.3.0
+
 ## 1.2.0
 
 ### Minor Changes
