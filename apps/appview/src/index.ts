@@ -9,6 +9,8 @@ import { createAppServer } from "./server.js";
 import { EventServer } from "./ws/events.js";
 import { VoiceServer } from "./ws/voice.js";
 
+const SHUTDOWN_DEADLINE_MS = 15_000;
+
 const main = async (): Promise<void> => {
 	const config = loadConfig();
 	const reporting = startErrorReporting(config, `appview@${resolveVersion()}`);
@@ -37,7 +39,22 @@ const main = async (): Promise<void> => {
 	await ctx.sync.start();
 	await jetstream.start();
 
+	let shuttingDown = false;
+
+	const step = async (name: string, run: () => unknown): Promise<void> => {
+		try {
+			await run();
+		} catch (error) {
+			ctx.log.error({ step: name, err: error }, "shutdown.step-failed");
+		}
+	};
+
 	const shutdown = async (signal: string) => {
+		if (shuttingDown) {
+			return;
+		}
+		shuttingDown = true;
+
 		ctx.log.info(
 			{
 				signal,
@@ -46,13 +63,21 @@ const main = async (): Promise<void> => {
 			},
 			"shutting down",
 		);
-		disconnectPipeline();
-		await stopErrorReporting();
-		await jetstream.stop();
-		await events.close();
-		await voice.close();
-		http.close();
-		await ctx.close();
+
+		const deadline = setTimeout(() => {
+			ctx.log.error({ deadlineMs: SHUTDOWN_DEADLINE_MS }, "shutdown.deadline-exceeded");
+			process.exit(1);
+		}, SHUTDOWN_DEADLINE_MS);
+
+		await step("pipeline", () => disconnectPipeline());
+		await step("error-reporting", () => stopErrorReporting());
+		await step("jetstream", () => jetstream.stop());
+		await step("events", () => events.close());
+		await step("voice", () => voice.close());
+		await step("http", () => http.close());
+		await step("context", () => ctx.close());
+
+		clearTimeout(deadline);
 		process.exit(0);
 	};
 

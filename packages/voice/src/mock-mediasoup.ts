@@ -116,14 +116,36 @@ export function createFakeRouter(rtpCapabilities: RtpCapabilities = {}) {
 	return router as typeof router & { closed: boolean };
 }
 
-export function createFakeWorker(pid: number) {
+export function createFakeWorker(pid: number, options: { autoExit?: boolean } = {}) {
 	const emitter = new EventEmitter();
-	return Object.assign(emitter, {
+	const autoExit = options.autoExit ?? true;
+	let closed = false;
+	let subprocessClosed = false;
+
+	const exitSubprocess = () => {
+		if (subprocessClosed) return;
+		subprocessClosed = true;
+		emitter.emit("subprocessclose");
+	};
+
+	const worker = Object.assign(emitter, {
 		pid,
-		closed: false,
-		close: vi.fn(),
+		close: vi.fn(() => {
+			if (closed) return;
+			closed = true;
+			if (autoExit) exitSubprocess();
+		}),
+		exitSubprocess,
 		createRouter: vi.fn(async () => createFakeRouter()),
 	});
+
+	Object.defineProperty(worker, "closed", { get: () => closed, enumerable: true });
+	Object.defineProperty(worker, "subprocessClosed", {
+		get: () => subprocessClosed,
+		enumerable: true,
+	});
+
+	return worker as typeof worker & { closed: boolean; subprocessClosed: boolean };
 }
 
 export function asRouter(router: ReturnType<typeof createFakeRouter>): Router {

@@ -16,7 +16,6 @@ export interface WorkerPoolLike extends RouterProvider {
 export type WorkerPoolEvents = {
 	"worker-died": [{ pid: number; error: Error }];
 	"worker-restarted": [{ pid: number }];
-	"worker-close-timeout": [{ pid: number }];
 };
 
 export type WorkerPoolOptions = {
@@ -117,7 +116,6 @@ export class WorkerPool extends TypedEmitter<WorkerPoolEvents> implements Worker
 
 			const timer = setTimeout(() => {
 				worker.off("subprocessclose", settle);
-				this.emit("worker-close-timeout", { pid: worker.pid });
 				killSubprocess(worker.pid);
 				resolve();
 			}, this.subprocessExitTimeoutMs);
