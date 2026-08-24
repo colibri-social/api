@@ -1,5 +1,25 @@
 # @colibri-social/appview
 
+## 2.3.0
+
+### Minor Changes
+
+- 22ad3fb: Announce channel, category, role, community, membership, profile and status changes to the community over the socket, and answer every voice frame a client waits on
+- 22ad3fb: Keep a channel's visibility lists when projecting its record, and tell the community over the socket when a channel or category changes
+- 22ad3fb: Resolve a community's handle from its DID document, and log every 5xx an XRPC route produces
+- b5c5283: Answer CORS on `/xrpc`, including on error responses, and stop the catchall from shadowing the blob route
+- 9c7e4d2: Serve embed images and video through the AppView again, answer handle and DID resolution for clients, deliver push notifications, honor muted channels, tell a peer when it is disconnected from a call, report errors to Sentry, and report progress while migrating
+- 22ad3fb: Keep using a space credential that is still valid when nothing can mint a delegation token for it
+- 912b790: Handle the typing and viewChannel frames, keep notifications quiet for the channel someone is reading, and send the notification, seen, application, moderation and community-progress events that were declared but never published
+- 912b790: Report progress while migrating a legacy community, and announce a label the moment it is applied so a hidden message disappears live
+- 22ad3fb: Add a `preferencesEvent` sync frame and send it to an actor's own devices when their preferences change
+- 22ad3fb: Derive an actor's online state from their open event sockets, and broadcast it to the communities they belong to
+- 22ad3fb: Sweep a channel space against its member list, so a member's repo is found and kept even when the authority's writer set leaves it out
+
+### Patch Changes
+
+- 9c7e4d2: Honor a role's per-channel overrides when checking `label.apply`, and keep every env file out of the Docker build context
+
 ## 2.2.0
 
 ### Minor Changes
