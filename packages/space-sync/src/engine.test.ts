@@ -29,6 +29,7 @@ const cursor = (
 let cursors: Map<string, RepoCursor>;
 let dropped: string[];
 let droppedSpaces: string[];
+let dropSpaceFails: boolean;
 
 const store = (expected?: string[]): SyncStore => ({
 	listSpaces: async () => [{ uri: SPACE, authority: AUTHORITY }],
@@ -42,7 +43,10 @@ const store = (expected?: string[]): SyncStore => ({
 		dropped.push(author);
 		cursors.delete(author);
 	},
-	dropSpace: async (space) => void droppedSpaces.push(space),
+	dropSpace: async (space) => {
+		if (dropSpaceFails) throw new Error("the database is on fire");
+		droppedSpaces.push(space);
+	},
 });
 
 const client = (remotes: Remote[], options: { listThrows?: unknown } = {}) => ({
@@ -93,6 +97,7 @@ beforeEach(() => {
 	cursors = new Map();
 	dropped = [];
 	droppedSpaces = [];
+	dropSpaceFails = false;
 });
 
 describe("sweeping a space", () => {
@@ -553,6 +558,21 @@ describe("notify registrations", () => {
 		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(1);
 		await engine.stop();
 		vi.useRealTimers();
+	});
+
+	it("keeps running when dropping a deleted space fails", async () => {
+		const logged: Array<{ event: string }> = [];
+		const { engine } = engineFor([], async () => undefined, {
+			engine: { log: (event: string) => void logged.push({ event }) },
+		});
+		dropSpaceFails = true;
+
+		engine.notifySpaceDeleted(SPACE);
+		await vi.waitFor(() =>
+			expect(logged.map((entry) => entry.event)).toContain("dropSpace.failed"),
+		);
+
+		expect(droppedSpaces).toEqual([]);
 	});
 });
 

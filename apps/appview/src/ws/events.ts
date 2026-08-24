@@ -4,7 +4,7 @@ import { ServiceAuthError } from "@colibri-social/identity";
 import { social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import { type WebSocket, WebSocketServer } from "ws";
-import { channelEvent } from "../announce.js";
+import { channelEvent, communityEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { isOnlineState, PresenceTracker } from "../presence.js";
 import { ActorViews } from "../views/actor.js";
@@ -413,6 +413,21 @@ export class EventServer {
 		if (event !== "delete") return;
 		for (const connection of [...this.topics.subscribersOf(channelTopic(space))]) {
 			this.topics.unsubscribe(connection, [channelTopic(space)]);
+			this.confirmSubscription(connection);
+		}
+	}
+
+	communityDeleted(community: string): void {
+		const frame = communityEvent("delete", community);
+		const topic = communityTopic(community);
+
+		for (const connection of [...this.connections]) {
+			const channels = this.channelsHeldIn(connection, community);
+			const held = this.topics.topicsOf(connection).includes(topic);
+			if (!held && channels.length === 0) continue;
+
+			this.send(connection, frame);
+			this.topics.unsubscribe(connection, [topic, ...channels.map(channelTopic)]);
 			this.confirmSubscription(connection);
 		}
 	}

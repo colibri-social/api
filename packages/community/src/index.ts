@@ -8,5 +8,6 @@ export * from "./membership.js";
 export * from "./migrate.js";
 export * from "./moderation.js";
 export * from "./provisioning.js";
+export * from "./purge.js";
 export * from "./spaces.js";
 export * from "./writes.js";

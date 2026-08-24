@@ -405,8 +405,8 @@ export class CommunityProvisioner {
 		await this.deps.spaces.forget(space);
 	}
 
-	async destroy(community: string, host: CommunityHost, spaces: CommunitySpaces): Promise<void> {
-		for (const space of Object.values(spaces)) {
+	async destroy(community: string, host: CommunityHost, spaces: readonly string[]): Promise<void> {
+		for (const space of spaces) {
 			await host.pds.deleteSpace(host.session, space).catch(() => undefined);
 			await this.deps.spaces.forget(space);
 		}

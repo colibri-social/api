@@ -14,11 +14,13 @@ const HOST = "https://pds.test";
 
 let database: TestDatabase;
 let kicked: string[];
+let dropped: string[];
 
 const registry = () =>
 	spaceRegistry({
 		database,
 		onRegistered: (uri) => kicked.push(uri),
+		onForgotten: (uri) => dropped.push(uri),
 		now: () => new Date("2026-08-23T00:00:00.000Z"),
 	});
 
@@ -27,6 +29,7 @@ const rows = () => database.db.select().from(database.tables.spaces);
 beforeEach(async () => {
 	database = await openTestDatabase();
 	kicked = [];
+	dropped = [];
 });
 
 afterEach(async () => {
@@ -97,6 +100,17 @@ describe("spaceRegistry", () => {
 		await registry().forget(spaces.profile);
 
 		expect((await rows()).map((row) => row.uri)).toEqual([spaces.members]);
+	});
+
+	it("tells the caller when a space is forgotten, so the sync engine can drop it", async () => {
+		const space = communitySpaces(COMMUNITY).profile;
+		await registry().register({ uri: space, community: COMMUNITY, host: HOST });
+
+		expect(dropped).toEqual([]);
+
+		await registry().forget(space);
+
+		expect(dropped).toEqual([space]);
 	});
 
 	it("rejects something that is not a space reference rather than storing it", async () => {

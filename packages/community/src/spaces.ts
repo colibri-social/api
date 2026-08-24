@@ -16,12 +16,14 @@ export type SpaceRegistry = {
 export type SpaceRegistryDeps = {
 	database: Database;
 	onRegistered?: (uri: string) => void;
+	onForgotten?: (uri: string) => void;
 	now?: () => Date;
 };
 
 export const spaceRegistry = ({
 	database,
 	onRegistered,
+	onForgotten,
 	now,
 }: SpaceRegistryDeps): SpaceRegistry => {
 	const { db, tables } = database;
@@ -53,6 +55,8 @@ export const spaceRegistry = ({
 
 		forget: async (uri) => {
 			await db.delete(tables.spaces).where(eq(tables.spaces.uri, uri));
+
+			onForgotten?.(uri);
 		},
 	};
 };

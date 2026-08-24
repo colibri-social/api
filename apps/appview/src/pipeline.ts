@@ -1,4 +1,5 @@
-import { COLLECTIONS, LABEL_VALUES } from "@colibri-social/lexicons";
+import { communitySpaceUris, purgeCommunity } from "@colibri-social/community";
+import { COLLECTIONS, LABEL_VALUES, SPACE_TYPES } from "@colibri-social/lexicons";
 import {
 	createSenders,
 	deliverNotification,
@@ -79,10 +80,32 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 	const channels = new ChannelViews(ctx, actors);
 	const communities = new CommunityViews(ctx, actors);
 
+	const reconcileDeletedCommunity = async (community: string): Promise<void> => {
+		if (!(await ctx.loader.community(community))) return;
+
+		const spaces = await communitySpaceUris(ctx.database, community);
+		await purgeCommunity(ctx.database, community, spaces);
+
+		events.communityDeleted(community);
+		ctx.authzChanges.publish({ community, collection: COLLECTIONS.member });
+	};
+
 	const unsubscribeDeleted = ctx.sync.on("spaceDeleted", (uri) => {
 		const space = spaceContextFor(uri);
-		if (!space?.community || !isChannelSpace(space)) return;
-		events.channelChanged(space.community, uri, "delete");
+		if (!space?.community) return;
+
+		if (isChannelSpace(space)) {
+			events.channelChanged(space.community, uri, "delete");
+			return;
+		}
+
+		if (space.spaceType !== SPACE_TYPES.communityProfile) return;
+
+		const community = space.community;
+		void reconcileDeletedCommunity(community).catch((error) => {
+			reportFailure(error, { stage: "pipeline", space: uri });
+			ctx.log.warn({ community, error }, "pipeline.communityReconcileFailed");
+		});
 	});
 
 	const unsubscribe = ctx.sync.on("changed", (change) => {

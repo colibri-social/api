@@ -323,10 +323,28 @@ describe("channel spaces", () => {
 	it("forgets every community space when the community is destroyed", async () => {
 		await adopt();
 		const host = { pds: clientFor(THEIRS), session: {} as never };
-		const spaces = communitySpaces(COMMUNITY);
+		const spaces = Object.values(communitySpaces(COMMUNITY));
 
 		await provisioner().destroy(COMMUNITY, host, spaces);
 
-		expect(forgottenSpaces.sort()).toEqual(Object.values(spaces).sort());
+		expect(forgottenSpaces.sort()).toEqual([...spaces].sort());
+	});
+
+	it("deletes the channel spaces too, so nothing is left behind on someone else's PDS", async () => {
+		const provisioned = await adopt();
+		const host = { pds: clientFor(THEIRS), session: {} as never };
+		const spaces = [
+			...Object.values(communitySpaces(COMMUNITY)),
+			provisioned.channels.text,
+			provisioned.channels.voice,
+		];
+
+		await provisioner().destroy(COMMUNITY, host, spaces);
+
+		expect(deletedSpaces).toContain(provisioned.channels.text);
+		expect(deletedSpaces).toContain(provisioned.channels.voice);
+		expect(forgottenSpaces).toContain(provisioned.channels.text);
+		expect(forgottenSpaces).toContain(provisioned.channels.voice);
+		expect(forgotten).toEqual([COMMUNITY]);
 	});
 });

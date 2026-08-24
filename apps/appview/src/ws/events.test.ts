@@ -385,6 +385,100 @@ describe("EventServer", () => {
 		ws.close();
 	});
 
+	it("stops delivering a community once it is deleted", async () => {
+		await putChannelRow(CHANNEL, "3lkgeneral");
+
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#subscribe",
+			communities: [COMMUNITY],
+		});
+		await nextFrameOfType(ws, "subscribed");
+
+		events.communityDeleted(COMMUNITY);
+
+		expect(await nextFrameOfType(ws, "communityEvent")).toMatchObject({
+			event: "delete",
+			community: COMMUNITY,
+		});
+		expect(await nextFrameOfType(ws, "subscribed")).toMatchObject({
+			communities: [],
+			channels: [],
+		});
+
+		ws.close();
+	});
+
+	it("tells a channel-only subscriber that its community is gone", async () => {
+		await putChannelRow(CHANNEL, "3lkgeneral");
+
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+		await subscribed(ws, CHANNEL);
+
+		events.communityDeleted(COMMUNITY);
+
+		expect(await nextFrameOfType(ws, "communityEvent")).toMatchObject({
+			event: "delete",
+			community: COMMUNITY,
+		});
+		expect(await nextFrameOfType(ws, "subscribed")).toMatchObject({ channels: [] });
+
+		ws.close();
+	});
+
+	it("refuses to re-subscribe to a community that no longer exists", async () => {
+		await putChannelRow(CHANNEL, "3lkgeneral");
+
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#subscribe",
+			communities: [COMMUNITY],
+		});
+		await nextFrameOfType(ws, "subscribed");
+
+		events.communityDeleted(COMMUNITY);
+		await nextFrameOfType(ws, "subscribed");
+
+		authz.set(ALICE, anonymousAuthz(ALICE, COMMUNITY));
+		channels.clear();
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#subscribe",
+			communities: [COMMUNITY],
+		});
+
+		expect(await nextFrameOfType(ws, "subscribed")).toMatchObject({
+			communities: [],
+			channels: [],
+		});
+
+		ws.close();
+	});
+
+	it("leaves a socket that never held the community alone", async () => {
+		await putChannelRow(CHANNEL, "3lkgeneral");
+
+		const alice = connect("alice-token");
+		const bob = connect("bob-token");
+		await Promise.all([waitForOpen(alice), waitForOpen(bob)]);
+		send(alice, {
+			$type: "social.colibri.beta.sync.defs#subscribe",
+			communities: [COMMUNITY],
+		});
+		await nextFrameOfType(alice, "subscribed");
+
+		events.communityDeleted(COMMUNITY);
+		await nextFrameOfType(alice, "communityEvent");
+		await vi.waitFor(() => expect(events.connectionCount).toBe(2));
+
+		expect(heldOfType(bob, "communityEvent")).toEqual([]);
+
+		alice.close();
+		bob.close();
+	});
+
 	it("passes a typing frame to the others in the channel", async () => {
 		const alice = connect("alice-token");
 		const bob = connect("bob-token");

@@ -2,6 +2,7 @@ import { InvalidRequestError } from "@atproto/xrpc-server";
 import { sniffMimeType } from "@colibri-social/blobs";
 import {
 	CommunityCredentialError,
+	communitySpaceUris,
 	generatePassword,
 	has,
 	isAdmin,
@@ -12,6 +13,7 @@ import {
 	migrateCommunity,
 	type ProvisionedCommunity,
 	ProvisioningRefused,
+	purgeCommunity,
 } from "@colibri-social/community";
 import { SERVICE_FRAGMENTS, serviceId } from "@colibri-social/identity";
 import {
@@ -481,13 +483,20 @@ export const handleDeleteCommunity = async (
 	const authz = await ctx.loader.authz(community, callerDid);
 	if (!has(authz, "community.delete")) throw forbidden("community.delete");
 
+	const spaces = await communitySpaceUris(ctx.database, community);
+
 	try {
 		const host = await ctx.credentials.connect(community);
-		await ctx.provisioner.destroy(community, host, communitySpaces(community));
+		await ctx.provisioner.destroy(community, host, spaces);
 	} catch (error) {
 		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);
 		throw error;
 	}
+
+	await purgeCommunity(ctx.database, community, spaces);
+
+	ctx.announce.communityDeleted(community);
+	ctx.authzChanges.publish({ community, collection: COLLECTIONS.member });
 };
 
 export const handleJoinCommunity = async (

@@ -31,6 +31,8 @@ let published: { space: string; frame: ServerFrame }[];
 let emit: (change: RepoChange) => void;
 let emitSpaceDeleted: (uri: string) => void;
 let disconnect: () => void;
+let communityDeletes: string[];
+let authzChanges: string[];
 
 const framesOfType = (suffix: string) =>
 	published.filter((entry) => entry.frame.$type === `social.colibri.beta.sync.defs#${suffix}`);
@@ -99,6 +101,8 @@ const labelChange = (subjectRkey: string, val: string, neg: boolean): RepoChange
 beforeEach(async () => {
 	database = await openTestDatabase();
 	published = [];
+	communityDeletes = [];
+	authzChanges = [];
 
 	const ctx = {
 		database,
@@ -120,6 +124,9 @@ beforeEach(async () => {
 				return () => {};
 			},
 		},
+		authzChanges: {
+			publish: (change: { community: string }) => authzChanges.push(change.community),
+		},
 	} as unknown as AppContext;
 
 	const events = {
@@ -137,6 +144,17 @@ beforeEach(async () => {
 					space,
 				},
 			}),
+		communityDeleted: (community: string) => {
+			communityDeletes.push(community);
+			published.push({
+				space: community,
+				frame: {
+					$type: "social.colibri.beta.sync.defs#communityEvent",
+					event: "delete",
+					community,
+				},
+			});
+		},
 	} as unknown as EventServer;
 
 	await database.db.insert(database.tables.communities).values({
@@ -318,6 +336,28 @@ describe("configuration events", () => {
 		emitSpaceDeleted(CONFIG_SPACE);
 
 		expect(framesOfType("channelEvent")).toHaveLength(0);
+	});
+
+	it("purges and announces a community whose profile space was deleted", async () => {
+		const PROFILE_SPACE = `at://${COMMUNITY}/space/${SPACE_TYPES.communityProfile}/self`;
+
+		emitSpaceDeleted(PROFILE_SPACE);
+		await vi.waitFor(() => expect(communityDeletes).toEqual([COMMUNITY]));
+
+		expect(authzChanges).toEqual([COMMUNITY]);
+		expect(await database.db.select().from(database.tables.communities)).toEqual([]);
+		expect(await database.db.select().from(database.tables.channels)).toEqual([]);
+	});
+
+	it("stays quiet when the community row is already gone", async () => {
+		const PROFILE_SPACE = `at://${COMMUNITY}/space/${SPACE_TYPES.communityProfile}/self`;
+		await database.db.delete(database.tables.communities);
+
+		emitSpaceDeleted(PROFILE_SPACE);
+		await vi.waitFor(() => expect(framesOfType("channelEvent")).toHaveLength(0));
+
+		expect(communityDeletes).toEqual([]);
+		expect(authzChanges).toEqual([]);
 	});
 });
 

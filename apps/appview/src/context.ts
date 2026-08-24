@@ -141,6 +141,9 @@ export const createContext = async (config: Config) => {
 		onRegistered: (uri) => {
 			void sync.sweepSpace(uri).catch((error) => log.warn({ space: uri, error }, "sweep.failed"));
 		},
+		onForgotten: (uri) => {
+			sync.notifySpaceDeleted(uri);
+		},
 	});
 
 	const provisioner = new CommunityProvisioner({

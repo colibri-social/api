@@ -187,7 +187,9 @@ export class SpaceSyncEngine {
 	}
 
 	notifySpaceDeleted(space: string): void {
-		void this.dropSpace(space);
+		void this.dropSpace(space).catch((error: unknown) =>
+			this.log("dropSpace.failed", { space, error }),
+		);
 	}
 
 	async drain(): Promise<void> {
