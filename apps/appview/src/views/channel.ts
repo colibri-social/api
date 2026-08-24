@@ -19,7 +19,7 @@ import {
 	messageRefKey,
 } from "@colibri-social/projections";
 import { parseSpaceRef, spaceRecordUri } from "@colibri-social/space";
-import { and, asc, desc, eq, gt, inArray, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, lt, ne, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { signBlobUrl } from "../media-token.js";
 import type { ActorViews } from "./actor.js";
@@ -376,6 +376,7 @@ export class ChannelViews {
 
 	private async hasUnreadMessages(
 		space: string,
+		did: string,
 		sources: readonly string[],
 		cursor?: string,
 	): Promise<boolean> {
@@ -386,7 +387,11 @@ export class ChannelViews {
 			const rows = await this.ctx.database.db
 				.select({ author: table.author, rkey: table.rkey })
 				.from(table)
-				.where(after ? and(eq(table.space, space), gt(table.rkey, after)) : eq(table.space, space))
+				.where(
+					after
+						? and(eq(table.space, space), ne(table.author, did), gt(table.rkey, after))
+						: and(eq(table.space, space), ne(table.author, did)),
+				)
 				.orderBy(asc(table.rkey))
 				.limit(batch);
 			if (rows.length === 0) return false;
@@ -489,7 +494,7 @@ export class ChannelViews {
 			const cursor = cursorBySkey.get(row.skey);
 			const sources = sourcesByCommunity.get(row.community) ?? [row.community];
 			const [hasUnread, unreadMentions] = await Promise.all([
-				this.hasUnreadMessages(row.space, sources, cursor),
+				this.hasUnreadMessages(row.space, did, sources, cursor),
 				this.countUnreadMentions(row.space, did, sources, cursor),
 			]);
 			statuses.push({

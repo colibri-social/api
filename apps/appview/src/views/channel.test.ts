@@ -498,6 +498,19 @@ describe("ChannelViews.unreadStatus", () => {
 		expect(afterReadingAll[0]).toMatchObject({ hasUnread: false, unreadMentions: 0 });
 	});
 
+	it("does not count the caller's own message as unread", async () => {
+		await putMessage(nextTid(), { author: AUTHOR_B });
+
+		const own = await views.unreadStatus(AUTHOR_B, { community: COMMUNITY });
+		expect(own).toHaveLength(1);
+		expect(own[0]).toMatchObject({ hasUnread: false, unreadMentions: 0 });
+
+		await putMessage(nextTid());
+
+		const fromSomeoneElse = await views.unreadStatus(AUTHOR_B, { community: COMMUNITY });
+		expect(fromSomeoneElse[0]).toMatchObject({ hasUnread: true });
+	});
+
 	it("does not count a hidden message as unread, nor its mention", async () => {
 		const rkey = nextTid();
 		await putMessage(rkey);
