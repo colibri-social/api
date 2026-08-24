@@ -205,7 +205,7 @@ export class SpaceClient {
 	): Promise<Response> {
 		const client = this.clientFor(repoHost);
 		const { auth } = await this.authFor(space);
-		return client.stream("com.atproto.space.getBlob", { space, did: repo, cid }, auth);
+		return client.stream("com.atproto.space.getBlob", { space, repo, cid }, auth);
 	}
 
 	async listBlobs(
