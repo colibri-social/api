@@ -48,6 +48,15 @@ const notificationLevel = async (did: string, level: "all" | "mentionsAndReplies
 	await database.db.insert(database.tables.actorSettings).values({ did, notificationLevel: level });
 };
 
+const viewing = async (did: string, channel: string) => {
+	await database.db.insert(database.tables.userPresence).values({
+		did,
+		derivedState: "online",
+		viewingChannel: channel,
+		updatedAt: NOW,
+	});
+};
+
 const rowsFor = async (recipient: string) =>
 	database.db
 		.select()
@@ -314,5 +323,43 @@ describe("indexMessage", () => {
 
 			expect(await rowsFor(holder)).toHaveLength(0);
 		});
+	});
+});
+
+describe("someone already looking at the channel", () => {
+	const reader = "did:plc:reader0000000000000000000";
+
+	it("gets no notification for a mention in the channel they are reading", async () => {
+		await member(reader);
+		await viewing(reader, CHANNEL);
+
+		await indexMessage(deps, {
+			space: CHANNEL,
+			community: COMMUNITY,
+			author: AUTHOR,
+			rkey: "3lkmsg1",
+			facets: [mentionFacet(reader)],
+			parentAuthor: null,
+			parentRkey: null,
+		});
+
+		expect(await rowsFor(reader)).toHaveLength(0);
+	});
+
+	it("still gets one when they are reading a different channel", async () => {
+		await member(reader);
+		await viewing(reader, channelSpace(COMMUNITY, "social.colibri.beta.channel.text", "3lkelse"));
+
+		await indexMessage(deps, {
+			space: CHANNEL,
+			community: COMMUNITY,
+			author: AUTHOR,
+			rkey: "3lkmsg2",
+			facets: [mentionFacet(reader)],
+			parentAuthor: null,
+			parentRkey: null,
+		});
+
+		expect(await rowsFor(reader)).toHaveLength(1);
 	});
 });

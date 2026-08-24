@@ -381,3 +381,27 @@ describe("labels", () => {
 		expect(writes.at(-1)?.write.record).toMatchObject({ val: "hidden", neg: true });
 	});
 });
+
+describe("what a logged action reports back", () => {
+	it("names the record it wrote, so a caller can announce it", async () => {
+		const logged = await moderation.ban(COMMUNITY, OWNER, MEMBER, "spam");
+
+		const written = writes.at(-1)?.write;
+		expect(logged).toEqual({
+			rkey: `generated-${writes.length}`,
+			action: "ban",
+			createdAt: NOW.toISOString(),
+		});
+		expect(written?.record).toMatchObject({ action: "ban", subject: MEMBER, reason: "spam" });
+	});
+
+	it("reports a kick and an unban the same way", async () => {
+		const kicked = await moderation.kick(COMMUNITY, OWNER, MEMBER);
+		expect(kicked.action).toBe("kick");
+
+		await moderation.ban(COMMUNITY, OWNER, OUTSIDER);
+		const unbanned = await moderation.unban(COMMUNITY, OWNER, OUTSIDER);
+		expect(unbanned.action).toBe("unban");
+		expect(unbanned.rkey).not.toBe(kicked.rkey);
+	});
+});

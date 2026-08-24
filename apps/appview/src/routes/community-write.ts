@@ -28,7 +28,13 @@ import {
 } from "@colibri-social/lexicons";
 import { XrpcError } from "@colibri-social/space";
 import { and, asc, eq } from "drizzle-orm";
-import { communityEvent, memberEvent, memberGoneEvent } from "../announce.js";
+import {
+	applicationEvent,
+	communityEvent,
+	communityProgressEvent,
+	memberEvent,
+	memberGoneEvent,
+} from "../announce.js";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
@@ -165,12 +171,15 @@ export const handleCreateCommunity = async (
 ): Promise<{ community: CommunityView }> => {
 	let provisioned: ProvisionedCommunity;
 	try {
-		provisioned = await ctx.provisioner.create({
-			name: input.name,
-			description: input.description,
-			handlePrefix: input.handlePrefix,
-			creator: callerDid,
-		});
+		provisioned = await ctx.provisioner.create(
+			{
+				name: input.name,
+				description: input.description,
+				handlePrefix: input.handlePrefix,
+				creator: callerDid,
+			},
+			(progress) => ctx.announce.toUser(callerDid, communityProgressEvent(progress)),
+		);
 	} catch (error) {
 		return provisioningFailure(error);
 	}
@@ -211,15 +220,18 @@ export const handleAdoptCommunity = async (
 
 	let provisioned: ProvisionedCommunity;
 	try {
-		provisioned = await ctx.provisioner.adopt({
-			did: input.did,
-			pdsEndpoint,
-			identifier: input.identifier,
-			password: input.password,
-			name: input.name,
-			description: input.description,
-			creator: callerDid,
-		});
+		provisioned = await ctx.provisioner.adopt(
+			{
+				did: input.did,
+				pdsEndpoint,
+				identifier: input.identifier,
+				password: input.password,
+				name: input.name,
+				description: input.description,
+				creator: callerDid,
+			},
+			(progress) => ctx.announce.toUser(callerDid, communityProgressEvent(progress)),
+		);
 	} catch (error) {
 		if (isCredentialRejection(error)) {
 			await ctx.credentials.forget(input.did);
@@ -744,6 +756,7 @@ export const handleMigrateCommunity = async (
 				spaces: ctx.spaces,
 				appviewService: serviceId(ctx.config.APPVIEW_DID, SERVICE_FRAGMENTS.appview),
 				log: (message, detail) => ctx.log.info(detail ?? {}, message),
+				onProgress: (progress) => ctx.announce.toUser(callerDid, communityProgressEvent(progress)),
 				dryRun: false,
 			},
 			legacyDid,
@@ -850,6 +863,11 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 				ctx.announce.toCommunity(
 					input.body.community,
 					memberEvent("join", input.body.community, body.member),
+				);
+			} else {
+				ctx.announce.toCommunity(
+					input.body.community,
+					applicationEvent("create", input.body.community, caller.credentials.did),
 				);
 			}
 			return { encoding: "application/json" as const, body };

@@ -13,6 +13,12 @@ export type ModerationFailure =
 	| "notBanned"
 	| "labelNotFound";
 
+export type LoggedAction = {
+	rkey: string;
+	action: "ban" | "unban" | "kick";
+	createdAt: string;
+};
+
 export class ModerationError extends Error {
 	constructor(
 		readonly failure: ModerationFailure,
@@ -51,8 +57,9 @@ export class Moderation {
 		subject: string,
 		createdBy: string,
 		reason?: string,
-	): Promise<void> {
-		await this.deps.writer.put(community, {
+	): Promise<LoggedAction> {
+		const createdAt = this.now().toISOString();
+		const { rkey } = await this.deps.writer.put(community, {
 			space: this.deps.writer.spaces(community).moderation,
 			collection: COLLECTIONS.moderation,
 			record: {
@@ -60,10 +67,11 @@ export class Moderation {
 				action,
 				subject,
 				createdBy,
-				createdAt: this.now().toISOString(),
+				createdAt,
 				...(reason ? { reason } : {}),
 			},
 		});
+		return { rkey, action, createdAt };
 	}
 
 	private async assertOutranks(community: string, actor: string, subject: string): Promise<void> {
@@ -76,12 +84,22 @@ export class Moderation {
 		}
 	}
 
-	async kick(community: string, actor: string, subject: string, reason?: string): Promise<void> {
+	async kick(
+		community: string,
+		actor: string,
+		subject: string,
+		reason?: string,
+	): Promise<LoggedAction> {
 		await this.deps.membership.kick(community, actor, subject);
-		await this.log(community, "kick", subject, actor, reason);
+		return this.log(community, "kick", subject, actor, reason);
 	}
 
-	async ban(community: string, actor: string, subject: string, reason?: string): Promise<void> {
+	async ban(
+		community: string,
+		actor: string,
+		subject: string,
+		reason?: string,
+	): Promise<LoggedAction> {
 		if (await this.deps.loader.isBanned(community, subject)) {
 			throw new ModerationError("alreadyBanned", `${subject} is already banned`);
 		}
@@ -89,14 +107,19 @@ export class Moderation {
 
 		const target = await this.deps.loader.authz(community, subject);
 		if (target.member) await this.deps.membership.remove(community, subject);
-		await this.log(community, "ban", subject, actor, reason);
+		return this.log(community, "ban", subject, actor, reason);
 	}
 
-	async unban(community: string, actor: string, subject: string, reason?: string): Promise<void> {
+	async unban(
+		community: string,
+		actor: string,
+		subject: string,
+		reason?: string,
+	): Promise<LoggedAction> {
 		if (!(await this.deps.loader.isBanned(community, subject))) {
 			throw new ModerationError("notBanned", `${subject} is not banned`);
 		}
-		await this.log(community, "unban", subject, actor, reason);
+		return this.log(community, "unban", subject, actor, reason);
 	}
 
 	async listBans(community: string, options: { limit?: number; cursor?: string } = {}) {

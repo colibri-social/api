@@ -84,6 +84,69 @@ export const preferencesEvent = (
 	preferences,
 });
 
+export const seenEvent = (
+	unread: number,
+	where: { seenAt: string; channel?: string },
+): ServerFrame => ({
+	$type: "social.colibri.beta.sync.defs#seenEvent",
+	unread,
+	seenAt: where.seenAt,
+	...(where.channel ? { channel: where.channel } : {}),
+});
+
+export const notificationEvent = (
+	notification: social.colibri.beta.notification.defs.NotificationView,
+): ServerFrame => ({
+	$type: "social.colibri.beta.sync.defs#notificationEvent",
+	notification,
+});
+
+export const applicationEvent = (
+	event: "create" | "approve" | "dismiss" | "undismiss",
+	community: string,
+	subject: string,
+): ServerFrame => ({
+	$type: "social.colibri.beta.sync.defs#applicationEvent",
+	event,
+	community,
+	subject,
+});
+
+export const moderationEvent = (
+	community: string,
+	entry: social.colibri.beta.community.defs.ModerationView,
+): ServerFrame => ({
+	$type: "social.colibri.beta.sync.defs#moderationEvent",
+	community,
+	entry,
+});
+
+export const labelEvent = (
+	event: "create" | "negate",
+	space: string,
+	src: string,
+	subject: { did: string; collection: string; rkey: string },
+	val: string,
+): ServerFrame => ({
+	$type: "social.colibri.beta.sync.defs#labelEvent",
+	event,
+	space,
+	subject,
+	val,
+	src,
+});
+
+export const communityProgressEvent = (progress: {
+	step: string;
+	completed: number;
+	total: number;
+	community?: string;
+	message?: string;
+}): ServerFrame => ({
+	$type: "social.colibri.beta.sync.defs#communityProgressEvent",
+	...progress,
+});
+
 export const announceToCommunities = async (
 	ctx: AppContext,
 	did: string,

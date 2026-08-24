@@ -55,6 +55,21 @@ export class PresenceTracker {
 		await this.settle(did, OFFLINE);
 	}
 
+	async viewing(did: string, channel: string | null): Promise<void> {
+		const { db, tables } = this.deps.ctx.database;
+		const [existing] = await db
+			.select()
+			.from(tables.userPresence)
+			.where(eq(tables.userPresence.did, did))
+			.limit(1);
+		if (!existing) return;
+
+		await db
+			.update(tables.userPresence)
+			.set({ viewingChannel: channel, updatedAt: new Date().toISOString() })
+			.where(eq(tables.userPresence.did, did));
+	}
+
 	async requested(did: string, state: OnlineState): Promise<void> {
 		await this.settle(did, this.connections(did) > 0 ? ONLINE : OFFLINE, state);
 	}

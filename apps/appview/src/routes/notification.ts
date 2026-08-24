@@ -15,6 +15,7 @@ import {
 	unseenForChannel,
 } from "@colibri-social/notifications";
 import { and, eq } from "drizzle-orm";
+import { seenEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
@@ -88,9 +89,11 @@ export const handleGetUnseen = async (
 	return { notifications: await hydrateNotifications(deps, rows, hydrateActors) };
 };
 
-export const handleUpdateSeen = async (ctx: AppContext, callerDid: string, seenAt: string) => ({
-	unread: await markSeen(notificationDeps(ctx), callerDid, seenAt),
-});
+export const handleUpdateSeen = async (ctx: AppContext, callerDid: string, seenAt: string) => {
+	const unread = await markSeen(notificationDeps(ctx), callerDid, seenAt);
+	ctx.announce.toUser(callerDid, seenEvent(unread, { seenAt }));
+	return { unread };
+};
 
 export const handleUpdateSeenForMessage = async (
 	ctx: AppContext,
@@ -101,13 +104,15 @@ export const handleUpdateSeenForMessage = async (
 ) => {
 	await requireChannel(ctx, channel);
 	await requireMessage(ctx, channel, messageAuthor, messageRkey);
+	const seenAt = new Date().toISOString();
 	const unread = await markSeenForMessage(
 		notificationDeps(ctx),
 		callerDid,
 		messageAuthor,
 		messageRkey,
-		new Date().toISOString(),
+		seenAt,
 	);
+	ctx.announce.toUser(callerDid, seenEvent(unread, { seenAt, channel }));
 	return { unread };
 };
 

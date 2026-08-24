@@ -36,6 +36,27 @@ export type MigrationReport = {
 	warnings: string[];
 };
 
+export const MIGRATION_STEPS = [
+	"readingLegacyRepo",
+	"creatingSpaces",
+	"writingProfile",
+	"migratingRoles",
+	"migratingMembers",
+	"migratingChannels",
+	"migratingCategories",
+	"mirroringMessages",
+	"done",
+] as const;
+
+export type MigrationStep = (typeof MIGRATION_STEPS)[number];
+
+export type MigrationProgress = {
+	step: MigrationStep;
+	completed: number;
+	total: number;
+	community: string;
+};
+
 export type MigrateDeps = {
 	database: Database;
 	hostFor: (did: string) => Promise<string>;
@@ -44,6 +65,7 @@ export type MigrateDeps = {
 	spaces: SpaceRegistry;
 	appviewService: string;
 	log: (message: string, detail?: Record<string, unknown>) => void;
+	onProgress?: (progress: MigrationProgress) => void;
 	dryRun?: boolean;
 };
 
@@ -88,12 +110,22 @@ export const migrateCommunity = async (
 		warnings: [],
 	};
 
+	const advance = (step: MigrationStep): void => {
+		deps.onProgress?.({
+			step,
+			completed: MIGRATION_STEPS.indexOf(step),
+			total: MIGRATION_STEPS.length - 1,
+			community,
+		});
+	};
+
 	const spaces = communitySpaces(community);
 	const host = await deps.credentials.connect(community);
 	const session = host.session;
 	const repoOf = async (did: string) => deps.credentials.clientFor(await deps.hostFor(did));
 	const legacyRepo = await repoOf(community);
 
+	advance("readingLegacyRepo");
 	deps.log("reading the legacy repo", { community, pds: legacyRepo.service });
 	const [legacyCommunity, legacyCategories, legacyChannels, legacyRoles, legacyMembers] =
 		await Promise.all([
@@ -143,6 +175,7 @@ export const migrateCommunity = async (
 		});
 	};
 
+	advance("creatingSpaces");
 	deps.log("creating the community's spaces");
 	for (const type of [
 		SPACE_TYPES.communityProfile,
@@ -174,6 +207,7 @@ export const migrateCommunity = async (
 		await deps.writer.put(community, { space, collection, rkey, record });
 	};
 
+	advance("writingProfile");
 	deps.log("writing the community profile");
 	await put(spaces.profile, COLLECTIONS.community, SELF, {
 		$type: COLLECTIONS.community,
@@ -185,6 +219,7 @@ export const migrateCommunity = async (
 		migratedFrom: legacyUri(community, LEGACY_COLLECTIONS.community, SELF),
 	});
 
+	advance("migratingRoles");
 	deps.log("writing roles");
 	for (const role of legacyRoles) {
 		const value = role.value as Record<string, unknown>;
@@ -201,6 +236,7 @@ export const migrateCommunity = async (
 		report.roles += 1;
 	}
 
+	advance("migratingMembers");
 	deps.log("writing members");
 	for (const member of legacyMembers) {
 		const value = member.value as {
@@ -223,6 +259,7 @@ export const migrateCommunity = async (
 		report.members += 1;
 	}
 
+	advance("migratingChannels");
 	deps.log("creating channel spaces");
 	const channelSpaceByLegacyRkey = new Map<string, string>();
 	for (const channel of legacyChannels) {
@@ -263,6 +300,7 @@ export const migrateCommunity = async (
 		report.channels += 1;
 	}
 
+	advance("migratingCategories");
 	deps.log("writing categories");
 	const categoryOrder: string[] = [];
 	for (const category of legacyCategories) {
@@ -287,8 +325,11 @@ export const migrateCommunity = async (
 		linkEmbeds: legacy.linkEmbeds ?? true,
 	});
 
+	advance("mirroringMessages");
 	deps.log("mirroring legacy message history");
 	report.legacyMessages = await mirrorLegacyMessages(deps, community, legacyMembers, report);
+
+	advance("done");
 
 	return report;
 };

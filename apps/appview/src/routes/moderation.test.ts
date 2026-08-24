@@ -40,6 +40,7 @@ const MEMBER = "did:plc:memberxxxxxxxxxxxxxxxxxxxxxxx";
 const APPLICANT = "did:plc:applicantxxxxxxxxxxxxxxxxxxx";
 const NOW = new Date("2026-08-23T00:00:00.000Z");
 
+let announced: Array<{ target: string; frame: Record<string, unknown> }>;
 let database: TestDatabase;
 let ctx: AppContext;
 let loader: CommunityLoader;
@@ -184,6 +185,7 @@ const addChannel = (community: string, skey: string) =>
 
 beforeEach(async () => {
 	database = await openTestDatabase();
+	announced = [];
 	writes = [];
 	removals = [];
 
@@ -206,7 +208,13 @@ beforeEach(async () => {
 	});
 
 	ctx = {
-		announce: silentAnnouncer,
+		announce: {
+			...silentAnnouncer,
+			toCommunity: (community: string, frame: Record<string, unknown>) =>
+				announced.push({ target: community, frame }),
+			toChannel: (space: string, frame: Record<string, unknown>) =>
+				announced.push({ target: space, frame }),
+		},
 		config: { PUBLIC_URL: "https://appview.test" },
 		database,
 		loader,
@@ -312,5 +320,43 @@ describe("ban and unban", () => {
 
 		await handleUnban(ctx, moderation, OWNER, COMMUNITY, MEMBER);
 		expect((await loader.authz(COMMUNITY, MEMBER)).isBanned).toBe(false);
+	});
+});
+
+describe("announcing moderation", () => {
+	const space = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkchannel1");
+	const subject = { did: MEMBER, collection: "social.colibri.beta.message", rkey: "3lkmsg1" };
+
+	const framesOfType = (suffix: string) =>
+		announced.filter((entry) => entry.frame.$type === `social.colibri.beta.sync.defs#${suffix}`);
+
+	it("tells the channel the moment a message is hidden", async () => {
+		await handleApplyLabel(ctx, moderation, OWNER, { space, subject, val: "hidden" });
+
+		expect(framesOfType("labelEvent")).toEqual([
+			{
+				target: space,
+				frame: {
+					$type: "social.colibri.beta.sync.defs#labelEvent",
+					event: "create",
+					space,
+					subject,
+					val: "hidden",
+					src: COMMUNITY,
+				},
+			},
+		]);
+	});
+
+	it("puts a ban in the log for everyone watching the community", async () => {
+		await handleBan(ctx, moderation, OWNER, COMMUNITY, MEMBER, "spam");
+
+		const [entry] = framesOfType("moderationEvent");
+		expect(entry?.target).toBe(COMMUNITY);
+		expect(entry?.frame.entry).toMatchObject({
+			action: "ban",
+			reason: "spam",
+			createdBy: OWNER,
+		});
 	});
 });

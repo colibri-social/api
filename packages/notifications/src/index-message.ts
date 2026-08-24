@@ -183,6 +183,17 @@ const filterRecipients = async (
 		);
 	const mentionsAndRepliesOnly = new Set(settingsRows.map((row) => row.did));
 
+	const viewingRows = await deps.db
+		.select({ did: deps.tables.userPresence.did })
+		.from(deps.tables.userPresence)
+		.where(
+			and(
+				inArray(deps.tables.userPresence.did, dids),
+				eq(deps.tables.userPresence.viewingChannel, message.space),
+			),
+		);
+	const watching = new Set(viewingRows.map((row) => row.did));
+
 	const alreadyNotifiedRows = await deps.db
 		.select({ recipient: deps.tables.notifications.recipient })
 		.from(deps.tables.notifications)
@@ -199,6 +210,7 @@ const filterRecipients = async (
 		if (!memberDids.has(recipient.did)) return false;
 		if (mutedDids.has(recipient.did)) return false;
 		if (recipient.kind === "message" && mentionsAndRepliesOnly.has(recipient.did)) return false;
+		if (watching.has(recipient.did)) return false;
 		if (alreadyNotified.has(recipient.did)) return false;
 		return true;
 	});

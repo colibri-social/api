@@ -2,6 +2,7 @@ import { InvalidRequestError } from "@atproto/xrpc-server";
 import {
 	CommunityCredentialError,
 	has,
+	type LoggedAction,
 	Membership,
 	MembershipError,
 	Moderation,
@@ -19,7 +20,13 @@ import {
 } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import { and, asc, desc, eq, gt, isNull, lt } from "drizzle-orm";
-import { memberEvent, memberGoneEvent } from "../announce.js";
+import {
+	applicationEvent,
+	labelEvent,
+	memberEvent,
+	memberGoneEvent,
+	moderationEvent,
+} from "../announce.js";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
@@ -67,6 +74,27 @@ const requireKnownSpace = async (
 	if (!COMMUNITY_SPACE_TYPE_SET.has(parsed.spaceType)) throw spaceNotFound();
 };
 
+const announceLogged = async (
+	ctx: AppContext,
+	community: string,
+	subject: string,
+	reason: string | undefined,
+	callerDid: string,
+	logged: LoggedAction,
+): Promise<void> => {
+	ctx.announce.toCommunity(
+		community,
+		moderationEvent(community, {
+			rkey: asRecordKey(logged.rkey),
+			action: logged.action,
+			subject: await new ActorViews(ctx).one(subject),
+			reason,
+			createdBy: asDid(callerDid),
+			createdAt: asDatetime(logged.createdAt),
+		}),
+	);
+};
+
 export const handleKick = async (
 	ctx: AppContext,
 	moderation: Moderation,
@@ -80,8 +108,9 @@ export const handleKick = async (
 	if (!has(authz, "member.kick")) throw forbidden("member.kick");
 
 	try {
-		await moderation.kick(community, callerDid, subject, reason);
+		const logged = await moderation.kick(community, callerDid, subject, reason);
 		ctx.announce.toCommunity(community, memberGoneEvent(community, subject));
+		await announceLogged(ctx, community, subject, reason, callerDid, logged);
 	} catch (error) {
 		if (error instanceof MembershipError) throw membershipErrorToXrpc(error);
 		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);
@@ -102,8 +131,9 @@ export const handleBan = async (
 	if (!has(authz, "member.ban")) throw forbidden("member.ban");
 
 	try {
-		await moderation.ban(community, callerDid, subject, reason);
+		const logged = await moderation.ban(community, callerDid, subject, reason);
 		ctx.announce.toCommunity(community, memberGoneEvent(community, subject));
+		await announceLogged(ctx, community, subject, reason, callerDid, logged);
 	} catch (error) {
 		if (error instanceof ModerationError) throw moderationErrorToXrpc(error);
 		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);
@@ -124,7 +154,8 @@ export const handleUnban = async (
 	if (!has(authz, "member.unban")) throw forbidden("member.unban");
 
 	try {
-		await moderation.unban(community, callerDid, subject, reason);
+		const logged = await moderation.unban(community, callerDid, subject, reason);
+		await announceLogged(ctx, community, subject, reason, callerDid, logged);
 	} catch (error) {
 		if (error instanceof ModerationError) throw moderationErrorToXrpc(error);
 		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);
@@ -226,6 +257,7 @@ export const handleApproveApplication = async (
 		nickname: undefined,
 	};
 	ctx.announce.toCommunity(community, memberEvent("join", community, member));
+	ctx.announce.toCommunity(community, applicationEvent("approve", community, subject));
 
 	return { member };
 };
@@ -243,6 +275,7 @@ export const handleDismissApplication = async (
 
 	try {
 		await membership.dismiss(community, subject, true);
+		ctx.announce.toCommunity(community, applicationEvent("dismiss", community, subject));
 	} catch (error) {
 		if (error instanceof MembershipError) throw membershipErrorToXrpc(error);
 		throw error;
@@ -262,6 +295,7 @@ export const handleUndismissApplication = async (
 
 	try {
 		await membership.dismiss(community, subject, false);
+		ctx.announce.toCommunity(community, applicationEvent("undismiss", community, subject));
 	} catch (error) {
 		if (error instanceof MembershipError) throw membershipErrorToXrpc(error);
 		throw error;
@@ -336,6 +370,11 @@ export const handleApplyLabel = async (
 		throw error;
 	}
 
+	ctx.announce.toChannel(
+		input.space,
+		labelEvent("create", input.space, community, input.subject, input.val),
+	);
+
 	return {
 		label: {
 			src: asDid(community),
@@ -363,6 +402,10 @@ export const handleNegateLabel = async (
 
 	try {
 		await moderation.negateLabel(community, input.space, input.subject, input.val, input.reason);
+		ctx.announce.toChannel(
+			input.space,
+			labelEvent("negate", input.space, community, input.subject, input.val),
+		);
 	} catch (error) {
 		if (error instanceof ModerationError) throw moderationErrorToXrpc(error);
 		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);

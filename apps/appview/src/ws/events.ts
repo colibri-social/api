@@ -171,6 +171,12 @@ export class EventServer {
 			case "setPresence":
 				await this.applyPresence(connection, result.value as never);
 				return;
+			case "typing":
+				this.applyTyping(connection, result.value as never);
+				return;
+			case "viewChannel":
+				await this.applyViewChannel(connection, result.value as never);
+				return;
 			default:
 				return;
 		}
@@ -178,7 +184,7 @@ export class EventServer {
 
 	private async trackPresence(
 		did: string,
-		transition: "opened" | "closed" | "requested",
+		transition: "opened" | "closed" | "requested" | "viewing",
 		work: () => Promise<void>,
 	): Promise<void> {
 		await work().catch((error: unknown) => {
@@ -201,6 +207,28 @@ export class EventServer {
 		}
 		await this.trackPresence(connection.did, "requested", () =>
 			this.presence.requested(connection.did, requested),
+		);
+	}
+
+	private applyTyping(connection: Connection, frame: { channel: string }): void {
+		if (!this.topics.topicsOf(connection).includes(channelTopic(frame.channel))) return;
+		this.publishToChannel(
+			frame.channel,
+			{
+				$type: "social.colibri.beta.sync.defs#typingEvent",
+				did: connection.did,
+				channel: frame.channel,
+			},
+			connection.did,
+		);
+	}
+
+	private async applyViewChannel(
+		connection: Connection,
+		frame: { channel?: string },
+	): Promise<void> {
+		await this.trackPresence(connection.did, "viewing", () =>
+			this.presence.viewing(connection.did, frame.channel ?? null),
 		);
 	}
 
@@ -288,8 +316,12 @@ export class EventServer {
 		this.publish(communityTopic(community), frame);
 	}
 
-	publishToChannel(space: string, frame: ServerFrame): void {
-		this.publish(channelTopic(space), frame);
+	publishToChannel(space: string, frame: ServerFrame, except?: string): void {
+		const payload = JSON.stringify(frame);
+		for (const connection of this.topics.subscribersOf(channelTopic(space))) {
+			if (except !== undefined && connection.did === except) continue;
+			if (connection.socket.readyState === connection.socket.OPEN) connection.socket.send(payload);
+		}
 	}
 
 	publishToUser(did: string, frame: ServerFrame): void {

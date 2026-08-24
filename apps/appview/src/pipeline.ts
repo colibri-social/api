@@ -1,5 +1,9 @@
 import { COLLECTIONS, LABEL_VALUES } from "@colibri-social/lexicons";
-import { indexMessage } from "@colibri-social/notifications";
+import {
+	hydrateNotifications,
+	type IndexedNotificationRow,
+	indexMessage,
+} from "@colibri-social/notifications";
 import { isChannelSpace, isPersonalSpace, spaceContextFor } from "@colibri-social/projections";
 import type { RepoChange } from "@colibri-social/space-sync";
 import {
@@ -8,6 +12,7 @@ import {
 	communityEvent,
 	memberEvent,
 	memberGoneEvent,
+	notificationEvent,
 	preferencesEvent,
 	roleEvent,
 } from "./announce.js";
@@ -81,6 +86,24 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		);
 	});
 
+	const notificationDeps = {
+		db: ctx.database.db,
+		tables: ctx.database.tables,
+		now: () => new Date().toISOString(),
+	};
+
+	const publishNotifications = async (rows: IndexedNotificationRow[]): Promise<void> => {
+		if (rows.length === 0) return;
+		const views = await hydrateNotifications(notificationDeps, rows, (dids) =>
+			actors.hydrate(dids),
+		);
+		const recipients = new Map(rows.map((row) => [row.id, row.recipient]));
+		for (const view of views) {
+			const recipient = recipients.get(view.id);
+			if (recipient) events.publishToUser(recipient, notificationEvent(view));
+		}
+	};
+
 	const publishMember = async (community: string, did: string): Promise<void> => {
 		const member = await communities.memberOf(community, did);
 		if (!member) return;
@@ -113,22 +136,17 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		for (const put of change.puts) {
 			if (put.collection === COLLECTIONS.message && space.community) {
 				const parent = put.value.parent as { did?: string; rkey?: string } | undefined;
-				await indexMessage(
-					{
-						db: ctx.database.db,
-						tables: ctx.database.tables,
-						now: () => new Date().toISOString(),
-					},
-					{
-						space: change.space,
-						community: space.community,
-						author: change.author,
-						rkey: put.rkey,
-						facets: (put.value.facets as unknown[] | undefined) ?? null,
-						parentAuthor: parent?.did ?? null,
-						parentRkey: parent?.rkey ?? null,
-					},
-				).catch((error) => ctx.log.warn({ error }, "notifications.indexFailed"));
+				await indexMessage(notificationDeps, {
+					space: change.space,
+					community: space.community,
+					author: change.author,
+					rkey: put.rkey,
+					facets: (put.value.facets as unknown[] | undefined) ?? null,
+					parentAuthor: parent?.did ?? null,
+					parentRkey: parent?.rkey ?? null,
+				})
+					.then(publishNotifications)
+					.catch((error) => ctx.log.warn({ error }, "notifications.indexFailed"));
 				await publishMessage(change.space, change.author, put.rkey);
 			}
 
