@@ -86,6 +86,7 @@ export type WebRtcListenOptions = {
 	announcedIp?: string;
 	rtcMinPort?: number;
 	rtcMaxPort?: number;
+	initialAvailableOutgoingBitrate?: number;
 };
 
 export type VoiceRoomOptions = {
@@ -116,7 +117,7 @@ export function mediaCodecs(): RouterRtpCodecCapability[] {
 			mimeType: "audio/opus",
 			clockRate: 48000,
 			channels: 2,
-			parameters: { useinbandfec: 1 },
+			parameters: { useinbandfec: 1, usedtx: 1 },
 			rtcpFeedback: [{ type: "transport-cc" }],
 		},
 		{
@@ -169,6 +170,9 @@ export function buildWebRtcTransportOptions(options: WebRtcListenOptions): WebRt
 			{ ...baseListenInfo, protocol: "udp" },
 			{ ...baseListenInfo, protocol: "tcp" },
 		],
+		...(options.initialAvailableOutgoingBitrate !== undefined
+			? { initialAvailableOutgoingBitrate: options.initialAvailableOutgoingBitrate }
+			: {}),
 	};
 }
 

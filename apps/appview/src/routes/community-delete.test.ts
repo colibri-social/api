@@ -110,6 +110,7 @@ beforeEach(async () => {
 	const loader = new CommunityLoader({ db: database.db, tables: database.tables });
 	const announcer: Announcer = {
 		toCommunity: () => {},
+		toCommunityPermission: async () => {},
 		toChannel: () => {},
 		toUser: () => {},
 		channelChanged: () => {},

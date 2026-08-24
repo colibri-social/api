@@ -1,6 +1,11 @@
 import { availableParallelism } from "node:os";
 import { describe, expect, it } from "vitest";
-import { parseIceServers, parseVoiceSfuConfig, voiceSfuConfigFromEnv } from "./config.js";
+import {
+	DEFAULT_INITIAL_OUTGOING_BITRATE,
+	parseIceServers,
+	parseVoiceSfuConfig,
+	voiceSfuConfigFromEnv,
+} from "./config.js";
 
 describe("parseVoiceSfuConfig", () => {
 	it("applies sensible defaults matching the Rust .env.example", () => {
@@ -12,6 +17,7 @@ describe("parseVoiceSfuConfig", () => {
 			rtcMinPort: 40_000,
 			rtcMaxPort: 40_100,
 			iceServers: [],
+			initialAvailableOutgoingBitrate: DEFAULT_INITIAL_OUTGOING_BITRATE,
 			roomGraceMs: 30_000,
 			speakingDebounceMs: 1_000,
 		});
@@ -42,6 +48,15 @@ describe("parseVoiceSfuConfig", () => {
 		const config = parseVoiceSfuConfig({ rtcMinPort: 40_050 });
 		expect(config.rtcMinPort).toBe(40_050);
 		expect(config.rtcMaxPort).toBe(40_100);
+	});
+
+	it("keeps an explicit initial outgoing bitrate", () => {
+		const config = parseVoiceSfuConfig({ initialAvailableOutgoingBitrate: 120_000 });
+		expect(config.initialAvailableOutgoingBitrate).toBe(120_000);
+	});
+
+	it("rejects a non positive initial outgoing bitrate", () => {
+		expect(() => parseVoiceSfuConfig({ initialAvailableOutgoingBitrate: 0 })).toThrow();
 	});
 
 	it("keeps an announced ip when given", () => {
@@ -89,6 +104,7 @@ describe("voiceSfuConfigFromEnv", () => {
 			SFU_RTC_MIN_PORT: "40000",
 			SFU_RTC_MAX_PORT: "40100",
 			SFU_ICE_SERVERS: JSON.stringify([{ urls: ["stun:stun.example.com"] }]),
+			SFU_INITIAL_OUTGOING_BITRATE: "500000",
 		});
 
 		expect(config).toEqual({
@@ -98,6 +114,7 @@ describe("voiceSfuConfigFromEnv", () => {
 			rtcMinPort: 40_000,
 			rtcMaxPort: 40_100,
 			iceServers: [{ urls: ["stun:stun.example.com"] }],
+			initialAvailableOutgoingBitrate: 500_000,
 			roomGraceMs: 30_000,
 			speakingDebounceMs: 1_000,
 		});
@@ -114,6 +131,11 @@ describe("voiceSfuConfigFromEnv", () => {
 		const config = voiceSfuConfigFromEnv({ SFU_ANNOUNCED_IP: "203.0.113.1" });
 		expect(config.rtcMinPort).toBe(40_000);
 		expect(config.rtcMaxPort).toBe(40_100);
+	});
+
+	it("falls back to the default outgoing bitrate for a garbage value", () => {
+		const config = voiceSfuConfigFromEnv({ SFU_INITIAL_OUTGOING_BITRATE: "plenty" });
+		expect(config.initialAvailableOutgoingBitrate).toBe(DEFAULT_INITIAL_OUTGOING_BITRATE);
 	});
 
 	it("ignores a garbage worker count instead of throwing", () => {

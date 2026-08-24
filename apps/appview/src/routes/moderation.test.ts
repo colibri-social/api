@@ -40,7 +40,11 @@ const MEMBER = "did:plc:memberxxxxxxxxxxxxxxxxxxxxxxx";
 const APPLICANT = "did:plc:applicantxxxxxxxxxxxxxxxxxxx";
 const NOW = new Date("2026-08-23T00:00:00.000Z");
 
-let announced: Array<{ target: string; frame: Record<string, unknown> }>;
+let announced: Array<{
+	target: string;
+	frame: Record<string, unknown>;
+	permission?: string;
+}>;
 let database: TestDatabase;
 let ctx: AppContext;
 let loader: CommunityLoader;
@@ -214,6 +218,13 @@ beforeEach(async () => {
 				announced.push({ target: community, frame }),
 			toChannel: (space: string, frame: Record<string, unknown>) =>
 				announced.push({ target: space, frame }),
+			toCommunityPermission: async (
+				community: string,
+				permission: string,
+				frame: Record<string, unknown>,
+			) => {
+				announced.push({ target: community, frame, permission });
+			},
 		},
 		config: { PUBLIC_URL: "https://appview.test" },
 		database,
@@ -348,15 +359,30 @@ describe("announcing moderation", () => {
 		]);
 	});
 
-	it("puts a ban in the log for everyone watching the community", async () => {
+	it("puts a ban in the log for the moderators watching the community", async () => {
 		await handleBan(ctx, moderation, OWNER, COMMUNITY, MEMBER, "spam");
 
 		const [entry] = framesOfType("moderationEvent");
 		expect(entry?.target).toBe(COMMUNITY);
+		expect(entry?.permission).toBe("moderation.viewLog");
 		expect(entry?.frame.entry).toMatchObject({
 			action: "ban",
 			reason: "spam",
 			createdBy: OWNER,
 		});
+	});
+
+	it("keeps the reason and the moderator out of the plain member fan-out", async () => {
+		await handleBan(ctx, moderation, OWNER, COMMUNITY, MEMBER, "spam");
+
+		const unscoped = announced.filter((entry) => entry.permission === undefined);
+		expect(
+			unscoped.some(
+				(entry) => entry.frame.$type === "social.colibri.beta.sync.defs#moderationEvent",
+			),
+		).toBe(false);
+		expect(unscoped.map((entry) => entry.frame.$type)).toContain(
+			"social.colibri.beta.sync.defs#memberEvent",
+		);
 	});
 });

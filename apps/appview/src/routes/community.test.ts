@@ -120,6 +120,52 @@ describe("listChannels", () => {
 	});
 });
 
+const insertBan = async (community: string, did: string) => {
+	await database.db.insert(database.tables.moderationLog).values({
+		community,
+		rkey: "3kbanxxxxxxxx",
+		action: "ban",
+		subject: did,
+		reason: null,
+		createdBy: MEMBER,
+		createdAt: NOW,
+	});
+};
+
+const insertInvitation = async (community: string, code: string) => {
+	await database.db.insert(database.tables.invitations).values({
+		code,
+		community,
+		createdBy: MEMBER,
+		active: true,
+		uses: 0,
+		maxUses: null,
+		createdAt: NOW,
+		expiresAt: null,
+	});
+};
+
+describe("member-only reads", () => {
+	it("says a banned caller is banned rather than merely absent", async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+		await insertBan(COMMUNITY, OUTSIDER);
+
+		await expect(handleListChannels(ctx, communities, COMMUNITY, OUTSIDER)).rejects.toMatchObject({
+			customErrorName: "Forbidden",
+			message: "you are banned from this community",
+		});
+	});
+
+	it("still says a stranger is not a member", async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+
+		await expect(handleListChannels(ctx, communities, COMMUNITY, OUTSIDER)).rejects.toMatchObject({
+			customErrorName: "Forbidden",
+			message: "you are not a member of this community",
+		});
+	});
+});
+
 describe("getInvitation", () => {
 	it("works without authentication", async () => {
 		await insertCommunity(COMMUNITY, "Protocol Nerds");
@@ -143,6 +189,36 @@ describe("getInvitation", () => {
 		await expect(handleGetInvitation(ctx, communities, "nope", null)).rejects.toMatchObject({
 			customErrorName: "InvitationNotFound",
 		});
+	});
+
+	it("tells a banned caller that they are banned", async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+		await insertInvitation(COMMUNITY, "welcome-code");
+		await insertBan(COMMUNITY, OUTSIDER);
+
+		const result = await handleGetInvitation(ctx, communities, "welcome-code", OUTSIDER);
+		expect(result.community.viewer.isBanned).toBe(true);
+		expect(result.community.viewer.isMember).toBe(false);
+	});
+
+	it("tells a member that they already joined", async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+		await insertInvitation(COMMUNITY, "welcome-code");
+		await insertMember(COMMUNITY, MEMBER, NOW);
+
+		const result = await handleGetInvitation(ctx, communities, "welcome-code", MEMBER);
+		expect(result.community.viewer.isMember).toBe(true);
+		expect(result.community.viewer.isBanned).toBe(false);
+	});
+
+	it("keeps an anonymous caller anonymous", async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+		await insertInvitation(COMMUNITY, "welcome-code");
+		await insertBan(COMMUNITY, OUTSIDER);
+
+		const result = await handleGetInvitation(ctx, communities, "welcome-code", null);
+		expect(result.community.viewer.isBanned).toBe(false);
+		expect(result.community.viewer.isMember).toBe(false);
 	});
 });
 

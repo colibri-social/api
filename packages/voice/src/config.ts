@@ -3,6 +3,7 @@ import { z } from "zod";
 
 export const DEFAULT_RTC_MIN_PORT = 40000;
 export const DEFAULT_RTC_MAX_PORT = 40100;
+export const DEFAULT_INITIAL_OUTGOING_BITRATE = 300000;
 
 export const iceServerSchema = z.object({
 	urls: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
@@ -24,6 +25,11 @@ export const voiceSfuConfigSchema = z.object({
 	rtcMinPort: z.number().int().min(0).max(65535).default(DEFAULT_RTC_MIN_PORT),
 	rtcMaxPort: z.number().int().min(0).max(65535).default(DEFAULT_RTC_MAX_PORT),
 	iceServers: z.array(iceServerSchema).default([]),
+	initialAvailableOutgoingBitrate: z
+		.number()
+		.int()
+		.positive()
+		.default(DEFAULT_INITIAL_OUTGOING_BITRATE),
 	roomGraceMs: z.number().int().nonnegative().default(30_000),
 	speakingDebounceMs: z.number().int().nonnegative().default(1_000),
 });
@@ -88,5 +94,7 @@ export function voiceSfuConfigFromEnv(
 		rtcMinPort: optionalPositiveInt(env.SFU_RTC_MIN_PORT) ?? DEFAULT_RTC_MIN_PORT,
 		rtcMaxPort: optionalPositiveInt(env.SFU_RTC_MAX_PORT) ?? DEFAULT_RTC_MAX_PORT,
 		iceServers: parseIceServers(env.SFU_ICE_SERVERS),
+		initialAvailableOutgoingBitrate:
+			optionalPositiveInt(env.SFU_INITIAL_OUTGOING_BITRATE) ?? DEFAULT_INITIAL_OUTGOING_BITRATE,
 	});
 }

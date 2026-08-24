@@ -15,7 +15,7 @@ import {
 } from "@colibri-social/lexicons";
 import { and, asc, count, eq, gt, inArray } from "drizzle-orm";
 import type { AppContext } from "../context.js";
-import { publicRoute, route } from "../route.js";
+import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
 import type { CommunityView } from "../views/community.js";
 import { CommunityViews } from "../views/community.js";
@@ -53,6 +53,7 @@ const requireCommunity = async (ctx: AppContext, community: string) => {
 
 const requireMembership = async (ctx: AppContext, community: string, actor: string) => {
 	const authz = await ctx.loader.authz(community, actor);
+	if (authz.isBanned) throw forbidden("you are banned from this community");
 	if (!isMember(authz)) throw forbidden("you are not a member of this community");
 	return authz;
 };
@@ -297,10 +298,11 @@ export const registerCommunityRoutes = ({ server, ctx, auth }: RouteDeps): void 
 		}),
 	});
 
-	publicRoute(server, social.colibri.beta.community.getInvitation, {
-		handler: async ({ params }) => ({
+	route(server, social.colibri.beta.community.getInvitation, {
+		auth: auth.optional,
+		handler: async ({ params, auth: caller }) => ({
 			encoding: "application/json" as const,
-			body: await handleGetInvitation(ctx, communities, params.code, null),
+			body: await handleGetInvitation(ctx, communities, params.code, caller.credentials.did),
 		}),
 	});
 

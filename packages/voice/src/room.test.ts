@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { asRouter, createFakeRouter, createFakeTransport } from "./mock-mediasoup.js";
-import { buildWebRtcTransportOptions, VoiceRoom } from "./room.js";
+import { buildWebRtcTransportOptions, mediaCodecs, VoiceRoom } from "./room.js";
 
 const webRtcTransportOptions = buildWebRtcTransportOptions({ listenIp: "0.0.0.0" });
 
@@ -15,6 +15,13 @@ async function createRoom(rawRouter = createFakeRouter()) {
 	return { room, rawRouter };
 }
 
+describe("mediaCodecs", () => {
+	it("asks opus for inband fec and dtx", () => {
+		const opus = mediaCodecs().find((codec) => codec.mimeType === "audio/opus");
+		expect(opus?.parameters).toMatchObject({ useinbandfec: 1, usedtx: 1 });
+	});
+});
+
 describe("buildWebRtcTransportOptions", () => {
 	it("declares both a udp and a tcp listen info", () => {
 		const options = buildWebRtcTransportOptions({ listenIp: "0.0.0.0" });
@@ -22,6 +29,19 @@ describe("buildWebRtcTransportOptions", () => {
 			{ ip: "0.0.0.0", announcedAddress: undefined, portRange: undefined, protocol: "udp" },
 			{ ip: "0.0.0.0", announcedAddress: undefined, portRange: undefined, protocol: "tcp" },
 		]);
+	});
+
+	it("omits the initial outgoing bitrate when none is configured", () => {
+		const options = buildWebRtcTransportOptions({ listenIp: "0.0.0.0" });
+		expect(options.initialAvailableOutgoingBitrate).toBeUndefined();
+	});
+
+	it("carries a configured initial outgoing bitrate", () => {
+		const options = buildWebRtcTransportOptions({
+			listenIp: "0.0.0.0",
+			initialAvailableOutgoingBitrate: 300_000,
+		});
+		expect(options.initialAvailableOutgoingBitrate).toBe(300_000);
 	});
 
 	it("carries the announced ip and port range through to both protocols", () => {

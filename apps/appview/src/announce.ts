@@ -1,10 +1,15 @@
-import type { social } from "@colibri-social/lexicons";
+import type { Permission, social } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import type { AppContext } from "./context.js";
 import type { EventServer, ServerFrame } from "./ws/events.js";
 
 export type Announcer = {
 	toCommunity(community: string, frame: ServerFrame): void;
+	toCommunityPermission(
+		community: string,
+		permission: Permission,
+		frame: ServerFrame,
+	): Promise<void>;
 	toChannel(space: string, frame: ServerFrame): void;
 	toUser(did: string, frame: ServerFrame): void;
 	channelChanged(community: string, space: string, event: "update" | "delete"): void;
@@ -13,6 +18,7 @@ export type Announcer = {
 
 export const silentAnnouncer: Announcer = {
 	toCommunity: () => {},
+	toCommunityPermission: async () => {},
 	toChannel: () => {},
 	toUser: () => {},
 	channelChanged: () => {},
@@ -21,6 +27,8 @@ export const silentAnnouncer: Announcer = {
 
 export const eventAnnouncer = (events: EventServer): Announcer => ({
 	toCommunity: (community, frame) => events.publishToCommunity(community, frame),
+	toCommunityPermission: (community, permission, frame) =>
+		events.publishToCommunityPermission(community, permission, frame),
 	toChannel: (space, frame) => events.publishToChannel(space, frame),
 	toUser: (did, frame) => events.publishToUser(did, frame),
 	channelChanged: (community, space, event) => events.channelChanged(community, space, event),

@@ -82,17 +82,23 @@ const announceLogged = async (
 	callerDid: string,
 	logged: LoggedAction,
 ): Promise<void> => {
-	ctx.announce.toCommunity(
-		community,
-		moderationEvent(community, {
-			rkey: asRecordKey(logged.rkey),
-			action: logged.action,
-			subject: await new ActorViews(ctx).one(subject),
-			reason,
-			createdBy: asDid(callerDid),
-			createdAt: asDatetime(logged.createdAt),
-		}),
-	);
+	const frame = moderationEvent(community, {
+		rkey: asRecordKey(logged.rkey),
+		action: logged.action,
+		subject: await new ActorViews(ctx).one(subject),
+		reason,
+		createdBy: asDid(callerDid),
+		createdAt: asDatetime(logged.createdAt),
+	});
+
+	void ctx.announce
+		.toCommunityPermission(community, "moderation.viewLog", frame)
+		.catch((error: unknown) => {
+			ctx.log.warn(
+				{ community, reason: error instanceof Error ? error.message : error },
+				"moderation.announce.failed",
+			);
+		});
 };
 
 export const handleKick = async (

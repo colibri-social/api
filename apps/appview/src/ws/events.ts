@@ -1,6 +1,7 @@
 import type { Server as HttpServer, IncomingHttpHeaders } from "node:http";
-import { canRead } from "@colibri-social/community";
+import { canRead, has } from "@colibri-social/community";
 import { ServiceAuthError } from "@colibri-social/identity";
+import type { Permission } from "@colibri-social/lexicons";
 import { social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import { type WebSocket, WebSocketServer } from "ws";
@@ -459,6 +460,31 @@ export class EventServer {
 
 	publishToCommunity(community: string, frame: ServerFrame): void {
 		this.publish(communityTopic(community), frame);
+	}
+
+	async publishToCommunityPermission(
+		community: string,
+		permission: Permission,
+		frame: ServerFrame,
+	): Promise<void> {
+		const subscribers = [...this.topics.subscribersOf(communityTopic(community))];
+		if (subscribers.length === 0) return;
+
+		const payload = JSON.stringify(frame);
+		const allowed = new Map<string, boolean>();
+
+		for (const connection of subscribers) {
+			if (connection.socket.readyState !== connection.socket.OPEN) continue;
+
+			let permitted = allowed.get(connection.did);
+			if (permitted === undefined) {
+				const authz = await this.ctx.loader.authz(community, connection.did);
+				permitted = has(authz, permission);
+				allowed.set(connection.did, permitted);
+			}
+
+			if (permitted) connection.socket.send(payload);
+		}
 	}
 
 	publishToChannel(space: string, frame: ChannelFrame, except?: string): void {
