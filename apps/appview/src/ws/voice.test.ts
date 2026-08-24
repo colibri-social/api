@@ -471,6 +471,58 @@ describe("VoiceServer", () => {
 
 		expect(sfu.presenceOf(ALICE)).toBeUndefined();
 	});
+
+	it("tells the peer it was removed, and nobody else", async () => {
+		await sfu.rtpCapabilities(VOICE_CHANNEL);
+		const aliceWs = connect("alice-token");
+		const bobWs = connect("bob-token");
+		await Promise.all([waitForOpen(aliceWs), waitForOpen(bobWs)]);
+
+		send(aliceWs, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrame(aliceWs);
+		send(aliceWs, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
+		await nextFrame(aliceWs);
+		send(bobWs, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrame(bobWs);
+		send(bobWs, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
+		await nextFrame(bobWs);
+
+		const left = new Promise<void>((resolve) => sfu.once("participant-left", () => resolve()));
+		await sfu.leave(VOICE_CHANNEL, ALICE);
+		await left;
+
+		expect(await nextFrameOfType(aliceWs, "disconnected")).toEqual({
+			$type: "social.colibri.beta.voice.defs#disconnected",
+			reason: "moderator",
+		});
+		expect(await nextFrameOfType(bobWs, "peerLeft")).toMatchObject({ did: ALICE });
+
+		aliceWs.close();
+		bobWs.close();
+	});
+
+	it("says nothing to a peer that left on its own", async () => {
+		await sfu.rtpCapabilities(VOICE_CHANNEL);
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+
+		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrame(ws);
+		send(ws, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
+		await nextFrame(ws);
+
+		const left = new Promise<void>((resolve) => sfu.once("participant-left", () => resolve()));
+		send(ws, { $type: "social.colibri.beta.voice.defs#leave" });
+		await left;
+
+		expect(
+			(inboxes.get(ws)?.held ?? []).filter(
+				(frame) => frame.$type === "social.colibri.beta.voice.defs#disconnected",
+			),
+		).toEqual([]);
+
+		ws.close();
+	});
 });
 
 describe("transportOptions", () => {

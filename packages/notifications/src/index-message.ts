@@ -167,7 +167,7 @@ const filterRecipients = async (
 		.where(
 			and(
 				inArray(deps.tables.mutes.did, dids),
-				inArray(deps.tables.mutes.subject, [message.author, message.community]),
+				inArray(deps.tables.mutes.subject, [message.author, message.community, message.space]),
 			),
 		);
 	const mutedDids = new Set(muteRows.map((row) => row.did));

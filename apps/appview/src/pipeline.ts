@@ -1,11 +1,14 @@
 import { COLLECTIONS, LABEL_VALUES } from "@colibri-social/lexicons";
 import {
+	createSenders,
+	deliverNotification,
 	hydrateNotifications,
 	type IndexedNotificationRow,
 	indexMessage,
 } from "@colibri-social/notifications";
 import { isChannelSpace, isPersonalSpace, spaceContextFor } from "@colibri-social/projections";
 import type { RepoChange } from "@colibri-social/space-sync";
+import { and, eq, inArray } from "drizzle-orm";
 import {
 	categoryEvent,
 	channelEvent,
@@ -18,6 +21,7 @@ import {
 } from "./announce.js";
 import type { AppContext } from "./context.js";
 import { loadPreferences } from "./routes/actor.js";
+import { reportFailure } from "./sentry.js";
 import { ActorViews } from "./views/actor.js";
 import { ChannelViews } from "./views/channel.js";
 import { CommunityViews } from "./views/community.js";
@@ -81,10 +85,13 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 	});
 
 	const unsubscribe = ctx.sync.on("changed", (change) => {
-		void handle(change).catch((error) =>
-			ctx.log.warn({ space: change.space, author: change.author, error }, "pipeline.failed"),
-		);
+		void handle(change).catch((error) => {
+			reportFailure(error, { stage: "pipeline", space: change.space });
+			ctx.log.warn({ space: change.space, author: change.author, error }, "pipeline.failed");
+		});
 	});
+
+	const senders = createSenders(ctx.config.notifications);
 
 	const notificationDeps = {
 		db: ctx.database.db,
@@ -92,16 +99,51 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		now: () => new Date().toISOString(),
 	};
 
-	const publishNotifications = async (rows: IndexedNotificationRow[]): Promise<void> => {
+	const publishNotifications = async (
+		rows: IndexedNotificationRow[],
+		text: string,
+	): Promise<void> => {
 		if (rows.length === 0) return;
 		const views = await hydrateNotifications(notificationDeps, rows, (dids) =>
 			actors.hydrate(dids),
 		);
-		const recipients = new Map(rows.map((row) => [row.id, row.recipient]));
+		const byId = new Map(rows.map((row) => [row.id, row]));
+		const servable: IndexedNotificationRow[] = [];
 		for (const view of views) {
-			const recipient = recipients.get(view.id);
-			if (recipient) events.publishToUser(recipient, notificationEvent(view));
+			const row = byId.get(view.id);
+			if (!row) continue;
+			events.publishToUser(row.recipient, notificationEvent(view));
+			servable.push(row);
 		}
+		await pushNotifications(servable, text);
+	};
+
+	const pushNotifications = async (rows: IndexedNotificationRow[], text: string): Promise<void> => {
+		if (rows.length === 0 || ctx.config.pushProviders.length === 0) return;
+
+		const quiet = await doNotDisturb(rows.map((row) => row.recipient));
+		await Promise.all(
+			rows
+				.filter((row) => !quiet.has(row.recipient))
+				.map((row) =>
+					deliverNotification(notificationDeps, senders, row, { text }).catch((error) =>
+						ctx.log.warn({ error }, "push.deliveryFailed"),
+					),
+				),
+		);
+	};
+
+	const doNotDisturb = async (dids: string[]): Promise<Set<string>> => {
+		const rows = await ctx.database.db
+			.select({ did: ctx.database.tables.userPresence.did })
+			.from(ctx.database.tables.userPresence)
+			.where(
+				and(
+					inArray(ctx.database.tables.userPresence.did, dids),
+					eq(ctx.database.tables.userPresence.requestedState, "dnd"),
+				),
+			);
+		return new Set(rows.map((row) => row.did));
 	};
 
 	const publishMember = async (community: string, did: string): Promise<void> => {
@@ -145,7 +187,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 					parentAuthor: parent?.did ?? null,
 					parentRkey: parent?.rkey ?? null,
 				})
-					.then(publishNotifications)
+					.then((rows) => publishNotifications(rows, String(put.value.text ?? "")))
 					.catch((error) => ctx.log.warn({ error }, "notifications.indexFailed"));
 				await publishMessage(change.space, change.author, put.rkey);
 			}

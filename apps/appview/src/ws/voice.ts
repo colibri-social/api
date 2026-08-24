@@ -162,6 +162,14 @@ export class VoiceServer {
 		});
 	}
 
+	private tell(channel: string, did: string, frame: ServerFrame): void {
+		for (const connection of [...this.topics.subscribersOf(channelTopic(channel))]) {
+			if (connection.did !== did) continue;
+			this.send(connection, frame);
+			this.forgetChannel(connection);
+		}
+	}
+
 	private broadcast(channel: string, frame: ServerFrame, exclude?: string): void {
 		for (const connection of this.topics.subscribersOf(channelTopic(channel))) {
 			if (exclude && connection.did === exclude) continue;
@@ -465,6 +473,10 @@ export class VoiceServer {
 		});
 		voice.on("participant-left", ({ channel, did }) => {
 			this.broadcast(channel, { $type: "social.colibri.beta.voice.defs#peerLeft", did }, did);
+			this.tell(channel, did, {
+				$type: "social.colibri.beta.voice.defs#disconnected",
+				reason: "moderator",
+			});
 			this.announce(channel, did, "leave");
 		});
 		voice.on("producer-added", ({ channel, did, producerId, kind, source }) => {

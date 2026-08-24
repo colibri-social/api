@@ -19,7 +19,7 @@ const readPackageVersion = (): string => {
 	}
 };
 
-const resolveVersion = (): string => process.env.VERSION || readPackageVersion();
+export const resolveVersion = (): string => process.env.VERSION || readPackageVersion();
 
 export const describeServer = (ctx: AppContext): ServerDescription => {
 	const features: string[] = [];

@@ -363,3 +363,58 @@ describe("someone already looking at the channel", () => {
 		expect(await rowsFor(reader)).toHaveLength(1);
 	});
 });
+
+describe("muted channels", () => {
+	const reader = "did:plc:muter0000000000000000000000";
+
+	it("skips a mention in a channel the recipient muted", async () => {
+		await member(reader);
+		await mute(reader, CHANNEL);
+
+		await indexMessage(deps, {
+			space: CHANNEL,
+			community: COMMUNITY,
+			author: AUTHOR,
+			rkey: "3lkmute1",
+			facets: [mentionFacet(reader)],
+			parentAuthor: null,
+			parentRkey: null,
+		});
+
+		expect(await rowsFor(reader)).toHaveLength(0);
+	});
+
+	it("still notifies for a channel the recipient did not mute", async () => {
+		await member(reader);
+		await mute(reader, channelSpace(COMMUNITY, "social.colibri.beta.channel.text", "3lkother"));
+
+		await indexMessage(deps, {
+			space: CHANNEL,
+			community: COMMUNITY,
+			author: AUTHOR,
+			rkey: "3lkmute2",
+			facets: [mentionFacet(reader)],
+			parentAuthor: null,
+			parentRkey: null,
+		});
+
+		expect(await rowsFor(reader)).toHaveLength(1);
+	});
+
+	it("skips a mention from a community the recipient muted", async () => {
+		await member(reader);
+		await mute(reader, COMMUNITY);
+
+		await indexMessage(deps, {
+			space: CHANNEL,
+			community: COMMUNITY,
+			author: AUTHOR,
+			rkey: "3lkmute3",
+			facets: [mentionFacet(reader)],
+			parentAuthor: null,
+			parentRkey: null,
+		});
+
+		expect(await rowsFor(reader)).toHaveLength(0);
+	});
+});

@@ -91,7 +91,7 @@ beforeEach(async () => {
 
 	const ctx = {
 		database,
-		config: { PUBLIC_URL: "https://appview.test" },
+		config: { PUBLIC_URL: "https://appview.test", notifications: {}, pushProviders: [] },
 		loader: new CommunityLoader({ db: database.db, tables: database.tables }),
 		log: { warn: () => {} },
 		identity: {

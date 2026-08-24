@@ -337,6 +337,18 @@
 				}
 			}
 		},
+		"disconnected": {
+			"type": "object",
+			"description": "The server removed this client from the voice channel. Sent only to the client it applies to.",
+			"required": [],
+			"properties": {
+				"reason": {
+					"type": "string",
+					"description": "Why it happened.",
+					"knownValues": ["moderator", "superseded", "channelGone"]
+				}
+			}
+		},
 		"moderationChanged": {
 			"type": "object",
 			"description": "A peer's mute or deafen state changed, whether they did it themselves or a moderator did it to them.",

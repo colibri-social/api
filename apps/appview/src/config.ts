@@ -1,3 +1,8 @@
+import {
+	configuredProviders,
+	type NotificationsConfig,
+	parseFcmServiceAccountJson,
+} from "@colibri-social/notifications";
 import { z } from "zod";
 import { DEVELOPMENT_ORIGINS, parseOrigins } from "./cors.js";
 import { isLegacyJetstreamUrl, jetstreamEndpoint } from "./jetstream-url.js";
@@ -90,6 +95,7 @@ export type RawConfig = z.infer<typeof configSchema>;
 export type Config = RawConfig & {
 	canProvisionCommunities: boolean;
 	pushProviders: Array<"webpush" | "fcm">;
+	notifications: NotificationsConfig;
 	gifsEnabled: boolean;
 	corsOrigins: string[];
 };
@@ -110,10 +116,21 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): Config => {
 	}
 
 	const raw = parsed.data;
-	const pushProviders: Array<"webpush" | "fcm"> = [];
-	if (raw.VAPID_PUBLIC_KEY && raw.VAPID_PRIVATE_KEY && raw.VAPID_SUBJECT)
-		pushProviders.push("webpush");
-	if (raw.FCM_SERVICE_ACCOUNT_JSON) pushProviders.push("fcm");
+	const notifications: NotificationsConfig = {
+		...(raw.VAPID_PUBLIC_KEY && raw.VAPID_PRIVATE_KEY && raw.VAPID_SUBJECT
+			? {
+					vapid: {
+						publicKey: raw.VAPID_PUBLIC_KEY,
+						privateKey: raw.VAPID_PRIVATE_KEY,
+						subject: raw.VAPID_SUBJECT,
+					},
+				}
+			: {}),
+		...(raw.FCM_SERVICE_ACCOUNT_JSON
+			? { fcm: parseFcmServiceAccountJson(raw.FCM_SERVICE_ACCOUNT_JSON) }
+			: {}),
+	};
+	const pushProviders = configuredProviders(notifications);
 
 	const corsOrigins = raw.CORS_ORIGINS
 		? parseOrigins(raw.CORS_ORIGINS)
@@ -125,6 +142,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): Config => {
 		...raw,
 		canProvisionCommunities: Boolean(raw.PDS_ADMIN_PASSWORD),
 		pushProviders,
+		notifications,
 		gifsEnabled: Boolean(raw.KLIPY_API_KEY),
 		corsOrigins,
 	};

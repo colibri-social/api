@@ -3,13 +3,17 @@ import { describeConfig, loadConfig } from "./config.js";
 import { createContext } from "./context.js";
 import { Jetstream } from "./jetstream.js";
 import { connectPipeline } from "./pipeline.js";
+import { resolveVersion } from "./routes/server.js";
+import { startErrorReporting, stopErrorReporting } from "./sentry.js";
 import { createAppServer } from "./server.js";
 import { EventServer } from "./ws/events.js";
 import { VoiceServer } from "./ws/voice.js";
 
 const main = async (): Promise<void> => {
 	const config = loadConfig();
+	const reporting = startErrorReporting(config, `appview@${resolveVersion()}`);
 	const ctx = await createContext(config);
+	ctx.log.info({ errorReporting: reporting ? "enabled" : "disabled" }, "config.sentry");
 
 	for (const [name, value] of Object.entries(describeConfig(config))) {
 		ctx.log.info({ [name]: value }, `config.${name}`);
@@ -42,6 +46,7 @@ const main = async (): Promise<void> => {
 			"shutting down",
 		);
 		disconnectPipeline();
+		await stopErrorReporting();
 		await jetstream.stop();
 		await events.close();
 		await voice.close();

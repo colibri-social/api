@@ -430,6 +430,21 @@ const producerRemoved = /*#__PURE__*/ l.typedObject<ProducerRemoved>($nsid, "pro
 
 export { producerRemoved };
 
+/** The server removed this client from the voice channel. Sent only to the client it applies to. */
+type Disconnected = { $type?: "social.colibri.beta.voice.defs#disconnected";
+
+  /**
+   * Why it happened.
+   */
+  "reason"?:"moderator" | "superseded" | "channelGone" | l.UnknownString };
+
+export type { Disconnected };
+
+/** The server removed this client from the voice channel. Sent only to the client it applies to. */
+const disconnected = /*#__PURE__*/ l.typedObject<Disconnected>($nsid, "disconnected", /*#__PURE__*/ l.object({"reason":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["moderator","superseded","channelGone"]}>())}));
+
+export { disconnected };
+
 /** A peer's mute or deafen state changed, whether they did it themselves or a moderator did it to them. */
 type ModerationChanged = { $type?: "social.colibri.beta.voice.defs#moderationChanged";
 

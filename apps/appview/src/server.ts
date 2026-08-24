@@ -12,12 +12,15 @@ import { registerChannelWriteRoutes } from "./routes/channel-write.js";
 import { registerCommunityRoutes } from "./routes/community.js";
 import { registerCommunityWriteRoutes } from "./routes/community-write.js";
 import { registerEmbedRoutes } from "./routes/embed.js";
+import { mountEmbedMediaRoutes } from "./routes/embed-media.js";
+import { mountIdentityRoutes } from "./routes/identity.js";
 import { registerModerationRoutes } from "./routes/moderation.js";
 import { registerNotificationRoutes } from "./routes/notification.js";
 import { registerProtocolRoutes } from "./routes/protocol.js";
 import { registerRoleRoutes } from "./routes/role.js";
 import { registerServerRoutes } from "./routes/server.js";
 import { registerVoiceRoutes } from "./routes/voice.js";
+import { reportFailure } from "./sentry.js";
 
 const BANNER = `           _ _ _          _                  _       _
           | (_) |        (_)                (_)     | |
@@ -43,6 +46,7 @@ export const createAppServer = (ctx: AppContext): Server => {
 		errorParser: (error) => {
 			const xrpcError = XRPCError.fromError(error);
 			if (xrpcError.statusCode >= 500) {
+				reportFailure(error, { stage: "route", status: xrpcError.statusCode });
 				ctx.log.error(
 					{
 						name: error instanceof Error ? error.name : typeof error,
@@ -96,6 +100,8 @@ export const createAppServer = (ctx: AppContext): Server => {
 	});
 
 	mountBlobRoutes(ctx, app);
+	mountEmbedMediaRoutes(ctx, app);
+	mountIdentityRoutes(ctx, app);
 
 	return server;
 };
