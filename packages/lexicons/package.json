@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/lexicons",
-	"version": "2.4.0",
+	"version": "2.5.0",
 	"description": "Colibri lexicon schemas and the types generated from them",
 	"type": "module",
 	"exports": {

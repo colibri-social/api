@@ -1,5 +1,14 @@
 # @colibri-social/projections
 
+## 1.3.1
+
+### Patch Changes
+
+- dc9ea5c: Reconcile a mute by its subject rather than its record key, so the immediate `actor.putMutes` push and the later repo sync of the same mute no longer collide on the one-mute-per-subject index and strand the user's preferences space with an unapplied cursor
+- Updated dependencies [38dc331]
+- Updated dependencies [07d1508]
+  - @colibri-social/lexicons@2.5.0
+
 ## 1.3.0
 
 ### Minor Changes
