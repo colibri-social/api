@@ -22,9 +22,9 @@ import type {
 } from "./types.js";
 
 export type RepoSyncOutcome =
-	| { kind: "unchanged" }
-	| { kind: "advanced"; change: RepoChange }
-	| { kind: "recovered"; change: RepoChange }
+	| { kind: "unchanged"; appliedRev: string | null }
+	| { kind: "advanced"; change: RepoChange; appliedRev: string | null }
+	| { kind: "recovered"; change: RepoChange; appliedRev: string | null }
 	| { kind: "gone" };
 
 export type RepoSyncDeps = {
@@ -104,7 +104,9 @@ export class RepoSync {
 			pageCursor = page.cursor ?? undefined;
 		} while (pageCursor);
 
-		if (puts.length === 0 && deletes.length === 0 && commit === null) return { kind: "unchanged" };
+		if (puts.length === 0 && deletes.length === 0 && commit === null) {
+			return { kind: "unchanged", appliedRev: cursor.appliedRev };
+		}
 
 		if (commit) {
 			const authentic = await verifyRepoCommit(
@@ -126,7 +128,7 @@ export class RepoSync {
 			setHashBase64: setHashToBase64(hash),
 			state: "active",
 		});
-		return { kind: "advanced", change };
+		return { kind: "advanced", change, appliedRev: rev };
 	}
 
 	private async recover(space: string, author: string, host: string): Promise<RepoSyncOutcome> {
@@ -167,7 +169,11 @@ export class RepoSync {
 			state: "active",
 		};
 		await this.deps.store.replace({ space, author, puts }, cursor);
-		return { kind: "recovered", change: { space, author, puts, deletes: [] } };
+		return {
+			kind: "recovered",
+			change: { space, author, puts, deletes: [] },
+			appliedRev: verified.commit.rev,
+		};
 	}
 }
 

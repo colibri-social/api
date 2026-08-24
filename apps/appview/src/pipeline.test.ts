@@ -8,6 +8,17 @@ import type { AppContext } from "./context.js";
 import { connectPipeline } from "./pipeline.js";
 import type { EventServer, ServerFrame } from "./ws/events.js";
 
+const stalledIndexing = { enabled: false };
+
+vi.mock("@colibri-social/notifications", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@colibri-social/notifications")>();
+	return {
+		...actual,
+		indexMessage: (...args: Parameters<typeof actual.indexMessage>) =>
+			stalledIndexing.enabled ? new Promise<never>(() => {}) : actual.indexMessage(...args),
+	};
+});
+
 const COMMUNITY = "did:plc:2hnjxkqm6bpuvvpjbztkxxxx";
 const AUTHOR = "did:plc:7fkdlwjqmzcuvvpjbztkaaaa";
 const LABELER = "did:plc:labelerlabelerlabelerlabl";
@@ -93,7 +104,7 @@ beforeEach(async () => {
 		database,
 		config: { PUBLIC_URL: "https://appview.test", notifications: {}, pushProviders: [] },
 		loader: new CommunityLoader({ db: database.db, tables: database.tables }),
-		log: { warn: () => {} },
+		log: { warn: () => {}, debug: () => {} },
 		identity: {
 			resolveDid: async () => {
 				throw new Error("no identity in tests");
@@ -141,6 +152,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	stalledIndexing.enabled = false;
 	disconnect();
 	await database.destroy();
 });
@@ -160,6 +172,16 @@ describe("connectPipeline", () => {
 		const message = frame?.message as { rkey: string; text: string; labels: unknown[] };
 		expect(message).toMatchObject({ rkey, text: "hello" });
 		expect(message.labels).toEqual([expect.objectContaining({ src: LABELER, val: "spoiler" })]);
+	});
+
+	it("publishes the message before notification indexing settles", async () => {
+		const rkey = nextTid();
+		await putMessageRow(rkey);
+		stalledIndexing.enabled = true;
+
+		emit(messageChange(rkey));
+
+		await vi.waitFor(() => expect(framesOfType("messageEvent")).toHaveLength(1));
 	});
 
 	it("publishes the visible message of a batch and withholds the hidden one", async () => {

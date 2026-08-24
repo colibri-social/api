@@ -41,7 +41,12 @@ export const registerProtocolRoutes = ({ server, ctx, auth }: RouteDeps): void =
 	route(server, com.atproto.space.notifyWrite, {
 		auth: auth.service,
 		handler: async ({ input }) => {
-			ctx.sync.notifyWrite(input.body.space, input.body.repo);
+			ctx.sync.notifyWrite(input.body.space, input.body.repo, {
+				rev: input.body.rev,
+				setHashBase64: Buffer.from(input.body.hash).toString("base64"),
+				trigger: "notify",
+				notifiedAt: Date.now(),
+			});
 		},
 	});
 

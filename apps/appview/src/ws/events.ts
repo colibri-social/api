@@ -2,6 +2,7 @@ import type { Server as HttpServer, IncomingHttpHeaders } from "node:http";
 import { canRead } from "@colibri-social/community";
 import { ServiceAuthError } from "@colibri-social/identity";
 import { social } from "@colibri-social/lexicons";
+import { parseSpaceRef } from "@colibri-social/space";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { AppContext } from "../context.js";
 import { isOnlineState, PresenceTracker } from "../presence.js";
@@ -12,11 +13,19 @@ export type ServerFrame = { $type: string } & Record<string, unknown>;
 
 const EVENTS_PATH = "/xrpc/social.colibri.beta.sync.subscribeEvents";
 const HEARTBEAT_MS = 30_000;
+const HINT_BUDGET = 20;
+const HINT_WINDOW_MS = 10_000;
+
+type HintBudget = {
+	count: number;
+	windowStartedAt: number;
+};
 
 type Connection = {
 	socket: WebSocket;
 	did: string;
 	alive: boolean;
+	hints: HintBudget;
 };
 
 const clientFrames = {
@@ -25,6 +34,7 @@ const clientFrames = {
 	heartbeat: social.colibri.beta.sync.defs.heartbeat,
 	typing: social.colibri.beta.sync.defs.typing,
 	viewChannel: social.colibri.beta.sync.defs.viewChannel,
+	wroteTo: social.colibri.beta.sync.defs.wroteTo,
 	setPresence: social.colibri.beta.sync.defs.setPresence,
 } as const;
 
@@ -107,7 +117,12 @@ export class EventServer {
 	}
 
 	private accept(socket: WebSocket, did: string): void {
-		const connection: Connection = { socket, did, alive: true };
+		const connection: Connection = {
+			socket,
+			did,
+			alive: true,
+			hints: { count: 0, windowStartedAt: 0 },
+		};
 		this.connections.add(connection);
 		this.topics.subscribe(connection, [userTopic(did)]);
 		void this.trackPresence(did, "opened", () => this.presence.opened(did));
@@ -177,6 +192,9 @@ export class EventServer {
 			case "viewChannel":
 				await this.applyViewChannel(connection, result.value as never);
 				return;
+			case "wroteTo":
+				this.applyWroteTo(connection, result.value as never);
+				return;
 			default:
 				return;
 		}
@@ -221,6 +239,44 @@ export class EventServer {
 			},
 			connection.did,
 		);
+	}
+
+	private authorityOf(space: string): string | null {
+		try {
+			return parseSpaceRef(space).authority;
+		} catch {
+			return null;
+		}
+	}
+
+	private mayHint(connection: Connection, space: string): boolean {
+		if (this.topics.topicsOf(connection).includes(channelTopic(space))) return true;
+		return this.authorityOf(space) === connection.did;
+	}
+
+	private withinHintBudget(connection: Connection, now: number): boolean {
+		const budget = connection.hints;
+		if (now - budget.windowStartedAt >= HINT_WINDOW_MS) {
+			budget.windowStartedAt = now;
+			budget.count = 0;
+		}
+		budget.count += 1;
+		return budget.count <= HINT_BUDGET;
+	}
+
+	private applyWroteTo(connection: Connection, frame: { space: string; rev?: string }): void {
+		const notifiedAt = Date.now();
+		if (!this.mayHint(connection, frame.space)) return;
+		if (!this.withinHintBudget(connection, notifiedAt)) {
+			this.error(connection, "RateLimited", "too many write hints, slow down");
+			return;
+		}
+
+		this.ctx.sync.notifyWrite(frame.space, connection.did, {
+			trigger: "clientHint",
+			notifiedAt,
+			...(frame.rev ? { rev: frame.rev } : {}),
+		});
 	}
 
 	private async applyViewChannel(

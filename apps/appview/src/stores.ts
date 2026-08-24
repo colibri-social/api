@@ -108,6 +108,23 @@ export const drizzleSyncStore = (database: Database, projections: ProjectionDeps
 			return rows;
 		},
 
+		listRegistrations: async () => {
+			const rows = await db.select().from(tables.notifyRegistrations);
+			return rows.map((row) => ({
+				space: row.space,
+				service: row.service,
+				expiresAt: new Date(row.expiresAt),
+			}));
+		},
+
+		saveRegistration: async ({ space, service, expiresAt }) => {
+			const row = { space, service, expiresAt: expiresAt.toISOString() };
+			await db
+				.insert(tables.notifyRegistrations)
+				.values(row)
+				.onConflictDoUpdate({ target: tables.notifyRegistrations.space, set: row });
+		},
+
 		expectedRepos: async (space) => {
 			const [row] = await db
 				.select({

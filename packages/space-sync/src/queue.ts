@@ -6,12 +6,14 @@ export type QueueOptions = {
 export type QueueStats = {
 	pending: number;
 	running: number;
+	dirty: number;
 };
 
 export class KeyedWorkQueue {
 	private readonly waiting: string[] = [];
 	private readonly queued = new Set<string>();
 	private readonly running = new Set<string>();
+	private readonly dirty = new Set<string>();
 	private readonly idleWaiters: Array<() => void> = [];
 	private draining = false;
 	private stopped = false;
@@ -22,14 +24,21 @@ export class KeyedWorkQueue {
 	) {}
 
 	get stats(): QueueStats {
-		return { pending: this.waiting.length, running: this.running.size };
+		return {
+			pending: this.waiting.length,
+			running: this.running.size,
+			dirty: this.dirty.size,
+		};
 	}
 
 	push(key: string): void {
 		if (this.stopped) return;
-		if (this.queued.has(key) || this.running.has(key)) return;
-		this.queued.add(key);
-		this.waiting.push(key);
+		if (this.running.has(key)) {
+			this.dirty.add(key);
+			return;
+		}
+		if (this.queued.has(key)) return;
+		this.enqueue(key);
 		this.drain();
 	}
 
@@ -46,7 +55,13 @@ export class KeyedWorkQueue {
 		this.stopped = true;
 		this.waiting.length = 0;
 		this.queued.clear();
+		this.dirty.clear();
 		this.settleIfIdle();
+	}
+
+	private enqueue(key: string): void {
+		this.queued.add(key);
+		this.waiting.push(key);
 	}
 
 	private isIdle(): boolean {
@@ -83,6 +98,7 @@ export class KeyedWorkQueue {
 		} catch (error) {
 			this.options.onError?.(key, error);
 		} finally {
+			if (this.dirty.delete(key) && !this.stopped) this.enqueue(key);
 			this.running.delete(key);
 			this.fill();
 		}

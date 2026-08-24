@@ -96,6 +96,26 @@ const viewChannel = /*#__PURE__*/ l.typedObject<ViewChannel>($nsid, "viewChannel
 
 export { viewChannel };
 
+/** Reports that the user just wrote a record to a space, so the AppView can pull it without waiting for the space host to forward a notification. Honoured only for a space this connection already receives. */
+type WroteTo = { $type?: "social.colibri.beta.sync.defs#wroteTo";
+
+  /**
+   * The space that was written to.
+   */
+  "space":l.SpaceRefString;
+
+  /**
+   * The revision the write produced, when the client knows it.
+   */
+  "rev"?:l.TidString };
+
+export type { WroteTo };
+
+/** Reports that the user just wrote a record to a space, so the AppView can pull it without waiting for the space host to forward a notification. Honoured only for a space this connection already receives. */
+const wroteTo = /*#__PURE__*/ l.typedObject<WroteTo>($nsid, "wroteTo", /*#__PURE__*/ l.object({"space":/*#__PURE__*/ l.string({"format":"space-ref"}),"rev":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"tid"}))}));
+
+export { wroteTo };
+
 /** Updates the user's own presence over the socket. */
 type SetPresence = { $type?: "social.colibri.beta.sync.defs#setPresence";
 

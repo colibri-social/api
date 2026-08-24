@@ -1,7 +1,8 @@
 import { SpaceCredentialError } from "@colibri-social/space";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SpaceSyncEngine } from "./engine.js";
-import type { RepoCursor, SyncStore } from "./types.js";
+import { SpaceSyncEngine, type SyncEngineOptions } from "./engine.js";
+import type { RepoSyncOutcome } from "./repo-sync.js";
+import type { ChangeTiming, RepoCursor, SyncStore } from "./types.js";
 
 const SPACE = "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchan";
 const AUTHORITY = "did:plc:community";
@@ -53,17 +54,25 @@ const client = (remotes: Remote[], options: { listThrows?: unknown } = {}) => ({
 	registerNotify: vi.fn(async () => ({ expiresAt: new Date(Date.now() + 3_600_000) })),
 });
 
+const isOutcome = (value: unknown): value is RepoSyncOutcome =>
+	typeof value === "object" && value !== null && "kind" in value;
+
 const engineFor = (
 	remotes: Remote[],
-	sync: (space: string, author: string) => Promise<void>,
-	options: { listThrows?: unknown; now?: () => Date; expected?: string[] } = {},
+	sync: (space: string, author: string) => Promise<unknown>,
+	options: {
+		listThrows?: unknown;
+		now?: () => Date;
+		expected?: string[];
+		engine?: Partial<SyncEngineOptions>;
+	} = {},
 ) => {
 	const spaceClient = client(remotes, options);
 	const engine = new SpaceSyncEngine({
 		repos: {
 			sync: async (space: string, author: string) => {
-				await sync(space, author);
-				return { kind: "unchanged" as const };
+				const outcome = await sync(space, author);
+				return isOutcome(outcome) ? outcome : { kind: "unchanged" as const, appliedRev: null };
 			},
 		},
 		client: spaceClient as never,
@@ -74,6 +83,7 @@ const engineFor = (
 		syncerService: "did:web:appview#atproto_space_syncer",
 		concurrency: 4,
 		...(options.now ? { now: options.now } : {}),
+		...(options.engine ?? {}),
 	});
 
 	return { engine, spaceClient };
@@ -354,5 +364,211 @@ describe("write notifications", () => {
 
 		expect(cursors.get(ALICE)?.consecutiveFailures).toBe(2);
 		expect(second).toBeGreaterThan(first);
+	});
+});
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+const deferred = () => {
+	let resolve: () => void = () => undefined;
+	const promise = new Promise<void>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+};
+
+const advanced = (appliedRev: string | null): RepoSyncOutcome => ({
+	kind: "advanced",
+	change: { space: SPACE, author: ALICE, puts: [], deletes: [] },
+	appliedRev,
+});
+
+describe("chasing a notified revision", () => {
+	it("pulls again when a write lands while a pull is already running", async () => {
+		let pulls = 0;
+		const gate = deferred();
+		const { engine } = engineFor([], async () => {
+			pulls += 1;
+			if (pulls === 1) await gate.promise;
+		});
+
+		engine.notifyWrite(SPACE, ALICE);
+		await settle();
+		engine.notifyWrite(SPACE, ALICE);
+		gate.resolve();
+		await engine.drain();
+
+		expect(pulls).toBe(2);
+	});
+
+	it("keeps pulling until the applied revision reaches the notified one", async () => {
+		let pulls = 0;
+		const { engine } = engineFor([], async () => {
+			pulls += 1;
+			return advanced(pulls === 1 ? "3l0" : "3l9");
+		});
+
+		engine.notifyWrite(SPACE, ALICE, { rev: "3l9" });
+		await engine.drain();
+
+		expect(pulls).toBe(2);
+	});
+
+	it("gives up chasing after the attempt cap", async () => {
+		let pulls = 0;
+		const events: string[] = [];
+		const { engine } = engineFor(
+			[],
+			async () => {
+				pulls += 1;
+				return advanced("3l0");
+			},
+			{ engine: { maxChaseAttempts: 2, log: (event) => void events.push(event) } },
+		);
+
+		engine.notifyWrite(SPACE, ALICE, { rev: "3l9" });
+		await engine.drain();
+
+		expect(pulls).toBe(2);
+		expect(events).toContain("repo.chaseExhausted");
+	});
+
+	it("skips a notification for a revision that is already applied", async () => {
+		let pulls = 0;
+		const { engine } = engineFor([], async () => {
+			pulls += 1;
+			return advanced("3l5");
+		});
+
+		engine.notifyWrite(SPACE, ALICE, { rev: "3l5" });
+		await engine.drain();
+		engine.notifyWrite(SPACE, ALICE, { rev: "3l5" });
+		await engine.drain();
+
+		expect(pulls).toBe(1);
+	});
+
+	it("attaches the trigger and notification time to the change it emits", async () => {
+		const { engine } = engineFor([], async () => advanced("3l1"));
+		const timings: Array<ChangeTiming | undefined> = [];
+		engine.on("changed", (change) => void timings.push(change.timing));
+
+		engine.notifyWrite(SPACE, ALICE, {
+			rev: "3l1",
+			trigger: "clientHint",
+			notifiedAt: 1_000,
+		});
+		await engine.drain();
+
+		expect(timings[0]?.trigger).toBe("clientHint");
+		expect(timings[0]?.notifiedAt).toBe(1_000);
+		expect(timings[0]?.committedAt).toBeGreaterThanOrEqual(timings[0]?.startedAt ?? 0);
+	});
+});
+
+describe("notify registrations", () => {
+	it("renews on its own schedule before the registration lapses", async () => {
+		vi.useFakeTimers();
+		let clock = new Date("2026-08-23T00:00:00.000Z").getTime();
+		const { engine, spaceClient } = engineFor([], async () => undefined, {
+			now: () => new Date(clock),
+			engine: { registrationRenewMarginMs: 60_000 },
+		});
+		spaceClient.registerNotify.mockImplementation(async () => ({
+			expiresAt: new Date(clock + 120_000),
+		}));
+
+		await engine.start();
+		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(1);
+
+		clock += 70_000;
+		await vi.advanceTimersByTimeAsync(30_000);
+
+		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(2);
+		await engine.stop();
+		vi.useRealTimers();
+	});
+
+	it("retries a failed registration within seconds instead of waiting for a sweep", async () => {
+		vi.useFakeTimers();
+		let clock = new Date("2026-08-23T00:00:00.000Z").getTime();
+		const events: string[] = [];
+		const { engine, spaceClient } = engineFor([], async () => undefined, {
+			now: () => new Date(clock),
+			engine: { log: (event) => void events.push(event) },
+		});
+		spaceClient.registerNotify.mockRejectedValueOnce(new Error("host refused"));
+
+		await engine.start();
+		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(1);
+		expect(events).toContain("registerNotify.failed");
+
+		clock += 10_000;
+		await vi.advanceTimersByTimeAsync(30_000);
+
+		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(2);
+		await engine.stop();
+		vi.useRealTimers();
+	});
+
+	it("says so when it finds a registration that already expired", async () => {
+		vi.useFakeTimers();
+		let clock = new Date("2026-08-23T00:00:00.000Z").getTime();
+		const events: string[] = [];
+		const { engine, spaceClient } = engineFor([], async () => undefined, {
+			now: () => new Date(clock),
+			engine: { log: (event) => void events.push(event) },
+		});
+		spaceClient.registerNotify.mockImplementation(async () => ({
+			expiresAt: new Date(clock + 60_000),
+		}));
+
+		await engine.start();
+		clock += 120_000;
+		await vi.advanceTimersByTimeAsync(30_000);
+
+		expect(events).toContain("registerNotify.lapsed");
+		await engine.stop();
+		vi.useRealTimers();
+	});
+
+	it("stops renewing a space that was deleted", async () => {
+		vi.useFakeTimers();
+		let clock = new Date("2026-08-23T00:00:00.000Z").getTime();
+		const { engine, spaceClient } = engineFor([], async () => undefined, {
+			now: () => new Date(clock),
+			engine: { registrationRenewMarginMs: 60_000 },
+		});
+		spaceClient.registerNotify.mockImplementation(async () => ({
+			expiresAt: new Date(clock + 120_000),
+		}));
+
+		await engine.start();
+		engine.notifySpaceDeleted(SPACE);
+		await vi.advanceTimersByTimeAsync(0);
+
+		clock += 70_000;
+		await vi.advanceTimersByTimeAsync(30_000);
+
+		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(1);
+		await engine.stop();
+		vi.useRealTimers();
+	});
+});
+
+describe("sweeping", () => {
+	it("refuses to start a second sweep while one is running", async () => {
+		const { engine, spaceClient } = engineFor([], async () => undefined);
+		let listings = 0;
+		const original = spaceClient.allRepos;
+		spaceClient.allRepos = async function* () {
+			listings += 1;
+			await new Promise((resolve) => setTimeout(resolve, 10));
+			yield* original();
+		};
+
+		await Promise.all([engine.sweep(), engine.sweep()]);
+
+		expect(listings).toBe(1);
 	});
 });

@@ -27,6 +27,8 @@ import { ChannelViews } from "./views/channel.js";
 import { CommunityViews } from "./views/community.js";
 import type { EventServer, ServerFrame } from "./ws/events.js";
 
+const SLOW_DELIVERY_MS = 2_000;
+
 type Deps = {
 	ctx: AppContext;
 	events: EventServer;
@@ -152,6 +154,29 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		events.publishToCommunity(community, memberEvent("update", community, member));
 	};
 
+	const logDelivery = (change: RepoChange, published: number): void => {
+		const timing = change.timing;
+		if (published === 0 || !timing) return;
+
+		const publishedAt = Date.now();
+		const detail = {
+			space: change.space,
+			author: change.author,
+			trigger: timing.trigger,
+			messages: published,
+			queueMs: timing.notifiedAt === null ? null : timing.startedAt - timing.notifiedAt,
+			syncMs: timing.committedAt - timing.startedAt,
+			publishMs: publishedAt - timing.committedAt,
+			totalMs: timing.notifiedAt === null ? null : publishedAt - timing.notifiedAt,
+		};
+
+		if (detail.totalMs !== null && detail.totalMs > SLOW_DELIVERY_MS) {
+			ctx.log.warn(detail, "sync.deliverySlow");
+			return;
+		}
+		ctx.log.debug(detail, "sync.delivered");
+	};
+
 	const publishMessage = async (space: string, author: string, rkey: string): Promise<void> => {
 		const message = await channels.message(space, null, { author, rkey });
 		if (!message) return;
@@ -175,10 +200,15 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			return;
 		}
 
+		let publishedMessages = 0;
+
 		for (const put of change.puts) {
 			if (put.collection === COLLECTIONS.message && space.community) {
+				await publishMessage(change.space, change.author, put.rkey);
+				publishedMessages += 1;
+
 				const parent = put.value.parent as { did?: string; rkey?: string } | undefined;
-				await indexMessage(notificationDeps, {
+				void indexMessage(notificationDeps, {
 					space: change.space,
 					community: space.community,
 					author: change.author,
@@ -189,7 +219,6 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 				})
 					.then((rows) => publishNotifications(rows, String(put.value.text ?? "")))
 					.catch((error) => ctx.log.warn({ error }, "notifications.indexFailed"));
-				await publishMessage(change.space, change.author, put.rkey);
 			}
 
 			if (put.collection === COLLECTIONS.reaction) {
@@ -273,6 +302,8 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 				events.publishToCommunity(space.community, memberGoneEvent(space.community, entry.rkey));
 			}
 		}
+
+		logDelivery(change, publishedMessages);
 	};
 
 	return () => {

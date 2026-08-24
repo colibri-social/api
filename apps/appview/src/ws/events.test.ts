@@ -2,7 +2,8 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { type ActorAuthz, anonymousAuthz, type ChannelState } from "@colibri-social/community";
-import { channelSpace, SPACE_TYPES } from "@colibri-social/lexicons";
+import { channelSpace, preferencesSpace, SPACE_TYPES } from "@colibri-social/lexicons";
+import { nextTid } from "@colibri-social/space";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
@@ -89,6 +90,7 @@ describe("EventServer", () => {
 	let http: Server;
 	let events: EventServer;
 	let port: number;
+	let notifyWrite: ReturnType<typeof vi.fn>;
 
 	const buildCtx = (): AppContext => {
 		const channels = new Map<string, ChannelState>([
@@ -107,6 +109,7 @@ describe("EventServer", () => {
 		return {
 			database,
 			log: { warn: () => {}, debug: () => {}, error: () => {} },
+			sync: { notifyWrite },
 			voice: null,
 			serviceAuth: {
 				verify: async (token: string, lxm: string | null) => {
@@ -149,6 +152,7 @@ describe("EventServer", () => {
 
 	beforeEach(async () => {
 		database = await openTestDatabase();
+		notifyWrite = vi.fn();
 		http = createServer();
 		events = new EventServer(buildCtx());
 		events.attach(http);
@@ -223,6 +227,74 @@ describe("EventServer", () => {
 
 		alice.close();
 		bob.close();
+	});
+
+	it("pulls a channel the caller hinted it just wrote to", async () => {
+		const alice = connect("alice-token");
+		await waitForOpen(alice);
+		await subscribed(alice, CHANNEL);
+
+		const rev = nextTid();
+		send(alice, { $type: "social.colibri.beta.sync.defs#wroteTo", space: CHANNEL, rev });
+
+		await vi.waitFor(() =>
+			expect(notifyWrite).toHaveBeenCalledWith(
+				CHANNEL,
+				ALICE,
+				expect.objectContaining({ trigger: "clientHint", rev }),
+			),
+		);
+
+		alice.close();
+	});
+
+	it("ignores a write hint for a channel the caller never subscribed to", async () => {
+		const alice = connect("alice-token");
+		await waitForOpen(alice);
+		await subscribed(alice, CHANNEL);
+
+		send(alice, { $type: "social.colibri.beta.sync.defs#wroteTo", space: OTHER });
+		send(alice, { $type: "social.colibri.beta.sync.defs#typing", channel: CHANNEL });
+		await new Promise((resolve) => setTimeout(resolve, 20));
+
+		expect(notifyWrite).not.toHaveBeenCalled();
+
+		alice.close();
+	});
+
+	it("pulls the caller's own personal space without a subscription", async () => {
+		const alice = connect("alice-token");
+		await waitForOpen(alice);
+
+		send(alice, {
+			$type: "social.colibri.beta.sync.defs#wroteTo",
+			space: preferencesSpace(ALICE),
+		});
+
+		await vi.waitFor(() =>
+			expect(notifyWrite).toHaveBeenCalledWith(
+				preferencesSpace(ALICE),
+				ALICE,
+				expect.objectContaining({ trigger: "clientHint" }),
+			),
+		);
+
+		alice.close();
+	});
+
+	it("rate limits a client that floods write hints", async () => {
+		const alice = connect("alice-token");
+		await waitForOpen(alice);
+		await subscribed(alice, CHANNEL);
+
+		for (let sent = 0; sent < 25; sent += 1) {
+			send(alice, { $type: "social.colibri.beta.sync.defs#wroteTo", space: CHANNEL });
+		}
+
+		expect(await nextFrameOfType(alice, "error")).toMatchObject({ error: "RateLimited" });
+		expect(notifyWrite.mock.calls.length).toBeLessThanOrEqual(20);
+
+		alice.close();
 	});
 
 	it("remembers which channel someone is looking at, and forgets it when they go", async () => {
