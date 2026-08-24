@@ -51,12 +51,17 @@ type TransportOptions = { $type?: "social.colibri.beta.voice.defs#transportOptio
   /**
    * Which side of the call this transport carries.
    */
-  "direction"?:"send" | "recv" | l.UnknownString };
+  "direction"?:"send" | "recv" | l.UnknownString;
+
+  /**
+   * STUN and TURN servers the client should use while gathering candidates. Absent when the server has none configured.
+   */
+  "iceServers"?:(l.LexMap)[] };
 
 export type { TransportOptions };
 
 /** Parameters for creating one side of a WebRTC transport. */
-const transportOptions = /*#__PURE__*/ l.typedObject<TransportOptions>($nsid, "transportOptions", /*#__PURE__*/ l.object({"id":/*#__PURE__*/ l.string(),"iceParameters":/*#__PURE__*/ l.lexMap(),"iceCandidates":/*#__PURE__*/ l.array(/*#__PURE__*/ l.lexMap(), ),"dtlsParameters":/*#__PURE__*/ l.lexMap(),"direction":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["send","recv"]}>())}));
+const transportOptions = /*#__PURE__*/ l.typedObject<TransportOptions>($nsid, "transportOptions", /*#__PURE__*/ l.object({"id":/*#__PURE__*/ l.string(),"iceParameters":/*#__PURE__*/ l.lexMap(),"iceCandidates":/*#__PURE__*/ l.array(/*#__PURE__*/ l.lexMap(), ),"dtlsParameters":/*#__PURE__*/ l.lexMap(),"direction":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["send","recv"]}>()),"iceServers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.lexMap(), ))}));
 
 export { transportOptions };
 

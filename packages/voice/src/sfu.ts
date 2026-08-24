@@ -10,7 +10,9 @@ import type {
 import { parseVoiceSfuConfig, type VoiceSfuConfig, type VoiceSfuConfigInput } from "./config.js";
 import {
 	buildWebRtcTransportOptions,
+	type ModerationStore,
 	mediaCodecs,
+	type ParticipantLeftReason,
 	type ProducerSnapshot,
 	type TransportDirection,
 	type VoicePatch,
@@ -27,9 +29,16 @@ export type VoiceSfuEvents = {
 	"worker-died": [{ pid: number; error: Error }];
 	"worker-restarted": [{ pid: number }];
 	"participant-joined": [{ channel: string; did: string }];
-	"participant-left": [{ channel: string; did: string }];
+	"participant-left": [{ channel: string; did: string; reason?: ParticipantLeftReason }];
 	"producer-added": [
-		{ channel: string; did: string; producerId: string; kind: MediaKind; source: string },
+		{
+			channel: string;
+			did: string;
+			producerId: string;
+			kind: MediaKind;
+			source: string;
+			paused: boolean;
+		},
 	];
 	"producer-removed": [{ channel: string; did: string; producerId: string }];
 	"speaking-changed": [{ channel: string; did: string; speaking: boolean }];
@@ -48,6 +57,7 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 	private readonly roomCreations = new Map<string, Promise<VoiceRoom>>();
 	private readonly roomGraceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 	private readonly presence = new Map<string, string>();
+	private readonly moderation = new Map<string, ModerationStore>();
 	private closed = false;
 
 	private constructor(config: VoiceSfuConfig, workerPool: WorkerPoolLike) {
@@ -70,6 +80,10 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 			workerPool.on("worker-restarted", (event) => sfu.emit("worker-restarted", event));
 		}
 		return sfu;
+	}
+
+	get iceServers(): readonly unknown[] {
+		return this.config.iceServers;
 	}
 
 	presenceOf(did: string): string | undefined {
@@ -98,8 +112,11 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 		did: string,
 		direction: TransportDirection,
 	): Promise<WebRtcTransport> {
+		const previousChannel = this.claimPresence(channel, did);
 		const room = await this.getOrCreateRoom(channel);
-		await this.movePresence(channel, did);
+		if (previousChannel) {
+			await this.rooms.get(previousChannel)?.leave(did, "superseded");
+		}
 		return room.createTransport(did, direction);
 	}
 
@@ -152,12 +169,20 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 		await room.setSelfState(did, patch);
 	}
 
-	async leave(channel: string, did: string): Promise<void> {
+	async leave(channel: string, did: string, reason?: ParticipantLeftReason): Promise<void> {
 		const room = this.rooms.get(channel);
 		if (!room) {
 			return;
 		}
-		await room.leave(did);
+		await room.leave(did, reason);
+	}
+
+	supersede(channel: string, did: string): void {
+		this.rooms.get(channel)?.dropMedia(did);
+	}
+
+	listParticipants(channel: string): string[] {
+		return this.rooms.get(channel)?.participantDids ?? [];
 	}
 
 	async close(): Promise<void> {
@@ -176,6 +201,7 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 		}
 		this.rooms.clear();
 		this.presence.clear();
+		this.moderation.clear();
 
 		await this.workerPool.close();
 	}
@@ -208,23 +234,50 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 		const room = await VoiceRoom.create(router, channel, {
 			webRtcTransportOptions: this.webRtcTransportOptions,
 			speakingDebounceMs: this.config.speakingDebounceMs,
+			moderation: this.moderationFor(channel),
 		});
+
+		if (this.closed) {
+			await room.close();
+			throw new Error("voice sfu is closed");
+		}
+
 		this.rooms.set(channel, room);
 		this.wireRoomEvents(channel, room);
+		router.on("workerclose", () => void this.discardRoom(channel, room));
 		this.emit("room-created", { channel });
 		return room;
+	}
+
+	private async discardRoom(channel: string, room: VoiceRoom): Promise<void> {
+		if (this.rooms.get(channel) !== room) {
+			return;
+		}
+		this.rooms.delete(channel);
+		this.cancelGraceTimer(channel);
+		await room.close();
+		this.emit("room-closed", { channel });
+	}
+
+	private moderationFor(channel: string): ModerationStore {
+		let store = this.moderation.get(channel);
+		if (!store) {
+			store = new Map();
+			this.moderation.set(channel, store);
+		}
+		return store;
 	}
 
 	private wireRoomEvents(channel: string, room: VoiceRoom): void {
 		room.on("participant-joined", ({ did }) => {
 			this.emit("participant-joined", { channel, did });
 		});
-		room.on("participant-left", ({ did }) => {
-			this.emit("participant-left", { channel, did });
+		room.on("participant-left", ({ did, reason }) => {
+			this.emit("participant-left", { channel, did, ...(reason ? { reason } : {}) });
 			if (this.presence.get(did) === channel) {
 				this.presence.delete(did);
 			}
-			if (room.participantCount === 0) {
+			if (!this.closed && this.rooms.get(channel) === room && room.participantCount === 0) {
 				this.scheduleGraceTeardown(channel);
 			}
 		});
@@ -236,15 +289,10 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 		);
 	}
 
-	private async movePresence(channel: string, did: string): Promise<void> {
+	private claimPresence(channel: string, did: string): string | null {
 		const previousChannel = this.presence.get(did);
-		if (previousChannel && previousChannel !== channel) {
-			const previousRoom = this.rooms.get(previousChannel);
-			if (previousRoom) {
-				await previousRoom.leave(did);
-			}
-		}
 		this.presence.set(did, channel);
+		return previousChannel && previousChannel !== channel ? previousChannel : null;
 	}
 
 	private scheduleGraceTeardown(channel: string): void {
@@ -259,6 +307,7 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 			this.emit("room-closed", { channel });
 			void room.close();
 		}, this.config.roomGraceMs);
+		timer.unref?.();
 		this.roomGraceTimers.set(channel, timer);
 	}
 

@@ -19,6 +19,7 @@ const BOB = "did:plc:bob";
 const MALLORY = "did:plc:mallory";
 
 const VOICE_CHANNEL = channelSpace(COMMUNITY, SPACE_TYPES.channelVoice, "general");
+const OTHER_VOICE_CHANNEL = channelSpace(COMMUNITY, SPACE_TYPES.channelVoice, "lounge");
 const TEXT_CHANNEL = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "chat");
 
 const memberAuthz = (did: string): ActorAuthz => ({
@@ -55,6 +56,7 @@ type Harness = {
 const buildCtx = (voice: VoiceSfu | null): Harness => {
 	const channels = new Map<string, ChannelState>([
 		[VOICE_CHANNEL, openChannel(VOICE_CHANNEL, "general")],
+		[OTHER_VOICE_CHANNEL, openChannel(OTHER_VOICE_CHANNEL, "lounge")],
 		[TEXT_CHANNEL, openChannel(TEXT_CHANNEL, "chat")],
 	]);
 	const authz = new Map<string, ActorAuthz>([
@@ -414,6 +416,9 @@ describe("VoiceServer", () => {
 		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
 		await nextFrame(ws);
 
+		send(ws, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
+		const transport = await nextFrame(ws);
+
 		send(ws, { $type: "social.colibri.beta.voice.defs#setSelfState", muted: false });
 		const changed = await nextFrame(ws);
 		expect(changed).toMatchObject({
@@ -426,9 +431,6 @@ describe("VoiceServer", () => {
 			serverMuted: true,
 		});
 		expect(await nextFrame(ws)).toEqual({ $type: "social.colibri.beta.voice.defs#ack" });
-
-		send(ws, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
-		const transport = await nextFrame(ws);
 
 		send(ws, {
 			$type: "social.colibri.beta.voice.defs#produce",
@@ -505,7 +507,7 @@ describe("VoiceServer", () => {
 		expect(sfu.presenceOf(ALICE)).toBeUndefined();
 	});
 
-	it("tells the peer it was removed, and nobody else", async () => {
+	it("tells the peer why the sfu removed it, and nobody else", async () => {
 		await sfu.rtpCapabilities(VOICE_CHANNEL);
 		const aliceWs = connect("alice-token");
 		const bobWs = connect("bob-token");
@@ -521,12 +523,12 @@ describe("VoiceServer", () => {
 		await nextFrame(bobWs);
 
 		const left = new Promise<void>((resolve) => sfu.once("participant-left", () => resolve()));
-		await sfu.leave(VOICE_CHANNEL, ALICE);
+		await sfu.leave(VOICE_CHANNEL, ALICE, "channelGone");
 		await left;
 
 		expect(await nextFrameOfType(aliceWs, "disconnected")).toEqual({
 			$type: "social.colibri.beta.voice.defs#disconnected",
-			reason: "moderator",
+			reason: "channelGone",
 		});
 		expect(await nextFrameOfType(bobWs, "peerLeft")).toMatchObject({ did: ALICE });
 
@@ -638,6 +640,147 @@ describe("VoiceServer", () => {
 			reason: "moderator",
 		});
 		expect(voiceServer.isJoined(VOICE_CHANNEL, ALICE)).toBe(false);
+
+		ws.close();
+	});
+
+	it("hands a channel over to a second device without telling the room anyone left", async () => {
+		const laptop = connect("alice-token");
+		const phone = connect("alice-token");
+		const bob = connect("bob-token");
+		await Promise.all([waitForOpen(laptop), waitForOpen(phone), waitForOpen(bob)]);
+
+		send(bob, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrame(bob);
+		send(bob, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
+		await nextFrame(bob);
+
+		send(laptop, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrameOfType(laptop, "joined");
+		send(laptop, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
+		await nextFrameOfType(laptop, "transportOptions");
+
+		announced.length = 0;
+
+		send(phone, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+
+		expect(await nextFrameOfType(laptop, "disconnected")).toEqual({
+			$type: "social.colibri.beta.voice.defs#disconnected",
+			reason: "superseded",
+		});
+		await nextFrameOfType(phone, "joined");
+
+		expect(voiceServer.isJoined(VOICE_CHANNEL, ALICE)).toBe(true);
+		expect(sfu.presenceOf(ALICE)).toBe(VOICE_CHANNEL);
+		expect(announced.map((entry) => entry.frame.event)).not.toContain("leave");
+		expect(
+			(inboxes.get(bob)?.held ?? []).filter(
+				(frame) => frame.$type === "social.colibri.beta.voice.defs#peerLeft",
+			),
+		).toEqual([]);
+
+		laptop.close();
+		phone.close();
+		bob.close();
+	});
+
+	it("drops the old channel when a second device joins a different one", async () => {
+		const laptop = connect("alice-token");
+		const phone = connect("alice-token");
+		await Promise.all([waitForOpen(laptop), waitForOpen(phone)]);
+
+		send(laptop, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrameOfType(laptop, "joined");
+		send(laptop, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
+		await nextFrameOfType(laptop, "transportOptions");
+
+		announced.length = 0;
+
+		send(phone, { $type: "social.colibri.beta.voice.defs#join", channel: OTHER_VOICE_CHANNEL });
+
+		expect(await nextFrameOfType(laptop, "disconnected")).toEqual({
+			$type: "social.colibri.beta.voice.defs#disconnected",
+			reason: "superseded",
+		});
+		await nextFrameOfType(phone, "joined");
+
+		expect(voiceServer.isJoined(VOICE_CHANNEL, ALICE)).toBe(false);
+		expect(voiceServer.isJoined(OTHER_VOICE_CHANNEL, ALICE)).toBe(true);
+		expect(announced).toContainEqual(
+			expect.objectContaining({
+				frame: expect.objectContaining({ event: "leave", channel: VOICE_CHANNEL, did: ALICE }),
+			}),
+		);
+
+		laptop.close();
+		phone.close();
+	});
+
+	it("tells a joiner who is already in the room", async () => {
+		const bob = connect("bob-token");
+		await waitForOpen(bob);
+		send(bob, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrame(bob);
+		send(bob, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
+		await nextFrame(bob);
+
+		await sfu.moderate(VOICE_CHANNEL, BOB, { muted: true });
+
+		const alice = connect("alice-token");
+		await waitForOpen(alice);
+		send(alice, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+
+		await nextFrameOfType(alice, "joined");
+		expect(await nextFrameOfType(alice, "peerJoined")).toMatchObject({ did: BOB });
+		expect(await nextFrameOfType(alice, "moderationChanged")).toMatchObject({
+			did: BOB,
+			muted: true,
+			serverMuted: true,
+		});
+
+		alice.close();
+		bob.close();
+	});
+
+	it("answers a frame the sfu cannot serve instead of crashing", async () => {
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+
+		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrame(ws);
+		send(ws, { $type: "social.colibri.beta.voice.defs#setSelfState", muted: true });
+
+		expect(await nextFrame(ws)).toMatchObject({
+			$type: "social.colibri.beta.voice.defs#error",
+		});
+
+		ws.close();
+	});
+
+	it("pauses a server-muted peer's audio whatever source it claims", async () => {
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+
+		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrame(ws);
+		send(ws, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
+		const transport = await nextFrame(ws);
+
+		send(ws, {
+			$type: "social.colibri.beta.voice.defs#produce",
+			transportId: transport.id,
+			kind: "audio",
+			rtpParameters: {},
+			source: "screen",
+		});
+		const info = await nextFrameOfType(ws, "producerInfo");
+		expect(info).toMatchObject({ paused: false });
+
+		await sfu.moderate(VOICE_CHANNEL, ALICE, { muted: true });
+
+		expect(await sfu.listProducers(VOICE_CHANNEL)).toContainEqual(
+			expect.objectContaining({ producerId: info.producerId, paused: true }),
+		);
 
 		ws.close();
 	});

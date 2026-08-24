@@ -74,7 +74,7 @@ describe("VoiceSfu one room per did", () => {
 		await sfu.createTransport(CHANNEL_B, "did:plc:a", "send");
 
 		expect(sfu.presenceOf("did:plc:a")).toBe(CHANNEL_B);
-		expect(left).toEqual([{ channel: CHANNEL_A, did: "did:plc:a" }]);
+		expect(left).toEqual([{ channel: CHANNEL_A, did: "did:plc:a", reason: "superseded" }]);
 	});
 
 	it("does not move a did that joins the same channel again", async () => {
@@ -88,6 +88,27 @@ describe("VoiceSfu one room per did", () => {
 
 		expect(sfu.presenceOf("did:plc:a")).toBe(CHANNEL_A);
 		expect(left).toEqual([]);
+	});
+});
+
+describe("VoiceSfu worker death", () => {
+	it("discards a room whose router died, so presence and the roster let go", async () => {
+		const workerPool = fakeWorkerPool();
+		const router = createFakeRouter();
+		workerPool.createRouter.mockResolvedValue(asRouter(router));
+		const sfu = await VoiceSfu.create({ roomGraceMs: 1_000 }, { workerPool });
+
+		const closed: unknown[] = [];
+		sfu.on("room-closed", (event) => closed.push(event));
+
+		await sfu.createTransport(CHANNEL_A, "did:plc:a", "send");
+		expect(sfu.presenceOf("did:plc:a")).toBe(CHANNEL_A);
+
+		router.killWorker();
+		await vi.waitFor(() => expect(closed).toEqual([{ channel: CHANNEL_A }]));
+
+		expect(sfu.presenceOf("did:plc:a")).toBeUndefined();
+		expect(sfu.listParticipants(CHANNEL_A)).toEqual([]);
 	});
 });
 
@@ -111,6 +132,7 @@ describe("VoiceSfu event forwarding", () => {
 				producerId: producer.id,
 				kind: "audio",
 				source: "mic",
+				paused: false,
 			},
 		]);
 	});

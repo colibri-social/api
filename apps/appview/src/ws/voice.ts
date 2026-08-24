@@ -19,6 +19,7 @@ type Connection = {
 	did: string;
 	channel: string | null;
 	alive: boolean;
+	queue: Promise<void>;
 };
 
 const clientFrames = {
@@ -153,7 +154,10 @@ export class VoiceServer {
 	async close(): Promise<void> {
 		this.stopWatchingAuthz();
 		if (this.heartbeat) clearInterval(this.heartbeat);
-		for (const connection of this.connections) connection.socket.close(1001, "shutting down");
+		for (const connection of this.connections) {
+			this.topics.forget(connection);
+			connection.socket.close(1001, "shutting down");
+		}
 		this.connections.clear();
 		await new Promise<void>((resolve) => this.wss.close(() => resolve()));
 	}
@@ -177,28 +181,44 @@ export class VoiceServer {
 	}
 
 	private accept(socket: WebSocket, did: string): void {
-		const connection: Connection = { socket, did, channel: null, alive: true };
+		const connection: Connection = {
+			socket,
+			did,
+			channel: null,
+			alive: true,
+			queue: Promise.resolve(),
+		};
 		this.connections.add(connection);
 
 		socket.on("pong", () => {
 			connection.alive = true;
 		});
-		socket.on("message", (raw) => void this.receive(connection, raw.toString()));
+		socket.on("message", (raw) => this.enqueue(connection, raw.toString()));
 		socket.on("close", () => this.dropped(connection));
 		socket.on("error", () => socket.close());
+	}
+
+	private enqueue(connection: Connection, raw: string): void {
+		connection.alive = true;
+		connection.queue = connection.queue.then(() =>
+			this.receive(connection, raw).catch((cause: unknown) => {
+				this.ctx.log.error({ did: connection.did, reason: messageOf(cause) }, "voice.frame.failed");
+				this.error(connection, "InternalServerError", messageOf(cause));
+			}),
+		);
 	}
 
 	private dropped(connection: Connection): void {
 		this.connections.delete(connection);
 		const channel = this.forgetChannel(connection);
+		this.topics.forget(connection);
 		if (channel) void this.ctx.voice?.leave(channel, connection.did);
 	}
 
 	private forgetChannel(connection: Connection): string | null {
 		const channel = connection.channel;
-		if (!channel) return null;
 		connection.channel = null;
-		this.topics.unsubscribe(connection, [channelTopic(channel)]);
+		this.topics.unsubscribe(connection, this.topics.topicsOf(connection));
 		return channel;
 	}
 
@@ -335,6 +355,8 @@ export class VoiceServer {
 			return;
 		}
 
+		await this.supersedeOtherSessions(connection, voice, frame.channel);
+
 		const previous = this.forgetChannel(connection);
 		if (previous) await voice.leave(previous, connection.did);
 
@@ -345,6 +367,20 @@ export class VoiceServer {
 			channel: frame.channel,
 		});
 
+		for (const did of voice.listParticipants(frame.channel)) {
+			if (did === connection.did) continue;
+			this.send(connection, { $type: "social.colibri.beta.voice.defs#peerJoined", did });
+			const state = voice.getVoiceState(frame.channel, did);
+			this.send(connection, {
+				$type: "social.colibri.beta.voice.defs#moderationChanged",
+				did,
+				muted: state.muted,
+				deafened: state.deafened,
+				serverMuted: state.serverMuted,
+				serverDeafened: state.serverDeafened,
+			});
+		}
+
 		const producers = await voice.listProducers(frame.channel);
 		for (const producer of producers) {
 			if (producer.did === connection.did) continue;
@@ -353,8 +389,29 @@ export class VoiceServer {
 				producerId: producer.producerId,
 				did: producer.did,
 				kind: producer.kind,
+				paused: producer.paused,
 				source: toWireSource(producer.source),
 			});
+		}
+	}
+
+	private async supersedeOtherSessions(
+		connection: Connection,
+		voice: VoiceSfu,
+		channel: string,
+	): Promise<void> {
+		for (const other of [...this.connections]) {
+			if (other === connection || other.did !== connection.did) continue;
+
+			const heldChannel = other.channel;
+			this.detach(other, "superseded");
+			if (!heldChannel) continue;
+
+			if (heldChannel === channel) {
+				voice.supersede(heldChannel, connection.did);
+			} else {
+				await voice.leave(heldChannel, connection.did);
+			}
 		}
 	}
 
@@ -393,6 +450,7 @@ export class VoiceServer {
 				iceCandidates: transport.iceCandidates,
 				dtlsParameters: transport.dtlsParameters,
 				direction: frame.direction,
+				...(voice.iceServers.length > 0 ? { iceServers: voice.iceServers } : {}),
 			});
 		} catch (cause) {
 			this.error(connection, "NotFound", messageOf(cause));
@@ -538,15 +596,17 @@ export class VoiceServer {
 			this.broadcast(channel, { $type: "social.colibri.beta.voice.defs#peerJoined", did }, did);
 			this.announce(channel, did, "join", voiceStateIn(voice, channel, did));
 		});
-		voice.on("participant-left", ({ channel, did }) => {
+		voice.on("participant-left", ({ channel, did, reason }) => {
 			this.broadcast(channel, { $type: "social.colibri.beta.voice.defs#peerLeft", did }, did);
-			this.tell(channel, did, {
-				$type: "social.colibri.beta.voice.defs#disconnected",
-				reason: "moderator",
-			});
+			if (reason) {
+				this.tell(channel, did, {
+					$type: "social.colibri.beta.voice.defs#disconnected",
+					reason,
+				});
+			}
 			this.announce(channel, did, "leave");
 		});
-		voice.on("producer-added", ({ channel, did, producerId, kind, source }) => {
+		voice.on("producer-added", ({ channel, did, producerId, kind, source, paused }) => {
 			this.broadcast(
 				channel,
 				{
@@ -554,6 +614,7 @@ export class VoiceServer {
 					producerId,
 					did,
 					kind,
+					paused,
 					source: toWireSource(source),
 				},
 				did,

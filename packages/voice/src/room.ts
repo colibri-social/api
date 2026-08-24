@@ -58,12 +58,24 @@ export type ProducerSnapshot = {
 	producerId: string;
 	kind: MediaKind;
 	source: string;
+	paused: boolean;
 };
+
+export type ServerVoiceState = {
+	serverMuted: boolean;
+	serverDeafened: boolean;
+};
+
+export type ModerationStore = Map<string, ServerVoiceState>;
+
+export type ParticipantLeftReason = "superseded" | "channelGone";
 
 export type VoiceRoomEvents = {
 	"participant-joined": [{ did: string }];
-	"participant-left": [{ did: string }];
-	"producer-added": [{ did: string; producerId: string; kind: MediaKind; source: string }];
+	"participant-left": [{ did: string; reason?: ParticipantLeftReason }];
+	"producer-added": [
+		{ did: string; producerId: string; kind: MediaKind; source: string; paused: boolean },
+	];
 	"producer-removed": [{ did: string; producerId: string }];
 	"speaking-changed": [{ did: string; speaking: boolean }];
 	"voice-state-changed": [{ did: string; origin: VoiceStateOrigin } & VoiceState];
@@ -79,6 +91,7 @@ export type WebRtcListenOptions = {
 export type VoiceRoomOptions = {
 	webRtcTransportOptions: WebRtcTransportOptions;
 	speakingDebounceMs?: number;
+	moderation?: ModerationStore;
 };
 
 type ParticipantRecord = {
@@ -163,6 +176,10 @@ function isMicProducer(kind: MediaKind, source: string): boolean {
 	return kind === "audio" && source === "mic";
 }
 
+function isMutableProducer(kind: MediaKind): boolean {
+	return kind === "audio";
+}
+
 export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 	readonly channelRef: string;
 
@@ -173,6 +190,8 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 	private readonly participants = new Map<string, ParticipantRecord>();
 	private readonly producerIndex = new Map<string, { did: string; source: string }>();
 	private readonly speakingTracker: SpeakingTracker = createSpeakingTracker();
+	private readonly moderation: ModerationStore;
+	private speakingSettleTimer: ReturnType<typeof setTimeout> | null = null;
 	private closed = false;
 
 	private constructor(
@@ -181,6 +200,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		audioLevelObserver: AudioLevelObserver,
 		webRtcTransportOptions: WebRtcTransportOptions,
 		speakingDebounceMs: number,
+		moderation: ModerationStore,
 	) {
 		super();
 		this.channelRef = channelRef;
@@ -188,6 +208,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		this.audioLevelObserver = audioLevelObserver;
 		this.webRtcTransportOptions = webRtcTransportOptions;
 		this.speakingDebounceMs = speakingDebounceMs;
+		this.moderation = moderation;
 		this.wireAudioLevelObserver();
 	}
 
@@ -203,6 +224,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 			audioLevelObserver,
 			options.webRtcTransportOptions,
 			options.speakingDebounceMs ?? DEFAULT_SPEAKING_DEBOUNCE_MS,
+			options.moderation ?? new Map(),
 		);
 	}
 
@@ -212,6 +234,10 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 
 	get participantCount(): number {
 		return this.participants.size;
+	}
+
+	get participantDids(): string[] {
+		return [...this.participants.keys()];
 	}
 
 	get isClosed(): boolean {
@@ -230,7 +256,13 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		const snapshot: ProducerSnapshot[] = [];
 		for (const [did, participant] of this.participants) {
 			for (const [producerId, entry] of participant.producers) {
-				snapshot.push({ did, producerId, kind: entry.producer.kind, source: entry.source });
+				snapshot.push({
+					did,
+					producerId,
+					kind: entry.producer.kind,
+					source: entry.source,
+					paused: entry.producer.paused,
+				});
 			}
 		}
 		return snapshot;
@@ -243,10 +275,17 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 			...this.webRtcTransportOptions,
 			appData: { did, direction },
 		});
+
+		if (this.participants.get(did) !== participant) {
+			transport.close();
+			throw new Error(`${did} left room ${this.channelRef} while its transport was being created`);
+		}
+
 		participant.transports.set(transport.id, transport);
 		transport.on("dtlsstatechange", (state) => {
-			if (state === "closed") {
+			if (state === "closed" || state === "failed") {
 				participant.transports.delete(transport.id);
+				transport.close();
 			}
 		});
 		return transport;
@@ -267,16 +306,20 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		options: { kind: MediaKind; rtpParameters: RtpParameters; source: string },
 	): Promise<Producer> {
 		this.assertOpen();
-		const participant = this.ensureParticipant(did);
+		const participant = this.getParticipant(did);
 		const transport = this.getTransport(did, transportId);
-		const startPaused =
-			isMicProducer(options.kind, options.source) && effectiveVoice(participant.voice).muted;
+		const startPaused = isMutableProducer(options.kind) && effectiveVoice(participant.voice).muted;
 
 		const producer = await transport.produce({
 			kind: options.kind,
 			rtpParameters: options.rtpParameters,
 			paused: startPaused,
 		});
+
+		if (this.participants.get(did) !== participant) {
+			producer.close();
+			throw new Error(`${did} left room ${this.channelRef} while its producer was being created`);
+		}
 
 		participant.producers.set(producer.id, { producer, source: options.source });
 		this.producerIndex.set(producer.id, { did, source: options.source });
@@ -294,6 +337,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 			producerId: producer.id,
 			kind: options.kind,
 			source: options.source,
+			paused: producer.paused,
 		});
 		return producer;
 	}
@@ -314,7 +358,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		options: { producerId: string; rtpCapabilities: RtpCapabilities },
 	): Promise<Consumer> {
 		this.assertOpen();
-		const participant = this.ensureParticipant(did);
+		const participant = this.getParticipant(did);
 		const transport = this.getTransport(did, transportId);
 
 		const consumer = await transport.consume({
@@ -322,6 +366,11 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 			rtpCapabilities: options.rtpCapabilities,
 			paused: true,
 		});
+
+		if (this.participants.get(did) !== participant) {
+			consumer.close();
+			throw new Error(`${did} left room ${this.channelRef} while its consumer was being created`);
+		}
 
 		participant.consumers.set(consumer.id, consumer);
 		consumer.on("transportclose", () => participant.consumers.delete(consumer.id));
@@ -347,6 +396,24 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 	}
 
 	async setServerState(did: string, patch: VoicePatch): Promise<void> {
+		const enforced = this.moderation.get(did) ?? { serverMuted: false, serverDeafened: false };
+		if (patch.muted !== undefined) enforced.serverMuted = patch.muted;
+		if (patch.deafened !== undefined) enforced.serverDeafened = patch.deafened;
+
+		if (enforced.serverMuted || enforced.serverDeafened) this.moderation.set(did, enforced);
+		else this.moderation.delete(did);
+
+		if (!this.participants.has(did)) {
+			this.emit("voice-state-changed", {
+				did,
+				origin: "server",
+				muted: enforced.serverMuted,
+				deafened: enforced.serverDeafened,
+				...enforced,
+			});
+			return;
+		}
+
 		await this.applyVoiceState(did, "server", patch);
 	}
 
@@ -355,7 +422,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		origin: VoiceStateOrigin,
 		patch: VoicePatch,
 	): Promise<void> {
-		const participant = this.ensureParticipant(did);
+		const participant = this.getParticipant(did);
 		const before = effectiveVoice(participant.voice);
 
 		if (patch.muted !== undefined) {
@@ -366,12 +433,11 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 			if (origin === "self") participant.voice.selfDeafened = patch.deafened;
 			else participant.voice.serverDeafened = patch.deafened;
 		}
-
 		const after = effectiveVoice(participant.voice);
 
 		if (after.muted !== before.muted) {
-			for (const { producer, source } of participant.producers.values()) {
-				if (isMicProducer(producer.kind, source)) {
+			for (const { producer } of participant.producers.values()) {
+				if (isMutableProducer(producer.kind)) {
 					await (after.muted ? producer.pause() : producer.resume());
 				}
 			}
@@ -386,26 +452,54 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		this.emit("voice-state-changed", { did, origin, ...after });
 	}
 
-	async leave(did: string): Promise<void> {
+	async leave(did: string, reason?: ParticipantLeftReason): Promise<void> {
 		const participant = this.participants.get(did);
 		if (!participant) {
 			return;
 		}
 
+		this.releaseMedia(participant);
+		this.participants.delete(did);
+		this.stopSpeaking(did);
+		this.emit("participant-left", { did, ...(reason ? { reason } : {}) });
+	}
+
+	dropMedia(did: string): void {
+		const participant = this.participants.get(did);
+		if (!participant) {
+			return;
+		}
+
+		const producerIds = [...participant.producers.keys()];
+		this.releaseMedia(participant);
+		this.stopSpeaking(did);
+		for (const producerId of producerIds) {
+			this.emit("producer-removed", { did, producerId });
+		}
+	}
+
+	private releaseMedia(participant: ParticipantRecord): void {
 		for (const consumer of participant.consumers.values()) {
 			consumer.close();
 		}
+		participant.consumers.clear();
+
 		for (const { producer } of participant.producers.values()) {
 			producer.close();
 			this.producerIndex.delete(producer.id);
 		}
+		participant.producers.clear();
+
 		for (const transport of participant.transports.values()) {
 			transport.close();
 		}
+		participant.transports.clear();
+	}
 
-		this.participants.delete(did);
+	private stopSpeaking(did: string): void {
+		const wasSpeaking = this.speakingTracker.get(did)?.speaking ?? false;
 		forgetSpeaker(this.speakingTracker, did);
-		this.emit("participant-left", { did });
+		if (wasSpeaking) this.emit("speaking-changed", { did, speaking: false });
 	}
 
 	async close(): Promise<void> {
@@ -413,8 +507,12 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 			return;
 		}
 		this.closed = true;
+		if (this.speakingSettleTimer) {
+			clearTimeout(this.speakingSettleTimer);
+			this.speakingSettleTimer = null;
+		}
 		for (const did of [...this.participants.keys()]) {
-			await this.leave(did);
+			await this.leave(did, "channelGone");
 		}
 		this.audioLevelObserver.close();
 		this.router.close();
@@ -423,11 +521,16 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 	private ensureParticipant(did: string): ParticipantRecord {
 		let participant = this.participants.get(did);
 		if (!participant) {
+			const enforced = this.moderation.get(did);
 			participant = {
 				transports: new Map(),
 				producers: new Map(),
 				consumers: new Map(),
-				voice: { ...SILENT },
+				voice: {
+					...SILENT,
+					serverMuted: enforced?.serverMuted ?? false,
+					serverDeafened: enforced?.serverDeafened ?? false,
+				},
 			};
 			this.participants.set(did, participant);
 			this.emit("participant-joined", { did });
@@ -477,6 +580,11 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 	}
 
 	private tickSpeaking(activeDids: string[]): void {
+		if (this.speakingSettleTimer) {
+			clearTimeout(this.speakingSettleTimer);
+			this.speakingSettleTimer = null;
+		}
+
 		const { started, stopped } = applySpeakingTick(
 			this.speakingTracker,
 			activeDids,
@@ -489,5 +597,26 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		for (const did of stopped) {
 			this.emit("speaking-changed", { did, speaking: false });
 		}
+
+		this.armSpeakingSettle();
+	}
+
+	private armSpeakingSettle(): void {
+		if (this.closed || this.speakingSettleTimer) return;
+
+		let pending = false;
+		for (const entry of this.speakingTracker.values()) {
+			if (entry.speaking) {
+				pending = true;
+				break;
+			}
+		}
+		if (!pending) return;
+
+		this.speakingSettleTimer = setTimeout(() => {
+			this.speakingSettleTimer = null;
+			this.tickSpeaking([]);
+		}, this.speakingDebounceMs);
+		this.speakingSettleTimer.unref?.();
 	}
 }

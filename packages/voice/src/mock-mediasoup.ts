@@ -72,7 +72,10 @@ export function createFakeTransport() {
 	const transport = Object.assign(emitter, {
 		id: id("transport"),
 		connect: vi.fn(async () => {}),
-		close: vi.fn(),
+		close: vi.fn(() => {
+			for (const producer of producers.values()) producer.emit("transportclose");
+			emitter.emit("transportclose");
+		}),
 		produce: vi.fn(async (options: { kind: MediaKind; paused?: boolean }) => {
 			const producer = createFakeProducer(options.kind);
 			if (options.paused) {
@@ -92,15 +95,25 @@ export function createFakeTransport() {
 
 export function createFakeRouter(rtpCapabilities: RtpCapabilities = {}) {
 	const audioLevelObserver = createFakeAudioLevelObserver();
-	return {
+	const emitter = new EventEmitter();
+	let closed = false;
+
+	const router = Object.assign(emitter, {
 		id: id("router"),
 		rtpCapabilities,
-		closed: false,
-		close: vi.fn(),
+		close: vi.fn(() => {
+			closed = true;
+		}),
 		createWebRtcTransport: vi.fn(async () => createFakeTransport()),
 		createAudioLevelObserver: vi.fn(async () => audioLevelObserver),
 		audioLevelObserver,
-	};
+		killWorker: () => {
+			closed = true;
+			emitter.emit("workerclose");
+		},
+	});
+	Object.defineProperty(router, "closed", { get: () => closed, enumerable: true });
+	return router as typeof router & { closed: boolean };
 }
 
 export function createFakeWorker(pid: number) {

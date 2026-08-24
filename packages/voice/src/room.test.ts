@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { asRouter, createFakeRouter, createFakeTransport } from "./mock-mediasoup.js";
 import { buildWebRtcTransportOptions, VoiceRoom } from "./room.js";
 
@@ -74,10 +74,10 @@ describe("VoiceRoom", () => {
 		});
 
 		expect(added).toEqual([
-			{ did: "did:plc:a", producerId: producer.id, kind: "audio", source: "mic" },
+			{ did: "did:plc:a", producerId: producer.id, kind: "audio", source: "mic", paused: false },
 		]);
 		expect(room.snapshotProducers()).toEqual([
-			{ did: "did:plc:a", producerId: producer.id, kind: "audio", source: "mic" },
+			{ did: "did:plc:a", producerId: producer.id, kind: "audio", source: "mic", paused: false },
 		]);
 	});
 
@@ -295,6 +295,14 @@ describe("VoiceRoom voice state", () => {
 });
 
 describe("VoiceRoom speaking detection", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
 	it("emits speaking-changed start immediately and stop after the debounce window", async () => {
 		const rawRouter = createFakeRouter();
 		const room = await VoiceRoom.create(asRouter(rawRouter), "channel", {
@@ -316,6 +324,37 @@ describe("VoiceRoom speaking detection", () => {
 
 		rawRouter.audioLevelObserver.emit("silence");
 		expect(events).toEqual([{ did: "did:plc:a", speaking: true }]);
+
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(events).toEqual([
+			{ did: "did:plc:a", speaking: true },
+			{ did: "did:plc:a", speaking: false },
+		]);
+	});
+
+	it("stops a speaker that leaves mid-word", async () => {
+		const rawRouter = createFakeRouter();
+		const room = await VoiceRoom.create(asRouter(rawRouter), "channel", {
+			webRtcTransportOptions,
+			speakingDebounceMs: 1_000,
+		});
+		const events: unknown[] = [];
+		room.on("speaking-changed", (event) => events.push(event));
+
+		const transport = await room.createTransport("did:plc:a", "send");
+		const producer = await room.produce("did:plc:a", transport.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "mic",
+		});
+
+		rawRouter.audioLevelObserver.emit("volumes", [{ producer: { id: producer.id }, volume: -20 }]);
+		await room.leave("did:plc:a");
+
+		expect(events).toEqual([
+			{ did: "did:plc:a", speaking: true },
+			{ did: "did:plc:a", speaking: false },
+		]);
 	});
 });
 
@@ -332,16 +371,97 @@ describe("VoiceRoom transport lifecycle", () => {
 		await expect(room.createTransport("did:plc:a", "send")).rejects.toThrow(/closed/);
 	});
 
-	it("removes a transport bookkeeping entry once mediasoup reports it closed", async () => {
+	it("closes a transport mediasoup reports as dead, and drops its producers", async () => {
+		const { room } = await createRoom(router);
+		const rawTransport = createFakeTransport();
+		router.createWebRtcTransport.mockResolvedValueOnce(rawTransport);
+
+		const transport = await room.createTransport("did:plc:a", "send");
+		await room.produce("did:plc:a", transport.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "mic",
+		});
+
+		rawTransport.emit("dtlsstatechange", "closed");
+
+		expect(rawTransport.close).toHaveBeenCalled();
+		expect(room.snapshotProducers()).toEqual([]);
+		await expect(room.connectTransport("did:plc:a", rawTransport.id, {} as never)).rejects.toThrow(
+			/no transport/,
+		);
+	});
+
+	it("closes a transport that fails ice, not only one that closes", async () => {
 		const { room } = await createRoom(router);
 		const rawTransport = createFakeTransport();
 		router.createWebRtcTransport.mockResolvedValueOnce(rawTransport);
 
 		await room.createTransport("did:plc:a", "send");
-		rawTransport.emit("dtlsstatechange", "closed");
+		rawTransport.emit("dtlsstatechange", "failed");
 
-		await expect(room.connectTransport("did:plc:a", rawTransport.id, {} as never)).rejects.toThrow(
-			/no transport/,
-		);
+		expect(rawTransport.close).toHaveBeenCalled();
+	});
+});
+
+describe("VoiceRoom moderation", () => {
+	it("keeps a server mute across a rejoin", async () => {
+		const { room } = await createRoom();
+		await room.createTransport("did:plc:a", "send");
+		await room.setServerState("did:plc:a", { muted: true });
+
+		await room.leave("did:plc:a");
+		const transport = await room.createTransport("did:plc:a", "send");
+		const producer = await room.produce("did:plc:a", transport.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "mic",
+		});
+
+		expect(room.getVoiceState("did:plc:a")).toMatchObject({ muted: true, serverMuted: true });
+		expect(producer.paused).toBe(true);
+	});
+
+	it("pauses every audio producer a mute applies to, whatever its source", async () => {
+		const { room } = await createRoom();
+		const transport = await room.createTransport("did:plc:a", "send");
+		const screenAudio = await room.produce("did:plc:a", transport.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "screen",
+		});
+
+		await room.setServerState("did:plc:a", { muted: true });
+
+		expect(screenAudio.paused).toBe(true);
+	});
+
+	it("records a mute for someone who has joined but carries no media yet", async () => {
+		const { room } = await createRoom();
+		await room.setServerState("did:plc:a", { muted: true });
+
+		const transport = await room.createTransport("did:plc:a", "send");
+		const producer = await room.produce("did:plc:a", transport.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "mic",
+		});
+
+		expect(producer.paused).toBe(true);
+	});
+});
+
+describe("VoiceRoom participant creation", () => {
+	it("does not invent a participant from a frame naming an unknown transport", async () => {
+		const { room } = await createRoom();
+		const joined: string[] = [];
+		room.on("participant-joined", ({ did }) => joined.push(did));
+
+		await expect(
+			room.consume("did:plc:a", "nope", { producerId: "x", rtpCapabilities: {} as never }),
+		).rejects.toThrow(/no participant/);
+
+		expect(joined).toEqual([]);
+		expect(room.hasParticipant("did:plc:a")).toBe(false);
 	});
 });
