@@ -498,6 +498,26 @@ describe("EventServer", () => {
 		bob.close();
 	});
 
+	it("builds a per-recipient frame from each subscriber's own DID", async () => {
+		const alice = connect("alice-token");
+		const bob = connect("bob-token");
+		await Promise.all([waitForOpen(alice), waitForOpen(bob)]);
+		await subscribed(alice, CHANNEL);
+		await subscribed(bob, CHANNEL);
+
+		events.publishToChannel(CHANNEL, (did) => ({
+			$type: "social.colibri.beta.sync.defs#typingEvent",
+			did,
+			channel: CHANNEL,
+		}));
+
+		expect(await nextFrameOfType(alice, "typingEvent")).toMatchObject({ did: ALICE });
+		expect(await nextFrameOfType(bob, "typingEvent")).toMatchObject({ did: BOB });
+
+		alice.close();
+		bob.close();
+	});
+
 	it("does not echo a typing frame back to whoever is typing", async () => {
 		const alice = connect("alice-token");
 		const bob = connect("bob-token");

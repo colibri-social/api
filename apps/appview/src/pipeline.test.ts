@@ -5,8 +5,9 @@ import { nextTid } from "@colibri-social/space";
 import type { RepoChange } from "@colibri-social/space-sync";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppContext } from "./context.js";
+import { verifyMediaGrant } from "./media-token.js";
 import { connectPipeline } from "./pipeline.js";
-import type { EventServer, ServerFrame } from "./ws/events.js";
+import type { ChannelFrame, EventServer, ServerFrame } from "./ws/events.js";
 
 const stalledIndexing = { enabled: false };
 
@@ -23,6 +24,9 @@ const COMMUNITY = "did:plc:2hnjxkqm6bpuvvpjbztkxxxx";
 const AUTHOR = "did:plc:7fkdlwjqmzcuvvpjbztkaaaa";
 const LABELER = "did:plc:labelerlabelerlabelerlabl";
 const CHANNEL_SKEY = "3lkpipelinetest";
+const VIEWER = "did:plc:viewerviewerviewerviewer";
+const SIGNING_KEY = "f".repeat(64);
+const ATTACHMENT_CID = "bafkreiattachmentxxxxxxxxxxxxxxxxxxxx";
 const SPACE = channelSpace(COMMUNITY, SPACE_TYPES.channelText, CHANNEL_SKEY);
 const NOW = "2026-08-23T00:00:00.000Z";
 
@@ -37,7 +41,7 @@ let authzChanges: string[];
 const framesOfType = (suffix: string) =>
 	published.filter((entry) => entry.frame.$type === `social.colibri.beta.sync.defs#${suffix}`);
 
-const putMessageRow = async (rkey: string, text = "hello") => {
+const putMessageRow = async (rkey: string, text = "hello", attachments?: unknown[]) => {
 	await database.db.insert(database.tables.messages).values({
 		space: SPACE,
 		author: AUTHOR,
@@ -47,8 +51,17 @@ const putMessageRow = async (rkey: string, text = "hello") => {
 		createdAt: NOW,
 		fromLegacyRepo: false,
 		indexedAt: NOW,
+		...(attachments ? { attachments } : {}),
 	});
 };
+
+const putAttachedMessageRow = (rkey: string) =>
+	putMessageRow(rkey, "look at this", [
+		{
+			blob: { ref: { $link: ATTACHMENT_CID }, mimeType: "image/png", size: 1234 },
+			name: "cat.png",
+		},
+	]);
 
 const putLabelRow = async (subjectRkey: string, val: string, negated = false) => {
 	await database.db.insert(database.tables.labels).values({
@@ -106,7 +119,12 @@ beforeEach(async () => {
 
 	const ctx = {
 		database,
-		config: { PUBLIC_URL: "https://appview.test", notifications: {}, pushProviders: [] },
+		config: {
+			PUBLIC_URL: "https://appview.test",
+			SIGNING_KEY,
+			notifications: {},
+			pushProviders: [],
+		},
 		loader: new CommunityLoader({ db: database.db, tables: database.tables }),
 		log: { warn: () => {}, debug: () => {} },
 		identity: {
@@ -130,7 +148,8 @@ beforeEach(async () => {
 	} as unknown as AppContext;
 
 	const events = {
-		publishToChannel: (space: string, frame: ServerFrame) => published.push({ space, frame }),
+		publishToChannel: (space: string, frame: ChannelFrame) =>
+			published.push({ space, frame: typeof frame === "function" ? frame(VIEWER) : frame }),
 		publishToCommunity: (community: string, frame: ServerFrame) =>
 			published.push({ space: community, frame }),
 		publishToUser: (did: string, frame: ServerFrame) => published.push({ space: did, frame }),
@@ -254,6 +273,29 @@ describe("connectPipeline", () => {
 
 		expect(framesOfType("labelEvent")[0]?.frame).toMatchObject({ event: "negate" });
 		expect(framesOfType("messageEvent")[0]?.frame.message).toMatchObject({ rkey });
+	});
+
+	it("signs an attachment's media link for each subscriber", async () => {
+		const rkey = nextTid();
+		await putAttachedMessageRow(rkey);
+
+		emit(messageChange(rkey));
+		await vi.waitFor(() => expect(framesOfType("messageEvent")).toHaveLength(1));
+
+		const message = framesOfType("messageEvent")[0]?.frame.message as {
+			attachments: { url: string }[];
+		};
+		const url = new URL(message.attachments[0]?.url as string);
+		expect(url.searchParams.get("viewer")).toBe(VIEWER);
+		expect(
+			verifyMediaGrant(
+				SIGNING_KEY,
+				{ did: AUTHOR, cid: ATTACHMENT_CID, space: SPACE, viewer: VIEWER },
+				Number(url.searchParams.get("exp")),
+				url.searchParams.get("sig") as string,
+				Math.floor(Date.now() / 1000),
+			),
+		).toBe(true);
 	});
 
 	it("publishes a bare reference on delete", async () => {

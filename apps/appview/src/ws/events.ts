@@ -14,6 +14,10 @@ import { channelTopic, communityTopic, type Topic, TopicIndex, userTopic } from 
 
 export type ServerFrame = { $type: string } & Record<string, unknown>;
 
+export type FrameForViewer = (did: string) => ServerFrame;
+
+export type ChannelFrame = ServerFrame | FrameForViewer;
+
 const EVENTS_PATH = "/xrpc/social.colibri.beta.sync.subscribeEvents";
 const HEARTBEAT_MS = 30_000;
 const HINT_BUDGET = 20;
@@ -457,11 +461,12 @@ export class EventServer {
 		this.publish(communityTopic(community), frame);
 	}
 
-	publishToChannel(space: string, frame: ServerFrame, except?: string): void {
-		const payload = JSON.stringify(frame);
+	publishToChannel(space: string, frame: ChannelFrame, except?: string): void {
+		const shared = typeof frame === "function" ? null : JSON.stringify(frame);
 		for (const connection of this.topics.subscribersOf(channelTopic(space))) {
 			if (except !== undefined && connection.did === except) continue;
-			if (connection.socket.readyState === connection.socket.OPEN) connection.socket.send(payload);
+			if (connection.socket.readyState !== connection.socket.OPEN) continue;
+			connection.socket.send(shared ?? JSON.stringify((frame as FrameForViewer)(connection.did)));
 		}
 	}
 

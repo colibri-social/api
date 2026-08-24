@@ -10,7 +10,7 @@ type $nsid = typeof $nsid;
 
 export { $nsid };
 
-export const $params = /*#__PURE__*/ l.params({"did":/*#__PURE__*/ l.string({"format":"did"}),"cid":/*#__PURE__*/ l.string({"format":"cid"}),"space":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"})),"variant":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["thumbnail","avatar","banner","full"]}>()),"filename":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())});
+export const $params = /*#__PURE__*/ l.params({"did":/*#__PURE__*/ l.string({"format":"did"}),"cid":/*#__PURE__*/ l.string({"format":"cid"}),"space":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"})),"variant":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["thumbnail","avatar","banner","full"]}>()),"filename":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"viewer":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"did"})),"exp":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"sig":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())});
 
 export type $Params = l.InferOutput<typeof $params>;
 

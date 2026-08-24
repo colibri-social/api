@@ -202,12 +202,12 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 	const publishMessage = async (space: string, author: string, rkey: string): Promise<void> => {
 		const message = await channels.message(space, null, { author, rkey });
 		if (!message) return;
-		events.publishToChannel(space, {
+		events.publishToChannel(space, (viewer) => ({
 			$type: "social.colibri.beta.sync.defs#messageEvent",
 			event: message.updatedAt ? "update" : "create",
 			channel: space,
-			message,
-		});
+			message: channels.forViewer(message, viewer),
+		}));
 	};
 
 	const handle = async (change: RepoChange): Promise<void> => {

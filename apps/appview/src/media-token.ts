@@ -48,3 +48,26 @@ export const verifyMediaGrant = (
 	if (expected.byteLength !== supplied.byteLength) return false;
 	return timingSafeEqual(expected, supplied);
 };
+
+export const signBlobUrl = (
+	signingKey: string,
+	url: string,
+	viewer: string,
+	nowSeconds: number,
+): string => {
+	const parsed = new URL(url);
+	const did = parsed.searchParams.get("did");
+	const cid = parsed.searchParams.get("cid");
+	const space = parsed.searchParams.get("space");
+	if (!did || !cid || !space) return url;
+
+	const { expiresAt, signature } = signMediaGrant(
+		signingKey,
+		{ did, cid, space, viewer },
+		nowSeconds,
+	);
+	parsed.searchParams.set("viewer", viewer);
+	parsed.searchParams.set("exp", String(expiresAt));
+	parsed.searchParams.set("sig", signature);
+	return parsed.toString();
+};

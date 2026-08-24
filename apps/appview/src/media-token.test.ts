@@ -3,6 +3,7 @@ import {
 	MEDIA_TOKEN_BUCKET_SECONDS,
 	MEDIA_TOKEN_TTL_SECONDS,
 	mediaTokenExpiry,
+	signBlobUrl,
 	signMediaGrant,
 	verifyMediaGrant,
 } from "./media-token.js";
@@ -85,5 +86,54 @@ describe("media grants", () => {
 	it("puts the expiry on a bucket boundary", () => {
 		expect(mediaTokenExpiry(NOW) % MEDIA_TOKEN_BUCKET_SECONDS).toBe(0);
 		expect(mediaTokenExpiry(NOW + 37) % MEDIA_TOKEN_BUCKET_SECONDS).toBe(0);
+	});
+});
+
+describe("signBlobUrl", () => {
+	const unsigned = (space: string | null = GRANT.space) => {
+		const url = new URL("/xrpc/social.colibri.beta.blob.get", "https://appview.test");
+		url.searchParams.set("did", GRANT.did);
+		url.searchParams.set("cid", GRANT.cid);
+		if (space) url.searchParams.set("space", space);
+		return url.toString();
+	};
+
+	it("appends a grant the blob route accepts for that viewer", () => {
+		const signed = new URL(signBlobUrl(KEY, unsigned(), GRANT.viewer, NOW));
+		expect(signed.searchParams.get("viewer")).toBe(GRANT.viewer);
+
+		const expiresAt = Number(signed.searchParams.get("exp"));
+		const signature = signed.searchParams.get("sig") as string;
+		expect(verifyMediaGrant(KEY, GRANT, expiresAt, signature, NOW)).toBe(true);
+		expect(
+			verifyMediaGrant(
+				KEY,
+				{ ...GRANT, viewer: "did:plc:intruderxxxxxxxxxxxxxxxxxxx" },
+				expiresAt,
+				signature,
+				NOW,
+			),
+		).toBe(false);
+	});
+
+	it("keeps the rest of the URL intact", () => {
+		const signed = new URL(signBlobUrl(KEY, `${unsigned()}&filename=cat.png`, GRANT.viewer, NOW));
+		expect(signed.pathname).toBe("/xrpc/social.colibri.beta.blob.get");
+		expect(signed.searchParams.get("did")).toBe(GRANT.did);
+		expect(signed.searchParams.get("cid")).toBe(GRANT.cid);
+		expect(signed.searchParams.get("space")).toBe(GRANT.space);
+		expect(signed.searchParams.get("filename")).toBe("cat.png");
+	});
+
+	it("leaves a public blob URL alone", () => {
+		const url = unsigned(null);
+		expect(signBlobUrl(KEY, url, GRANT.viewer, NOW)).toBe(url);
+	});
+
+	it("re-signs an already signed URL rather than stacking params", () => {
+		const once = signBlobUrl(KEY, unsigned(), GRANT.viewer, NOW);
+		const twice = new URL(signBlobUrl(KEY, once, "did:plc:secondxxxxxxxxxxxxxxxxxxxxx", NOW));
+		expect(twice.searchParams.getAll("sig")).toHaveLength(1);
+		expect(twice.searchParams.get("viewer")).toBe("did:plc:secondxxxxxxxxxxxxxxxxxxxxx");
 	});
 });

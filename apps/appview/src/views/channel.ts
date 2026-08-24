@@ -21,7 +21,7 @@ import {
 import { parseSpaceRef, spaceRecordUri } from "@colibri-social/space";
 import { and, asc, desc, eq, gt, inArray, lt, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
-import { signMediaGrant } from "../media-token.js";
+import { signBlobUrl } from "../media-token.js";
 import type { ActorViews } from "./actor.js";
 
 export type MessageView = social.colibri.beta.channel.defs.MessageView;
@@ -63,17 +63,28 @@ export class ChannelViews {
 		url.searchParams.set("did", did);
 		url.searchParams.set("cid", cid);
 		url.searchParams.set("space", space);
-		if (viewer) {
-			const { expiresAt, signature } = signMediaGrant(
-				this.ctx.config.SIGNING_KEY,
-				{ did, cid, space, viewer },
-				Math.floor(Date.now() / 1000),
-			);
-			url.searchParams.set("viewer", viewer);
-			url.searchParams.set("exp", String(expiresAt));
-			url.searchParams.set("sig", signature);
-		}
-		return url.toString();
+		return viewer ? this.signFor(url.toString(), viewer) : url.toString();
+	}
+
+	private signFor(url: string, viewer: string): string {
+		return signBlobUrl(this.ctx.config.SIGNING_KEY, url, viewer, Math.floor(Date.now() / 1000));
+	}
+
+	forViewer(message: MessageView, viewer: string): MessageView {
+		const isMessage = message.parent?.$type === "social.colibri.beta.channel.defs#messageView";
+		const parent = isMessage
+			? this.forViewer(message.parent as MessageView, viewer)
+			: message.parent;
+		if (message.attachments.length === 0 && parent === message.parent) return message;
+
+		return {
+			...message,
+			parent,
+			attachments: message.attachments.map(
+				(attachment) =>
+					({ ...attachment, url: asUri(this.signFor(attachment.url, viewer)) }) as AttachmentView,
+			),
+		} as MessageView;
 	}
 
 	private attachments(space: string, row: MessageRow, viewer: string | null): AttachmentView[] {
