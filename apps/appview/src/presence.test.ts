@@ -98,6 +98,25 @@ describe("presence tracking", () => {
 		expect(published[0]?.frame.$type).toBe("social.colibri.beta.sync.defs#presenceEvent");
 	});
 
+	it("still reports offline when a close races the open that preceded it", async () => {
+		await Promise.all([tracker.opened(ACTOR), tracker.closed(ACTOR)]);
+
+		expect(tracker.connections(ACTOR)).toBe(0);
+		expect((await stored())?.derivedState).toBe("offline");
+		expect(states().at(-1)).toBe("offline");
+	});
+
+	it("still reports online when an open races the close that preceded it", async () => {
+		await tracker.opened(ACTOR);
+		published = [];
+
+		await Promise.all([tracker.closed(ACTOR), tracker.opened(ACTOR)]);
+
+		expect(tracker.connections(ACTOR)).toBe(1);
+		expect((await stored())?.derivedState).toBe("online");
+		expect(states().at(-1)).toBe("online");
+	});
+
 	it("forgets the channel in view once the actor disconnects", async () => {
 		await tracker.opened(ACTOR);
 		await database.db

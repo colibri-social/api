@@ -33,6 +33,7 @@ export type PresenceDeps = {
  */
 export class PresenceTracker {
 	private readonly sockets = new Map<string, number>();
+	private readonly queues = new Map<string, Promise<void>>();
 
 	constructor(private readonly deps: PresenceDeps) {}
 
@@ -41,44 +42,59 @@ export class PresenceTracker {
 	}
 
 	async opened(did: string): Promise<void> {
-		this.sockets.set(did, this.connections(did) + 1);
-		if (this.connections(did) === 1) await this.settle(did, ONLINE);
+		return this.enqueue(did, async () => {
+			this.sockets.set(did, this.connections(did) + 1);
+			if (this.connections(did) === 1) await this.settle(did);
+		});
 	}
 
 	async closed(did: string): Promise<void> {
-		const remaining = this.connections(did) - 1;
-		if (remaining > 0) {
-			this.sockets.set(did, remaining);
-			return;
-		}
-		this.sockets.delete(did);
-		await this.settle(did, OFFLINE);
+		return this.enqueue(did, async () => {
+			const remaining = this.connections(did) - 1;
+			if (remaining > 0) {
+				this.sockets.set(did, remaining);
+				return;
+			}
+			this.sockets.delete(did);
+			await this.settle(did);
+		});
 	}
 
 	async viewing(did: string, channel: string | null): Promise<void> {
-		const { db, tables } = this.deps.ctx.database;
-		const [existing] = await db
-			.select()
-			.from(tables.userPresence)
-			.where(eq(tables.userPresence.did, did))
-			.limit(1);
-		if (!existing) return;
+		return this.enqueue(did, async () => {
+			const { db, tables } = this.deps.ctx.database;
+			const [existing] = await db
+				.select()
+				.from(tables.userPresence)
+				.where(eq(tables.userPresence.did, did))
+				.limit(1);
+			if (!existing) return;
 
-		await db
-			.update(tables.userPresence)
-			.set({ viewingChannel: channel, updatedAt: new Date().toISOString() })
-			.where(eq(tables.userPresence.did, did));
+			await db
+				.update(tables.userPresence)
+				.set({ viewingChannel: channel, updatedAt: new Date().toISOString() })
+				.where(eq(tables.userPresence.did, did));
+		});
 	}
 
 	async requested(did: string, state: OnlineState): Promise<void> {
-		await this.settle(did, this.connections(did) > 0 ? ONLINE : OFFLINE, state);
+		return this.enqueue(did, () => this.settle(did, state));
 	}
 
-	private async settle(
-		did: string,
-		derivedState: OnlineState,
-		requestedState?: OnlineState,
-	): Promise<void> {
+	private enqueue(did: string, work: () => Promise<void>): Promise<void> {
+		const previous = this.queues.get(did) ?? Promise.resolve();
+		const next = previous.then(work);
+		const settled = next.catch(() => undefined);
+
+		this.queues.set(did, settled);
+		void settled.then(() => {
+			if (this.queues.get(did) === settled) this.queues.delete(did);
+		});
+
+		return next;
+	}
+
+	private async settle(did: string, requestedState?: OnlineState): Promise<void> {
 		const { db, tables } = this.deps.ctx.database;
 		const [existing] = await db
 			.select()
@@ -86,6 +102,7 @@ export class PresenceTracker {
 			.where(eq(tables.userPresence.did, did))
 			.limit(1);
 
+		const derivedState: OnlineState = this.connections(did) > 0 ? ONLINE : OFFLINE;
 		const row = {
 			did,
 			derivedState,
