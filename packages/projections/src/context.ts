@@ -18,11 +18,17 @@ export type RecordRef = {
 	cid: string;
 };
 
+export type AuthzChange = {
+	community: string;
+	collection: string;
+};
+
 export type ProjectionDeps = {
 	db: Queryable;
 	tables: Schema;
 	now: () => string;
 	onSkipped?: (ref: RecordRef, reason: string) => void;
+	onAuthzChanged?: (change: AuthzChange) => void;
 };
 
 const COMMUNITY_SPACES: readonly string[] = [...COMMUNITY_SPACE_TYPES, ...CHANNEL_SPACE_TYPES];

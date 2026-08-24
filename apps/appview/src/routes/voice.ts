@@ -37,9 +37,14 @@ export const handleModerateVoice = async (
 	if (!has(authz, "voice.moderate", channel.skey)) throw forbidden();
 
 	if (!ctx.voice) throw voiceUnavailable();
-	if (ctx.voice.presenceOf(input.subject) !== input.channel) throw notInVoice(input.subject);
+
+	const carriesMedia = ctx.voice.presenceOf(input.subject) === input.channel;
+	if (!carriesMedia && !ctx.voiceRoster.isJoined(input.channel, input.subject)) {
+		throw notInVoice(input.subject);
+	}
 
 	if (input.muted !== undefined || input.deafened !== undefined) {
+		if (!carriesMedia) throw notInVoice(input.subject);
 		await ctx.voice.moderate(input.channel, input.subject, {
 			...(input.muted === undefined ? {} : { muted: input.muted }),
 			...(input.deafened === undefined ? {} : { deafened: input.deafened }),
@@ -47,7 +52,7 @@ export const handleModerateVoice = async (
 	}
 
 	if (input.disconnect) {
-		await ctx.voice.leave(input.channel, input.subject);
+		await ctx.voiceRoster.disconnect(input.channel, input.subject);
 	}
 
 	return {};

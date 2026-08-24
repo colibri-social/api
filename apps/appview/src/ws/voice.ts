@@ -1,5 +1,5 @@
 import type { Server as HttpServer, IncomingHttpHeaders } from "node:http";
-import { canRead } from "@colibri-social/community";
+import { type ActorAuthz, type ChannelState, canPost } from "@colibri-social/community";
 import { ServiceAuthError } from "@colibri-social/identity";
 import { asDid, asSpaceRef, SPACE_TYPES, social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
@@ -37,6 +37,11 @@ const clientFrames = {
 
 type ClientFrameName = keyof typeof clientFrames;
 
+export type VoiceRoster = {
+	isJoined: (channel: string, did: string) => boolean;
+	disconnect: (channel: string, did: string) => Promise<void>;
+};
+
 const frameName = (value: unknown): ClientFrameName | null => {
 	if (!value || typeof value !== "object") return null;
 	const type = (value as { $type?: unknown }).$type;
@@ -61,16 +66,63 @@ export class VoiceServer {
 	private readonly topics = new TopicIndex<Connection>();
 	private readonly connections = new Set<Connection>();
 	private heartbeat: NodeJS.Timeout | null = null;
+	private readonly stopWatchingAuthz: () => void;
 
 	constructor(
 		private readonly ctx: AppContext,
 		private readonly events: EventServer | null = null,
 	) {
 		if (ctx.voice) this.wireVoiceEvents(ctx.voice);
+		this.stopWatchingAuthz = ctx.authzChanges.subscribe((change) => {
+			void this.revalidate(change.community).catch((error: unknown) => {
+				ctx.log.warn(
+					{ community: change.community, reason: error instanceof Error ? error.message : error },
+					"voice.revalidate.failed",
+				);
+			});
+		});
 	}
 
 	get connectionCount(): number {
 		return this.connections.size;
+	}
+
+	isJoined(channel: string, did: string): boolean {
+		return this.joined(channel, did).length > 0;
+	}
+
+	async disconnect(channel: string, did: string): Promise<void> {
+		for (const connection of this.joined(channel, did)) this.detach(connection, "moderator");
+		await this.ctx.voice?.leave(channel, did);
+	}
+
+	async revalidate(community: string): Promise<void> {
+		const affected = [...this.connections].filter(
+			(connection) =>
+				connection.channel && parseSpaceRef(connection.channel).authority === community,
+		);
+		if (affected.length === 0) return;
+
+		const channels = new Map<string, ChannelState | null>();
+		const rights = new Map<string, ActorAuthz>();
+
+		for (const connection of affected) {
+			const space = connection.channel;
+			if (!space) continue;
+
+			if (!channels.has(space)) channels.set(space, await this.ctx.loader.channel(space));
+			const channel = channels.get(space) ?? null;
+
+			if (!rights.has(connection.did)) {
+				rights.set(connection.did, await this.ctx.loader.authz(community, connection.did));
+			}
+			const authz = rights.get(connection.did);
+
+			if (channel && authz && canPost(authz, channel)) continue;
+
+			this.detach(connection, channel ? "forbidden" : "channelGone");
+			await this.ctx.voice?.leave(space, connection.did);
+		}
 	}
 
 	attach(http: HttpServer): void {
@@ -99,6 +151,7 @@ export class VoiceServer {
 	}
 
 	async close(): Promise<void> {
+		this.stopWatchingAuthz();
 		if (this.heartbeat) clearInterval(this.heartbeat);
 		for (const connection of this.connections) connection.socket.close(1001, "shutting down");
 		this.connections.clear();
@@ -131,11 +184,11 @@ export class VoiceServer {
 			connection.alive = true;
 		});
 		socket.on("message", (raw) => void this.receive(connection, raw.toString()));
-		socket.on("close", () => this.disconnect(connection));
+		socket.on("close", () => this.dropped(connection));
 		socket.on("error", () => socket.close());
 	}
 
-	private disconnect(connection: Connection): void {
+	private dropped(connection: Connection): void {
 		this.connections.delete(connection);
 		const channel = this.forgetChannel(connection);
 		if (channel) void this.ctx.voice?.leave(channel, connection.did);
@@ -147,6 +200,20 @@ export class VoiceServer {
 		connection.channel = null;
 		this.topics.unsubscribe(connection, [channelTopic(channel)]);
 		return channel;
+	}
+
+	private joined(channel: string, did: string): Connection[] {
+		return [...this.topics.subscribersOf(channelTopic(channel))].filter(
+			(connection) => connection.did === did,
+		);
+	}
+
+	private detach(connection: Connection, reason: string): void {
+		this.send(connection, {
+			$type: "social.colibri.beta.voice.defs#disconnected",
+			reason,
+		});
+		this.forgetChannel(connection);
 	}
 
 	private send(connection: Connection, frame: ServerFrame): void {
@@ -263,8 +330,8 @@ export class VoiceServer {
 		}
 
 		const authz = await this.ctx.loader.authz(parsed.authority, connection.did);
-		if (!canRead(authz, state)) {
-			this.error(connection, "Forbidden", "you cannot read this channel");
+		if (!canPost(authz, state)) {
+			this.error(connection, "Forbidden", "you cannot speak in this channel");
 			return;
 		}
 

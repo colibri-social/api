@@ -1,11 +1,12 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { type ActorAuthz, anonymousAuthz, type ChannelState } from "@colibri-social/community";
-import { channelSpace, SPACE_TYPES, social } from "@colibri-social/lexicons";
+import { COLLECTIONS, channelSpace, SPACE_TYPES, social } from "@colibri-social/lexicons";
 import { VoiceSfu, type WorkerPoolLike } from "@colibri-social/voice";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { asRouter, createFakeRouter } from "../../../../packages/voice/src/mock-mediasoup.js";
+import { type AuthzChanges, createAuthzChanges } from "../authz-changes.js";
 import type { AppContext } from "../context.js";
 import type { EventServer } from "./events.js";
 import { VoiceServer } from "./voice.js";
@@ -44,7 +45,14 @@ const fakeWorkerPool = (): WorkerPoolLike => ({
 	close: async () => {},
 });
 
-const buildCtx = (voice: VoiceSfu | null): AppContext => {
+type Harness = {
+	ctx: AppContext;
+	authzChanges: AuthzChanges;
+	channels: Map<string, ChannelState>;
+	authz: Map<string, ActorAuthz>;
+};
+
+const buildCtx = (voice: VoiceSfu | null): Harness => {
 	const channels = new Map<string, ChannelState>([
 		[VOICE_CHANNEL, openChannel(VOICE_CHANNEL, "general")],
 		[TEXT_CHANNEL, openChannel(TEXT_CHANNEL, "chat")],
@@ -58,9 +66,12 @@ const buildCtx = (voice: VoiceSfu | null): AppContext => {
 		["bob-token", BOB],
 		["mallory-token", MALLORY],
 	]);
+	const authzChanges = createAuthzChanges();
 
-	return {
+	const ctx = {
 		voice,
+		authzChanges,
+		log: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
 		serviceAuth: {
 			verify: async (token: string, lxm: string | null) => {
 				const did = tokens.get(token);
@@ -74,6 +85,8 @@ const buildCtx = (voice: VoiceSfu | null): AppContext => {
 				authz.get(actor) ?? anonymousAuthz(actor, community),
 		},
 	} as unknown as AppContext;
+
+	return { ctx, authzChanges, channels, authz };
 };
 
 const listen = (http: Server): Promise<number> =>
@@ -128,12 +141,14 @@ describe("VoiceServer", () => {
 	let http: Server;
 	let voiceServer: VoiceServer;
 	let port: number;
+	let harness: Harness;
 	let announced: Array<{ community: string; frame: Record<string, unknown> }>;
 
 	beforeEach(async () => {
 		sfu = await VoiceSfu.create({ roomGraceMs: 1_000 }, { workerPool: fakeWorkerPool() });
 		announced = [];
-		voiceServer = new VoiceServer(buildCtx(sfu), {
+		harness = buildCtx(sfu);
+		voiceServer = new VoiceServer(harness.ctx, {
 			publishToCommunity: (community: string, frame: Record<string, unknown>) => {
 				announced.push({ community, frame });
 			},
@@ -165,7 +180,7 @@ describe("VoiceServer", () => {
 	});
 
 	it("refuses the upgrade when voice is disabled", async () => {
-		const disabledServer = new VoiceServer(buildCtx(null));
+		const disabledServer = new VoiceServer(buildCtx(null).ctx);
 		const disabledHttp = createServer();
 		disabledServer.attach(disabledHttp);
 		const disabledPort = await listen(disabledHttp);
@@ -218,6 +233,24 @@ describe("VoiceServer", () => {
 		const frame = await nextFrame(ws);
 
 		expect(frame).toMatchObject({
+			$type: "social.colibri.beta.voice.defs#error",
+			error: "Forbidden",
+		});
+		ws.close();
+	});
+
+	it("rejects joining a voice channel the caller may read but not speak in", async () => {
+		harness.channels.set(VOICE_CHANNEL, {
+			...openChannel(VOICE_CHANNEL, "general"),
+			allowedRoles: ["speakers"],
+		});
+
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+
+		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+
+		expect(await nextFrame(ws)).toMatchObject({
 			$type: "social.colibri.beta.voice.defs#error",
 			error: "Forbidden",
 		});
@@ -520,6 +553,91 @@ describe("VoiceServer", () => {
 				(frame) => frame.$type === "social.colibri.beta.voice.defs#disconnected",
 			),
 		).toEqual([]);
+
+		ws.close();
+	});
+
+	it("disconnects a participant whose access is revoked mid-call", async () => {
+		const aliceWs = connect("alice-token");
+		const bobWs = connect("bob-token");
+		await Promise.all([waitForOpen(aliceWs), waitForOpen(bobWs)]);
+
+		send(aliceWs, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrame(aliceWs);
+		send(aliceWs, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
+		await nextFrame(aliceWs);
+		send(bobWs, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrame(bobWs);
+
+		harness.authz.set(ALICE, { ...memberAuthz(ALICE), isBanned: true });
+		harness.authzChanges.publish({ community: COMMUNITY, collection: COLLECTIONS.moderation });
+
+		expect(await nextFrameOfType(aliceWs, "disconnected")).toEqual({
+			$type: "social.colibri.beta.voice.defs#disconnected",
+			reason: "forbidden",
+		});
+		expect(await nextFrameOfType(bobWs, "peerLeft")).toMatchObject({ did: ALICE });
+		expect(voiceServer.isJoined(VOICE_CHANNEL, ALICE)).toBe(false);
+		expect(voiceServer.isJoined(VOICE_CHANNEL, BOB)).toBe(true);
+
+		aliceWs.close();
+		bobWs.close();
+	});
+
+	it("disconnects a participant once its channel is gone", async () => {
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+
+		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrame(ws);
+
+		harness.channels.delete(VOICE_CHANNEL);
+		harness.authzChanges.publish({ community: COMMUNITY, collection: COLLECTIONS.channel });
+
+		expect(await nextFrameOfType(ws, "disconnected")).toEqual({
+			$type: "social.colibri.beta.voice.defs#disconnected",
+			reason: "channelGone",
+		});
+		ws.close();
+	});
+
+	it("keeps a participant whose access survives an authz change", async () => {
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+
+		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrame(ws);
+
+		harness.authzChanges.publish({ community: COMMUNITY, collection: COLLECTIONS.role });
+		await voiceServer.revalidate(COMMUNITY);
+
+		expect(voiceServer.isJoined(VOICE_CHANNEL, ALICE)).toBe(true);
+		expect(
+			(inboxes.get(ws)?.held ?? []).filter(
+				(frame) => frame.$type === "social.colibri.beta.voice.defs#disconnected",
+			),
+		).toEqual([]);
+
+		ws.close();
+	});
+
+	it("disconnects a peer that joined but never created a transport", async () => {
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+
+		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrame(ws);
+
+		expect(sfu.presenceOf(ALICE)).toBeUndefined();
+		expect(voiceServer.isJoined(VOICE_CHANNEL, ALICE)).toBe(true);
+
+		await voiceServer.disconnect(VOICE_CHANNEL, ALICE);
+
+		expect(await nextFrameOfType(ws, "disconnected")).toEqual({
+			$type: "social.colibri.beta.voice.defs#disconnected",
+			reason: "moderator",
+		});
+		expect(voiceServer.isJoined(VOICE_CHANNEL, ALICE)).toBe(false);
 
 		ws.close();
 	});

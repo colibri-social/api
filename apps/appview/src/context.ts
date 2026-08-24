@@ -28,9 +28,16 @@ import {
 import { SpaceSyncEngine } from "@colibri-social/space-sync";
 import { createVoiceSfu, voiceSfuConfigFromEnv } from "@colibri-social/voice";
 import { type Announcer, silentAnnouncer } from "./announce.js";
+import { type AuthzChanges, createAuthzChanges } from "./authz-changes.js";
 import type { Config } from "./config.js";
 import { createLogger, type Logger } from "./logger.js";
 import { drizzleCredentialStorage, drizzleSyncStore } from "./stores.js";
+import type { VoiceRoster } from "./ws/voice.js";
+
+const emptyVoiceRoster: VoiceRoster = {
+	isJoined: () => false,
+	disconnect: async () => {},
+};
 
 export type AppContext = Awaited<ReturnType<typeof createContext>>;
 
@@ -96,12 +103,15 @@ export const createContext = async (config: Config) => {
 		tables: database.tables,
 	});
 
+	const authzChanges = createAuthzChanges();
+
 	const projections: ProjectionDeps = {
 		db: database.db,
 		tables: database.tables,
 		now: () => new Date().toISOString(),
 		onSkipped: (ref, reason) =>
 			log.debug({ space: ref.space.uri, collection: ref.collection, reason }, "record.skipped"),
+		onAuthzChanged: (change) => authzChanges.publish(change),
 	};
 
 	const writer = new CommunityWriter({
@@ -172,6 +182,8 @@ export const createContext = async (config: Config) => {
 
 	return {
 		announce: silentAnnouncer as Announcer,
+		voiceRoster: emptyVoiceRoster as VoiceRoster,
+		authzChanges: authzChanges as AuthzChanges,
 		config,
 		log,
 		database,

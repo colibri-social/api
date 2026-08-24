@@ -436,12 +436,12 @@ type Disconnected = { $type?: "social.colibri.beta.voice.defs#disconnected";
   /**
    * Why it happened.
    */
-  "reason"?:"moderator" | "superseded" | "channelGone" | l.UnknownString };
+  "reason"?:"moderator" | "superseded" | "channelGone" | "forbidden" | l.UnknownString };
 
 export type { Disconnected };
 
 /** The server removed this client from the voice channel. Sent only to the client it applies to. */
-const disconnected = /*#__PURE__*/ l.typedObject<Disconnected>($nsid, "disconnected", /*#__PURE__*/ l.object({"reason":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["moderator","superseded","channelGone"]}>())}));
+const disconnected = /*#__PURE__*/ l.typedObject<Disconnected>($nsid, "disconnected", /*#__PURE__*/ l.object({"reason":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["moderator","superseded","channelGone","forbidden"]}>())}));
 
 export { disconnected };
 

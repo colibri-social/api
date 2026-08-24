@@ -345,7 +345,7 @@
 				"reason": {
 					"type": "string",
 					"description": "Why it happened.",
-					"knownValues": ["moderator", "superseded", "channelGone"]
+					"knownValues": ["moderator", "superseded", "channelGone", "forbidden"]
 				}
 			}
 		},

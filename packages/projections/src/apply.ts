@@ -1,3 +1,4 @@
+import { COLLECTIONS } from "@colibri-social/lexicons";
 import type { ProjectionDeps, RecordRef } from "./context.js";
 import { spaceContextFor } from "./context.js";
 import * as channel from "./mappers/channel.js";
@@ -23,6 +24,19 @@ const ALL: ErasedProjector[] = [
 
 const BY_COLLECTION = new Map(ALL.map((projector) => [projector.collection, projector]));
 
+const AUTHZ_COLLECTIONS: ReadonlySet<string> = new Set<string>([
+	COLLECTIONS.role,
+	COLLECTIONS.member,
+	COLLECTIONS.channel,
+	COLLECTIONS.moderation,
+]);
+
+const announceAuthzChange = (deps: ProjectionDeps, ref: RecordRef): void => {
+	const community = ref.space.community;
+	if (!community || !AUTHZ_COLLECTIONS.has(ref.collection)) return;
+	deps.onAuthzChanged?.({ community, collection: ref.collection });
+};
+
 export const projectedCollections = (): string[] => [...BY_COLLECTION.keys()];
 
 export type SpaceChange = {
@@ -46,6 +60,7 @@ export const applyChange = async (deps: ProjectionDeps, change: SpaceChange): Pr
 			continue;
 		}
 		await projector.remove(deps, ref);
+		announceAuthzChange(deps, ref);
 	}
 
 	for (const entry of change.puts) {
@@ -58,6 +73,10 @@ export const applyChange = async (deps: ProjectionDeps, change: SpaceChange): Pr
 			continue;
 		}
 		const outcome = await projector.apply(deps, ref, entry.value);
-		if (!outcome.applied) deps.onSkipped?.(ref, outcome.reason);
+		if (!outcome.applied) {
+			deps.onSkipped?.(ref, outcome.reason);
+			continue;
+		}
+		announceAuthzChange(deps, ref);
 	}
 };

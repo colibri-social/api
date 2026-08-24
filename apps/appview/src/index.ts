@@ -23,6 +23,7 @@ const main = async (): Promise<void> => {
 	const events = new EventServer(ctx);
 	ctx.announce = eventAnnouncer(events);
 	const voice = new VoiceServer(ctx, events);
+	ctx.voiceRoster = voice;
 	const disconnectPipeline = connectPipeline({ ctx, events });
 
 	const jetstream = new Jetstream(ctx);

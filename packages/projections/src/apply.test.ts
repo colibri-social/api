@@ -3,7 +3,7 @@ import { channelSpace, communitySpaces, preferencesSpace, SELF } from "@colibri-
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { applyChange, type SpaceChange } from "./apply.js";
-import type { ProjectionDeps, RecordRef } from "./context.js";
+import type { AuthzChange, ProjectionDeps, RecordRef } from "./context.js";
 
 const COMMUNITY = "did:plc:2hnjxkqm6bpuvvpjbztkxxxx";
 const MEMBER = "did:plc:7fkdlwjqmzcuvvpjbztkyyyy";
@@ -15,6 +15,7 @@ const NOW = "2026-08-23T00:00:00.000Z";
 let database: TestDatabase;
 let deps: ProjectionDeps;
 let skipped: Array<{ ref: RecordRef; reason: string }>;
+let authzChanges: AuthzChange[];
 
 const put = (
 	space: string,
@@ -32,11 +33,13 @@ const put = (
 beforeEach(async () => {
 	database = await openTestDatabase();
 	skipped = [];
+	authzChanges = [];
 	deps = {
 		db: database.db,
 		tables: database.tables,
 		now: () => NOW,
 		onSkipped: (ref, reason) => skipped.push({ ref, reason }),
+		onAuthzChanged: (change) => authzChanges.push(change),
 	};
 });
 
@@ -436,5 +439,76 @@ describe("channel projections", () => {
 
 		expect(row?.visibleToRoles).toEqual([]);
 		expect(row?.visibleToMembers).toEqual([]);
+	});
+});
+
+describe("authz changes", () => {
+	it("reports the community behind every collection an authorization decision reads", async () => {
+		await applyChange(
+			deps,
+			put(SPACES.members, COMMUNITY, "social.colibri.beta.role", "3lkrole1", {
+				$type: "social.colibri.beta.role",
+				name: "Moderator",
+				permissions: ["member.kick"],
+				position: 10,
+			}),
+		);
+		await applyChange(
+			deps,
+			put(SPACES.members, COMMUNITY, "social.colibri.beta.member", MEMBER, {
+				$type: "social.colibri.beta.member",
+				subject: MEMBER,
+				joinedAt: NOW,
+				roles: [],
+			}),
+		);
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.channel", SELF, {
+				$type: "social.colibri.beta.channel",
+				name: "general",
+			}),
+		);
+		await applyChange(deps, {
+			space: TEXT_CHANNEL,
+			author: COMMUNITY,
+			puts: [],
+			deletes: [{ collection: "social.colibri.beta.channel", rkey: SELF }],
+		});
+
+		expect(authzChanges).toEqual([
+			{ community: COMMUNITY, collection: "social.colibri.beta.role" },
+			{ community: COMMUNITY, collection: "social.colibri.beta.member" },
+			{ community: COMMUNITY, collection: "social.colibri.beta.channel" },
+			{ community: COMMUNITY, collection: "social.colibri.beta.channel" },
+		]);
+	});
+
+	it("stays quiet for a record no authorization decision reads", async () => {
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3lkmsg1", {
+				$type: "social.colibri.beta.message",
+				text: "hello",
+				createdAt: NOW,
+			}),
+		);
+
+		expect(authzChanges).toEqual([]);
+	});
+
+	it("stays quiet for a refused write", async () => {
+		await applyChange(
+			deps,
+			put(SPACES.members, MEMBER, "social.colibri.beta.role", "3lkrole1", {
+				$type: "social.colibri.beta.role",
+				name: "Self-appointed",
+				permissions: ["community.manage"],
+				position: 99,
+			}),
+		);
+
+		expect(skipped).toHaveLength(1);
+		expect(authzChanges).toEqual([]);
 	});
 });
