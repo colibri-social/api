@@ -324,12 +324,19 @@ export class VoiceServer {
 		}
 	}
 
+	private ack(connection: Connection): void {
+		this.send(connection, { $type: "social.colibri.beta.voice.defs#ack" });
+	}
+
 	private async handleConnectTransport(
 		connection: Connection,
 		voice: VoiceSfu,
 		frame: { transportId: string; dtlsParameters: unknown },
 	): Promise<void> {
-		if (!connection.channel) return;
+		if (!connection.channel) {
+			this.error(connection, "NotJoined", "join a channel before connecting a transport");
+			return;
+		}
 		try {
 			await voice.connectTransport(
 				connection.channel,
@@ -337,6 +344,7 @@ export class VoiceServer {
 				frame.transportId,
 				frame.dtlsParameters as never,
 			);
+			this.ack(connection);
 		} catch (cause) {
 			this.error(connection, "NotFound", messageOf(cause));
 		}
@@ -384,8 +392,12 @@ export class VoiceServer {
 		voice: VoiceSfu,
 		frame: { producerId: string },
 	): void {
-		if (!connection.channel) return;
+		if (!connection.channel) {
+			this.error(connection, "NotJoined", "join a channel before closing a producer");
+			return;
+		}
 		voice.closeProducer(connection.channel, connection.did, frame.producerId);
+		this.ack(connection);
 	}
 
 	private async handleConsume(
@@ -416,9 +428,13 @@ export class VoiceServer {
 		voice: VoiceSfu,
 		frame: { consumerId: string },
 	): Promise<void> {
-		if (!connection.channel) return;
+		if (!connection.channel) {
+			this.error(connection, "NotJoined", "join a channel before resuming a consumer");
+			return;
+		}
 		try {
 			await voice.resume(connection.channel, connection.did, frame.consumerId);
+			this.ack(connection);
 		} catch (cause) {
 			this.error(connection, "NotFound", messageOf(cause));
 		}
@@ -429,12 +445,17 @@ export class VoiceServer {
 		voice: VoiceSfu,
 		frame: { muted?: boolean; deafened?: boolean },
 	): Promise<void> {
-		if (!connection.channel) return;
-		if (frame.muted === undefined && frame.deafened === undefined) return;
-		await voice.setSelfState(connection.channel, connection.did, {
-			...(frame.muted === undefined ? {} : { muted: frame.muted }),
-			...(frame.deafened === undefined ? {} : { deafened: frame.deafened }),
-		});
+		if (!connection.channel) {
+			this.error(connection, "NotJoined", "join a channel before setting your own state");
+			return;
+		}
+		if (frame.muted !== undefined || frame.deafened !== undefined) {
+			await voice.setSelfState(connection.channel, connection.did, {
+				...(frame.muted === undefined ? {} : { muted: frame.muted }),
+				...(frame.deafened === undefined ? {} : { deafened: frame.deafened }),
+			});
+		}
+		this.ack(connection);
 	}
 
 	private wireVoiceEvents(voice: VoiceSfu): void {

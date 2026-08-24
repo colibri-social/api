@@ -141,6 +141,21 @@ describe("space credentials", () => {
 		expect(host.calls).toHaveLength(2);
 	});
 
+	it("keeps a still-valid credential when nothing can mint a delegation token", async () => {
+		const host = fakeSpaceHost(authorityKey, { lifetimeSeconds: 60 });
+		let tokens = 0;
+		const credentials = credentialsFor(host.fetchImpl, {
+			delegation: async () => (tokens++ === 0 ? "delegation-token" : null),
+		});
+
+		const first = await credentials.acquire(SPACE);
+		const second = await credentials.acquire(SPACE);
+
+		expect(host.calls).toHaveLength(1);
+		expect(second.credential).toBe(first.credential);
+		expect(second.key.thumbprint).toBe(first.key.thumbprint);
+	});
+
 	it("collapses concurrent requests for the same space into one exchange", async () => {
 		const host = fakeSpaceHost(authorityKey);
 		const credentials = credentialsFor(host.fetchImpl);

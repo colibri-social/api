@@ -19,6 +19,7 @@ import {
 } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import { and, asc, desc, eq, gt, isNull, lt } from "drizzle-orm";
+import { memberEvent, memberGoneEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
@@ -80,6 +81,7 @@ export const handleKick = async (
 
 	try {
 		await moderation.kick(community, callerDid, subject, reason);
+		ctx.announce.toCommunity(community, memberGoneEvent(community, subject));
 	} catch (error) {
 		if (error instanceof MembershipError) throw membershipErrorToXrpc(error);
 		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);
@@ -101,6 +103,7 @@ export const handleBan = async (
 
 	try {
 		await moderation.ban(community, callerDid, subject, reason);
+		ctx.announce.toCommunity(community, memberGoneEvent(community, subject));
 	} catch (error) {
 		if (error instanceof ModerationError) throw moderationErrorToXrpc(error);
 		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);
@@ -216,14 +219,15 @@ export const handleApproveApplication = async (
 		throw error;
 	}
 
-	return {
-		member: {
-			actor: await actors.one(subject),
-			roles: [],
-			joinedAt: asDatetime(new Date().toISOString()),
-			nickname: undefined,
-		},
+	const member: MemberView = {
+		actor: await actors.one(subject),
+		roles: [],
+		joinedAt: asDatetime(new Date().toISOString()),
+		nickname: undefined,
 	};
+	ctx.announce.toCommunity(community, memberEvent("join", community, member));
+
+	return { member };
 };
 
 export const handleDismissApplication = async (

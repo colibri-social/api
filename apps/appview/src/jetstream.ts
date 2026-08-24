@@ -1,8 +1,10 @@
-import { COLLECTIONS } from "@colibri-social/lexicons";
+import { asDatetime, asRecordKey, COLLECTIONS } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import { WebSocket } from "ws";
+import { memberEvent } from "./announce.js";
 import type { AppContext } from "./context.js";
 import { JETSTREAM_SUBPROTOCOL, jetstreamEndpoint } from "./jetstream-url.js";
+import { ActorViews } from "./views/actor.js";
 
 const CURSOR_KEY = "jetstream.cursor";
 const RECONNECT_MIN_MS = 1_000;
@@ -204,7 +206,7 @@ export class Jetstream {
 		}
 
 		if (kind === "account" && payload.account && !payload.account.active) {
-			this.ctx.log.info(
+			this.ctx.log.debug(
 				{ did: payload.did, status: payload.account.status },
 				"jetstream.accountGone",
 			);
@@ -233,6 +235,27 @@ export class Jetstream {
 				fetchedAt: new Date().toISOString(),
 			})
 			.where(eq(this.ctx.database.tables.profileCache.did, did));
+
+		await this.announceProfile(did);
+	}
+
+	private async announceProfile(did: string): Promise<void> {
+		const { db, tables } = this.ctx.database;
+		const rows = await db.select().from(tables.members).where(eq(tables.members.did, did));
+		if (rows.length === 0) return;
+
+		const actor = await new ActorViews(this.ctx).one(did);
+		for (const row of rows) {
+			this.ctx.announce.toCommunity(
+				row.community,
+				memberEvent("update", row.community, {
+					actor,
+					roles: row.roles.map(asRecordKey),
+					joinedAt: asDatetime(row.joinedAt),
+					nickname: row.nickname ?? undefined,
+				}),
+			);
+		}
 	}
 
 	private async forgetIdentity(did: string): Promise<void> {

@@ -9,6 +9,7 @@ import {
 import { COLLECTIONS, social } from "@colibri-social/lexicons";
 import { nextTid } from "@colibri-social/space";
 import { and, eq } from "drizzle-orm";
+import { roleEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { toXrpcError } from "../errors.js";
 import { route } from "../route.js";
@@ -119,6 +120,8 @@ export const handleCreateRole = async (
 			},
 		});
 
+		ctx.announce.toCommunity(community, roleEvent("create", community, rkey));
+
 		return {
 			role: communities.role({
 				community,
@@ -203,6 +206,7 @@ export const handleUpdateRole = async (
 			},
 		});
 
+		ctx.announce.toCommunity(community, roleEvent("update", community, rkey));
 		return {
 			role: communities.role({
 				community,
@@ -267,6 +271,7 @@ export const handleDeleteRole = async (
 			});
 		}
 
+		ctx.announce.toCommunity(community, roleEvent("delete", community, rkey));
 		return {};
 	} catch (error) {
 		throw toXrpcError(error);

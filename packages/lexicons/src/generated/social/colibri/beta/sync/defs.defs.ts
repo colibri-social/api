@@ -546,6 +546,21 @@ const presenceEvent = /*#__PURE__*/ l.typedObject<PresenceEvent>($nsid, "presenc
 
 export { presenceEvent };
 
+/** The connected user changed their own preferences somewhere else. */
+type PreferencesEvent = { $type?: "social.colibri.beta.sync.defs#preferencesEvent";
+
+  /**
+   * Their preferences as they now stand.
+   */
+  "preferences":ActorDefs.Preferences };
+
+export type { PreferencesEvent };
+
+/** The connected user changed their own preferences somewhere else. */
+const preferencesEvent = /*#__PURE__*/ l.typedObject<PreferencesEvent>($nsid, "preferencesEvent", /*#__PURE__*/ l.object({"preferences":/*#__PURE__*/ l.ref<ActorDefs.Preferences>((() => ActorDefs.preferences) as any)}));
+
+export { preferencesEvent };
+
 /** Someone is typing in a subscribed channel. */
 type TypingEvent = { $type?: "social.colibri.beta.sync.defs#typingEvent";
 

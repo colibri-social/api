@@ -1,7 +1,9 @@
+import { l } from "@atproto/lex-schema";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { CommunityLoader } from "@colibri-social/community";
-import { channelSpace, communitySpaces, SPACE_TYPES } from "@colibri-social/lexicons";
+import { channelSpace, communitySpaces, SPACE_TYPES, social } from "@colibri-social/lexicons";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { silentAnnouncer } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { ActorViews } from "../views/actor.js";
 import { CommunityViews } from "../views/community.js";
@@ -17,6 +19,13 @@ const OUTSIDER = "did:plc:outsiderxxxxxxxxxxxxxxxxxxxxx";
 let database: TestDatabase;
 let ctx: AppContext;
 let communities: CommunityViews;
+let didDocumentHandles: Map<string, string>;
+
+const asListCommunitiesOutput = (body: unknown): void => {
+	const { output } = l.getMain(social.colibri.beta.actor.listCommunities);
+	const result = output.schema.safeValidate(body);
+	if (!result.success) throw new Error(result.reason.message);
+};
 
 const insertCommunity = async (did: string, name: string, managingApp: string | null = null) => {
 	const spaces = communitySpaces(did);
@@ -53,11 +62,21 @@ const insertMember = async (community: string, did: string, joinedAt: string) =>
 beforeEach(async () => {
 	database = await openTestDatabase();
 
+	didDocumentHandles = new Map();
+
 	const loader = new CommunityLoader({ db: database.db, tables: database.tables });
 	ctx = {
+		announce: silentAnnouncer,
 		config: { PUBLIC_URL: "https://appview.test", APPVIEW_DID: "did:web:appview.test" },
 		database,
 		loader,
+		identity: {
+			resolveDid: async (did: string) => {
+				const handle = didDocumentHandles.get(did);
+				if (!handle) throw new Error(`no DID document for ${did}`);
+				return { did, handle, pds: "https://pds.test", signingKey: "did:key:zQ3sh" };
+			},
+		},
 	} as unknown as AppContext;
 
 	communities = new CommunityViews(ctx, new ActorViews(ctx));
@@ -166,5 +185,37 @@ describe("listCommunities", () => {
 
 		const result = await handleListCommunities(ctx, communities, MEMBER);
 		expect(result.communities.map((view) => view.did)).toEqual([C, A, B]);
+	});
+});
+
+describe("the handle on a community view", () => {
+	it("comes from the DID document, since no record carries it", async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+		didDocumentHandles.set(COMMUNITY, "nerds.spaces.example");
+
+		const result = await handleGetCommunity(ctx, communities, COMMUNITY, OUTSIDER);
+		expect(result.community.handle).toBe("nerds.spaces.example");
+	});
+
+	it("falls back to handle.invalid when the DID does not resolve", async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+
+		const result = await handleGetCommunity(ctx, communities, COMMUNITY, OUTSIDER);
+		expect(result.community.handle).toBe("handle.invalid");
+	});
+
+	it("keeps listCommunities valid against its own lexicon output", async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+		await insertMember(COMMUNITY, MEMBER, "2026-01-01T00:00:00.000Z");
+		didDocumentHandles.set(COMMUNITY, "nerds.spaces.example");
+
+		asListCommunitiesOutput(await handleListCommunities(ctx, communities, MEMBER));
+	});
+
+	it("keeps listCommunities valid when no handle resolves", async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+		await insertMember(COMMUNITY, MEMBER, "2026-01-01T00:00:00.000Z");
+
+		asListCommunitiesOutput(await handleListCommunities(ctx, communities, MEMBER));
 	});
 });

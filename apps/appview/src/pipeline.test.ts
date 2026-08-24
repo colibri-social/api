@@ -18,6 +18,7 @@ const NOW = "2026-08-23T00:00:00.000Z";
 let database: TestDatabase;
 let published: { space: string; frame: ServerFrame }[];
 let emit: (change: RepoChange) => void;
+let emitSpaceDeleted: (uri: string) => void;
 let disconnect: () => void;
 
 const framesOfType = (suffix: string) =>
@@ -102,8 +103,9 @@ beforeEach(async () => {
 			},
 		},
 		sync: {
-			on: (event: string, listener: (change: RepoChange) => void) => {
-				if (event === "changed") emit = listener;
+			on: (event: string, listener: (arg: never) => void) => {
+				if (event === "changed") emit = listener as (change: RepoChange) => void;
+				if (event === "spaceDeleted") emitSpaceDeleted = listener as (uri: string) => void;
 				return () => {};
 			},
 		},
@@ -113,6 +115,7 @@ beforeEach(async () => {
 		publishToChannel: (space: string, frame: ServerFrame) => published.push({ space, frame }),
 		publishToCommunity: (community: string, frame: ServerFrame) =>
 			published.push({ space: community, frame }),
+		publishToUser: (did: string, frame: ServerFrame) => published.push({ space: did, frame }),
 	} as unknown as EventServer;
 
 	await database.db.insert(database.tables.communities).values({
@@ -217,5 +220,94 @@ describe("connectPipeline", () => {
 			event: "delete",
 			subject: { did: AUTHOR, rkey },
 		});
+	});
+});
+
+describe("configuration events", () => {
+	const CONFIG_SPACE = `at://${COMMUNITY}/space/${SPACE_TYPES.communityConfiguration}/self`;
+
+	it("tells the community a channel record landed", async () => {
+		emit({
+			space: SPACE,
+			author: COMMUNITY,
+			puts: [
+				{
+					collection: COLLECTIONS.channel,
+					rkey: "self",
+					cid: "bafyreictestchannel",
+					value: { $type: COLLECTIONS.channel, name: "general" },
+				},
+			],
+			deletes: [],
+		});
+		await vi.waitFor(() => expect(framesOfType("channelEvent")).toHaveLength(1));
+
+		expect(framesOfType("channelEvent")[0]).toMatchObject({
+			space: COMMUNITY,
+			frame: { event: "update", community: COMMUNITY },
+		});
+	});
+
+	it("tells the community a category record landed", async () => {
+		const rkey = nextTid();
+		emit({
+			space: CONFIG_SPACE,
+			author: COMMUNITY,
+			puts: [
+				{
+					collection: COLLECTIONS.category,
+					rkey,
+					cid: "bafyreictestcategory",
+					value: { $type: COLLECTIONS.category, name: "Text channels", channelOrder: [] },
+				},
+			],
+			deletes: [],
+		});
+		await vi.waitFor(() => expect(framesOfType("categoryEvent")).toHaveLength(1));
+
+		expect(framesOfType("categoryEvent")[0]?.frame).toMatchObject({
+			event: "update",
+			community: COMMUNITY,
+		});
+	});
+
+	it("names the channel that went when its space is deleted", async () => {
+		emitSpaceDeleted(SPACE);
+		await vi.waitFor(() => expect(framesOfType("channelEvent")).toHaveLength(1));
+
+		expect(framesOfType("channelEvent")[0]?.frame).toMatchObject({
+			event: "delete",
+			community: COMMUNITY,
+			space: SPACE,
+		});
+	});
+
+	it("says nothing when a community's own space is deleted", async () => {
+		emitSpaceDeleted(CONFIG_SPACE);
+
+		expect(framesOfType("channelEvent")).toHaveLength(0);
+	});
+});
+
+describe("personal space events", () => {
+	const PREFERENCES = `at://${AUTHOR}/space/${SPACE_TYPES.actorPreferences}/self`;
+
+	it("tells the actor's own devices when their preferences change", async () => {
+		emit({
+			space: PREFERENCES,
+			author: AUTHOR,
+			puts: [
+				{
+					collection: COLLECTIONS.settings,
+					rkey: "self",
+					cid: "bafyreictestsettings",
+					value: { $type: COLLECTIONS.settings, notificationLevel: "all" },
+				},
+			],
+			deletes: [],
+		});
+		await vi.waitFor(() => expect(framesOfType("preferencesEvent")).toHaveLength(1));
+
+		expect(framesOfType("preferencesEvent")[0]?.space).toBe(AUTHOR);
 	});
 });

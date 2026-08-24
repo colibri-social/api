@@ -1,4 +1,5 @@
 import type { Database, Queryable } from "@colibri-social/appview-db";
+import { isChannelSpaceType } from "@colibri-social/lexicons";
 import { applyChange, type ProjectionDeps } from "@colibri-social/projections";
 import type { CredentialStorage } from "@colibri-social/space";
 import type { RepoChange, RepoCursor, SyncStore } from "@colibri-social/space-sync";
@@ -105,6 +106,26 @@ export const drizzleSyncStore = (database: Database, projections: ProjectionDeps
 				.select({ uri: tables.spaces.uri, authority: tables.spaces.authority })
 				.from(tables.spaces);
 			return rows;
+		},
+
+		expectedRepos: async (space) => {
+			const [row] = await db
+				.select({
+					authority: tables.spaces.authority,
+					spaceType: tables.spaces.spaceType,
+					community: tables.spaces.community,
+				})
+				.from(tables.spaces)
+				.where(eq(tables.spaces.uri, space))
+				.limit(1);
+			if (!row) return [];
+			if (!row.community || !isChannelSpaceType(row.spaceType)) return [row.authority];
+
+			const members = await db
+				.select({ did: tables.members.did })
+				.from(tables.members)
+				.where(eq(tables.members.community, row.community));
+			return [row.authority, ...members.map((member) => member.did)];
 		},
 
 		listCursors: async (space) => {

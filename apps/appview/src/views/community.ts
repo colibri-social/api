@@ -12,7 +12,7 @@ import {
 import {
 	asDatetime,
 	asDid,
-	asHandleOrUndefined,
+	asHandle,
 	asRecordKey,
 	asSpaceRef,
 	asUriOrUndefined,
@@ -31,6 +31,8 @@ export type MemberView = social.colibri.beta.community.defs.MemberView;
 type CommunityRow = Schema["communities"]["$inferSelect"];
 type ChannelRow = Schema["channels"]["$inferSelect"];
 type RoleRow = Schema["roles"]["$inferSelect"];
+
+const INVALID_HANDLE = "handle.invalid";
 
 const toChannelState = (row: ChannelRow): ChannelState => ({
 	space: row.space,
@@ -61,10 +63,20 @@ export class CommunityViews {
 		return url.toString();
 	}
 
-	community(row: CommunityRow, authz: ActorAuthz, memberCount?: number): CommunityView {
+	private async handleFor(row: CommunityRow): Promise<string> {
+		if (row.handle) return row.handle;
+		const identity = await this.ctx.identity.resolveDid(row.did).catch(() => null);
+		return identity?.handle ?? INVALID_HANDLE;
+	}
+
+	async community(
+		row: CommunityRow,
+		authz: ActorAuthz,
+		memberCount?: number,
+	): Promise<CommunityView> {
 		return {
 			did: asDid(row.did),
-			handle: asHandleOrUndefined(row.handle) ?? undefined,
+			handle: asHandle(await this.handleFor(row)),
 			managingApp: asDid(row.managingApp ?? this.ctx.config.APPVIEW_DID),
 			name: row.name,
 			description: row.description ?? undefined,
@@ -179,6 +191,27 @@ export class CommunityViews {
 				nickname: row.nickname ?? undefined,
 			})),
 			cursor: rows.length > options.limit ? (page.at(-1)?.did ?? null) : null,
+		};
+	}
+
+	async memberOf(community: string, did: string): Promise<MemberView | null> {
+		const [row] = await this.ctx.database.db
+			.select()
+			.from(this.ctx.database.tables.members)
+			.where(
+				and(
+					eq(this.ctx.database.tables.members.community, community),
+					eq(this.ctx.database.tables.members.did, did),
+				),
+			)
+			.limit(1);
+		if (!row) return null;
+
+		return {
+			actor: await this.actors.one(did),
+			roles: row.roles.map(asRecordKey),
+			joinedAt: asDatetime(row.joinedAt),
+			nickname: row.nickname ?? undefined,
 		};
 	}
 

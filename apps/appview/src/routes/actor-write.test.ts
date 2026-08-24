@@ -3,6 +3,7 @@ import { CommunityLoader } from "@colibri-social/community";
 import { preferencesSpace } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { silentAnnouncer } from "../announce.js";
 import type { AppContext } from "../context.js";
 import {
 	handleDeleteAccount,
@@ -28,6 +29,7 @@ beforeEach(async () => {
 
 	const loader = new CommunityLoader({ db: database.db, tables: database.tables });
 	ctx = {
+		announce: silentAnnouncer,
 		config: { PUBLIC_URL: "https://appview.test", pushProviders: [] },
 		database,
 		loader,

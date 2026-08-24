@@ -1,10 +1,21 @@
 import { COLLECTIONS, LABEL_VALUES } from "@colibri-social/lexicons";
 import { indexMessage } from "@colibri-social/notifications";
-import { spaceContextFor } from "@colibri-social/projections";
+import { isChannelSpace, isPersonalSpace, spaceContextFor } from "@colibri-social/projections";
 import type { RepoChange } from "@colibri-social/space-sync";
+import {
+	categoryEvent,
+	channelEvent,
+	communityEvent,
+	memberEvent,
+	memberGoneEvent,
+	preferencesEvent,
+	roleEvent,
+} from "./announce.js";
 import type { AppContext } from "./context.js";
+import { loadPreferences } from "./routes/actor.js";
 import { ActorViews } from "./views/actor.js";
 import { ChannelViews } from "./views/channel.js";
+import { CommunityViews } from "./views/community.js";
 import type { EventServer, ServerFrame } from "./ws/events.js";
 
 type Deps = {
@@ -54,13 +65,27 @@ const labelFrame = (
 });
 
 export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
-	const channels = new ChannelViews(ctx, new ActorViews(ctx));
+	const actors = new ActorViews(ctx);
+	const channels = new ChannelViews(ctx, actors);
+	const communities = new CommunityViews(ctx, actors);
+
+	const unsubscribeDeleted = ctx.sync.on("spaceDeleted", (uri) => {
+		const space = spaceContextFor(uri);
+		if (!space?.community || !isChannelSpace(space)) return;
+		events.publishToCommunity(space.community, channelEvent("delete", space.community, uri));
+	});
 
 	const unsubscribe = ctx.sync.on("changed", (change) => {
 		void handle(change).catch((error) =>
 			ctx.log.warn({ space: change.space, author: change.author, error }, "pipeline.failed"),
 		);
 	});
+
+	const publishMember = async (community: string, did: string): Promise<void> => {
+		const member = await communities.memberOf(community, did);
+		if (!member) return;
+		events.publishToCommunity(community, memberEvent("update", community, member));
+	};
 
 	const publishMessage = async (space: string, author: string, rkey: string): Promise<void> => {
 		const message = await channels.message(space, null, { author, rkey });
@@ -76,6 +101,14 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 	const handle = async (change: RepoChange): Promise<void> => {
 		const space = spaceContextFor(change.space);
 		if (!space) return;
+
+		if (isPersonalSpace(space)) {
+			events.publishToUser(
+				space.authority,
+				preferencesEvent(await loadPreferences(ctx, space.authority)),
+			);
+			return;
+		}
 
 		for (const put of change.puts) {
 			if (put.collection === COLLECTIONS.message && space.community) {
@@ -120,13 +153,34 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 				}
 			}
 
+			if (space.community && put.collection === COLLECTIONS.channel) {
+				events.publishToCommunity(
+					space.community,
+					channelEvent("update", space.community, change.space),
+				);
+			}
+
+			if (space.community && put.collection === COLLECTIONS.category) {
+				events.publishToCommunity(
+					space.community,
+					categoryEvent("update", space.community, put.rkey),
+				);
+			}
+
+			if (space.community && put.collection === COLLECTIONS.community) {
+				events.publishToCommunity(space.community, communityEvent("update", space.community));
+			}
+
+			if (space.community && put.collection === COLLECTIONS.communitySettings) {
+				events.publishToCommunity(space.community, communityEvent("update", space.community));
+			}
+
+			if (space.community && put.collection === COLLECTIONS.role) {
+				events.publishToCommunity(space.community, roleEvent("update", space.community, put.rkey));
+			}
+
 			if (space.community && put.collection === COLLECTIONS.member) {
-				events.publishToCommunity(space.community, {
-					$type: "social.colibri.beta.sync.defs#memberEvent",
-					event: "join",
-					community: space.community,
-					subject: put.rkey,
-				});
+				await publishMember(space.community, put.rkey);
 			}
 		}
 
@@ -134,16 +188,35 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			if (entry.collection === COLLECTIONS.message) {
 				events.publishToChannel(change.space, messageDeleted(change, entry.rkey));
 			}
+			if (space.community && entry.collection === COLLECTIONS.channel) {
+				events.publishToCommunity(
+					space.community,
+					channelEvent("delete", space.community, change.space),
+				);
+			}
+
+			if (space.community && entry.collection === COLLECTIONS.category) {
+				events.publishToCommunity(
+					space.community,
+					categoryEvent("delete", space.community, entry.rkey),
+				);
+			}
+
+			if (space.community && entry.collection === COLLECTIONS.role) {
+				events.publishToCommunity(
+					space.community,
+					roleEvent("delete", space.community, entry.rkey),
+				);
+			}
+
 			if (space.community && entry.collection === COLLECTIONS.member) {
-				events.publishToCommunity(space.community, {
-					$type: "social.colibri.beta.sync.defs#memberEvent",
-					event: "leave",
-					community: space.community,
-					subject: entry.rkey,
-				});
+				events.publishToCommunity(space.community, memberGoneEvent(space.community, entry.rkey));
 			}
 		}
 	};
 
-	return unsubscribe;
+	return () => {
+		unsubscribe();
+		unsubscribeDeleted();
+	};
 };

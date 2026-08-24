@@ -111,6 +111,51 @@ describe("legacyCandidates", () => {
 	it("returns nothing rather than throwing when the actor has no legacy records", async () => {
 		expect(await legacyCandidates(deps, ACTOR)).toEqual([]);
 	});
+
+	it("finds a community the actor only ever read, with no membership record", async () => {
+		seed(ACTOR, LEGACY_COLLECTIONS.read, "3lkchannel0000", {
+			channel: `at://${OWNED}/${LEGACY_COLLECTIONS.channel}/3lkchannel0000`,
+			cursor: `at://${ACTOR}/${LEGACY_COLLECTIONS.message}/3lkmsg00000001`,
+		});
+
+		expect(await legacyCandidates(deps, ACTOR)).toEqual([OWNED]);
+	});
+
+	it("falls back to the actor's messages when nothing else names a community", async () => {
+		seed(ACTOR, LEGACY_COLLECTIONS.message, "3lkmsg00000001", {
+			channel: `at://${OWNED}/${LEGACY_COLLECTIONS.channel}/3lkchannel0000`,
+			content: "hello",
+		});
+
+		expect(await legacyCandidates(deps, ACTOR)).toEqual([OWNED]);
+	});
+
+	it("does not scan messages once another source has named a community", async () => {
+		let messagePages = 0;
+		const counting = {
+			...deps,
+			clientFor: () => {
+				const client = fakeClient();
+				const inner = client.xrpc.query.bind(client.xrpc);
+				return {
+					...client,
+					xrpc: {
+						query: async (method: string, params: { collection: string }) => {
+							if (params.collection === LEGACY_COLLECTIONS.message) messagePages += 1;
+							return inner(method, params as never);
+						},
+					},
+				} as unknown as PdsClient;
+			},
+		};
+		seed(ACTOR, LEGACY_COLLECTIONS.actorData, "self", { status: "", communities: [OWNED] });
+		seed(ACTOR, LEGACY_COLLECTIONS.message, "3lkmsg00000001", {
+			channel: `at://${JOINED}/${LEGACY_COLLECTIONS.channel}/3lkchannel0000`,
+		});
+
+		expect(await legacyCandidates(counting, ACTOR)).toEqual([OWNED]);
+		expect(messagePages).toBe(0);
+	});
 });
 
 describe("readLegacyCommunity", () => {

@@ -240,6 +240,8 @@ export const channel: Projector<social.colibri.beta.channel.Main> = {
 			ownerOnly: value.ownerOnly ?? false,
 			allowedRoles: [...(value.allowedRoles ?? [])],
 			allowedMembers: [...(value.allowedMembers ?? [])],
+			visibleToRoles: [...(value.visibleToRoles ?? [])],
+			visibleToMembers: [...(value.visibleToMembers ?? [])],
 			linkEmbeds: value.linkEmbeds ?? null,
 			migratedFrom: value.migratedFrom ?? null,
 		};

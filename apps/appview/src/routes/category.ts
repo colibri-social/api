@@ -3,6 +3,7 @@ import { type CommunityWriter, has } from "@colibri-social/community";
 import { asRecordKey, COLLECTIONS, social } from "@colibri-social/lexicons";
 import { nextTid } from "@colibri-social/space";
 import { and, eq } from "drizzle-orm";
+import { categoryEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { toXrpcError } from "../errors.js";
 import { route } from "../route.js";
@@ -77,6 +78,7 @@ export const handleCreateCategory = async (
 			},
 		});
 		await writeCommunitySettings(ctx, writer, community, { categoryOrder: [...order, rkey] });
+		ctx.announce.toCommunity(community, categoryEvent("create", community, rkey));
 
 		return {
 			category: {
@@ -119,6 +121,8 @@ export const handleUpdateCategory = async (
 			},
 		});
 
+		ctx.announce.toCommunity(community, categoryEvent("update", community, rkey));
+
 		const categories = await communities.categories(community, authz);
 		const view = categories.find((category) => category.rkey === rkey);
 
@@ -158,6 +162,7 @@ export const handleDeleteCategory = async (
 		await writeCommunitySettings(ctx, writer, community, {
 			categoryOrder: order.filter((entry) => entry !== rkey),
 		});
+		ctx.announce.toCommunity(community, categoryEvent("delete", community, rkey));
 
 		return {};
 	} catch (error) {

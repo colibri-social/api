@@ -15,6 +15,7 @@ import {
 } from "@colibri-social/lexicons";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { silentAnnouncer } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { ActorViews } from "../views/actor.js";
 import {
@@ -205,6 +206,7 @@ beforeEach(async () => {
 	});
 
 	ctx = {
+		announce: silentAnnouncer,
 		config: { PUBLIC_URL: "https://appview.test" },
 		database,
 		loader,

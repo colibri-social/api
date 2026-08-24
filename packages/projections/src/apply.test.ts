@@ -383,3 +383,58 @@ describe("personal spaces", () => {
 		expect(rows[0]?.cursor).toBe("3lkaaaaaaaaa7");
 	});
 });
+
+describe("channel projections", () => {
+	const ROLE = "3lkrolemoderator";
+
+	it("keeps who may see a channel alongside who may post in it", async () => {
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.channel", SELF, {
+				$type: "social.colibri.beta.channel",
+				name: "backstage",
+				allowedRoles: [ROLE],
+				allowedMembers: [MEMBER],
+				visibleToRoles: [ROLE],
+				visibleToMembers: [MEMBER],
+			}),
+		);
+
+		const [row] = await database.db
+			.select()
+			.from(database.tables.channels)
+			.where(eq(database.tables.channels.space, TEXT_CHANNEL));
+
+		expect(row?.allowedRoles).toEqual([ROLE]);
+		expect(row?.allowedMembers).toEqual([MEMBER]);
+		expect(row?.visibleToRoles).toEqual([ROLE]);
+		expect(row?.visibleToMembers).toEqual([MEMBER]);
+	});
+
+	it("clears the lists again when the record drops them", async () => {
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.channel", SELF, {
+				$type: "social.colibri.beta.channel",
+				name: "backstage",
+				visibleToRoles: [ROLE],
+				visibleToMembers: [MEMBER],
+			}),
+		);
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.channel", SELF, {
+				$type: "social.colibri.beta.channel",
+				name: "backstage",
+			}),
+		);
+
+		const [row] = await database.db
+			.select()
+			.from(database.tables.channels)
+			.where(eq(database.tables.channels.space, TEXT_CHANNEL));
+
+		expect(row?.visibleToRoles).toEqual([]);
+		expect(row?.visibleToMembers).toEqual([]);
+	});
+});

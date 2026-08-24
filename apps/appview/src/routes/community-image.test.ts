@@ -2,6 +2,7 @@ import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db"
 import { CommunityLoader } from "@colibri-social/community";
 import { COLLECTIONS, communitySpaces, SELF } from "@colibri-social/lexicons";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { silentAnnouncer } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { ActorViews } from "../views/actor.js";
 import { CommunityViews } from "../views/community.js";
@@ -93,6 +94,7 @@ beforeEach(async () => {
 
 	const loader = new CommunityLoader({ db: database.db, tables: database.tables });
 	ctx = {
+		announce: silentAnnouncer,
 		config: { PUBLIC_URL: "https://appview.test", APPVIEW_DID: "did:web:appview.test" },
 		database,
 		loader,

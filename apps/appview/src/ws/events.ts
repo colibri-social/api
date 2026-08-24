@@ -4,6 +4,7 @@ import { ServiceAuthError } from "@colibri-social/identity";
 import { social } from "@colibri-social/lexicons";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { AppContext } from "../context.js";
+import { isOnlineState, PresenceTracker } from "../presence.js";
 import { bearerToken, selectSubprotocol } from "./auth.js";
 import { channelTopic, communityTopic, type Topic, TopicIndex, userTopic } from "./topics.js";
 
@@ -46,9 +47,16 @@ export class EventServer {
 	});
 	private readonly topics = new TopicIndex<Connection>();
 	private readonly connections = new Set<Connection>();
+	private readonly presence: PresenceTracker;
 	private heartbeat: NodeJS.Timeout | null = null;
 
-	constructor(private readonly ctx: AppContext) {}
+	constructor(private readonly ctx: AppContext) {
+		this.presence = new PresenceTracker({
+			ctx,
+			publish: (did, communities, frame) =>
+				this.publishTo([userTopic(did), ...communities.map(communityTopic)], frame),
+		});
+	}
 
 	get connectionCount(): number {
 		return this.connections.size;
@@ -102,6 +110,7 @@ export class EventServer {
 		const connection: Connection = { socket, did, alive: true };
 		this.connections.add(connection);
 		this.topics.subscribe(connection, [userTopic(did)]);
+		void this.trackPresence(did, "opened", () => this.presence.opened(did));
 
 		socket.on("pong", () => {
 			connection.alive = true;
@@ -110,6 +119,7 @@ export class EventServer {
 		socket.on("close", () => {
 			this.topics.forget(connection);
 			this.connections.delete(connection);
+			void this.trackPresence(did, "closed", () => this.presence.closed(did));
 		});
 		socket.on("error", () => socket.close());
 	}
@@ -158,9 +168,40 @@ export class EventServer {
 			case "unsubscribe":
 				await this.applySubscription(connection, result.value as never, "unsubscribe");
 				return;
+			case "setPresence":
+				await this.applyPresence(connection, result.value as never);
+				return;
 			default:
 				return;
 		}
+	}
+
+	private async trackPresence(
+		did: string,
+		transition: "opened" | "closed" | "requested",
+		work: () => Promise<void>,
+	): Promise<void> {
+		await work().catch((error: unknown) => {
+			this.ctx.log.warn(
+				{ did, transition, reason: error instanceof Error ? error.message : String(error) },
+				"presence.failed",
+			);
+		});
+	}
+
+	private async applyPresence(
+		connection: Connection,
+		frame: { onlineState?: string },
+	): Promise<void> {
+		const requested = frame.onlineState;
+		if (requested === undefined) return;
+		if (!isOnlineState(requested)) {
+			this.error(connection, "InvalidFrame", `unknown online state '${requested}'`);
+			return;
+		}
+		await this.trackPresence(connection.did, "requested", () =>
+			this.presence.requested(connection.did, requested),
+		);
 	}
 
 	private async applySubscription(
@@ -220,6 +261,20 @@ export class EventServer {
 			.topicsOf(connection)
 			.filter((topic) => topic.startsWith("channel:"))
 			.map((topic) => topic.slice("channel:".length));
+	}
+
+	publishTo(topics: readonly Topic[], frame: ServerFrame): void {
+		const payload = JSON.stringify(frame);
+		const seen = new Set<Connection>();
+		for (const topic of topics) {
+			for (const connection of this.topics.subscribersOf(topic)) {
+				if (seen.has(connection)) continue;
+				seen.add(connection);
+				if (connection.socket.readyState === connection.socket.OPEN) {
+					connection.socket.send(payload);
+				}
+			}
+		}
 	}
 
 	publish(topic: Topic, frame: ServerFrame): void {

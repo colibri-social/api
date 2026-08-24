@@ -479,6 +479,18 @@
 				}
 			}
 		},
+		"preferencesEvent": {
+			"type": "object",
+			"description": "The connected user changed their own preferences somewhere else.",
+			"required": ["preferences"],
+			"properties": {
+				"preferences": {
+					"type": "ref",
+					"ref": "social.colibri.beta.actor.defs#preferences",
+					"description": "Their preferences as they now stand."
+				}
+			}
+		},
 		"typingEvent": {
 			"type": "object",
 			"description": "Someone is typing in a subscribed channel.",

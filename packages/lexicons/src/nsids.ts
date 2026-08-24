@@ -53,6 +53,7 @@ export const LEGACY_COLLECTIONS = {
 	member: "social.colibri.member",
 	membership: "social.colibri.membership",
 	message: "social.colibri.message",
+	read: "social.colibri.channel.read",
 	role: "social.colibri.role",
 } as const;
 

@@ -8,6 +8,7 @@ import {
 import { COLLECTIONS, social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import { and, eq } from "drizzle-orm";
+import { channelEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { toXrpcError } from "../errors.js";
 import { route } from "../route.js";
@@ -167,6 +168,8 @@ export const handleCreateChannel = async (
 			migratedFrom: null,
 		};
 
+		ctx.announce.toCommunity(community, channelEvent("create", community, space));
+
 		return { channel: communities.channel(row, authz) };
 	} catch (error) {
 		throw toXrpcError(error);
@@ -264,6 +267,8 @@ export const handleUpdateChannel = async (
 			linkEmbeds: linkEmbeds ?? null,
 		};
 
+		ctx.announce.toCommunity(community, channelEvent("update", community, space));
+
 		return { channel: communities.channel(row, authz) };
 	} catch (error) {
 		throw toXrpcError(error);
@@ -284,6 +289,7 @@ export const handleDeleteChannel = async (
 
 		const host = await ctx.credentials.connect(community);
 		await ctx.provisioner.deleteChannel(host, space);
+		ctx.announce.toCommunity(community, channelEvent("delete", community, space));
 
 		return {};
 	} catch (error) {

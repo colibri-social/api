@@ -28,6 +28,7 @@ import {
 } from "@colibri-social/lexicons";
 import { XrpcError } from "@colibri-social/space";
 import { and, asc, eq } from "drizzle-orm";
+import { communityEvent, memberEvent, memberGoneEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
@@ -71,13 +72,13 @@ const invitationView = (row: {
 	maxUses: row.maxUses ?? undefined,
 });
 
-const provisionedView = (
+const provisionedView = async (
 	communities: CommunityViews,
 	callerDid: string,
 	provisioned: ProvisionedCommunity,
 	input: { name: string; description?: string },
 	managingApp: string,
-): { community: CommunityView } => {
+): Promise<{ community: CommunityView }> => {
 	const now = new Date().toISOString();
 	const row = {
 		did: provisioned.did,
@@ -117,8 +118,12 @@ const provisionedView = (
 		],
 	};
 
-	return { community: communities.community(row, authz, 1) };
+	return { community: await communities.community(row, authz, 1) };
 };
+
+const isTransportFailure = (error: unknown): error is Error =>
+	error instanceof Error &&
+	(error.name === "TypeError" || error.name === "AbortError" || error.name === "TimeoutError");
 
 const provisioningFailure = (error: unknown): never => {
 	if (error instanceof ProvisioningRefused) {
@@ -143,6 +148,12 @@ const provisioningFailure = (error: unknown): never => {
 		}
 		throw new InvalidRequestError(error.message, "UpstreamFailure");
 	}
+	if (isTransportFailure(error)) {
+		throw new InvalidRequestError(
+			`could not reach the PDS while provisioning (${error.message})`,
+			"UpstreamFailure",
+		);
+	}
 	throw error;
 };
 
@@ -164,7 +175,7 @@ export const handleCreateCommunity = async (
 		return provisioningFailure(error);
 	}
 
-	return provisionedView(communities, callerDid, provisioned, input, ctx.config.APPVIEW_DID);
+	return await provisionedView(communities, callerDid, provisioned, input, ctx.config.APPVIEW_DID);
 };
 
 export const handleAdoptCommunity = async (
@@ -221,7 +232,7 @@ export const handleAdoptCommunity = async (
 		return provisioningFailure(error);
 	}
 
-	return provisionedView(communities, callerDid, provisioned, input, ctx.config.APPVIEW_DID);
+	return await provisionedView(communities, callerDid, provisioned, input, ctx.config.APPVIEW_DID);
 };
 
 export const handleUpdateCommunity = async (
@@ -286,6 +297,8 @@ export const handleUpdateCommunity = async (
 		throw error;
 	}
 
+	ctx.announce.toCommunity(input.community, communityEvent("update", input.community));
+
 	const mergedRow = {
 		...row,
 		name: nextName,
@@ -295,7 +308,7 @@ export const handleUpdateCommunity = async (
 		labelers: nextLabelers,
 	};
 	const total = await countMembers(ctx, input.community);
-	return { community: communities.community(mergedRow, authz, total) };
+	return { community: await communities.community(mergedRow, authz, total) };
 };
 
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
@@ -355,7 +368,7 @@ const communityImageView = async (
 	const authz = await ctx.loader.authz(community, callerDid);
 	const total = await countMembers(ctx, community);
 	return {
-		community: communities.community({ ...row, ...next }, authz, total),
+		community: await communities.community({ ...row, ...next }, authz, total),
 	};
 };
 
@@ -400,6 +413,8 @@ const writeCommunityImage = async (
 		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);
 		throw error;
 	}
+
+	ctx.announce.toCommunity(community, communityEvent("update", community));
 
 	const cid = blob ? blob.ref.$link : null;
 	return communityImageView(ctx, community, callerDid, row, {
@@ -498,6 +513,7 @@ export const handleLeaveCommunity = async (
 	await requireCommunity(ctx, community);
 	try {
 		await membership.leave(community, callerDid);
+		ctx.announce.toCommunity(community, memberGoneEvent(community, callerDid));
 	} catch (error) {
 		if (error instanceof MembershipError) throw membershipErrorToXrpc(error);
 		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);
@@ -531,6 +547,7 @@ export const handleSetMemberRoles = async (
 		joinedAt: asDatetime(targetBefore.member?.joinedAt ?? new Date().toISOString()),
 		nickname: targetBefore.member?.nickname ?? undefined,
 	};
+	ctx.announce.toCommunity(input.community, memberEvent("update", input.community, member));
 	return { member };
 };
 
@@ -758,7 +775,7 @@ export const handleMigrateCommunity = async (
 	};
 
 	const authz = await ctx.loader.authz(legacyDid, callerDid);
-	return { community: communities.community(row, authz, report.members) };
+	return { community: await communities.community(row, authz, report.members) };
 };
 
 export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): void => {
@@ -821,16 +838,22 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 
 	route(server, social.colibri.beta.community.join, {
 		auth: auth.required,
-		handler: async ({ input, auth: caller }) => ({
-			encoding: "application/json" as const,
-			body: await handleJoinCommunity(
+		handler: async ({ input, auth: caller }) => {
+			const body = await handleJoinCommunity(
 				actors,
 				membership,
 				caller.credentials.did,
 				input.body.community,
 				input.body.invitation,
-			),
-		}),
+			);
+			if (body.member) {
+				ctx.announce.toCommunity(
+					input.body.community,
+					memberEvent("join", input.body.community, body.member),
+				);
+			}
+			return { encoding: "application/json" as const, body };
+		},
 	});
 
 	route(server, social.colibri.beta.community.leave, {

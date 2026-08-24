@@ -3,6 +3,7 @@ import { CommunityLoader, ProvisioningRefused } from "@colibri-social/community"
 import { communitySpaces } from "@colibri-social/lexicons";
 import { XrpcError } from "@colibri-social/space";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { silentAnnouncer } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { ActorViews } from "../views/actor.js";
 import { CommunityViews } from "../views/community.js";
@@ -51,6 +52,7 @@ beforeEach(async () => {
 
 	const loader = new CommunityLoader({ db: database.db, tables: database.tables });
 	ctx = {
+		announce: silentAnnouncer,
 		config: { PUBLIC_URL: "https://appview.test", APPVIEW_DID: APPVIEW },
 		database,
 		loader,

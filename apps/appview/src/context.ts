@@ -27,6 +27,7 @@ import {
 } from "@colibri-social/space";
 import { SpaceSyncEngine } from "@colibri-social/space-sync";
 import { createVoiceSfu, voiceSfuConfigFromEnv } from "@colibri-social/voice";
+import { type Announcer, silentAnnouncer } from "./announce.js";
 import type { Config } from "./config.js";
 import { createLogger, type Logger } from "./logger.js";
 import { drizzleCredentialStorage, drizzleSyncStore } from "./stores.js";
@@ -170,6 +171,7 @@ export const createContext = async (config: Config) => {
 	}
 
 	return {
+		announce: silentAnnouncer as Announcer,
 		config,
 		log,
 		database,

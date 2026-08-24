@@ -8,6 +8,7 @@ import {
 import { PdsClient } from "@colibri-social/space";
 import { inArray } from "drizzle-orm";
 import type { AppContext } from "../context.js";
+import { effectiveOnlineState } from "../presence.js";
 import { liveVoiceState } from "./voice-state.js";
 
 export type ProfileView = social.colibri.beta.actor.defs.ProfileView;
@@ -154,7 +155,7 @@ export class ActorViews {
 			.limit(1);
 		if (!row) return undefined;
 		return {
-			onlineState: row.requestedState ?? row.derivedState,
+			onlineState: effectiveOnlineState(row),
 			status: row.statusText
 				? { text: row.statusText, emoji: row.statusEmoji ?? undefined }
 				: undefined,

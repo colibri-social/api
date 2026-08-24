@@ -86,7 +86,7 @@ export const handleGetCommunity = async (
 	const row = await requireCommunity(ctx, did);
 	const authz = await ctx.loader.authz(did, callerDid);
 	const total = await countMembers(ctx, did);
-	return { community: communities.community(row, authz, total) };
+	return { community: await communities.community(row, authz, total) };
 };
 
 export const handleListCategories = async (
@@ -158,7 +158,7 @@ export const handleGetInvitation = async (
 
 	return {
 		invitation: invitationView(row),
-		community: communities.community(communityRow, authz, total),
+		community: await communities.community(communityRow, authz, total),
 	};
 };
 
@@ -201,6 +201,7 @@ export const handleListMigratable = async (
 	const deps = {
 		hostFor: (did: string) => ctx.hosts.hostFor(did),
 		clientFor: (endpoint: string) => ctx.credentials.clientFor(endpoint),
+		log: (event: string, detail: Record<string, unknown>) => ctx.log.warn(detail, event),
 	};
 
 	const candidates = await legacyCandidates(deps, callerDid).catch((cause) => {

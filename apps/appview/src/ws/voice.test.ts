@@ -87,10 +87,37 @@ const waitForOpen = (ws: WebSocket): Promise<void> =>
 		ws.once("error", reject);
 	});
 
-const nextFrame = (ws: WebSocket): Promise<Record<string, unknown>> =>
-	new Promise((resolve) => {
-		ws.once("message", (raw) => resolve(JSON.parse(raw.toString())));
+type Frame = Record<string, unknown>;
+
+const inboxes = new WeakMap<WebSocket, { held: Frame[]; waiting: ((frame: Frame) => void)[] }>();
+
+const watch = (ws: WebSocket): WebSocket => {
+	const inbox = { held: [] as Frame[], waiting: [] as ((frame: Frame) => void)[] };
+	inboxes.set(ws, inbox);
+	ws.on("message", (raw) => {
+		const frame = JSON.parse(raw.toString()) as Frame;
+		const waiting = inbox.waiting.shift();
+		if (waiting) waiting(frame);
+		else inbox.held.push(frame);
 	});
+	return ws;
+};
+
+const nextFrame = (ws: WebSocket): Promise<Frame> => {
+	const inbox = inboxes.get(ws);
+	if (!inbox) throw new Error("this socket is not being watched");
+	const held = inbox.held.shift();
+	if (held) return Promise.resolve(held);
+	return new Promise((resolve) => inbox.waiting.push(resolve));
+};
+
+const nextFrameOfType = async (ws: WebSocket, suffix: string): Promise<Frame> => {
+	const wanted = `social.colibri.beta.voice.defs#${suffix}`;
+	for (;;) {
+		const frame = await nextFrame(ws);
+		if (frame.$type === wanted) return frame;
+	}
+};
 
 const send = (ws: WebSocket, frame: Record<string, unknown>): void => {
 	ws.send(JSON.stringify(frame));
@@ -123,9 +150,11 @@ describe("VoiceServer", () => {
 	});
 
 	const connect = (token: string): WebSocket =>
-		new WebSocket(`ws://127.0.0.1:${port}${VOICE_PATH}`, {
-			headers: { authorization: `Bearer ${token}` },
-		});
+		watch(
+			new WebSocket(`ws://127.0.0.1:${port}${VOICE_PATH}`, {
+				headers: { authorization: `Bearer ${token}` },
+			}),
+		);
 
 	it("rejects an upgrade without a valid service auth token", async () => {
 		const ws = new WebSocket(`ws://127.0.0.1:${port}${VOICE_PATH}`);
@@ -216,6 +245,7 @@ describe("VoiceServer", () => {
 			transportId: transport.id,
 			dtlsParameters: {},
 		});
+		expect(await nextFrame(ws)).toEqual({ $type: "social.colibri.beta.voice.defs#ack" });
 
 		send(ws, {
 			$type: "social.colibri.beta.voice.defs#produce",
@@ -236,6 +266,45 @@ describe("VoiceServer", () => {
 		ws.close();
 	});
 
+	it("answers every frame a client waits on, so its reply queue keeps moving", async () => {
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+
+		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrame(ws);
+
+		send(ws, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
+		const transport = await nextFrame(ws);
+
+		send(ws, {
+			$type: "social.colibri.beta.voice.defs#connectTransport",
+			transportId: transport.id,
+			dtlsParameters: {},
+		});
+		expect(await nextFrame(ws)).toEqual({ $type: "social.colibri.beta.voice.defs#ack" });
+
+		send(ws, {
+			$type: "social.colibri.beta.voice.defs#produce",
+			transportId: transport.id,
+			kind: "audio",
+			rtpParameters: {},
+			source: "microphone",
+		});
+		const produced = await nextFrame(ws);
+
+		send(ws, {
+			$type: "social.colibri.beta.voice.defs#closeProducer",
+			producerId: produced.producerId,
+		});
+		expect(await nextFrame(ws)).toEqual({ $type: "social.colibri.beta.voice.defs#ack" });
+
+		send(ws, { $type: "social.colibri.beta.voice.defs#setSelfState", deafened: true });
+		expect((await nextFrame(ws)).$type).toBe("social.colibri.beta.voice.defs#moderationChanged");
+		expect(await nextFrame(ws)).toEqual({ $type: "social.colibri.beta.voice.defs#ack" });
+
+		ws.close();
+	});
+
 	it("tells other peers in the channel about a new producer", async () => {
 		const aliceWs = connect("alice-token");
 		const bobWs = connect("bob-token");
@@ -250,7 +319,7 @@ describe("VoiceServer", () => {
 		send(aliceWs, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
 		const transport = await nextFrame(aliceWs);
 
-		const bobNotification = nextFrame(bobWs);
+		const bobNotification = nextFrameOfType(bobWs, "producerInfo");
 
 		send(aliceWs, {
 			$type: "social.colibri.beta.voice.defs#produce",
@@ -259,7 +328,7 @@ describe("VoiceServer", () => {
 			rtpParameters: {},
 			source: "microphone",
 		});
-		await nextFrame(aliceWs);
+		await nextFrameOfType(aliceWs, "producerInfo");
 
 		const notification = await bobNotification;
 		expect(notification).toMatchObject({
@@ -323,6 +392,7 @@ describe("VoiceServer", () => {
 			muted: true,
 			serverMuted: true,
 		});
+		expect(await nextFrame(ws)).toEqual({ $type: "social.colibri.beta.voice.defs#ack" });
 
 		send(ws, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
 		const transport = await nextFrame(ws);

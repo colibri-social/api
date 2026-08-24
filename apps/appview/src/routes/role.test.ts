@@ -3,6 +3,7 @@ import { CommunityLoader, type CommunityWriter, type RecordWrite } from "@colibr
 import { COLLECTIONS, communitySpaces } from "@colibri-social/lexicons";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { silentAnnouncer } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { ActorViews } from "../views/actor.js";
 import { CommunityViews } from "../views/community.js";
@@ -17,6 +18,7 @@ const NOW = "2026-08-23T00:00:00.000Z";
 let database: TestDatabase;
 let ctx: AppContext;
 let communities: CommunityViews;
+let announced: Array<{ community: string; frame: Record<string, unknown> }>;
 let writes: Array<{ community: string; write: RecordWrite }>;
 let removals: Array<{ community: string; collection: string; rkey: string }>;
 
@@ -150,7 +152,13 @@ beforeEach(async () => {
 	removals = [];
 
 	const loader = new CommunityLoader({ db: database.db, tables: database.tables });
+	announced = [];
 	ctx = {
+		announce: {
+			...silentAnnouncer,
+			toCommunity: (community: string, frame: Record<string, unknown>) =>
+				announced.push({ community, frame }),
+		},
 		config: { PUBLIC_URL: "https://appview.test" },
 		database,
 		loader,
@@ -279,5 +287,44 @@ describe("deleting a role", () => {
 
 		const mod = rows.find((row) => row.did === MOD);
 		expect(mod?.roles).toEqual(["mod"]);
+	});
+});
+
+describe("announcing role changes", () => {
+	it("tells the community when a role is created, changed and deleted", async () => {
+		const { role } = await handleCreateRole(ctx, fakeWriter(), communities, COMMUNITY, OWNER, {
+			name: "helper",
+			permissions: [],
+			position: 10,
+		});
+
+		await handleUpdateRole(ctx, fakeWriter(), communities, COMMUNITY, OWNER, role.rkey, {
+			name: "helpers",
+		});
+		await handleDeleteRole(ctx, fakeWriter(), COMMUNITY, OWNER, role.rkey);
+
+		expect(
+			announced.map((entry) => ({
+				community: entry.community,
+				type: entry.frame.$type,
+				event: entry.frame.event,
+			})),
+		).toEqual([
+			{
+				community: COMMUNITY,
+				type: "social.colibri.beta.sync.defs#roleEvent",
+				event: "create",
+			},
+			{
+				community: COMMUNITY,
+				type: "social.colibri.beta.sync.defs#roleEvent",
+				event: "update",
+			},
+			{
+				community: COMMUNITY,
+				type: "social.colibri.beta.sync.defs#roleEvent",
+				event: "delete",
+			},
+		]);
 	});
 });

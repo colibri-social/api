@@ -222,3 +222,45 @@ describe("dropSpace", () => {
 		).toHaveLength(0);
 	});
 });
+
+describe("expectedRepos", () => {
+	const MEMBER = "did:plc:memberaaaaaaaaaaaaaaaaaaaaaa";
+
+	const declareSpace = async (uri: string, spaceType: string, community: string | null) => {
+		await database.db.insert(database.tables.spaces).values({
+			uri,
+			authority: community ?? COMMUNITY,
+			spaceType,
+			skey: "3lkchannel1",
+			community,
+			host: "https://pds.test",
+			createdAt: NOW,
+		});
+	};
+
+	beforeEach(async () => {
+		await database.db.insert(database.tables.members).values({
+			community: COMMUNITY,
+			did: MEMBER,
+			roles: [],
+			joinedAt: NOW,
+		});
+	});
+
+	it("names the community and every member for a channel space", async () => {
+		await declareSpace(SPACE, SPACE_TYPES.channelText, COMMUNITY);
+
+		expect((await store.expectedRepos?.(SPACE))?.sort()).toEqual([COMMUNITY, MEMBER].sort());
+	});
+
+	it("names only the authority for a space members do not write to", async () => {
+		const configuration = `at://${COMMUNITY}/space/${SPACE_TYPES.communityConfiguration}/self`;
+		await declareSpace(configuration, SPACE_TYPES.communityConfiguration, COMMUNITY);
+
+		expect(await store.expectedRepos?.(configuration)).toEqual([COMMUNITY]);
+	});
+
+	it("names nothing for a space it has never registered", async () => {
+		expect(await store.expectedRepos?.("at://did:plc:nope/space/x.y.z/self")).toEqual([]);
+	});
+});

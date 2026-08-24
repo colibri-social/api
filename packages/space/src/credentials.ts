@@ -75,14 +75,30 @@ export class SpaceCredentials {
 
 	private async resolve(space: SpaceRefString): Promise<SpaceCredential> {
 		const stored = await this.storage.load(space);
-		if (stored && stored.expiresAt.getTime() - Date.now() > this.renewBeforeMs) {
-			return {
-				credential: stored.credential,
-				key: await DpopKey.fromJwk(stored.privateJwk),
-				expiresAt: stored.expiresAt,
-			};
+		if (!stored) return this.mint(space);
+		if (stored.expiresAt.getTime() - Date.now() > this.renewBeforeMs) {
+			return this.held(stored);
 		}
-		return this.mint(space);
+		try {
+			return await this.mint(space);
+		} catch (error) {
+			if (!this.outlives(stored, error)) throw error;
+			return this.held(stored);
+		}
+	}
+
+	private async held(stored: StoredCredential): Promise<SpaceCredential> {
+		return {
+			credential: stored.credential,
+			key: await DpopKey.fromJwk(stored.privateJwk),
+			expiresAt: stored.expiresAt,
+		};
+	}
+
+	private outlives(stored: StoredCredential, error: unknown): boolean {
+		if (!(error instanceof SpaceCredentialError)) return false;
+		if (error.reason !== "noDelegationToken") return false;
+		return stored.expiresAt.getTime() > Date.now();
 	}
 
 	private async mint(space: SpaceRefString, delegationToken?: string): Promise<SpaceCredential> {

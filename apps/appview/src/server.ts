@@ -1,4 +1,4 @@
-import { createServer, type Server } from "@atproto/xrpc-server";
+import { createServer, type Server, XRPCError } from "@atproto/xrpc-server";
 import type { Request, Response } from "express";
 import { authVerifiers } from "./auth.js";
 import type { AppContext } from "./context.js";
@@ -40,6 +40,25 @@ export const createAppServer = (ctx: AppContext): Server => {
 	const server = createServer(undefined, {
 		payload: { jsonLimit: 1_000_000, blobLimit: 20 * 1024 * 1024 },
 		catchall: undefined,
+		errorParser: (error) => {
+			const xrpcError = XRPCError.fromError(error);
+			if (xrpcError.statusCode >= 500) {
+				ctx.log.error(
+					{
+						name: error instanceof Error ? error.name : typeof error,
+						status: xrpcError.statusCode,
+						reason: error instanceof Error ? error.message : String(error),
+						cause:
+							error instanceof Error && error.cause instanceof Error
+								? error.cause.message
+								: undefined,
+						stack: error instanceof Error ? error.stack : undefined,
+					},
+					"route.unhandled",
+				);
+			}
+			return xrpcError;
+		},
 	});
 
 	const app = server.routes;

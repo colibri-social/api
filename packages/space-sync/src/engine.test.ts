@@ -29,9 +29,10 @@ let cursors: Map<string, RepoCursor>;
 let dropped: string[];
 let droppedSpaces: string[];
 
-const store = (): SyncStore => ({
+const store = (expected?: string[]): SyncStore => ({
 	listSpaces: async () => [{ uri: SPACE, authority: AUTHORITY }],
 	listCursors: async () => [...cursors.values()],
+	...(expected ? { expectedRepos: async () => expected } : {}),
 	loadCursor: async (_space, author) => cursors.get(author) ?? null,
 	saveCursor: async (next) => void cursors.set(next.author, next),
 	commit: async () => undefined,
@@ -55,7 +56,7 @@ const client = (remotes: Remote[], options: { listThrows?: unknown } = {}) => ({
 const engineFor = (
 	remotes: Remote[],
 	sync: (space: string, author: string) => Promise<void>,
-	options: { listThrows?: unknown; now?: () => Date } = {},
+	options: { listThrows?: unknown; now?: () => Date; expected?: string[] } = {},
 ) => {
 	const spaceClient = client(remotes, options);
 	const engine = new SpaceSyncEngine({
@@ -67,7 +68,7 @@ const engineFor = (
 		},
 		client: spaceClient as never,
 		credentials: { invalidate: async () => undefined } as never,
-		store: store(),
+		store: store(options.expected),
 		hosts: { hostFor: async () => "https://pds.test" },
 		keys: { signingKeyFor: async () => "did:key:z" },
 		syncerService: "did:web:appview#atproto_space_syncer",
@@ -177,6 +178,74 @@ describe("sweeping a space", () => {
 		await engine.drain();
 
 		expect(dropped).toEqual([BOB]);
+	});
+
+	it("pulls a repo the space expects even when the authority does not list it", async () => {
+		const pulled: string[] = [];
+		const { engine } = engineFor([], async (_space, author) => void pulled.push(author), {
+			expected: [AUTHORITY, ALICE],
+		});
+
+		await engine.sweepSpace(SPACE);
+		await engine.drain();
+
+		expect(pulled.sort()).toEqual([ALICE, AUTHORITY].sort());
+	});
+
+	it("keeps pulling an expected repo after its first sync, since no revision is reported", async () => {
+		cursors.set(ALICE, cursor(ALICE, "3a"));
+		const pulled: string[] = [];
+		const { engine } = engineFor([], async (_space, author) => void pulled.push(author), {
+			expected: [ALICE],
+		});
+
+		await engine.sweepSpace(SPACE);
+		await engine.drain();
+
+		expect(pulled).toEqual([ALICE]);
+	});
+
+	it("does not drop an expected repo the authority leaves out of its writer set", async () => {
+		cursors.set(ALICE, cursor(ALICE, "3a"));
+		const { engine } = engineFor([], async () => undefined, { expected: [ALICE] });
+
+		await engine.sweepSpace(SPACE);
+		await engine.drain();
+
+		expect(dropped).toEqual([]);
+	});
+
+	it("still drops a repo that is neither listed nor expected", async () => {
+		cursors.set(BOB, cursor(BOB, "3a"));
+		const { engine } = engineFor([], async () => undefined, { expected: [ALICE] });
+
+		await engine.sweepSpace(SPACE);
+		await engine.drain();
+
+		expect(dropped).toEqual([BOB]);
+	});
+
+	it("leaves an expected repo alone while it is backing off", async () => {
+		const now = new Date("2026-08-23T00:00:00.000Z");
+		cursors.set(
+			ALICE,
+			cursor(ALICE, "3a", {
+				state: "error",
+				consecutiveFailures: 3,
+				retryAfter: new Date(now.getTime() + 60_000),
+			}),
+		);
+		const pulled: string[] = [];
+		const { engine } = engineFor([], async (_space, author) => void pulled.push(author), {
+			expected: [ALICE],
+			now: () => now,
+		});
+
+		await engine.sweepSpace(SPACE);
+		await engine.drain();
+
+		expect(pulled).toEqual([]);
+		expect(dropped).toEqual([]);
 	});
 
 	it("registers for write notifications, and only once while the registration holds", async () => {

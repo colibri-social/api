@@ -3,7 +3,9 @@ import type { NotificationLevel, OnlineState } from "@colibri-social/appview-db"
 import { asDatetime, encodeMuteSubject, social } from "@colibri-social/lexicons";
 import { nextTid, parseSpaceRef, SpaceCredentialError } from "@colibri-social/space";
 import { eq } from "drizzle-orm";
+import { announceToCommunities, preferencesEvent, presenceEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
+import { effectiveOnlineState, isOnlineState } from "../presence.js";
 import { route } from "../route.js";
 import { toGifFavorite } from "../views/gif.js";
 import { liveVoiceState } from "../views/voice-state.js";
@@ -30,14 +32,17 @@ const assertNotificationLevel = (value: string): NotificationLevel => {
 	return value;
 };
 
-const isOnlineState = (value: string): value is OnlineState =>
-	value === "online" || value === "away" || value === "dnd" || value === "offline";
-
 const assertOnlineState = (value: string): OnlineState => {
 	if (!isOnlineState(value)) {
 		throw new InvalidRequestError(`unknown online state '${value}'`, "InvalidRequest");
 	}
 	return value;
+};
+
+const announcePreferences = async (ctx: AppContext, did: string): Promise<Preferences> => {
+	const preferences = await loadPreferences(ctx, did);
+	ctx.announce.toUser(did, preferencesEvent(preferences));
+	return preferences;
 };
 
 export const handlePutSettings = async (
@@ -72,7 +77,7 @@ export const handlePutSettings = async (
 		.values(row)
 		.onConflictDoUpdate({ target: ctx.database.tables.actorSettings.did, set: row });
 
-	return { preferences: await loadPreferences(ctx, callerDid) };
+	return { preferences: await announcePreferences(ctx, callerDid) };
 };
 
 export const handlePutMutes = async (
@@ -93,7 +98,7 @@ export const handlePutMutes = async (
 		);
 	});
 
-	return { preferences: await loadPreferences(ctx, callerDid) };
+	return { preferences: await announcePreferences(ctx, callerDid) };
 };
 
 export const handleSetStatus = async (
@@ -126,12 +131,14 @@ export const handleSetStatus = async (
 		.onConflictDoUpdate({ target: ctx.database.tables.userPresence.did, set: row });
 
 	const presence = {
-		onlineState: row.requestedState ?? row.derivedState,
+		onlineState: effectiveOnlineState(row),
 		status: row.statusText
 			? { text: row.statusText, emoji: row.statusEmoji ?? undefined }
 			: undefined,
 		voice: liveVoiceState(ctx.voice, callerDid),
 	} as Presence;
+
+	await announceToCommunities(ctx, callerDid, presenceEvent(callerDid, presence));
 
 	return { presence };
 };

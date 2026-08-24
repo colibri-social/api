@@ -1,3 +1,4 @@
+import { eventAnnouncer } from "./announce.js";
 import { describeConfig, loadConfig } from "./config.js";
 import { createContext } from "./context.js";
 import { Jetstream } from "./jetstream.js";
@@ -16,6 +17,7 @@ const main = async (): Promise<void> => {
 
 	const server = createAppServer(ctx);
 	const events = new EventServer(ctx);
+	ctx.announce = eventAnnouncer(events);
 	const voice = new VoiceServer(ctx, events);
 	const disconnectPipeline = connectPipeline({ ctx, events });
 

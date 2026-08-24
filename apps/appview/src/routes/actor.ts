@@ -96,7 +96,7 @@ export const handleListCommunities = async (
 			if (!row) return null;
 			const authz = await ctx.loader.authz(did, callerDid);
 			const total = await countMembers(ctx, did);
-			return communities.community(row, authz, total);
+			return await communities.community(row, authz, total);
 		}),
 	);
 
@@ -164,7 +164,7 @@ export const handleGetDeletionStatus = async (
 		if (!row) continue;
 		const authz = await ctx.loader.authz(did, callerDid);
 		const total = await countMembers(ctx, did);
-		soleOwned.push(communities.community(row, authz, total));
+		soleOwned.push(await communities.community(row, authz, total));
 	}
 
 	return {
