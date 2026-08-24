@@ -4,8 +4,11 @@ import { ServiceAuthError } from "@colibri-social/identity";
 import { social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import { type WebSocket, WebSocketServer } from "ws";
+import { channelEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { isOnlineState, PresenceTracker } from "../presence.js";
+import { ActorViews } from "../views/actor.js";
+import { CommunityViews } from "../views/community.js";
 import { bearerToken, selectSubprotocol } from "./auth.js";
 import { channelTopic, communityTopic, type Topic, TopicIndex, userTopic } from "./topics.js";
 
@@ -58,6 +61,8 @@ export class EventServer {
 	private readonly topics = new TopicIndex<Connection>();
 	private readonly connections = new Set<Connection>();
 	private readonly presence: PresenceTracker;
+	private readonly communities: CommunityViews;
+	private readonly stopWatchingAuthz: () => void;
 	private heartbeat: NodeJS.Timeout | null = null;
 
 	constructor(private readonly ctx: AppContext) {
@@ -65,6 +70,15 @@ export class EventServer {
 			ctx,
 			publish: (did, communities, frame) =>
 				this.publishTo([userTopic(did), ...communities.map(communityTopic)], frame),
+		});
+		this.communities = new CommunityViews(ctx, new ActorViews(ctx));
+		this.stopWatchingAuthz = ctx.authzChanges.subscribe((change) => {
+			void this.revalidate(change.community).catch((error: unknown) => {
+				ctx.log.warn(
+					{ community: change.community, reason: error instanceof Error ? error.message : error },
+					"events.revalidate.failed",
+				);
+			});
 		});
 	}
 
@@ -92,6 +106,7 @@ export class EventServer {
 	}
 
 	async close(): Promise<void> {
+		this.stopWatchingAuthz();
 		if (this.heartbeat) clearInterval(this.heartbeat);
 		for (const connection of this.connections) connection.socket.close(1001, "shutting down");
 		this.connections.clear();
@@ -301,6 +316,9 @@ export class EventServer {
 			for (const community of frame.communities ?? []) {
 				topics.push(communityTopic(community));
 				communities.push(community);
+				for (const space of this.channelsHeldIn(connection, community)) {
+					topics.push(channelTopic(space));
+				}
 			}
 			for (const channel of frame.channels ?? []) {
 				topics.push(channelTopic(channel));
@@ -313,6 +331,10 @@ export class EventServer {
 				if (!authz.member && !authz.isOwner) continue;
 				topics.push(communityTopic(community));
 				communities.push(community);
+				for (const space of await this.communities.readableChannels(community, authz)) {
+					topics.push(channelTopic(space));
+					channels.push(space);
+				}
 			}
 			for (const channel of frame.channels ?? []) {
 				const state = await this.ctx.loader.channel(channel);
@@ -326,11 +348,7 @@ export class EventServer {
 			this.topics.subscribe(connection, topics);
 		}
 
-		this.send(connection, {
-			$type: "social.colibri.beta.sync.defs#subscribed",
-			communities: this.subscribedCommunities(connection),
-			channels: this.subscribedChannels(connection),
-		});
+		this.confirmSubscription(connection);
 	}
 
 	private subscribedCommunities(connection: Connection): string[] {
@@ -345,6 +363,58 @@ export class EventServer {
 			.topicsOf(connection)
 			.filter((topic) => topic.startsWith("channel:"))
 			.map((topic) => topic.slice("channel:".length));
+	}
+
+	private channelsHeldIn(connection: Connection, community: string): string[] {
+		return this.subscribedChannels(connection).filter(
+			(space) => this.authorityOf(space) === community,
+		);
+	}
+
+	private confirmSubscription(connection: Connection): void {
+		this.send(connection, {
+			$type: "social.colibri.beta.sync.defs#subscribed",
+			communities: this.subscribedCommunities(connection),
+			channels: this.subscribedChannels(connection),
+		});
+	}
+
+	async revalidate(community: string): Promise<void> {
+		const affected = [...this.topics.subscribersOf(communityTopic(community))];
+		if (affected.length === 0) return;
+
+		for (const connection of affected) {
+			const authz = await this.ctx.loader.authz(community, connection.did);
+			const readable =
+				authz.member || authz.isOwner
+					? await this.communities.readableChannels(community, authz)
+					: [];
+			const wanted = new Set(readable);
+			const held = new Set(this.channelsHeldIn(connection, community));
+
+			const gained = readable.filter((space) => !held.has(space));
+			const lost = [...held].filter((space) => !wanted.has(space));
+			if (gained.length === 0 && lost.length === 0) continue;
+
+			for (const space of lost) {
+				this.send(connection, channelEvent("delete", community, space));
+			}
+			this.topics.unsubscribe(connection, lost.map(channelTopic));
+			this.topics.subscribe(connection, gained.map(channelTopic));
+			for (const space of gained) {
+				this.send(connection, channelEvent("create", community, space));
+			}
+			this.confirmSubscription(connection);
+		}
+	}
+
+	channelChanged(community: string, space: string, event: "update" | "delete"): void {
+		this.publishToChannel(space, channelEvent(event, community, space));
+		if (event !== "delete") return;
+		for (const connection of [...this.topics.subscribersOf(channelTopic(space))]) {
+			this.topics.unsubscribe(connection, [channelTopic(space)]);
+			this.confirmSubscription(connection);
+		}
 	}
 
 	publishTo(topics: readonly Topic[], frame: ServerFrame): void {

@@ -7,18 +7,21 @@ export type Announcer = {
 	toCommunity(community: string, frame: ServerFrame): void;
 	toChannel(space: string, frame: ServerFrame): void;
 	toUser(did: string, frame: ServerFrame): void;
+	channelChanged(community: string, space: string, event: "update" | "delete"): void;
 };
 
 export const silentAnnouncer: Announcer = {
 	toCommunity: () => {},
 	toChannel: () => {},
 	toUser: () => {},
+	channelChanged: () => {},
 };
 
 export const eventAnnouncer = (events: EventServer): Announcer => ({
 	toCommunity: (community, frame) => events.publishToCommunity(community, frame),
 	toChannel: (space, frame) => events.publishToChannel(space, frame),
 	toUser: (did, frame) => events.publishToUser(did, frame),
+	channelChanged: (community, space, event) => events.channelChanged(community, space, event),
 });
 
 type Lifecycle = "create" | "update" | "delete";

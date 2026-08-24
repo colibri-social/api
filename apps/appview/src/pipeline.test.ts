@@ -127,6 +127,16 @@ beforeEach(async () => {
 		publishToCommunity: (community: string, frame: ServerFrame) =>
 			published.push({ space: community, frame }),
 		publishToUser: (did: string, frame: ServerFrame) => published.push({ space: did, frame }),
+		channelChanged: (community: string, space: string, event: "update" | "delete") =>
+			published.push({
+				space,
+				frame: {
+					$type: "social.colibri.beta.sync.defs#channelEvent",
+					event,
+					community,
+					space,
+				},
+			}),
 	} as unknown as EventServer;
 
 	await database.db.insert(database.tables.communities).values({
@@ -248,7 +258,7 @@ describe("connectPipeline", () => {
 describe("configuration events", () => {
 	const CONFIG_SPACE = `at://${COMMUNITY}/space/${SPACE_TYPES.communityConfiguration}/self`;
 
-	it("tells the community a channel record landed", async () => {
+	it("tells the channel's readers that its record landed", async () => {
 		emit({
 			space: SPACE,
 			author: COMMUNITY,
@@ -265,8 +275,8 @@ describe("configuration events", () => {
 		await vi.waitFor(() => expect(framesOfType("channelEvent")).toHaveLength(1));
 
 		expect(framesOfType("channelEvent")[0]).toMatchObject({
-			space: COMMUNITY,
-			frame: { event: "update", community: COMMUNITY },
+			space: SPACE,
+			frame: { event: "update", community: COMMUNITY, space: SPACE },
 		});
 	});
 

@@ -1,12 +1,18 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
-import { type ActorAuthz, anonymousAuthz, type ChannelState } from "@colibri-social/community";
-import { channelSpace, preferencesSpace, SPACE_TYPES } from "@colibri-social/lexicons";
+import {
+	type ActorAuthz,
+	anonymousAuthz,
+	type ChannelState,
+	type RoleState,
+} from "@colibri-social/community";
+import { COLLECTIONS, channelSpace, preferencesSpace, SPACE_TYPES } from "@colibri-social/lexicons";
 import { nextTid } from "@colibri-social/space";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
+import { createAuthzChanges } from "../authz-changes.js";
 import type { AppContext } from "../context.js";
 import { EventServer } from "./events.js";
 
@@ -28,6 +34,17 @@ const memberAuthz = (did: string): ActorAuthz => ({
 	isBanned: false,
 	member: { did, roles: [], joinedAt: "2026-01-01T00:00:00.000Z", nickname: null },
 	roles: [],
+});
+
+const insiderRole = (): RoleState => ({
+	rkey: "3lkinsiders",
+	name: "Insiders",
+	permissions: [],
+	position: 1,
+	hoisted: false,
+	mentionable: false,
+	protected: false,
+	channelOverrides: [],
 });
 
 const openChannel = (space: string, skey: string): ChannelState => ({
@@ -91,16 +108,20 @@ describe("EventServer", () => {
 	let events: EventServer;
 	let port: number;
 	let notifyWrite: ReturnType<typeof vi.fn>;
+	let channels: Map<string, ChannelState>;
+	let authz: Map<string, ActorAuthz>;
+	let authzChanges: ReturnType<typeof createAuthzChanges>;
 
 	const buildCtx = (): AppContext => {
-		const channels = new Map<string, ChannelState>([
+		channels = new Map<string, ChannelState>([
 			[CHANNEL, openChannel(CHANNEL, "3lkgeneral")],
 			[OTHER, openChannel(OTHER, "3lkbackstage")],
 		]);
-		const authz = new Map<string, ActorAuthz>([
+		authz = new Map<string, ActorAuthz>([
 			[ALICE, memberAuthz(ALICE)],
 			[BOB, memberAuthz(BOB)],
 		]);
+		authzChanges = createAuthzChanges();
 		const tokens = new Map<string, string>([
 			["alice-token", ALICE],
 			["bob-token", BOB],
@@ -118,6 +139,7 @@ describe("EventServer", () => {
 					return { did, lxm };
 				},
 			},
+			authzChanges,
 			loader: {
 				channel: async (space: string) => channels.get(space) ?? null,
 				authz: async (community: string, actor: string) =>
@@ -150,6 +172,26 @@ describe("EventServer", () => {
 		return row?.viewingChannel;
 	};
 
+	const putChannelRow = async (
+		space: string,
+		skey: string,
+		visibleToRoles: string[] = [],
+	): Promise<void> => {
+		await database.db.insert(database.tables.channels).values({
+			space,
+			community: COMMUNITY,
+			spaceType: SPACE_TYPES.channelText,
+			skey,
+			name: skey,
+			position: 0,
+			ownerOnly: false,
+			allowedRoles: [],
+			allowedMembers: [],
+			visibleToRoles,
+			visibleToMembers: [],
+		});
+	};
+
 	beforeEach(async () => {
 		database = await openTestDatabase();
 		notifyWrite = vi.fn();
@@ -175,6 +217,170 @@ describe("EventServer", () => {
 			$type: "social.colibri.beta.sync.defs#subscribed",
 			channels: [CHANNEL],
 		});
+
+		ws.close();
+	});
+
+	it("grants a community's readable channels without naming them", async () => {
+		await putChannelRow(CHANNEL, "3lkgeneral");
+		await putChannelRow(OTHER, "3lkbackstage", ["3lkinsiders"]);
+
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#subscribe",
+			communities: [COMMUNITY],
+		});
+
+		expect(await nextFrameOfType(ws, "subscribed")).toMatchObject({
+			communities: [COMMUNITY],
+			channels: [CHANNEL],
+		});
+
+		ws.close();
+	});
+
+	it("drops a community's channels when the community is unsubscribed", async () => {
+		await putChannelRow(CHANNEL, "3lkgeneral");
+
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#subscribe",
+			communities: [COMMUNITY],
+		});
+		await nextFrameOfType(ws, "subscribed");
+
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#unsubscribe",
+			communities: [COMMUNITY],
+		});
+
+		expect(await nextFrameOfType(ws, "subscribed")).toMatchObject({
+			communities: [],
+			channels: [],
+		});
+
+		ws.close();
+	});
+
+	it("hands over a channel that a granted role just made readable", async () => {
+		await putChannelRow(CHANNEL, "3lkgeneral");
+		await putChannelRow(OTHER, "3lkbackstage", ["3lkinsiders"]);
+
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#subscribe",
+			communities: [COMMUNITY],
+		});
+		await nextFrameOfType(ws, "subscribed");
+
+		authz.set(ALICE, { ...memberAuthz(ALICE), roles: [insiderRole()] });
+		authzChanges.publish({ community: COMMUNITY, collection: COLLECTIONS.member });
+
+		expect(await nextFrameOfType(ws, "channelEvent")).toMatchObject({
+			event: "create",
+			community: COMMUNITY,
+			space: OTHER,
+		});
+		expect(await nextFrameOfType(ws, "subscribed")).toMatchObject({
+			channels: [CHANNEL, OTHER],
+		});
+
+		ws.close();
+	});
+
+	it("hands over a channel that was just created", async () => {
+		await putChannelRow(CHANNEL, "3lkgeneral");
+
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#subscribe",
+			communities: [COMMUNITY],
+		});
+		await nextFrameOfType(ws, "subscribed");
+
+		await putChannelRow(OTHER, "3lkbackstage");
+		authzChanges.publish({ community: COMMUNITY, collection: COLLECTIONS.channel });
+
+		expect(await nextFrameOfType(ws, "channelEvent")).toMatchObject({
+			event: "create",
+			community: COMMUNITY,
+			space: OTHER,
+		});
+
+		ws.close();
+	});
+
+	it("takes back a channel that a revoked role made unreadable", async () => {
+		await putChannelRow(CHANNEL, "3lkgeneral");
+		await putChannelRow(OTHER, "3lkbackstage", ["3lkinsiders"]);
+		authz.set(ALICE, { ...memberAuthz(ALICE), roles: [insiderRole()] });
+
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#subscribe",
+			communities: [COMMUNITY],
+		});
+		expect(await nextFrameOfType(ws, "subscribed")).toMatchObject({
+			channels: [CHANNEL, OTHER],
+		});
+
+		authz.set(ALICE, memberAuthz(ALICE));
+		authzChanges.publish({ community: COMMUNITY, collection: COLLECTIONS.member });
+
+		expect(await nextFrameOfType(ws, "channelEvent")).toMatchObject({
+			event: "delete",
+			community: COMMUNITY,
+			space: OTHER,
+		});
+		expect(await nextFrameOfType(ws, "subscribed")).toMatchObject({
+			channels: [CHANNEL],
+		});
+
+		ws.close();
+	});
+
+	it("keeps a private channel's update away from anyone outside its audience", async () => {
+		await putChannelRow(OTHER, "3lkbackstage", ["3lkinsiders"]);
+
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#subscribe",
+			communities: [COMMUNITY],
+		});
+		await nextFrameOfType(ws, "subscribed");
+
+		events.channelChanged(COMMUNITY, OTHER, "update");
+		await vi.waitFor(() => expect(events.connectionCount).toBe(1));
+
+		expect(heldOfType(ws, "channelEvent")).toEqual([]);
+
+		ws.close();
+	});
+
+	it("stops delivering a channel once it is deleted", async () => {
+		await putChannelRow(CHANNEL, "3lkgeneral");
+
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#subscribe",
+			communities: [COMMUNITY],
+		});
+		await nextFrameOfType(ws, "subscribed");
+
+		events.channelChanged(COMMUNITY, CHANNEL, "delete");
+
+		expect(await nextFrameOfType(ws, "channelEvent")).toMatchObject({
+			event: "delete",
+			space: CHANNEL,
+		});
+		expect(await nextFrameOfType(ws, "subscribed")).toMatchObject({ channels: [] });
 
 		ws.close();
 	});

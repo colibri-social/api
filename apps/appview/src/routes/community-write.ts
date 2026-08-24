@@ -863,6 +863,10 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 					input.body.community,
 					memberEvent("join", input.body.community, body.member),
 				);
+				ctx.announce.toUser(
+					caller.credentials.did,
+					memberEvent("join", input.body.community, body.member),
+				);
 			} else {
 				ctx.announce.toCommunity(
 					input.body.community,

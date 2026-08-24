@@ -147,6 +147,11 @@ export class CommunityViews {
 		return rows.map((row) => this.channel(row, authz)).filter((view) => view.viewer.canRead);
 	}
 
+	async readableChannels(community: string, authz: ActorAuthz): Promise<string[]> {
+		const views = await this.channels(community, authz);
+		return views.map((view) => view.space);
+	}
+
 	async categories(community: string, authz: ActorAuthz): Promise<CategoryView[]> {
 		const [categories, channels] = await Promise.all([
 			this.ctx.database.db

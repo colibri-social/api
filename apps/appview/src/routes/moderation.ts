@@ -257,6 +257,7 @@ export const handleApproveApplication = async (
 		nickname: undefined,
 	};
 	ctx.announce.toCommunity(community, memberEvent("join", community, member));
+	ctx.announce.toUser(subject, memberEvent("join", community, member));
 	ctx.announce.toCommunity(community, applicationEvent("approve", community, subject));
 
 	return { member };

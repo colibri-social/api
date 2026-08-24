@@ -11,7 +11,6 @@ import type { RepoChange } from "@colibri-social/space-sync";
 import { and, eq, inArray } from "drizzle-orm";
 import {
 	categoryEvent,
-	channelEvent,
 	communityEvent,
 	memberEvent,
 	memberGoneEvent,
@@ -83,7 +82,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 	const unsubscribeDeleted = ctx.sync.on("spaceDeleted", (uri) => {
 		const space = spaceContextFor(uri);
 		if (!space?.community || !isChannelSpace(space)) return;
-		events.publishToCommunity(space.community, channelEvent("delete", space.community, uri));
+		events.channelChanged(space.community, uri, "delete");
 	});
 
 	const unsubscribe = ctx.sync.on("changed", (change) => {
@@ -243,10 +242,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			}
 
 			if (space.community && put.collection === COLLECTIONS.channel) {
-				events.publishToCommunity(
-					space.community,
-					channelEvent("update", space.community, change.space),
-				);
+				events.channelChanged(space.community, change.space, "update");
 			}
 
 			if (space.community && put.collection === COLLECTIONS.category) {
@@ -278,10 +274,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 				events.publishToChannel(change.space, messageDeleted(change, entry.rkey));
 			}
 			if (space.community && entry.collection === COLLECTIONS.channel) {
-				events.publishToCommunity(
-					space.community,
-					channelEvent("delete", space.community, change.space),
-				);
+				events.channelChanged(space.community, change.space, "delete");
 			}
 
 			if (space.community && entry.collection === COLLECTIONS.category) {
