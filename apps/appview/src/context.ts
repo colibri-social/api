@@ -37,6 +37,7 @@ import { type AuthzChanges, createAuthzChanges } from "./authz-changes.js";
 import type { Config } from "./config.js";
 import { createLogger, type Logger } from "./logger.js";
 import { drizzleCredentialStorage, drizzleSyncStore } from "./stores.js";
+import { createVideoArtworkClient } from "./video-artwork.js";
 import type { VoiceRoster } from "./ws/voice.js";
 
 const emptyVoiceRoster: VoiceRoster = {
@@ -176,6 +177,7 @@ export const createContext = async (config: Config) => {
 		maxEntries: ARTWORK_CACHE_MAX_ENTRIES,
 		ttlMs: ARTWORK_CACHE_TTL_MS,
 	});
+	const videoArtwork = config.VIDEO_ARTWORK_ENABLED ? createVideoArtworkClient({ log }) : null;
 
 	const voice = config.VOICE_ENABLED ? await createVoiceSfu(voiceSfuConfigFromEnv()) : null;
 
@@ -219,6 +221,7 @@ export const createContext = async (config: Config) => {
 		gifs,
 		previews,
 		artwork,
+		videoArtwork,
 		voice,
 		didDocument,
 		close: async () => {

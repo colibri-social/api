@@ -198,6 +198,31 @@ describe("applyTealStatus", () => {
 		expect((await loadActivity(ctx, ACTOR))?.imageUri).toBeUndefined();
 	});
 
+	it("looks the artwork up again for a track stored without any", async () => {
+		await sharing(true);
+		seedArtwork(null);
+		await applyTealStatus(ctx, ACTOR, status(PLAY));
+		expect((await storedRow())?.imageUrl).toBeNull();
+
+		seedArtwork("https://i.ytimg.com/vi/abc/maxresdefault.jpg");
+		await applyTealStatus(ctx, ACTOR, status(PLAY, { expiry: "2026-08-25T13:40:00Z" }));
+
+		expect((await storedRow())?.imageUrl).toBe("https://i.ytimg.com/vi/abc/maxresdefault.jpg");
+	});
+
+	it("keeps the artwork it already has for the same track", async () => {
+		await sharing(true);
+		seedArtwork("https://coverartarchive.org/release/fcdb5202/front-500");
+		await applyTealStatus(ctx, ACTOR, status(PLAY));
+
+		seedArtwork(null);
+		await applyTealStatus(ctx, ACTOR, status(PLAY, { expiry: "2026-08-25T13:40:00Z" }));
+
+		expect((await storedRow())?.imageUrl).toBe(
+			"https://coverartarchive.org/release/fcdb5202/front-500",
+		);
+	});
+
 	it("says nothing when the same track is written again", async () => {
 		await sharing(true);
 		seedArtwork(null);

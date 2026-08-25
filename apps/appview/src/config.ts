@@ -76,6 +76,7 @@ export const configSchema = z.object({
 	VAPID_SUBJECT: optionalString,
 	FCM_SERVICE_ACCOUNT_JSON: optionalString,
 	KLIPY_API_KEY: optionalString,
+	VIDEO_ARTWORK_ENABLED: boolish(false),
 
 	VOICE_ENABLED: boolish(true),
 	SFU_WORKER_COUNT: z.coerce.number().int().positive().optional(),

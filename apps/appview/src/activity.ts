@@ -175,18 +175,19 @@ export const applyTealStatus = async (
 	const existing = await storedActivity(ctx, did);
 	if (existing && sameTrack(existing, draft) && existing.endsAt === draft.endsAt) return;
 
+	const reusable = existing && sameTrack(existing, draft) ? existing.imageUrl : null;
 	const imageUrl =
-		existing && sameTrack(existing, draft)
-			? existing.imageUrl
-			: ((await resolveArtwork(
-					{ cache: ctx.artwork, log: ctx.log },
-					{
-						track: draft.title,
-						artist: draft.subtitle ?? undefined,
-						release: draft.detail ?? undefined,
-						releaseMbId: draft.releaseMbId ?? undefined,
-					},
-				)) ?? null);
+		reusable ??
+		(await resolveArtwork(
+			{ cache: ctx.artwork, log: ctx.log, video: ctx.videoArtwork },
+			{
+				track: draft.title,
+				artist: draft.subtitle ?? undefined,
+				release: draft.detail ?? undefined,
+				releaseMbId: draft.releaseMbId ?? undefined,
+			},
+		)) ??
+		null;
 
 	const row = {
 		did,
