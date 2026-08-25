@@ -164,12 +164,17 @@ type List = { $type?: "social.colibri.beta.richtext.facet#list";
   /**
    * Whether the list is numbered.
    */
-  "ordered":boolean };
+  "ordered":boolean;
+
+  /**
+   * The nesting depth of the item. 0 is the outermost level.
+   */
+  "indent"?:number };
 
 export type { List };
 
 /** A list item line. */
-const list = /*#__PURE__*/ l.typedObject<List>($nsid, "list", /*#__PURE__*/ l.object({"ordered":/*#__PURE__*/ l.boolean()}));
+const list = /*#__PURE__*/ l.typedObject<List>($nsid, "list", /*#__PURE__*/ l.object({"ordered":/*#__PURE__*/ l.boolean(),"indent":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":0,"maximum":10}))}));
 
 export { list };
 
