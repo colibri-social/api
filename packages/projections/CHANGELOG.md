@@ -1,5 +1,14 @@
 # @colibri-social/projections
 
+## 1.3.3
+
+### Patch Changes
+
+- eebf5ef: Show what someone is listening to when they turn on shareActivity, read from the teal.fm records on their own account
+- Updated dependencies [eebf5ef]
+  - @colibri-social/lexicons@2.7.0
+  - @colibri-social/appview-db@0.2.1
+
 ## 1.3.2
 
 ### Patch Changes
