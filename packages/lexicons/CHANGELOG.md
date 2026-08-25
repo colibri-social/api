@@ -1,5 +1,11 @@
 # @colibri-social/lexicons
 
+## 2.7.0
+
+### Minor Changes
+
+- eebf5ef: Show what someone is listening to when they turn on shareActivity, read from the teal.fm records on their own account
+
 ## 2.6.0
 
 ### Minor Changes

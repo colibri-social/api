@@ -1,5 +1,11 @@
 # @colibri-social/appview-db
 
+## 0.2.1
+
+### Patch Changes
+
+- eebf5ef: Show what someone is listening to when they turn on shareActivity, read from the teal.fm records on their own account
+
 ## 0.2.0
 
 ### Minor Changes
