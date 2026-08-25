@@ -1,5 +1,13 @@
 # @colibri-social/community
 
+## 2.3.1
+
+### Patch Changes
+
+- Updated dependencies [bad9064]
+  - @colibri-social/lexicons@2.6.0
+  - @colibri-social/projections@1.3.2
+
 ## 2.3.0
 
 ### Minor Changes

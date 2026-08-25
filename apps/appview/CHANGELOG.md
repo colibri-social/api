@@ -1,5 +1,24 @@
 # @colibri-social/appview
 
+## 2.5.1
+
+### Patch Changes
+
+- f67763b: Tell an invited user they are banned, and keep moderation log entries to the moderators
+- 45707d5: Leave a channel read when the newest message in it is your own
+- 1669210: Wait for every mediasoup worker subprocess to exit before the appview process does, so a restart no longer fails on ports the old workers still hold
+- 16a342d: Announce a voice join as soon as the peer joins, not when it creates its first transport
+- f67763b: Ask Opus for DTX alongside inband FEC, and cap the initial outgoing bitrate estimate
+- Updated dependencies [bad9064]
+- Updated dependencies [1669210]
+- Updated dependencies [16a342d]
+- Updated dependencies [f67763b]
+  - @colibri-social/lexicons@2.6.0
+  - @colibri-social/voice@0.1.2
+  - @colibri-social/community@2.3.1
+  - @colibri-social/notifications@1.1.3
+  - @colibri-social/projections@1.3.2
+
 ## 2.5.0
 
 ### Minor Changes
