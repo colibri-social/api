@@ -93,12 +93,17 @@ type Presence = { $type?: "social.colibri.beta.actor.defs#presence";
   /**
    * Where the user is connected for voice, if anywhere.
    */
-  "voice"?:VoiceState };
+  "voice"?:VoiceState;
+
+  /**
+   * What the user is doing right now, when they share it and the AppView has something current.
+   */
+  "activity"?:Activity };
 
 export type { Presence };
 
 /** A user's live, off-protocol state. */
-const presence = /*#__PURE__*/ l.typedObject<Presence>($nsid, "presence", /*#__PURE__*/ l.object({"onlineState":/*#__PURE__*/ l.string<{"knownValues":["online","away","dnd","offline"]}>(),"status":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Status>((() => status) as any)),"voice":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<VoiceState>((() => voiceState) as any))}));
+const presence = /*#__PURE__*/ l.typedObject<Presence>($nsid, "presence", /*#__PURE__*/ l.object({"onlineState":/*#__PURE__*/ l.string<{"knownValues":["online","away","dnd","offline"]}>(),"status":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Status>((() => status) as any)),"voice":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<VoiceState>((() => voiceState) as any)),"activity":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Activity>((() => activity) as any))}));
 
 export { presence };
 
@@ -121,6 +126,61 @@ export type { Status };
 const status = /*#__PURE__*/ l.typedObject<Status>($nsid, "status", /*#__PURE__*/ l.object({"text":/*#__PURE__*/ l.string({"maxLength":32}),"emoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())}));
 
 export { status };
+
+/** Something the user is doing right now, read from another service they publish to. A client renders it beside their presence. */
+type Activity = { $type?: "social.colibri.beta.actor.defs#activity";
+
+  /**
+   * What sort of activity this is. A client that does not know a kind falls back to naming the source.
+   */
+  "kind":"listening" | "playing" | "streaming" | l.UnknownString;
+
+  /**
+   * The main line: a track, a game, or a stream title.
+   */
+  "title":string;
+
+  /**
+   * The second line, such as the artist.
+   */
+  "subtitle"?:string;
+
+  /**
+   * A third line naming where the title sits, such as the album.
+   */
+  "detail"?:string;
+
+  /**
+   * Artwork for the activity, served by this AppView. Absent when none could be resolved.
+   */
+  "imageUri"?:l.UriString;
+
+  /**
+   * Where the activity points, such as the track's page on the service it was played from.
+   */
+  "linkUri"?:l.UriString;
+
+  /**
+   * When the activity began.
+   */
+  "startedAt"?:l.DatetimeString;
+
+  /**
+   * After this the activity is no longer current. The AppView clears it and says so, and a client treats a lapsed activity as absent.
+   */
+  "endsAt"?:l.DatetimeString;
+
+  /**
+   * The service the activity was read from, such as 'teal.fm'.
+   */
+  "source":string };
+
+export type { Activity };
+
+/** Something the user is doing right now, read from another service they publish to. A client renders it beside their presence. */
+const activity = /*#__PURE__*/ l.typedObject<Activity>($nsid, "activity", /*#__PURE__*/ l.object({"kind":/*#__PURE__*/ l.string<{"knownValues":["listening","playing","streaming"]}>(),"title":/*#__PURE__*/ l.string({"maxLength":256}),"subtitle":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256})),"detail":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256})),"imageUri":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"linkUri":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"startedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"endsAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"source":/*#__PURE__*/ l.string({"maxLength":64})}));
+
+export { activity };
 
 /** A user's voice connection. */
 type VoiceState = { $type?: "social.colibri.beta.actor.defs#voiceState";
@@ -178,12 +238,17 @@ type Preferences = { $type?: "social.colibri.beta.actor.defs#preferences";
   /**
    * GIFs saved from the picker, stored whole.
    */
-  "gifFavorites":(EmbedDefs.GifView)[] };
+  "gifFavorites":(EmbedDefs.GifView)[];
+
+  /**
+   * Whether the AppView may read what the user is listening to and show it to others.
+   */
+  "shareActivity"?:boolean };
 
 export type { Preferences };
 
 /** The authenticated user's own settings, as the AppView currently holds them. */
-const preferences = /*#__PURE__*/ l.typedObject<Preferences>($nsid, "preferences", /*#__PURE__*/ l.object({"notificationLevel":/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies"]}>(),"communityOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"mutes":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Mute>((() => mute) as any), ),"gifFavorites":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), )}));
+const preferences = /*#__PURE__*/ l.typedObject<Preferences>($nsid, "preferences", /*#__PURE__*/ l.object({"notificationLevel":/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies"]}>(),"communityOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"mutes":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Mute>((() => mute) as any), ),"gifFavorites":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), ),"shareActivity":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
 
 export { preferences };
 

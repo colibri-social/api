@@ -9,7 +9,7 @@ import {
 	SecretBox,
 	spaceRegistry,
 } from "@colibri-social/community";
-import { createGifsClient, createPreviewCache } from "@colibri-social/embeds";
+import { createGifsClient, createPreviewCache, createTtlCache } from "@colibri-social/embeds";
 import {
 	buildDidDocument,
 	IdentityResolver,
@@ -27,6 +27,11 @@ import {
 } from "@colibri-social/space";
 import { SpaceSyncEngine } from "@colibri-social/space-sync";
 import { createVoiceSfu, voiceSfuConfigFromEnv } from "@colibri-social/voice";
+import {
+	ARTWORK_CACHE_MAX_ENTRIES,
+	ARTWORK_CACHE_TTL_MS,
+	type ArtworkEntry,
+} from "./activity-artwork.js";
 import { type Announcer, silentAnnouncer } from "./announce.js";
 import { type AuthzChanges, createAuthzChanges } from "./authz-changes.js";
 import type { Config } from "./config.js";
@@ -167,6 +172,10 @@ export const createContext = async (config: Config) => {
 
 	const gifs = config.KLIPY_API_KEY ? createGifsClient({ apiKey: config.KLIPY_API_KEY }) : null;
 	const previews = createPreviewCache();
+	const artwork = createTtlCache<ArtworkEntry>({
+		maxEntries: ARTWORK_CACHE_MAX_ENTRIES,
+		ttlMs: ARTWORK_CACHE_TTL_MS,
+	});
 
 	const voice = config.VOICE_ENABLED ? await createVoiceSfu(voiceSfuConfigFromEnv()) : null;
 
@@ -209,6 +218,7 @@ export const createContext = async (config: Config) => {
 		blobs,
 		gifs,
 		previews,
+		artwork,
 		voice,
 		didDocument,
 		close: async () => {

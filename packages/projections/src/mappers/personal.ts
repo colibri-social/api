@@ -59,6 +59,7 @@ export const settings: Projector<social.colibri.beta.actor.settings.Main> = {
 			notificationLevel: (value.notificationLevel ?? "all") as "all" | "mentionsAndReplies",
 			communityOrder: [...(value.communityOrder ?? [])],
 			gifFavorites: (value.gifFavorites ?? []).map(toGifFavorite),
+			shareActivity: value.shareActivity ?? false,
 		};
 		await deps.db
 			.insert(deps.tables.actorSettings)

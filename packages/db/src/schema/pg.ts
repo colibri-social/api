@@ -23,6 +23,7 @@ export type ModerationAction = "ban" | "unban" | "kick";
 export type NotificationKind = "mention" | "reply" | "message";
 export type NotificationLevel = "all" | "mentionsAndReplies";
 export type OnlineState = "online" | "away" | "dnd" | "offline";
+export type ActivityKind = "listening" | "playing" | "streaming";
 export type PushProvider = "webpush" | "fcm";
 export type PushPlatform = "web" | "ios" | "android";
 export type CredentialSource = "provisioned" | "registered";
@@ -317,6 +318,7 @@ export const actorSettings = pgTable("actor_settings", {
 	gifFavorites: json<GifFavorite[]>("gif_favorites")
 		.notNull()
 		.$defaultFn(() => []),
+	shareActivity: flag("share_activity").notNull().default(false),
 });
 
 export const readCursors = pgTable(
@@ -424,6 +426,24 @@ export const userPresence = pgTable("user_presence", {
 	updatedAt: timestamp("updated_at").notNull(),
 });
 
+export const actorActivity = pgTable(
+	"actor_activity",
+	{
+		did: text("did").primaryKey(),
+		kind: text("kind").notNull().$type<ActivityKind>(),
+		title: text("title").notNull(),
+		subtitle: text("subtitle"),
+		detail: text("detail"),
+		imageUrl: text("image_url"),
+		linkUri: text("link_uri"),
+		startedAt: timestamp("started_at"),
+		endsAt: timestamp("ends_at"),
+		source: text("source").notNull(),
+		updatedAt: timestamp("updated_at").notNull(),
+	},
+	(t) => [index("actor_activity_ends_at_idx").on(t.endsAt)],
+);
+
 export const identityCache = pgTable(
 	"identity_cache",
 	{
@@ -488,6 +508,7 @@ export const schema = {
 	invitations,
 	applications,
 	userPresence,
+	actorActivity,
 	identityCache,
 	profileCache,
 	serviceState,

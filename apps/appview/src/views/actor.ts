@@ -9,8 +9,8 @@ import {
 import { PdsClient } from "@colibri-social/space";
 import { inArray } from "drizzle-orm";
 import type { AppContext } from "../context.js";
-import { effectiveOnlineState } from "../presence.js";
-import { liveVoiceState } from "./voice-state.js";
+import { presenceOf } from "../presence.js";
+import { type ActivityView, loadActivities } from "./activity.js";
 
 export type ProfileView = social.colibri.beta.actor.defs.ProfileView;
 export type Presence = social.colibri.beta.actor.defs.Presence;
@@ -116,6 +116,8 @@ export class ActorViews {
 			await Promise.all(stale.map(async (did) => [did, await this.fetchProfile(did)] as const)),
 		);
 
+		const activities = await loadActivities(this.ctx, unique);
+
 		const out = new Map<string, ProfileView>();
 		for (const did of unique) {
 			const source = fetched.get(did) ?? cached.get(did) ?? { colibri: null, bsky: null };
@@ -124,7 +126,7 @@ export class ActorViews {
 				(source.bsky as BlueskyProfile) ?? null,
 			);
 			const handle = await this.ctx.identity.resolveVerifiedHandle(did).catch(() => null);
-			const presence = await this.presenceFor(did);
+			const presence = await this.presenceFor(did, activities.get(did));
 
 			out.set(did, {
 				did: asDid(did),
@@ -148,19 +150,13 @@ export class ActorViews {
 		return map.get(did) as ProfileView;
 	}
 
-	private async presenceFor(did: string): Promise<Presence | undefined> {
+	private async presenceFor(did: string, activity?: ActivityView): Promise<Presence | undefined> {
 		const [row] = await this.ctx.database.db
 			.select()
 			.from(this.ctx.database.tables.userPresence)
 			.where(inArray(this.ctx.database.tables.userPresence.did, [did]))
 			.limit(1);
 		if (!row) return undefined;
-		return {
-			onlineState: effectiveOnlineState(row),
-			status: row.statusText
-				? { text: row.statusText, emoji: row.statusEmoji ?? undefined }
-				: undefined,
-			voice: liveVoiceState(this.ctx.voice, did),
-		} as Presence;
+		return presenceOf(this.ctx, did, row, activity);
 	}
 }

@@ -153,7 +153,7 @@ describe("endpoint", () => {
 });
 
 describe("subscription", () => {
-	it("asks for identity, account and profile commits only", async () => {
+	it("asks for identity, account, profile and listening commits only", async () => {
 		await startAgainstServer();
 		const request = requests[0] as URL;
 
@@ -162,6 +162,7 @@ describe("subscription", () => {
 		expect(request.searchParams.getAll("collections")).toEqual([
 			"social.colibri.beta.actor.profile",
 			"app.bsky.actor.profile",
+			"fm.teal.actor.status",
 		]);
 		expect(request.searchParams.has("wantedCollections")).toBe(false);
 	});

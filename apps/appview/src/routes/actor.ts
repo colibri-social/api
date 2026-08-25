@@ -54,6 +54,7 @@ export const loadPreferences = async (ctx: AppContext, callerDid: string): Promi
 			createdAt: asDatetime(row.createdAt),
 		})),
 		gifFavorites: (settings?.gifFavorites ?? []).map(toGifView),
+		shareActivity: settings?.shareActivity ?? false,
 	};
 };
 

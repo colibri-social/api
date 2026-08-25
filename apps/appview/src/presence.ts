@@ -1,6 +1,8 @@
 import type { OnlineState } from "@colibri-social/appview-db";
+import type { social } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import type { AppContext } from "./context.js";
+import { type ActivityView, loadActivity } from "./views/activity.js";
 import { liveVoiceState } from "./views/voice-state.js";
 import type { ServerFrame } from "./ws/events.js";
 
@@ -18,6 +20,26 @@ type PresenceRow = {
  */
 export const effectiveOnlineState = (row: PresenceRow): OnlineState =>
 	row.derivedState === OFFLINE ? OFFLINE : (row.requestedState ?? ONLINE);
+
+export type PresenceParts = PresenceRow & {
+	statusText: string | null;
+	statusEmoji: string | null;
+};
+
+export const presenceOf = (
+	ctx: AppContext,
+	did: string,
+	row: PresenceParts,
+	activity?: ActivityView,
+): social.colibri.beta.actor.defs.Presence =>
+	({
+		onlineState: effectiveOnlineState(row),
+		status: row.statusText
+			? { text: row.statusText, emoji: row.statusEmoji ?? undefined }
+			: undefined,
+		voice: liveVoiceState(ctx.voice, did),
+		activity,
+	}) as social.colibri.beta.actor.defs.Presence;
 
 export const isOnlineState = (value: string): value is OnlineState =>
 	value === ONLINE || value === "away" || value === "dnd" || value === OFFLINE;
@@ -133,13 +155,7 @@ export class PresenceTracker {
 			{
 				$type: "social.colibri.beta.sync.defs#presenceEvent",
 				did,
-				presence: {
-					onlineState: after,
-					status: row.statusText
-						? { text: row.statusText, emoji: row.statusEmoji ?? undefined }
-						: undefined,
-					voice: liveVoiceState(this.deps.ctx.voice, did),
-				},
+				presence: presenceOf(this.deps.ctx, did, row, await loadActivity(this.deps.ctx, did)),
 			},
 		);
 	}

@@ -3,12 +3,13 @@ import type { NotificationLevel, OnlineState } from "@colibri-social/appview-db"
 import { asDatetime, encodeMuteSubject, social } from "@colibri-social/lexicons";
 import { nextTid, parseSpaceRef, SpaceCredentialError } from "@colibri-social/space";
 import { and, eq, notInArray } from "drizzle-orm";
+import { setActivitySharing } from "../activity.js";
 import { announceToCommunities, preferencesEvent, presenceEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
-import { effectiveOnlineState, isOnlineState } from "../presence.js";
+import { isOnlineState, presenceOf } from "../presence.js";
 import { route } from "../route.js";
+import { loadActivity } from "../views/activity.js";
 import { toGifFavorite } from "../views/gif.js";
-import { liveVoiceState } from "../views/voice-state.js";
 import { findSoleOwnedCommunities, loadPreferences } from "./actor.js";
 import type { RouteDeps } from "./types.js";
 
@@ -52,6 +53,7 @@ export const handlePutSettings = async (
 		notificationLevel?: string;
 		communityOrder?: string[];
 		gifFavorites?: social.colibri.beta.embed.defs.GifView[];
+		shareActivity?: boolean;
 	},
 ): Promise<{ preferences: Preferences }> => {
 	const notificationLevel =
@@ -70,12 +72,20 @@ export const handlePutSettings = async (
 		notificationLevel: notificationLevel ?? existing?.notificationLevel ?? ("all" as const),
 		communityOrder: input.communityOrder ?? existing?.communityOrder ?? [],
 		gifFavorites: input.gifFavorites?.map(toGifFavorite) ?? existing?.gifFavorites ?? [],
+		shareActivity: input.shareActivity ?? existing?.shareActivity ?? false,
 	};
 
 	await ctx.database.db
 		.insert(ctx.database.tables.actorSettings)
 		.values(row)
 		.onConflictDoUpdate({ target: ctx.database.tables.actorSettings.did, set: row });
+
+	if (row.shareActivity !== (existing?.shareActivity ?? false)) {
+		const changed = setActivitySharing(ctx, callerDid, row.shareActivity).catch((error: unknown) =>
+			ctx.log.warn({ err: error }, "activity.sharingChangeFailed"),
+		);
+		if (!row.shareActivity) await changed;
+	}
 
 	return { preferences: await announcePreferences(ctx, callerDid) };
 };
@@ -146,13 +156,7 @@ export const handleSetStatus = async (
 		.values(row)
 		.onConflictDoUpdate({ target: ctx.database.tables.userPresence.did, set: row });
 
-	const presence = {
-		onlineState: effectiveOnlineState(row),
-		status: row.statusText
-			? { text: row.statusText, emoji: row.statusEmoji ?? undefined }
-			: undefined,
-		voice: liveVoiceState(ctx.voice, callerDid),
-	} as Presence;
+	const presence = presenceOf(ctx, callerDid, row, await loadActivity(ctx, callerDid));
 
 	await announceToCommunities(ctx, callerDid, presenceEvent(callerDid, presence));
 
@@ -234,6 +238,7 @@ export const handleDeleteAccount = async (
 		{ table: tables.actorSettings, column: tables.actorSettings.did },
 		{ table: tables.readCursors, column: tables.readCursors.did },
 		{ table: tables.userPresence, column: tables.userPresence.did },
+		{ table: tables.actorActivity, column: tables.actorActivity.did },
 		{ table: tables.profileCache, column: tables.profileCache.did },
 	];
 

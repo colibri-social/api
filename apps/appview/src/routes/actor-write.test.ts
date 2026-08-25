@@ -32,6 +32,7 @@ beforeEach(async () => {
 		announce: silentAnnouncer,
 		config: { PUBLIC_URL: "https://appview.test", pushProviders: [] },
 		database,
+		log: { warn: () => undefined, debug: () => undefined },
 		loader,
 		hosts: { hostFor: async () => "https://pds.test" },
 		sync: { notifyWrite: () => undefined },
@@ -99,6 +100,51 @@ describe("putSettings", () => {
 
 		expect(result.preferences.notificationLevel).toBe("mentionsAndReplies");
 		expect(result.preferences.gifFavorites).toEqual([GIF]);
+	});
+
+	it("does not share what someone is listening to until they ask for it", async () => {
+		const result = await handlePutSettings(ctx, CALLER, {});
+		expect(result.preferences.shareActivity).toBe(false);
+	});
+
+	it("records that the caller wants their listening shared", async () => {
+		const result = await handlePutSettings(ctx, CALLER, { shareActivity: true });
+
+		expect(result.preferences.shareActivity).toBe(true);
+
+		const [row] = await database.db
+			.select()
+			.from(database.tables.actorSettings)
+			.where(eq(database.tables.actorSettings.did, CALLER));
+		expect(row?.shareActivity).toBe(true);
+	});
+
+	it("leaves sharing alone when the field is absent", async () => {
+		await handlePutSettings(ctx, CALLER, { shareActivity: true });
+		const result = await handlePutSettings(ctx, CALLER, {
+			notificationLevel: "mentionsAndReplies",
+		});
+
+		expect(result.preferences.shareActivity).toBe(true);
+	});
+
+	it("drops a stored activity when the caller stops sharing", async () => {
+		await handlePutSettings(ctx, CALLER, { shareActivity: true });
+		await database.db.insert(database.tables.actorActivity).values({
+			did: CALLER,
+			kind: "listening",
+			title: "Sick Like You",
+			source: "teal.fm",
+			updatedAt: NOW,
+		});
+
+		await handlePutSettings(ctx, CALLER, { shareActivity: false });
+
+		const rows = await database.db
+			.select()
+			.from(database.tables.actorActivity)
+			.where(eq(database.tables.actorActivity.did, CALLER));
+		expect(rows).toEqual([]);
 	});
 });
 

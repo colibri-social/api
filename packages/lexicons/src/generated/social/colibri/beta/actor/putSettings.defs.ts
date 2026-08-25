@@ -16,7 +16,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"notificationLevel":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies"]}>()),"communityOrder":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"gifFavorites":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), ))});
+export const $input = /*#__PURE__*/ l.jsonPayload({"notificationLevel":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies"]}>()),"communityOrder":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"gifFavorites":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), )),"shareActivity":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;

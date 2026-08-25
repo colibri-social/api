@@ -5,6 +5,7 @@ import type { Permission } from "@colibri-social/lexicons";
 import { social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import { type WebSocket, WebSocketServer } from "ws";
+import { backfillActivity } from "../activity.js";
 import { channelEvent, communityEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { isOnlineState, PresenceTracker } from "../presence.js";
@@ -143,9 +144,15 @@ export class EventServer {
 			alive: true,
 			hints: { count: 0, windowStartedAt: 0 },
 		};
+		const first = this.presence.connections(did) === 0;
 		this.connections.add(connection);
 		this.topics.subscribe(connection, [userTopic(did)]);
 		void this.trackPresence(did, "opened", () => this.presence.opened(did));
+		if (first) {
+			void backfillActivity(this.ctx, did).catch((error: unknown) =>
+				this.ctx.log.warn({ did, err: error }, "activity.backfillFailed"),
+			);
+		}
 
 		socket.on("pong", () => {
 			connection.alive = true;
