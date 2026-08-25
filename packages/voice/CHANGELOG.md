@@ -1,5 +1,13 @@
 # @colibri-social/voice
 
+## 0.1.2
+
+### Patch Changes
+
+- 1669210: Wait for every mediasoup worker subprocess to exit before the appview process does, so a restart no longer fails on ports the old workers still hold
+- 16a342d: Announce a voice join as soon as the peer joins, not when it creates its first transport
+- f67763b: Ask Opus for DTX alongside inband FEC, and cap the initial outgoing bitrate estimate
+
 ## 0.1.1
 
 ### Patch Changes

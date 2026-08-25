@@ -1,5 +1,11 @@
 # @colibri-social/lexicons
 
+## 2.6.0
+
+### Minor Changes
+
+- bad9064: Add an optional `indent` to `social.colibri.beta.richtext.facet#list` so nested list items can carry their depth
+
 ## 2.5.0
 
 ### Minor Changes
