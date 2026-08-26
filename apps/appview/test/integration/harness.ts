@@ -248,6 +248,7 @@ export const createHarness = async () => {
 		sync: {
 			notifyWrite: () => undefined,
 			notifySpaceDeleted: () => undefined,
+			wake: () => undefined,
 		},
 	} as unknown as AppContext;
 

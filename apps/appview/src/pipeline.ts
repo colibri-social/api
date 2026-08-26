@@ -85,6 +85,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 
 		const spaces = await communitySpaceUris(ctx.database, community);
 		await purgeCommunity(ctx.database, community, spaces);
+		for (const space of spaces) ctx.sync.notifySpaceDeleted(space);
 
 		events.communityDeleted(community);
 		ctx.authzChanges.publish({ community, collection: COLLECTIONS.member });

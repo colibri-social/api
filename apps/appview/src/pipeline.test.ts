@@ -37,6 +37,7 @@ let emitSpaceDeleted: (uri: string) => void;
 let disconnect: () => void;
 let communityDeletes: string[];
 let authzChanges: string[];
+let forgotten: string[];
 
 const framesOfType = (suffix: string) =>
 	published.filter((entry) => entry.frame.$type === `social.colibri.beta.sync.defs#${suffix}`);
@@ -116,6 +117,7 @@ beforeEach(async () => {
 	published = [];
 	communityDeletes = [];
 	authzChanges = [];
+	forgotten = [];
 
 	const ctx = {
 		database,
@@ -141,6 +143,7 @@ beforeEach(async () => {
 				if (event === "spaceDeleted") emitSpaceDeleted = listener as (uri: string) => void;
 				return () => {};
 			},
+			notifySpaceDeleted: (uri: string) => forgotten.push(uri),
 		},
 		authzChanges: {
 			publish: (change: { community: string }) => authzChanges.push(change.community),
@@ -389,6 +392,7 @@ describe("configuration events", () => {
 		expect(authzChanges).toEqual([COMMUNITY]);
 		expect(await database.db.select().from(database.tables.communities)).toEqual([]);
 		expect(await database.db.select().from(database.tables.channels)).toEqual([]);
+		expect(forgotten).toContain(SPACE);
 	});
 
 	it("stays quiet when the community row is already gone", async () => {

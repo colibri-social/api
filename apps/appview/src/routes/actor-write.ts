@@ -212,6 +212,8 @@ export const handleGrantSpaceAccess = async (
 		throw grantErrorFor(cause);
 	}
 
+	ctx.sync.wake(ref.uri);
+
 	await ctx.spaces.register({
 		uri: ref.uri,
 		community: null,

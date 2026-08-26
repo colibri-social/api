@@ -30,9 +30,11 @@ let cursors: Map<string, RepoCursor>;
 let dropped: string[];
 let droppedSpaces: string[];
 let dropSpaceFails: boolean;
+let orphaned: boolean;
 
 const store = (expected?: string[]): SyncStore => ({
 	listSpaces: async () => [{ uri: SPACE, authority: AUTHORITY }],
+	isOrphaned: async () => orphaned,
 	listCursors: async () => [...cursors.values()],
 	...(expected ? { expectedRepos: async () => expected } : {}),
 	loadCursor: async (_space, author) => cursors.get(author) ?? null,
@@ -98,6 +100,7 @@ beforeEach(() => {
 	dropped = [];
 	droppedSpaces = [];
 	dropSpaceFails = false;
+	orphaned = false;
 });
 
 describe("sweeping a space", () => {
@@ -590,5 +593,76 @@ describe("sweeping", () => {
 		await Promise.all([engine.sweep(), engine.sweep()]);
 
 		expect(listings).toBe(1);
+	});
+});
+
+describe("spaces the appview cannot mint a credential for", () => {
+	const noToken = () =>
+		new SpaceCredentialError(SPACE, "noDelegationToken", "no session can mint a token");
+
+	it("parks the space instead of retrying every minute", async () => {
+		vi.useFakeTimers();
+		let clock = new Date("2026-08-23T00:00:00.000Z").getTime();
+		const events: string[] = [];
+		const { engine, spaceClient } = engineFor([], async () => undefined, {
+			now: () => new Date(clock),
+			engine: { log: (event) => void events.push(event) },
+		});
+		spaceClient.registerNotify.mockRejectedValue(noToken());
+
+		await engine.start();
+		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(1);
+		expect(events).toContain("space.dormant");
+		expect(events).not.toContain("registerNotify.failed");
+
+		clock += 600_000;
+		await vi.advanceTimersByTimeAsync(300_000);
+
+		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(1);
+		await engine.stop();
+		vi.useRealTimers();
+	});
+
+	it("leaves a parked space out of the sweep", async () => {
+		const { engine, spaceClient } = engineFor([{ did: ALICE, rev: "3b" }], async () => undefined);
+		spaceClient.registerNotify.mockRejectedValue(noToken());
+		let listings = 0;
+		const original = spaceClient.allRepos;
+		spaceClient.allRepos = async function* () {
+			listings += 1;
+			yield* original();
+		};
+
+		await engine.sweep();
+		await engine.sweep();
+
+		expect(listings).toBe(0);
+	});
+
+	it("resumes once a fresh grant wakes it", async () => {
+		const { engine, spaceClient } = engineFor([], async () => undefined);
+		spaceClient.registerNotify.mockRejectedValueOnce(noToken());
+
+		await engine.sweepSpace(SPACE);
+		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(1);
+
+		engine.wake(SPACE);
+		await engine.sweepSpace(SPACE);
+
+		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(2);
+	});
+
+	it("drops a space whose community is gone rather than parking it", async () => {
+		orphaned = true;
+		const events: string[] = [];
+		const { engine, spaceClient } = engineFor([], async () => undefined, {
+			engine: { log: (event) => void events.push(event) },
+		});
+		spaceClient.registerNotify.mockRejectedValue(noToken());
+
+		await engine.sweepSpace(SPACE);
+
+		expect(events).toContain("space.orphaned");
+		expect(droppedSpaces).toEqual([SPACE]);
 	});
 });

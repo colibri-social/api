@@ -59,6 +59,7 @@ export type SyncStore = {
 	listSpaces(): Promise<SyncSpace[]>;
 	listRegistrations?(): Promise<NotifyRegistration[]>;
 	saveRegistration?(registration: NotifyRegistration): Promise<void>;
+	isOrphaned?(space: string): Promise<boolean>;
 	listCursors(space: string): Promise<RepoCursor[]>;
 	expectedRepos?(space: string): Promise<string[]>;
 	loadCursor(space: string, author: string): Promise<RepoCursor | null>;

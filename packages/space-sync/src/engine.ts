@@ -77,7 +77,11 @@ type RegistrationState = {
 	registeredAt: Date | null;
 	retryAt: Date | null;
 	failures: number;
+	dormant: boolean;
 };
+
+const isMissingDelegation = (error: unknown): boolean =>
+	error instanceof SpaceCredentialError && error.reason === "noDelegationToken";
 
 export class SpaceSyncEngine {
 	private readonly repos: Pick<RepoSync, "sync">;
@@ -186,6 +190,15 @@ export class SpaceSyncEngine {
 		this.queue.push(key);
 	}
 
+	wake(space: string): void {
+		const state = this.registrations.get(space);
+		if (!state?.dormant) return;
+		state.dormant = false;
+		state.retryAt = null;
+		state.failures = 0;
+		this.log("space.woken", { space }, "debug");
+	}
+
 	notifySpaceDeleted(space: string): void {
 		void this.dropSpace(space).catch((error: unknown) =>
 			this.log("dropSpace.failed", { space, error }),
@@ -205,9 +218,11 @@ export class SpaceSyncEngine {
 		try {
 			const spaces = await this.options.store.listSpaces();
 			for (const space of spaces) {
-				await this.sweepSpace(space.uri).catch((error) =>
-					this.log("sweep.failed", { space: space.uri, error }),
-				);
+				if (this.registrations.get(space.uri)?.dormant) continue;
+				await this.sweepSpace(space.uri).catch(async (error) => {
+					if (await this.park(space.uri, error)) return;
+					this.log("sweep.failed", { space: space.uri, error });
+				});
 			}
 		} finally {
 			this.sweeping = false;
@@ -215,7 +230,7 @@ export class SpaceSyncEngine {
 	}
 
 	async sweepSpace(space: string): Promise<void> {
-		await this.ensureRegistered(space);
+		if (!(await this.ensureRegistered(space))) return;
 
 		const cursors = new Map<string, RepoCursor>();
 		for (const cursor of await this.options.store.listCursors(space)) {
@@ -239,6 +254,7 @@ export class SpaceSyncEngine {
 				await this.dropSpace(space);
 				return;
 			}
+			if (await this.park(space, error)) return;
 			throw error;
 		}
 
@@ -305,14 +321,16 @@ export class SpaceSyncEngine {
 				registeredAt: null,
 				retryAt: null,
 				failures: 0,
+				dormant: false,
 			});
 		}
 	}
 
-	private async ensureRegistered(space: string): Promise<void> {
+	private async ensureRegistered(space: string): Promise<boolean> {
 		const state = this.trackSpace(space);
-		if (!this.registrationDue(state, this.now())) return;
-		await this.register(space, state);
+		if (state.dormant) return false;
+		if (this.registrationDue(state, this.now())) await this.register(space, state);
+		return this.registrations.get(space)?.dormant === false;
 	}
 
 	private trackSpace(space: string): RegistrationState {
@@ -323,6 +341,7 @@ export class SpaceSyncEngine {
 			registeredAt: null,
 			retryAt: null,
 			failures: 0,
+			dormant: false,
 		};
 		this.registrations.set(space, fresh);
 		return fresh;
@@ -339,6 +358,7 @@ export class SpaceSyncEngine {
 	}
 
 	private registrationDue(state: RegistrationState, now: Date): boolean {
+		if (state.dormant) return false;
 		if (state.retryAt) return state.retryAt <= now;
 		if (!state.expiresAt) return true;
 		return now.getTime() >= state.expiresAt.getTime() - this.renewMarginFor(state);
@@ -350,6 +370,31 @@ export class SpaceSyncEngine {
 			if (!this.registrationDue(state, now)) continue;
 			await this.register(space, state);
 		}
+	}
+
+	private async park(space: string, error: unknown): Promise<boolean> {
+		if (!isMissingDelegation(error)) return false;
+
+		if (await this.orphaned(space)) {
+			this.log("space.orphaned", { space });
+			await this.dropSpace(space);
+			return true;
+		}
+
+		const state = this.trackSpace(space);
+		if (state.dormant) return true;
+		state.dormant = true;
+		state.retryAt = null;
+		this.log("space.dormant", { space, failures: state.failures });
+		return true;
+	}
+
+	private async orphaned(space: string): Promise<boolean> {
+		if (!this.options.store.isOrphaned) return false;
+		return this.options.store.isOrphaned(space).catch((error: unknown) => {
+			this.log("isOrphaned.failed", { space, error });
+			return false;
+		});
 	}
 
 	private async register(space: string, state: RegistrationState): Promise<void> {
@@ -375,6 +420,7 @@ export class SpaceSyncEngine {
 				.catch((error: unknown) => this.log("saveRegistration.failed", { space, error }));
 			this.log("registerNotify.renewed", { space, expiresAt: expiresAt.toISOString() }, "debug");
 		} catch (error) {
+			if (await this.park(space, error)) return;
 			state.failures += 1;
 			state.retryAt = new Date(
 				now.getTime() +

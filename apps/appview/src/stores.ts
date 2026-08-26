@@ -108,6 +108,22 @@ export const drizzleSyncStore = (database: Database, projections: ProjectionDeps
 			return rows;
 		},
 
+		isOrphaned: async (space) => {
+			const [row] = await db
+				.select({ community: tables.spaces.community })
+				.from(tables.spaces)
+				.where(eq(tables.spaces.uri, space))
+				.limit(1);
+			if (!row?.community) return false;
+
+			const [owner] = await db
+				.select({ did: tables.communities.did })
+				.from(tables.communities)
+				.where(eq(tables.communities.did, row.community))
+				.limit(1);
+			return !owner;
+		},
+
 		listRegistrations: async () => {
 			const rows = await db.select().from(tables.notifyRegistrations);
 			return rows.map((row) => ({
