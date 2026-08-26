@@ -232,6 +232,7 @@ beforeEach(async () => {
 		identity: {
 			resolveDid: async () => null,
 			resolveVerifiedHandle: async () => null,
+			resolveVerifiedHandles: async () => new Map(),
 		},
 	} as unknown as AppContext;
 	actors = new ActorViews(ctx);

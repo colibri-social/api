@@ -359,7 +359,7 @@ export const notifications = pgTable(
 	},
 	(t) => [
 		index("notifications_recipient_idx").on(t.recipient, t.indexedAt),
-		index("notifications_unseen_idx").on(t.recipient, t.seenAt),
+		index("notifications_unseen_idx").on(t.recipient, t.space, t.seenAt),
 		index("notifications_message_idx").on(t.messageAuthor, t.messageRkey),
 	],
 );
@@ -449,6 +449,7 @@ export const identityCache = pgTable(
 	{
 		did: text("did").primaryKey(),
 		handle: text("handle"),
+		handleVerified: flag("handle_verified"),
 		pds: text("pds"),
 		signingKey: text("signing_key"),
 		fetchedAt: timestamp("fetched_at").notNull(),

@@ -18,7 +18,7 @@ import {
 	asUriOrUndefined,
 	type social,
 } from "@colibri-social/lexicons";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import type { ActorViews } from "./actor.js";
 
@@ -29,10 +29,14 @@ export type RoleView = social.colibri.beta.community.defs.RoleView;
 export type MemberView = social.colibri.beta.community.defs.MemberView;
 
 type CommunityRow = Schema["communities"]["$inferSelect"];
+type MemberRow = Schema["members"]["$inferSelect"];
 type ChannelRow = Schema["channels"]["$inferSelect"];
 type RoleRow = Schema["roles"]["$inferSelect"];
 
 const INVALID_HANDLE = "handle.invalid";
+
+const ROLE_SCAN_BATCH = 500;
+const MAX_MEMBER_SCAN_ROUNDS = 20;
 
 const toChannelState = (row: ChannelRow): ChannelState => ({
 	space: row.space,
@@ -174,18 +178,54 @@ export class CommunityViews {
 		}));
 	}
 
+	private async memberRows(
+		community: string,
+		limit: number,
+		after: string | undefined,
+	): Promise<MemberRow[]> {
+		const conditions = [eq(this.ctx.database.tables.members.community, community)];
+		if (after) conditions.push(gt(this.ctx.database.tables.members.did, after));
+
+		return this.ctx.database.db
+			.select()
+			.from(this.ctx.database.tables.members)
+			.where(and(...conditions))
+			.orderBy(asc(this.ctx.database.tables.members.did))
+			.limit(limit);
+	}
+
 	async members(
 		community: string,
 		options: { role?: string; limit: number; cursor?: string } = { limit: 50 },
 	): Promise<{ members: MemberView[]; cursor: string | null }> {
-		const rows = await this.ctx.database.db
-			.select()
-			.from(this.ctx.database.tables.members)
-			.where(eq(this.ctx.database.tables.members.community, community))
-			.orderBy(asc(this.ctx.database.tables.members.did))
-			.limit(options.limit + 1);
+		const { limit, role } = options;
+		const batchSize = role ? ROLE_SCAN_BATCH : limit + 1;
 
-		const page = rows.slice(0, options.limit);
+		const matched: MemberRow[] = [];
+		let after = options.cursor;
+		let exhausted = false;
+
+		for (let round = 0; round < MAX_MEMBER_SCAN_ROUNDS; round++) {
+			const batch = await this.memberRows(community, batchSize, after);
+			if (batch.length === 0) {
+				exhausted = true;
+				break;
+			}
+
+			after = batch[batch.length - 1]?.did;
+			for (const row of batch) {
+				if (!role || row.roles.includes(role)) matched.push(row);
+			}
+
+			if (batch.length < batchSize) {
+				exhausted = true;
+				break;
+			}
+			if (matched.length > limit) break;
+		}
+
+		const page = matched.slice(0, limit);
+		const scannedToEnd = exhausted && matched.length <= limit;
 		const profiles = await this.actors.hydrate(page.map((row) => row.did));
 
 		return {
@@ -195,7 +235,7 @@ export class CommunityViews {
 				joinedAt: asDatetime(row.joinedAt),
 				nickname: row.nickname ?? undefined,
 			})),
-			cursor: rows.length > options.limit ? (page.at(-1)?.did ?? null) : null,
+			cursor: scannedToEnd ? null : (page.at(-1)?.did ?? after ?? null),
 		};
 	}
 

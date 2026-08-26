@@ -136,6 +136,9 @@ beforeEach(async () => {
 			resolveVerifiedHandle: async () => {
 				throw new Error("no identity in tests");
 			},
+			resolveVerifiedHandles: async () => {
+				throw new Error("no identity in tests");
+			},
 		},
 		sync: {
 			on: (event: string, listener: (arg: never) => void) => {

@@ -1,9 +1,55 @@
 import type { Database, Queryable } from "@colibri-social/appview-db";
+import {
+	type CachedIdentity,
+	type IdentityStore,
+	mapWithConcurrency,
+} from "@colibri-social/identity";
 import { isChannelSpaceType, toJsonForm } from "@colibri-social/lexicons";
 import { applyChange, type ProjectionDeps } from "@colibri-social/projections";
 import type { CredentialStorage } from "@colibri-social/space";
 import type { RepoChange, RepoCursor, SyncStore } from "@colibri-social/space-sync";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
+
+const IDENTITY_WRITE_CONCURRENCY = 8;
+
+export const drizzleIdentityStore = ({ db, tables }: Database): IdentityStore => ({
+	load: async (dids) => {
+		const out = new Map<string, CachedIdentity>();
+		if (dids.length === 0) return out;
+		const rows = await db
+			.select()
+			.from(tables.identityCache)
+			.where(inArray(tables.identityCache.did, [...dids]));
+		for (const row of rows) {
+			out.set(row.did, {
+				did: row.did,
+				handle: row.handle,
+				handleVerified: row.handleVerified,
+				pds: row.pds,
+				signingKey: row.signingKey,
+				fetchedAt: new Date(row.fetchedAt),
+			});
+		}
+		return out;
+	},
+	save: async (entries) => {
+		if (entries.length === 0) return;
+		await mapWithConcurrency(entries, IDENTITY_WRITE_CONCURRENCY, async (entry) => {
+			const row = {
+				did: entry.did,
+				handle: entry.handle,
+				handleVerified: entry.handleVerified,
+				pds: entry.pds,
+				signingKey: entry.signingKey,
+				fetchedAt: entry.fetchedAt.toISOString(),
+			};
+			await db
+				.insert(tables.identityCache)
+				.values(row)
+				.onConflictDoUpdate({ target: tables.identityCache.did, set: row });
+		});
+	},
+});
 
 export const drizzleCredentialStorage = ({ db, tables }: Database): CredentialStorage => ({
 	load: async (space) => {

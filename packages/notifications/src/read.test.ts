@@ -11,6 +11,7 @@ import {
 	type ProfileView,
 	unreadCount,
 	unseenForChannel,
+	unseenForChannelPage,
 } from "./read.js";
 
 const COMMUNITY = "did:plc:community0000000000000000";
@@ -236,5 +237,60 @@ describe("hydrateNotifications", () => {
 		const [view] = await hydrateNotifications(deps, rows, async () => new Map());
 		expect(view?.author.did).toBe(AUTHOR);
 		expect(view?.message).toBeUndefined();
+	});
+});
+
+describe("unseenForChannelPage", () => {
+	it("returns the label index it already built alongside the rows", async () => {
+		await insertMessage("3lkmsg1");
+		await insertNotification({ kind: "mention", messageRkey: "3lkmsg1" });
+		await insertLabel("3lkmsg1", "spoiler");
+
+		const page = await unseenForChannelPage(deps, RECIPIENT, CHANNEL);
+
+		expect(page.rows).toHaveLength(1);
+		expect(page.labels.get(CHANNEL)?.size).toBe(1);
+	});
+
+	it("drops a withheld row and still reports its labels", async () => {
+		await insertMessage("3lkmsg1");
+		await insertNotification({ kind: "mention", messageRkey: "3lkmsg1" });
+		await insertLabel("3lkmsg1", "hidden");
+
+		const page = await unseenForChannelPage(deps, RECIPIENT, CHANNEL);
+
+		expect(page.rows).toHaveLength(0);
+		expect(page.labels.get(CHANNEL)).toBeDefined();
+	});
+
+	it("hydrates from a supplied label index without filtering again", async () => {
+		await insertMessage("3lkmsg1");
+		await insertNotification({ kind: "mention", messageRkey: "3lkmsg1" });
+		await insertLabel("3lkmsg1", "spoiler");
+
+		const page = await unseenForChannelPage(deps, RECIPIENT, CHANNEL);
+		const views = await hydrateNotifications(deps, page.rows, async () => new Map(), page.labels);
+
+		expect(views).toHaveLength(1);
+		expect(views[0]?.message?.labels).toEqual([
+			expect.objectContaining({ src: COMMUNITY, val: "spoiler" }),
+		]);
+	});
+
+	it("carries every referenced message through the batched lookup", async () => {
+		for (const rkey of ["3lkmsg1", "3lkmsg2", "3lkmsg3"]) {
+			await insertMessage(rkey, `text ${rkey}`);
+			await insertNotification({ kind: "mention", messageRkey: rkey });
+		}
+
+		const page = await unseenForChannelPage(deps, RECIPIENT, CHANNEL);
+		const views = await hydrateNotifications(deps, page.rows, async () => new Map(), page.labels);
+
+		expect(views).toHaveLength(3);
+		expect(views.map((view) => view.message?.text).sort()).toEqual([
+			"text 3lkmsg1",
+			"text 3lkmsg2",
+			"text 3lkmsg3",
+		]);
 	});
 });

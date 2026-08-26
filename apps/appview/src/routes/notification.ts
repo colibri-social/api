@@ -12,7 +12,7 @@ import {
 	unreadCount,
 	unregisterFcm,
 	unregisterWebPush,
-	unseenForChannel,
+	unseenForChannelPage,
 } from "@colibri-social/notifications";
 import { and, eq } from "drizzle-orm";
 import { seenEvent } from "../announce.js";
@@ -85,8 +85,10 @@ export const handleGetUnseen = async (
 ) => {
 	await requireChannel(ctx, channel);
 	const deps = notificationDeps(ctx);
-	const rows = await unseenForChannel(deps, callerDid, channel, limit);
-	return { notifications: await hydrateNotifications(deps, rows, hydrateActors) };
+	const page = await unseenForChannelPage(deps, callerDid, channel, limit);
+	return {
+		notifications: await hydrateNotifications(deps, page.rows, hydrateActors, page.labels),
+	};
 };
 
 export const handleUpdateSeen = async (ctx: AppContext, callerDid: string, seenAt: string) => {

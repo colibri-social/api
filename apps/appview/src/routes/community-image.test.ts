@@ -108,6 +108,9 @@ beforeEach(async () => {
 			resolveVerifiedHandle: async () => {
 				throw new Error("no identity in tests");
 			},
+			resolveVerifiedHandles: async () => {
+				throw new Error("no identity in tests");
+			},
 		},
 		writer: {
 			currentRecord: async () => {

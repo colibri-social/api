@@ -49,15 +49,22 @@ const insertCommunity = async (did: string, name: string, managingApp: string | 
 	});
 };
 
-const insertMember = async (community: string, did: string, joinedAt: string) => {
+const insertMember = async (
+	community: string,
+	did: string,
+	joinedAt: string,
+	roles: string[] = [],
+) => {
 	await database.db.insert(database.tables.members).values({
 		community,
 		did,
-		roles: [],
+		roles,
 		joinedAt,
 		nickname: null,
 	});
 };
+
+const memberDid = (index: number) => `did:plc:member${String(index).padStart(20, "0")}`;
 
 beforeEach(async () => {
 	database = await openTestDatabase();
@@ -76,6 +83,8 @@ beforeEach(async () => {
 				if (!handle) throw new Error(`no DID document for ${did}`);
 				return { did, handle, pds: "https://pds.test", signingKey: "did:key:zQ3sh" };
 			},
+			resolveVerifiedHandles: async (dids: readonly string[]) =>
+				new Map(dids.map((did) => [did, didDocumentHandles.get(did) ?? null])),
 		},
 	} as unknown as AppContext;
 
@@ -293,5 +302,94 @@ describe("the handle on a community view", () => {
 		await insertMember(COMMUNITY, MEMBER, "2026-01-01T00:00:00.000Z");
 
 		asListCommunitiesOutput(await handleListCommunities(ctx, communities, MEMBER));
+	});
+});
+
+describe("listMembers", () => {
+	const walk = async (limit: number, role?: string) => {
+		const seen: string[] = [];
+		let cursor: string | undefined;
+
+		for (let page = 0; page < 20; page++) {
+			const result = await communities.members(COMMUNITY, {
+				limit,
+				cursor,
+				...(role ? { role } : {}),
+			});
+			seen.push(...result.members.map((member) => member.actor.did));
+			if (!result.cursor) return { seen, ranOut: false };
+			cursor = result.cursor;
+		}
+
+		return { seen, ranOut: true };
+	};
+
+	beforeEach(async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+	});
+
+	it("walks every member exactly once across pages", async () => {
+		const dids = Array.from({ length: 7 }, (_, i) => memberDid(i));
+		for (const did of dids) await insertMember(COMMUNITY, did, NOW);
+
+		const { seen, ranOut } = await walk(2);
+
+		expect(ranOut).toBe(false);
+		expect(seen).toEqual(dids);
+		expect(new Set(seen).size).toBe(seen.length);
+	});
+
+	it("advances the cursor instead of repeating the first page", async () => {
+		for (let i = 0; i < 5; i++) await insertMember(COMMUNITY, memberDid(i), NOW);
+
+		const first = await communities.members(COMMUNITY, { limit: 2 });
+		const second = await communities.members(COMMUNITY, {
+			limit: 2,
+			cursor: first.cursor as string,
+		});
+
+		expect(first.cursor).toBe(memberDid(1));
+		expect(second.members.map((member) => member.actor.did)).toEqual([memberDid(2), memberDid(3)]);
+	});
+
+	it("stops with a null cursor once the last member fits in the page", async () => {
+		await insertMember(COMMUNITY, memberDid(0), NOW);
+		await insertMember(COMMUNITY, memberDid(1), NOW);
+
+		const result = await communities.members(COMMUNITY, { limit: 50 });
+
+		expect(result.members).toHaveLength(2);
+		expect(result.cursor).toBeNull();
+	});
+
+	it("returns only members holding the requested role", async () => {
+		await insertMember(COMMUNITY, memberDid(0), NOW, ["mods"]);
+		await insertMember(COMMUNITY, memberDid(1), NOW, []);
+		await insertMember(COMMUNITY, memberDid(2), NOW, ["mods", "vips"]);
+
+		const result = await communities.members(COMMUNITY, { limit: 50, role: "mods" });
+
+		expect(result.members.map((member) => member.actor.did)).toEqual([memberDid(0), memberDid(2)]);
+		expect(result.cursor).toBeNull();
+	});
+
+	it("paginates a role-filtered listing without dropping matches", async () => {
+		for (let i = 0; i < 9; i++) {
+			await insertMember(COMMUNITY, memberDid(i), NOW, i % 3 === 0 ? ["mods"] : []);
+		}
+
+		const { seen, ranOut } = await walk(1, "mods");
+
+		expect(ranOut).toBe(false);
+		expect(seen).toEqual([memberDid(0), memberDid(3), memberDid(6)]);
+	});
+
+	it("reports an empty page with no cursor when nobody holds the role", async () => {
+		await insertMember(COMMUNITY, memberDid(0), NOW, ["mods"]);
+
+		const result = await communities.members(COMMUNITY, { limit: 50, role: "ghosts" });
+
+		expect(result.members).toEqual([]);
+		expect(result.cursor).toBeNull();
 	});
 });

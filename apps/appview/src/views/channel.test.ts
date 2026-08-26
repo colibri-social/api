@@ -85,6 +85,9 @@ beforeEach(async () => {
 			resolveVerifiedHandle: async () => {
 				throw new Error("no identity in tests");
 			},
+			resolveVerifiedHandles: async () => {
+				throw new Error("no identity in tests");
+			},
 		},
 	} as unknown as AppContext;
 

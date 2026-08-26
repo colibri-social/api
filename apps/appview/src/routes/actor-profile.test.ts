@@ -37,6 +37,8 @@ beforeEach(async () => {
 		identity: {
 			resolveDid: async () => ({ pds: PDS }),
 			resolveVerifiedHandle: async () => "caller.test",
+			resolveVerifiedHandles: async (dids: readonly string[]) =>
+				new Map(dids.map((did) => [did, "caller.test"])),
 			resolveAtIdentifier: async () => ({ did: CALLER }),
 		},
 		voice: undefined,

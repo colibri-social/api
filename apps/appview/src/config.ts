@@ -64,6 +64,13 @@ export const configSchema = z.object({
 	SYNC_WORKER_THREADS: z.coerce.number().int().nonnegative().default(0),
 	SYNC_SWEEP_SECONDS: z.coerce.number().int().positive().default(300),
 	SERVICE_AUTH_MAX_LIFETIME_SECONDS: z.coerce.number().int().positive().default(300),
+	HANDLE_CACHE_TTL_SECONDS: z.coerce
+		.number()
+		.int()
+		.positive()
+		.default(24 * 60 * 60),
+	IDENTITY_CONCURRENCY: z.coerce.number().int().positive().default(12),
+	PROFILE_FETCH_CONCURRENCY: z.coerce.number().int().positive().default(8),
 
 	BLOB_CACHE_MAX_BYTES: z.coerce
 		.number()

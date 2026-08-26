@@ -1,3 +1,4 @@
+import { mapWithConcurrency } from "@colibri-social/identity";
 import {
 	asDid,
 	asHandle,
@@ -10,10 +11,12 @@ import { PdsClient } from "@colibri-social/space";
 import { inArray } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { presenceOf } from "../presence.js";
-import { type ActivityView, loadActivities } from "./activity.js";
+import { loadActivities } from "./activity.js";
 
 export type ProfileView = social.colibri.beta.actor.defs.ProfileView;
 export type Presence = social.colibri.beta.actor.defs.Presence;
+
+type PresenceRow = Parameters<typeof presenceOf>[2];
 
 type ColibriProfile = social.colibri.beta.actor.profile.Main;
 type BlueskyProfile = {
@@ -105,6 +108,8 @@ export class ActorViews {
 		options: HydrateOptions = {},
 	): Promise<Map<string, ProfileView>> {
 		const unique = [...new Set(dids)];
+		if (unique.length === 0) return new Map();
+
 		const cached = await this.cachedProfiles(unique);
 		const stale = unique.filter((did) => {
 			if (options.refresh?.has(did)) return true;
@@ -112,11 +117,18 @@ export class ActorViews {
 			return !row || Date.now() - new Date(row.fetchedAt).getTime() > CACHE_TTL_MS;
 		});
 
-		const fetched = new Map(
-			await Promise.all(stale.map(async (did) => [did, await this.fetchProfile(did)] as const)),
-		);
+		const [fetchedEntries, activities, handles, presenceRows] = await Promise.all([
+			mapWithConcurrency(
+				stale,
+				this.ctx.config.PROFILE_FETCH_CONCURRENCY,
+				async (did) => [did, await this.fetchProfile(did)] as const,
+			),
+			loadActivities(this.ctx, unique),
+			this.ctx.identity.resolveVerifiedHandles(unique).catch(() => new Map<string, null>()),
+			this.presenceRows(unique),
+		]);
 
-		const activities = await loadActivities(this.ctx, unique);
+		const fetched = new Map(fetchedEntries);
 
 		const out = new Map<string, ProfileView>();
 		for (const did of unique) {
@@ -125,8 +137,11 @@ export class ActorViews {
 				(source.colibri as ColibriProfile) ?? null,
 				(source.bsky as BlueskyProfile) ?? null,
 			);
-			const handle = await this.ctx.identity.resolveVerifiedHandle(did).catch(() => null);
-			const presence = await this.presenceFor(did, activities.get(did));
+			const handle = handles.get(did) ?? null;
+			const presenceRow = presenceRows.get(did);
+			const presence = presenceRow
+				? presenceOf(this.ctx, did, presenceRow, activities.get(did))
+				: undefined;
 
 			out.set(did, {
 				did: asDid(did),
@@ -150,13 +165,12 @@ export class ActorViews {
 		return map.get(did) as ProfileView;
 	}
 
-	private async presenceFor(did: string, activity?: ActivityView): Promise<Presence | undefined> {
-		const [row] = await this.ctx.database.db
+	private async presenceRows(dids: readonly string[]): Promise<Map<string, PresenceRow>> {
+		if (dids.length === 0) return new Map();
+		const rows = await this.ctx.database.db
 			.select()
 			.from(this.ctx.database.tables.userPresence)
-			.where(inArray(this.ctx.database.tables.userPresence.did, [did]))
-			.limit(1);
-		if (!row) return undefined;
-		return presenceOf(this.ctx, did, row, activity);
+			.where(inArray(this.ctx.database.tables.userPresence.did, [...dids]));
+		return new Map(rows.map((row) => [row.did, row]));
 	}
 }

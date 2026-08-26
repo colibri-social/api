@@ -36,7 +36,7 @@ import { type Announcer, silentAnnouncer } from "./announce.js";
 import { type AuthzChanges, createAuthzChanges } from "./authz-changes.js";
 import type { Config } from "./config.js";
 import { createLogger, type Logger } from "./logger.js";
-import { drizzleCredentialStorage, drizzleSyncStore } from "./stores.js";
+import { drizzleCredentialStorage, drizzleIdentityStore, drizzleSyncStore } from "./stores.js";
 import { createVideoArtworkClient } from "./video-artwork.js";
 import type { VoiceRoster } from "./ws/voice.js";
 
@@ -66,6 +66,9 @@ export const createContext = async (config: Config) => {
 		plcUrl: config.PLC_URL,
 		staleSeconds: 60 * 60,
 		maxSeconds: 24 * 60 * 60,
+		store: drizzleIdentityStore(database),
+		handleTtlSeconds: config.HANDLE_CACHE_TTL_SECONDS,
+		handleConcurrency: config.IDENTITY_CONCURRENCY,
 	});
 
 	const serviceAuth = new ServiceAuth({
