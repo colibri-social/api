@@ -1,5 +1,30 @@
 # @colibri-social/appview
 
+## 2.7.0
+
+### Minor Changes
+
+- 636530e: Find cover art for more tracks. Artwork resolution now tries MusicBrainz and Deezer alongside Cover Art Archive and iTunes, and `VIDEO_ARTWORK_ENABLED` adds a YouTube search for uploads no music database carries
+- 64d9500: Improve actor hydration, cache handle/identity resolution, fix listMembers `cursor` and `role` parameters usage, `getUnseen` index building improvements, add `space` to `notifications_unseen_idx`
+- d7c4b6f: Stop invitations from bypassing join approval
+- 2b382d8: Read listening activity from rocksky.app and atradio.fm alongside teal.fm, and pick up the `fm.teal.alpha.actor.status` records a lot of accounts write instead of the current collection
+
+### Patch Changes
+
+- 1d48890: Stop retrying spaces the AppView cannot mint a credential for. A space that fails with `noDelegationToken` now goes dormant instead of retrying `registerNotify` every minute and failing every sweep, and a fresh grant from the client wakes it again. A space whose owning community is gone is dropped outright, and purging a community now tells the sync engine so its spaces leave the registration map
+- 5c3cf2b: Only use a YouTube still when the video is the scrobbled track. Title and channel must both match, and anything short of that falls back to the activity icon
+- Updated dependencies [1d48890]
+- Updated dependencies [64d9500]
+- Updated dependencies [d7c4b6f]
+- Updated dependencies [f0d57a4]
+  - @colibri-social/space-sync@0.3.1
+  - @colibri-social/appview-db@0.3.0
+  - @colibri-social/identity@0.1.0
+  - @colibri-social/notifications@1.1.5
+  - @colibri-social/community@2.4.0
+  - @colibri-social/lexicons@2.8.0
+  - @colibri-social/projections@1.3.4
+
 ## 2.6.0
 
 ### Minor Changes

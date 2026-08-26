@@ -1,5 +1,11 @@
 # @colibri-social/lexicons
 
+## 2.8.0
+
+### Minor Changes
+
+- d7c4b6f: Stop invitations from bypassing join approval
+
 ## 2.7.0
 
 ### Minor Changes
