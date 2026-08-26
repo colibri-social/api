@@ -50,10 +50,70 @@ describe("pickVideo", () => {
 		expect(pickVideo([reupload, HIT], QUERY)).toBe(HIT);
 	});
 
-	it("takes a title match when no channel lines up", () => {
+	it("refuses a title match on a channel that is not the artist", () => {
 		const reupload: VideoHit = { ...HIT, author: "Music Archive" };
 
-		expect(pickVideo([reupload], QUERY)).toBe(reupload);
+		expect(pickVideo([reupload], QUERY)).toBeUndefined();
+	});
+
+	it("takes the artist-and-track title shape", () => {
+		const upload: VideoHit = {
+			...HIT,
+			title: "Vortex - DELTARUNE - Blood Crushers (Album Mix)",
+		};
+
+		expect(pickVideo([upload], QUERY)).toBe(upload);
+	});
+
+	it("looks past the decorations a channel adds to a title", () => {
+		const upload: VideoHit = {
+			...HIT,
+			title: "DELTARUNE - Blood Crushers (Album Mix) [Official Audio]",
+			author: "Vortex - Topic",
+		};
+
+		expect(pickVideo([upload], QUERY)).toBe(upload);
+	});
+
+	it("accepts the label channel behind a VEVO upload", () => {
+		const upload: VideoHit = { ...HIT, author: "VortexVEVO" };
+
+		expect(pickVideo([upload], QUERY)).toBe(upload);
+	});
+
+	it("refuses a version carrying a guest the scrobble does not", () => {
+		const upload: VideoHit = {
+			...HIT,
+			title: "DELTARUNE - Blood Crushers (Album Mix) (feat. Someone)",
+		};
+
+		expect(pickVideo([upload], QUERY)).toBeUndefined();
+	});
+
+	it("refuses a compilation that merely contains the track name", () => {
+		expect(
+			pickVideo([{ id: "x", title: "Best of Vortex Full Album" }], { track: "Vortex" }),
+		).toBeUndefined();
+	});
+
+	it("matches one artist out of a joined credit", () => {
+		const upload: VideoHit = { ...HIT, author: "Toby Fox" };
+
+		expect(pickVideo([upload], { ...QUERY, artist: "Vortex, Toby Fox" })).toBe(upload);
+	});
+
+	it("takes an exact title from any channel when nothing scrobbled an artist", () => {
+		const upload: VideoHit = { id: "x", title: "Blood Crushers", author: "Whoever" };
+
+		expect(pickVideo([upload], { track: "Blood Crushers" })).toBe(upload);
+	});
+
+	it("refuses a near miss when nothing scrobbled an artist", () => {
+		expect(
+			pickVideo([{ id: "x", title: "Blood Crushers (Live)", author: "Vortex" }], {
+				track: "Blood Crushers",
+			}),
+		).toBeUndefined();
 	});
 
 	it("refuses a result that is about something else", () => {
