@@ -2,6 +2,7 @@ import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db"
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { NotificationDeps } from "./deps.js";
 import {
+	buildPayload,
 	type DeliveryOutcome,
 	deliverNotification,
 	nullPushSender,
@@ -102,5 +103,29 @@ describe("deliverNotification", () => {
 		await expect(
 			deliverNotification(deps, { webpush: nullPushSender }, notification, { text: "hi" }),
 		).resolves.toBeUndefined();
+	});
+});
+
+describe("buildPayload", () => {
+	it("carries the routing hints the web and Android clients read", () => {
+		const payload = buildPayload(notification, { text: "hi" });
+
+		expect(payload.data).toEqual({
+			channel: notification.space,
+			channelUri: notification.space,
+			messageAuthor: notification.author,
+			messageRkey: notification.messageRkey,
+			messageUri: `${notification.space}/${notification.author}/social.colibri.beta.message/${notification.messageRkey}`,
+			deepLink:
+				"social.colibri:/channel/did:plc:community/social.colibri.beta.channel.text/3lkchannel1",
+		});
+	});
+
+	it("leaves the routing hints off when the space ref is malformed", () => {
+		const payload = buildPayload({ ...notification, space: "not-a-space-ref" }, { text: "hi" });
+
+		expect(payload.data.messageUri).toBeUndefined();
+		expect(payload.data.deepLink).toBeUndefined();
+		expect(payload.data.channel).toBe("not-a-space-ref");
 	});
 });

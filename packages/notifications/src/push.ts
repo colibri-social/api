@@ -1,3 +1,5 @@
+import { COLLECTIONS } from "@colibri-social/lexicons";
+import { spaceRecordUri, tryParseSpaceRef } from "@colibri-social/space";
 import { cert, initializeApp } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
 import webpush from "web-push";
@@ -13,7 +15,14 @@ export type PushPayload = {
 	title: string;
 	body: string;
 	tag: string;
-	data: { channel: string; messageAuthor: string; messageRkey: string };
+	data: {
+		channel: string;
+		messageAuthor: string;
+		messageRkey: string;
+		channelUri?: string;
+		messageUri?: string;
+		deepLink?: string;
+	};
 };
 
 export type DeliveryOutcome = "delivered" | "gone" | "failed" | "not-configured";
@@ -75,6 +84,10 @@ export const fcmSender = (credentials: FcmConfig): PushSender => {
 						messageAuthor: payload.data.messageAuthor,
 						messageRkey: payload.data.messageRkey,
 						tag: payload.tag,
+						body: payload.body,
+						...(payload.data.channelUri ? { channelUri: payload.data.channelUri } : {}),
+						...(payload.data.messageUri ? { messageUri: payload.data.messageUri } : {}),
+						...(payload.data.deepLink ? { deepLink: payload.data.deepLink } : {}),
 					},
 				});
 				return "delivered";
@@ -102,6 +115,17 @@ const notificationTitle = (kind: string, mentionRole: string | null): string => 
 
 export type NotifiedMessage = { text: string };
 
+const channelDeepLink = (space: string): string | undefined => {
+	const ref = tryParseSpaceRef(space);
+	if (!ref) return undefined;
+	return `social.colibri:/channel/${ref.authority}/${ref.spaceType}/${encodeURIComponent(ref.skey)}`;
+};
+
+const messageRecordUri = (space: string, author: string, rkey: string): string | undefined => {
+	if (!tryParseSpaceRef(space)) return undefined;
+	return spaceRecordUri(space, author, COLLECTIONS.message, rkey);
+};
+
 export const buildPayload = (
 	notification: {
 		kind: string;
@@ -119,6 +143,9 @@ export const buildPayload = (
 		channel: notification.space,
 		messageAuthor: notification.author,
 		messageRkey: notification.messageRkey,
+		channelUri: notification.space,
+		messageUri: messageRecordUri(notification.space, notification.author, notification.messageRkey),
+		deepLink: channelDeepLink(notification.space),
 	},
 });
 
