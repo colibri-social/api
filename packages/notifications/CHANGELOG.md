@@ -1,5 +1,17 @@
 # @colibri-social/notifications
 
+## 1.1.5
+
+### Patch Changes
+
+- 64d9500: Improve actor hydration, cache handle/identity resolution, fix listMembers `cursor` and `role` parameters usage, `getUnseen` index building improvements, add `space` to `notifications_unseen_idx`
+- f0d57a4: Send the routing hints the clients read on a push notification tap. The payload now carries `channelUri`, `messageUri` and, for FCM, a `social.colibri:/channel/...` deep link plus the message body, so a tap can open the right channel and focus the message instead of falling back to the app root
+- Updated dependencies [64d9500]
+- Updated dependencies [d7c4b6f]
+  - @colibri-social/appview-db@0.3.0
+  - @colibri-social/lexicons@2.8.0
+  - @colibri-social/projections@1.3.4
+
 ## 1.1.4
 
 ### Patch Changes

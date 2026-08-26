@@ -1,5 +1,20 @@
 # @colibri-social/community
 
+## 2.4.0
+
+### Minor Changes
+
+- d7c4b6f: Stop invitations from bypassing join approval
+
+### Patch Changes
+
+- Updated dependencies [64d9500]
+- Updated dependencies [d7c4b6f]
+  - @colibri-social/appview-db@0.3.0
+  - @colibri-social/identity@0.1.0
+  - @colibri-social/lexicons@2.8.0
+  - @colibri-social/projections@1.3.4
+
 ## 2.3.2
 
 ### Patch Changes
