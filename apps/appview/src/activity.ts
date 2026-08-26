@@ -1,107 +1,33 @@
-import type { ActivityKind } from "@colibri-social/appview-db";
 import { PdsClient } from "@colibri-social/space";
-import { eq, lte } from "drizzle-orm";
+import { and, eq, lte } from "drizzle-orm";
 import { resolveArtwork } from "./activity-artwork.js";
+import {
+	ACTIVITY_PROVIDERS,
+	type ActivityDraft,
+	activityProviderFor,
+} from "./activity-providers.js";
 import { announceToCommunities, presenceEvent } from "./announce.js";
 import type { AppContext } from "./context.js";
 import { presenceOf } from "./presence.js";
 import { loadActivity } from "./views/activity.js";
 
-export const TEAL_STATUS_COLLECTION = "fm.teal.actor.status";
 export const ACTIVITY_SWEEP_MS = 30_000;
 
 const SELF = "self";
-const SOURCE = "teal.fm";
-const LISTENING = "listening" satisfies ActivityKind;
-const DEFAULT_WINDOW_MS = 10 * 60 * 1000;
-const MAX_TEXT = 256;
 
-type TealArtist = { artistName?: unknown };
+const queues = new Map<string, Promise<void>>();
 
-type TealPlay = {
-	trackName?: unknown;
-	artists?: unknown;
-	releaseName?: unknown;
-	releaseMbId?: unknown;
-	originUri?: unknown;
-	playedTime?: unknown;
-	duration?: unknown;
-};
+const enqueue = (did: string, work: () => Promise<void>): Promise<void> => {
+	const previous = queues.get(did) ?? Promise.resolve();
+	const next = previous.then(work);
+	const settled = next.catch(() => undefined);
 
-type TealStatus = { item?: unknown; time?: unknown; expiry?: unknown };
+	queues.set(did, settled);
+	void settled.then(() => {
+		if (queues.get(did) === settled) queues.delete(did);
+	});
 
-export type ActivityDraft = {
-	kind: ActivityKind;
-	title: string;
-	subtitle: string | null;
-	detail: string | null;
-	linkUri: string | null;
-	startedAt: string | null;
-	endsAt: string | null;
-	source: string;
-	releaseMbId: string | null;
-};
-
-const text = (value: unknown): string | undefined => {
-	if (typeof value !== "string") return undefined;
-	const trimmed = value.trim();
-	if (trimmed.length === 0) return undefined;
-	return trimmed.length > MAX_TEXT ? trimmed.slice(0, MAX_TEXT) : trimmed;
-};
-
-const httpUrl = (value: unknown): string | undefined => {
-	const raw = text(value);
-	if (!raw) return undefined;
-	try {
-		const url = new URL(raw);
-		return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : undefined;
-	} catch {
-		return undefined;
-	}
-};
-
-const instant = (value: unknown): number | undefined => {
-	const raw = text(value);
-	if (!raw) return undefined;
-	const parsed = Date.parse(raw);
-	return Number.isNaN(parsed) ? undefined : parsed;
-};
-
-const artistNames = (value: unknown): string[] => {
-	if (!Array.isArray(value)) return [];
-	return value
-		.map((entry) => text((entry as TealArtist | null)?.artistName))
-		.filter((name): name is string => name !== undefined);
-};
-
-export const readTealStatus = (record: unknown, nowMs: number): ActivityDraft | null => {
-	const status = (record ?? {}) as TealStatus;
-	const item = (status.item ?? {}) as TealPlay;
-
-	const title = text(item.trackName);
-	if (!title) return null;
-
-	const wroteAt = instant(status.time) ?? nowMs;
-	const startedAt = instant(item.playedTime) ?? wroteAt;
-	const duration = typeof item.duration === "number" && item.duration > 0 ? item.duration : null;
-	const endsAt =
-		instant(status.expiry) ??
-		(duration ? startedAt + duration * 1000 : wroteAt + DEFAULT_WINDOW_MS);
-	if (endsAt <= nowMs) return null;
-
-	const artists = artistNames(item.artists);
-
-	return {
-		kind: LISTENING,
-		title,
-		subtitle: artists.length > 0 ? artists.join(", ").slice(0, MAX_TEXT) : null,
-		detail: text(item.releaseName) ?? null,
-		linkUri: httpUrl(item.originUri) ?? null,
-		startedAt: new Date(startedAt).toISOString(),
-		endsAt: new Date(endsAt).toISOString(),
-		source: SOURCE,
-		releaseMbId: text(item.releaseMbId) ?? null,
-	};
+	return next;
 };
 
 const sameTrack = (
@@ -109,6 +35,17 @@ const sameTrack = (
 	right: Pick<ActivityDraft, "title" | "subtitle" | "detail">,
 ): boolean =>
 	left.title === right.title && left.subtitle === right.subtitle && left.detail === right.detail;
+
+const extendsWindow = (stored: string | null, incoming: string | null): boolean => {
+	const next = incoming ? Date.parse(incoming) : Number.NaN;
+	if (Number.isNaN(next)) return false;
+
+	const known = stored ? Date.parse(stored) : Number.NaN;
+	return Number.isNaN(known) || next > known;
+};
+
+const startedFirst = (left: ActivityDraft, right: ActivityDraft): number =>
+	Date.parse(right.startedAt ?? "") - Date.parse(left.startedAt ?? "");
 
 export const sharesActivity = async (ctx: AppContext, did: string): Promise<boolean> => {
 	const [row] = await ctx.database.db
@@ -150,44 +87,38 @@ export const announceActivity = async (ctx: AppContext, did: string): Promise<vo
 	await announceToCommunities(ctx, did, presenceEvent(did, view));
 };
 
-export const clearActivity = async (ctx: AppContext, did: string): Promise<void> => {
-	const removed = await ctx.database.db
-		.delete(ctx.database.tables.actorActivity)
-		.where(eq(ctx.database.tables.actorActivity.did, did))
+const removeActivity = async (ctx: AppContext, did: string, source?: string): Promise<boolean> => {
+	const { db, tables } = ctx.database;
+	const removed = await db
+		.delete(tables.actorActivity)
+		.where(
+			source
+				? and(eq(tables.actorActivity.did, did), eq(tables.actorActivity.source, source))
+				: eq(tables.actorActivity.did, did),
+		)
 		.returning();
-	if (removed.length === 0) return;
-	await announceActivity(ctx, did);
+	return removed.length > 0;
 };
 
-export const applyTealStatus = async (
-	ctx: AppContext,
-	did: string,
-	record: unknown,
-): Promise<void> => {
-	if (!(await sharesActivity(ctx, did))) return;
-
-	const draft = readTealStatus(record, Date.now());
-	if (!draft) {
-		await clearActivity(ctx, did);
-		return;
-	}
-
+const writeDraft = async (ctx: AppContext, did: string, draft: ActivityDraft): Promise<boolean> => {
 	const existing = await storedActivity(ctx, did);
-	if (existing && sameTrack(existing, draft) && existing.endsAt === draft.endsAt) return;
+	const continues = existing !== undefined && sameTrack(existing, draft);
+	if (continues && !extendsWindow(existing.endsAt, draft.endsAt)) return false;
 
-	const reusable = existing && sameTrack(existing, draft) ? existing.imageUrl : null;
 	const imageUrl =
-		reusable ??
-		(await resolveArtwork(
-			{ cache: ctx.artwork, log: ctx.log, video: ctx.videoArtwork },
-			{
-				track: draft.title,
-				artist: draft.subtitle ?? undefined,
-				release: draft.detail ?? undefined,
-				releaseMbId: draft.releaseMbId ?? undefined,
-			},
-		)) ??
-		null;
+		draft.imageUrl ??
+		(continues ? existing.imageUrl : null) ??
+		(draft.searchArtwork
+			? ((await resolveArtwork(
+					{ cache: ctx.artwork, log: ctx.log, video: ctx.videoArtwork },
+					{
+						track: draft.title,
+						artist: draft.subtitle ?? undefined,
+						release: draft.detail ?? undefined,
+						releaseMbId: draft.releaseMbId ?? undefined,
+					},
+				)) ?? null)
+			: null);
 
 	const row = {
 		did,
@@ -196,10 +127,10 @@ export const applyTealStatus = async (
 		subtitle: draft.subtitle,
 		detail: draft.detail,
 		imageUrl,
-		linkUri: draft.linkUri,
-		startedAt: draft.startedAt,
+		linkUri: continues ? (existing.linkUri ?? draft.linkUri) : draft.linkUri,
+		startedAt: continues ? (existing.startedAt ?? draft.startedAt) : draft.startedAt,
 		endsAt: draft.endsAt,
-		source: draft.source,
+		source: continues ? existing.source : draft.source,
 		updatedAt: new Date().toISOString(),
 	};
 
@@ -208,26 +139,75 @@ export const applyTealStatus = async (
 		.values(row)
 		.onConflictDoUpdate({ target: ctx.database.tables.actorActivity.did, set: row });
 
-	await announceActivity(ctx, did);
+	return true;
 };
 
-export const backfillActivity = async (ctx: AppContext, did: string): Promise<void> => {
-	if (!(await sharesActivity(ctx, did))) return;
-
+const refill = async (ctx: AppContext, did: string, skipSource?: string): Promise<boolean> => {
 	const pds = (await ctx.identity.resolveDid(did).catch(() => null))?.pds;
-	if (!pds) return;
+	if (!pds) return false;
 
-	const record = await new PdsClient({ service: pds })
-		.getPublicRecord<{ value: unknown }>(did, TEAL_STATUS_COLLECTION, SELF)
-		.then((found) => found.value)
-		.catch(() => null);
+	const client = new PdsClient({ service: pds });
+	const now = Date.now();
+	const drafts: ActivityDraft[] = [];
 
-	if (!record) {
-		await clearActivity(ctx, did);
-		return;
+	for (const provider of ACTIVITY_PROVIDERS) {
+		if (provider.source === skipSource) continue;
+
+		const record = await client
+			.getPublicRecord<{ value: unknown }>(did, provider.collection, SELF)
+			.then((found) => found.value)
+			.catch(() => null);
+		if (!record) continue;
+
+		const draft = provider.read(record, now);
+		if (draft) drafts.push(draft);
 	}
-	await applyTealStatus(ctx, did, record);
+
+	const [best] = drafts.sort(startedFirst);
+	if (!best) return await removeActivity(ctx, did);
+	return await writeDraft(ctx, did, best);
 };
+
+export const clearActivity = (ctx: AppContext, did: string): Promise<void> =>
+	enqueue(did, async () => {
+		if (!(await removeActivity(ctx, did))) return;
+		await announceActivity(ctx, did);
+	});
+
+export const clearActivityFrom = (ctx: AppContext, did: string, source: string): Promise<void> =>
+	enqueue(did, async () => {
+		if (!(await removeActivity(ctx, did, source))) return;
+		await refill(ctx, did, source);
+		await announceActivity(ctx, did);
+	});
+
+export const applyActivityRecord = (
+	ctx: AppContext,
+	did: string,
+	collection: string,
+	record: unknown,
+): Promise<void> =>
+	enqueue(did, async () => {
+		const provider = activityProviderFor(collection);
+		if (!provider) return;
+		if (!(await sharesActivity(ctx, did))) return;
+
+		const draft = provider.read(record, Date.now());
+		if (!draft) {
+			if (!(await removeActivity(ctx, did, provider.source))) return;
+			await refill(ctx, did, provider.source);
+			await announceActivity(ctx, did);
+			return;
+		}
+
+		if (await writeDraft(ctx, did, draft)) await announceActivity(ctx, did);
+	});
+
+export const backfillActivity = (ctx: AppContext, did: string): Promise<void> =>
+	enqueue(did, async () => {
+		if (!(await sharesActivity(ctx, did))) return;
+		if (await refill(ctx, did)) await announceActivity(ctx, did);
+	});
 
 export const setActivitySharing = async (
 	ctx: AppContext,

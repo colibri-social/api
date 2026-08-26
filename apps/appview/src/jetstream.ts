@@ -1,7 +1,8 @@
 import { asDatetime, asRecordKey, COLLECTIONS } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import { WebSocket } from "ws";
-import { applyTealStatus, clearActivity, TEAL_STATUS_COLLECTION } from "./activity.js";
+import { applyActivityRecord, clearActivityFrom } from "./activity.js";
+import { ACTIVITY_COLLECTIONS, activityProviderFor } from "./activity-providers.js";
 import { memberEvent } from "./announce.js";
 import type { AppContext } from "./context.js";
 import { JETSTREAM_SUBPROTOCOL, jetstreamEndpoint } from "./jetstream-url.js";
@@ -15,7 +16,7 @@ const EVENTS_PER_CURSOR_SAVE = 500;
 const EVENT_TYPE_PREFIX = "network.bsky.jetstream.subscribeEvents#";
 const WANTED_KINDS = ["commit", "identity", "account"] as const;
 const BSKY_PROFILE = "app.bsky.actor.profile";
-const WANTED_COLLECTIONS = [COLLECTIONS.profile, BSKY_PROFILE, TEAL_STATUS_COLLECTION] as const;
+const WANTED_COLLECTIONS = [COLLECTIONS.profile, BSKY_PROFILE, ...ACTIVITY_COLLECTIONS];
 
 type IdentityPayload = {
 	seq: number;
@@ -242,14 +243,18 @@ export class Jetstream {
 	}
 
 	private async refreshActivity(payload: Payload): Promise<void> {
-		if (payload.collection !== TEAL_STATUS_COLLECTION) return;
+		const collection = payload.collection;
+		if (collection === undefined) return;
+
+		const provider = activityProviderFor(collection);
+		if (!provider) return;
 
 		const did = payload.did as string;
 		if (payload.operation === "delete" || !payload.record) {
-			await clearActivity(this.ctx, did);
+			await clearActivityFrom(this.ctx, did, provider.source);
 			return;
 		}
-		await applyTealStatus(this.ctx, did, payload.record);
+		await applyActivityRecord(this.ctx, did, collection, payload.record);
 	}
 
 	private async announceProfile(did: string): Promise<void> {

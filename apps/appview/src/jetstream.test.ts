@@ -1,8 +1,10 @@
 import type { AddressInfo } from "node:net";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
+import { createTtlCache } from "@colibri-social/embeds";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type WebSocket, WebSocketServer } from "ws";
+import type { ArtworkEntry } from "./activity-artwork.js";
 import type { AppContext } from "./context.js";
 import { Jetstream } from "./jetstream.js";
 import { isLegacyJetstreamUrl, jetstreamEndpoint } from "./jetstream-url.js";
@@ -87,8 +89,16 @@ const cachedProfile = async (did = DID) => {
 
 const contextFor = (url: string): AppContext =>
 	({
-		config: { JETSTREAM_ENABLED: true, JETSTREAM_URL: url },
+		config: {
+			JETSTREAM_ENABLED: true,
+			JETSTREAM_URL: url,
+			PUBLIC_URL: "https://appview.test",
+			SIGNING_KEY: "abcdef0123456789",
+		},
 		database,
+		announce: { toUser: () => {}, toCommunity: () => {} },
+		artwork: createTtlCache<ArtworkEntry>(),
+		identity: { resolveDid: async () => ({ pds: null }) },
 		log: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} },
 	}) as unknown as AppContext;
 
@@ -163,6 +173,9 @@ describe("subscription", () => {
 			"social.colibri.beta.actor.profile",
 			"app.bsky.actor.profile",
 			"fm.teal.actor.status",
+			"fm.teal.alpha.actor.status",
+			"app.rocksky.actor.status",
+			"fm.atradio.actor.status",
 		]);
 		expect(request.searchParams.has("wantedCollections")).toBe(false);
 	});
@@ -360,5 +373,107 @@ describe("profile commits", () => {
 
 		await jetstream.stop();
 		expect(await storedCursor()).toBe("24990989093");
+	});
+});
+
+describe("listening commits", () => {
+	const ROCKSKY = "app.rocksky.actor.status";
+	const ATRADIO = "fm.atradio.actor.status";
+
+	const shares = () =>
+		database.db
+			.insert(database.tables.actorSettings)
+			.values({ did: DID, shareActivity: true })
+			.onConflictDoUpdate({
+				target: database.tables.actorSettings.did,
+				set: { shareActivity: true },
+			});
+
+	const storedActivity = async () => {
+		const [row] = await database.db
+			.select()
+			.from(database.tables.actorActivity)
+			.where(eq(database.tables.actorActivity.did, DID));
+		return row ?? null;
+	};
+
+	it("stores the track a rocksky commit carries", async () => {
+		await shares();
+		const socket = await startAgainstServer();
+
+		socket.send(
+			commitFrame(1, ROCKSKY, "create", {
+				$type: ROCKSKY,
+				track: {
+					name: "The Diary of Jane",
+					artist: "Breaking Benjamin",
+					durationMs: 200597,
+					albumCoverUrl: "https://i.scdn.co/image/ab67616d0000b273742e415e7f4bc3ee0c8ad600",
+				},
+				startedAt: new Date(Date.now() - 10_000).toISOString(),
+			}),
+		);
+		await settle();
+
+		const row = await storedActivity();
+		expect(row?.source).toBe("rocksky.app");
+		expect(row?.title).toBe("The Diary of Jane");
+	});
+
+	it("stores the station an atradio commit carries", async () => {
+		await shares();
+		const socket = await startAgainstServer();
+
+		socket.send(
+			commitFrame(1, ATRADIO, "create", {
+				$type: ATRADIO,
+				station: { name: "Rock Antenne", genre: "rock", homepage: "http://www.rockantenne.de/" },
+				playedAt: new Date().toISOString(),
+			}),
+		);
+		await settle();
+
+		const row = await storedActivity();
+		expect(row?.source).toBe("atradio.fm");
+		expect(row?.linkUri).toBe("http://www.rockantenne.de/");
+	});
+
+	it("clears the activity when the record is deleted", async () => {
+		await shares();
+		const socket = await startAgainstServer();
+
+		socket.send(
+			commitFrame(1, ATRADIO, "create", {
+				$type: ATRADIO,
+				station: { name: "Rock Antenne", genre: "rock" },
+				playedAt: new Date().toISOString(),
+			}),
+		);
+		await settle();
+		expect(await storedActivity()).not.toBeNull();
+
+		socket.send(commitFrame(2, ATRADIO, "delete"));
+		await settle();
+
+		expect(await storedActivity()).toBeNull();
+	});
+
+	it("stores nothing for someone who does not share their listening", async () => {
+		const socket = await startAgainstServer();
+
+		socket.send(
+			commitFrame(1, ROCKSKY, "create", {
+				$type: ROCKSKY,
+				track: {
+					name: "The Diary of Jane",
+					artist: "Breaking Benjamin",
+					albumCoverUrl: "https://i.scdn.co/image/ab67616d0000b273742e415e7f4bc3ee0c8ad600",
+				},
+				startedAt: new Date().toISOString(),
+			}),
+		);
+		await settle();
+
+		expect(await storedActivity()).toBeNull();
 	});
 });
