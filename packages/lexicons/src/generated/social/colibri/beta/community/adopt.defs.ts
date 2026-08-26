@@ -15,7 +15,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"did":/*#__PURE__*/ l.string({"format":"did"}),"identifier":/*#__PURE__*/ l.string(),"password":/*#__PURE__*/ l.string(),"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256}))});
+export const $input = /*#__PURE__*/ l.jsonPayload({"did":/*#__PURE__*/ l.string({"format":"did"}),"identifier":/*#__PURE__*/ l.string(),"password":/*#__PURE__*/ l.string(),"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256})),"requiresApprovalToJoin":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;

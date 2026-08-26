@@ -176,3 +176,23 @@ export const announceToCommunities = async (
 		ctx.announce.toCommunity(membership.community, frame);
 	}
 };
+
+export const announceApplication = (
+	ctx: AppContext,
+	event: "create" | "approve" | "dismiss" | "undismiss",
+	community: string,
+	subject: string,
+): void => {
+	void ctx.announce
+		.toCommunityPermission(
+			community,
+			"approval.manage",
+			applicationEvent(event, community, subject),
+		)
+		.catch((error: unknown) => {
+			ctx.log.warn(
+				{ community, reason: error instanceof Error ? error.message : error },
+				"application.announce.failed",
+			);
+		});
+};

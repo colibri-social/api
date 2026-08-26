@@ -404,6 +404,7 @@ export const applications = pgTable(
 	{
 		community: text("community").notNull(),
 		did: text("did").notNull(),
+		invitation: text("invitation"),
 		createdAt: timestamp("created_at").notNull(),
 		dismissedAt: timestamp("dismissed_at"),
 	},

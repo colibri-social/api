@@ -31,7 +31,7 @@ import {
 import { XrpcError } from "@colibri-social/space";
 import { and, asc, eq } from "drizzle-orm";
 import {
-	applicationEvent,
+	announceApplication,
 	communityEvent,
 	communityProgressEvent,
 	memberEvent,
@@ -84,7 +84,7 @@ const provisionedView = async (
 	communities: CommunityViews,
 	callerDid: string,
 	provisioned: ProvisionedCommunity,
-	input: { name: string; description?: string },
+	input: { name: string; description?: string; requiresApprovalToJoin?: boolean },
 	managingApp: string,
 ): Promise<{ community: CommunityView }> => {
 	const now = new Date().toISOString();
@@ -96,7 +96,7 @@ const provisionedView = async (
 		managingApp,
 		pictureCid: null,
 		bannerCid: null,
-		requiresApproval: false,
+		requiresApproval: input.requiresApprovalToJoin ?? false,
 		linkEmbeds: true,
 		labelers: [] as string[],
 		migratedFrom: null,
@@ -169,7 +169,7 @@ export const handleCreateCommunity = async (
 	ctx: AppContext,
 	communities: CommunityViews,
 	callerDid: string,
-	input: { name: string; description?: string },
+	input: { name: string; description?: string; requiresApprovalToJoin?: boolean },
 ): Promise<{ community: CommunityView }> => {
 	let provisioned: ProvisionedCommunity;
 	try {
@@ -178,6 +178,7 @@ export const handleCreateCommunity = async (
 				name: input.name,
 				description: input.description,
 				creator: callerDid,
+				requiresApprovalToJoin: input.requiresApprovalToJoin,
 			},
 			(progress) => ctx.announce.toUser(callerDid, communityProgressEvent(progress)),
 		);
@@ -198,6 +199,7 @@ export const handleAdoptCommunity = async (
 		password: string;
 		name: string;
 		description?: string;
+		requiresApprovalToJoin?: boolean;
 	},
 ): Promise<{ community: CommunityView }> => {
 	const [existing] = await ctx.database.db
@@ -230,6 +232,7 @@ export const handleAdoptCommunity = async (
 				name: input.name,
 				description: input.description,
 				creator: callerDid,
+				requiresApprovalToJoin: input.requiresApprovalToJoin,
 			},
 			(progress) => ctx.announce.toUser(callerDid, communityProgressEvent(progress)),
 		);
@@ -877,10 +880,7 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 					memberEvent("join", input.body.community, body.member),
 				);
 			} else {
-				ctx.announce.toCommunity(
-					input.body.community,
-					applicationEvent("create", input.body.community, caller.credentials.did),
-				);
+				announceApplication(ctx, "create", input.body.community, caller.credentials.did);
 			}
 			return { encoding: "application/json" as const, body };
 		},

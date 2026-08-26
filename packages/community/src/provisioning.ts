@@ -45,6 +45,7 @@ export type ProvisionRequest = {
 	description?: string;
 	creator: string;
 	isPrivate?: boolean;
+	requiresApprovalToJoin?: boolean;
 };
 
 export type AdoptRequest = {
@@ -56,6 +57,7 @@ export type AdoptRequest = {
 	description?: string;
 	creator: string;
 	isPrivate?: boolean;
+	requiresApprovalToJoin?: boolean;
 };
 
 export type ProvisionedCommunity = {
@@ -208,7 +210,13 @@ export class CommunityProvisioner {
 	private async seed(
 		host: CommunityHost,
 		community: string,
-		request: { name: string; description?: string; creator: string; isPrivate?: boolean },
+		request: {
+			name: string;
+			description?: string;
+			creator: string;
+			isPrivate?: boolean;
+			requiresApprovalToJoin?: boolean;
+		},
 		report: (step: ProvisionStep, completed: number, community?: string) => void,
 		completed: number,
 	): Promise<Omit<ProvisionedCommunity, "did" | "handle">> {
@@ -271,7 +279,12 @@ export class CommunityProvisioner {
 		});
 
 		report("creatingStarterChannels", completed + 3, community);
-		const channels = await this.seedLayout(host, community, spaces);
+		const channels = await this.seedLayout(
+			host,
+			community,
+			spaces,
+			request.requiresApprovalToJoin ?? false,
+		);
 
 		report("done", TOTAL_STEPS, community);
 		return { spaces, ownerRole, channels };
@@ -309,6 +322,7 @@ export class CommunityProvisioner {
 		host: CommunityHost,
 		community: string,
 		spaces: CommunitySpaces,
+		requiresApprovalToJoin: boolean,
 	): Promise<{ text: string; voice: string }> {
 		const text = await this.createChannel(host, community, {
 			type: SPACE_TYPES.channelText,
@@ -348,7 +362,7 @@ export class CommunityProvisioner {
 			record: {
 				$type: COLLECTIONS.communitySettings,
 				categoryOrder: [textCategory, voiceCategory],
-				requiresApprovalToJoin: false,
+				requiresApprovalToJoin,
 				linkEmbeds: true,
 			},
 		});

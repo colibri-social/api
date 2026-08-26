@@ -124,6 +124,51 @@ const addCommunity = (requiresApproval: boolean) => {
 	});
 };
 
+const INVITE = "invite-code";
+
+const addInvitation = (maxUses: number | null = null) =>
+	database.db.insert(database.tables.invitations).values({
+		code: INVITE,
+		community: COMMUNITY,
+		createdBy: OWNER,
+		active: true,
+		uses: 0,
+		maxUses,
+		createdAt: NOW.toISOString(),
+		expiresAt: null,
+	});
+
+const usesOf = async (code: string): Promise<number | undefined> => {
+	const { eq } = await import("drizzle-orm");
+	const [row] = await database.db
+		.select()
+		.from(database.tables.invitations)
+		.where(eq(database.tables.invitations.code, code));
+	return row?.uses;
+};
+
+const applicationOf = async (did: string) => {
+	const { and, eq } = await import("drizzle-orm");
+	const [row] = await database.db
+		.select()
+		.from(database.tables.applications)
+		.where(
+			and(
+				eq(database.tables.applications.community, COMMUNITY),
+				eq(database.tables.applications.did, did),
+			),
+		);
+	return row;
+};
+
+const requireApproval = async (): Promise<void> => {
+	const { eq } = await import("drizzle-orm");
+	await database.db
+		.update(database.tables.communities)
+		.set({ requiresApproval: true })
+		.where(eq(database.tables.communities.did, COMMUNITY));
+};
+
 beforeEach(async () => {
 	database = await openTestDatabase();
 	writes = [];
@@ -166,17 +211,68 @@ describe("joining", () => {
 	});
 
 	it("holds an application when the community requires approval", async () => {
-		const { eq } = await import("drizzle-orm");
-		await database.db
-			.update(database.tables.communities)
-			.set({ requiresApproval: true })
-			.where(eq(database.tables.communities.did, COMMUNITY));
+		await requireApproval();
 
 		expect(await membership.join(COMMUNITY, OUTSIDER)).toEqual({ status: "pending" });
 		expect((await loader.authz(COMMUNITY, OUTSIDER)).member).toBeNull();
 
 		await membership.approve(COMMUNITY, OUTSIDER);
 		expect((await loader.authz(COMMUNITY, OUTSIDER)).member).not.toBeNull();
+	});
+
+	it("holds an application even when the joiner carries an invitation", async () => {
+		await requireApproval();
+		await addInvitation(1);
+
+		expect(await membership.join(COMMUNITY, OUTSIDER, INVITE)).toEqual({ status: "pending" });
+		expect((await loader.authz(COMMUNITY, OUTSIDER)).member).toBeNull();
+		expect(await usesOf(INVITE)).toBe(0);
+	});
+
+	it("spends the invitation when the application is approved", async () => {
+		await requireApproval();
+		await addInvitation(1);
+		await membership.join(COMMUNITY, OUTSIDER, INVITE);
+
+		await membership.approve(COMMUNITY, OUTSIDER);
+		expect((await loader.authz(COMMUNITY, OUTSIDER)).member).not.toBeNull();
+		expect(await usesOf(INVITE)).toBe(1);
+	});
+
+	it("leaves the invitation unspent when the application is dismissed", async () => {
+		await requireApproval();
+		await addInvitation(1);
+		await membership.join(COMMUNITY, OUTSIDER, INVITE);
+
+		await membership.dismiss(COMMUNITY, OUTSIDER, true);
+		expect(await usesOf(INVITE)).toBe(0);
+	});
+
+	it("records the invitation on an application that started without one", async () => {
+		await requireApproval();
+		await addInvitation();
+		await membership.join(COMMUNITY, OUTSIDER);
+		await membership.join(COMMUNITY, OUTSIDER, INVITE);
+
+		await membership.approve(COMMUNITY, OUTSIDER);
+		expect(await usesOf(INVITE)).toBe(1);
+	});
+
+	it("refuses an unusable invitation before filing an application", async () => {
+		await requireApproval();
+
+		await expect(membership.join(COMMUNITY, OUTSIDER, INVITE)).rejects.toMatchObject({
+			failure: "invitationNotFound",
+		});
+		expect(await applicationOf(OUTSIDER)).toBeUndefined();
+	});
+
+	it("admits an invited joiner straight away when the community is open", async () => {
+		await addInvitation(1);
+
+		expect(await membership.join(COMMUNITY, OUTSIDER, INVITE)).toEqual({ status: "joined" });
+		expect((await loader.authz(COMMUNITY, OUTSIDER)).member).not.toBeNull();
+		expect(await usesOf(INVITE)).toBe(1);
 	});
 
 	it("refuses someone who is already a member", async () => {
@@ -202,10 +298,7 @@ describe("joining", () => {
 
 	it("dismisses and restores a real application", async () => {
 		const { and, eq } = await import("drizzle-orm");
-		await database.db
-			.update(database.tables.communities)
-			.set({ requiresApproval: true })
-			.where(eq(database.tables.communities.did, COMMUNITY));
+		await requireApproval();
 		await membership.join(COMMUNITY, OUTSIDER);
 
 		const dismissedAt = async () => {

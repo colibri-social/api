@@ -1,6 +1,6 @@
 import type { Queryable, Schema } from "@colibri-social/appview-db";
 import { COLLECTIONS } from "@colibri-social/lexicons";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { isAdmin, outranks } from "./authz.js";
 import type { CommunityLoader } from "./loader.js";
 import type { CommunityWriter } from "./writes.js";
@@ -43,7 +43,7 @@ export class Membership {
 		this.now = deps.now ?? (() => new Date());
 	}
 
-	private async redeemInvitation(community: string, code: string): Promise<void> {
+	private async requireUsableInvitation(community: string, code: string): Promise<void> {
 		const [invitation] = await this.deps.db
 			.select()
 			.from(this.deps.tables.invitations)
@@ -60,10 +60,12 @@ export class Membership {
 		if (!usable) {
 			throw new MembershipError("invitationNotFound", "that invitation cannot be redeemed");
 		}
+	}
 
+	private async consumeInvitation(code: string): Promise<void> {
 		await this.deps.db
 			.update(this.deps.tables.invitations)
-			.set({ uses: invitation.uses + 1 })
+			.set({ uses: sql`${this.deps.tables.invitations.uses} + 1` })
 			.where(eq(this.deps.tables.invitations.code, code));
 	}
 
@@ -75,15 +77,26 @@ export class Membership {
 		if (authz.isBanned) throw new MembershipError("banned", "you are banned from this community");
 		if (authz.member) throw new MembershipError("alreadyMember", "you are already a member");
 
-		if (invitation) await this.redeemInvitation(community, invitation);
+		if (invitation) await this.requireUsableInvitation(community, invitation);
 
-		if (row.requiresApproval && !invitation) {
-			await this.deps.db
-				.insert(this.deps.tables.applications)
-				.values({ community, did: actor, createdAt: this.now().toISOString(), dismissedAt: null })
-				.onConflictDoNothing();
+		if (row.requiresApproval) {
+			const application = this.deps.db.insert(this.deps.tables.applications).values({
+				community,
+				did: actor,
+				invitation: invitation ?? null,
+				createdAt: this.now().toISOString(),
+				dismissedAt: null,
+			});
+			await (invitation
+				? application.onConflictDoUpdate({
+						target: [this.deps.tables.applications.community, this.deps.tables.applications.did],
+						set: { invitation },
+					})
+				: application.onConflictDoNothing());
 			return { status: "pending" };
 		}
+
+		if (invitation) await this.consumeInvitation(invitation);
 
 		await this.admit(community, actor);
 		return { status: "joined" };
@@ -126,6 +139,7 @@ export class Membership {
 			throw new MembershipError("applicationNotFound", `${subject} has not applied to join`);
 		}
 		await this.admit(community, subject);
+		if (application.invitation) await this.consumeInvitation(application.invitation);
 	}
 
 	async dismiss(community: string, subject: string, dismissed: boolean): Promise<void> {

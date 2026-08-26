@@ -21,7 +21,7 @@ import {
 import { parseSpaceRef } from "@colibri-social/space";
 import { and, asc, desc, eq, gt, isNull, lt } from "drizzle-orm";
 import {
-	applicationEvent,
+	announceApplication,
 	labelEvent,
 	memberEvent,
 	memberGoneEvent,
@@ -264,7 +264,7 @@ export const handleApproveApplication = async (
 	};
 	ctx.announce.toCommunity(community, memberEvent("join", community, member));
 	ctx.announce.toUser(subject, memberEvent("join", community, member));
-	ctx.announce.toCommunity(community, applicationEvent("approve", community, subject));
+	announceApplication(ctx, "approve", community, subject);
 
 	return { member };
 };
@@ -282,7 +282,7 @@ export const handleDismissApplication = async (
 
 	try {
 		await membership.dismiss(community, subject, true);
-		ctx.announce.toCommunity(community, applicationEvent("dismiss", community, subject));
+		announceApplication(ctx, "dismiss", community, subject);
 	} catch (error) {
 		if (error instanceof MembershipError) throw membershipErrorToXrpc(error);
 		throw error;
@@ -302,7 +302,7 @@ export const handleUndismissApplication = async (
 
 	try {
 		await membership.dismiss(community, subject, false);
-		ctx.announce.toCommunity(community, applicationEvent("undismiss", community, subject));
+		announceApplication(ctx, "undismiss", community, subject);
 	} catch (error) {
 		if (error instanceof MembershipError) throw membershipErrorToXrpc(error);
 		throw error;
