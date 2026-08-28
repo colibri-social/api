@@ -19,7 +19,10 @@ class FakeController implements Dispatcher.DispatchController {
 }
 
 class DelayedEndDispatcher extends Dispatcher {
-	dispatch(options: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler): boolean {
+	override dispatch(
+		options: Dispatcher.DispatchOptions,
+		handler: Dispatcher.DispatchHandler,
+	): boolean {
 		const controller = new FakeController();
 		handler.onRequestStart?.(controller, {});
 		if (options.path === "/start") {
@@ -33,11 +36,11 @@ class DelayedEndDispatcher extends Dispatcher {
 		return true;
 	}
 
-	close(): Promise<void> {
+	override close(): Promise<void> {
 		return Promise.resolve();
 	}
 
-	destroy(): Promise<void> {
+	override destroy(): Promise<void> {
 		return Promise.resolve();
 	}
 }

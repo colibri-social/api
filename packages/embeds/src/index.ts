@@ -3,6 +3,7 @@ export * from "./errors.js";
 export * from "./fetch.js";
 export * from "./gifs.js";
 export * from "./html.js";
+export * from "./image.js";
 export * from "./net.js";
 export * from "./preview.js";
 export * from "./types.js";

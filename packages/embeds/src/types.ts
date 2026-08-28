@@ -1,5 +1,10 @@
 import type { PlayableVideoType } from "./video.js";
 
+export type MeasuredImage = {
+	width: number;
+	height: number;
+};
+
 export type EmbedImage = {
 	url: string;
 	width?: number;

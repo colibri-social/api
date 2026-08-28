@@ -4,7 +4,8 @@ import { createPreviewCache, normalizeUrlCacheKey } from "./cache.js";
 import { isEmbedError, notFetchable, upstreamFailure } from "./errors.js";
 import { type GuardedFetchResult, guardedFetch, type HostResolver } from "./fetch.js";
 import { containsHeadClose, extractMetaTags, extractTitleTag } from "./html.js";
-import type { EmbedImage, EmbedVideo, LinkEmbed } from "./types.js";
+import type { ImageMeasurer } from "./image.js";
+import type { EmbedImage, EmbedVideo, LinkEmbed, MeasuredImage } from "./types.js";
 import { type PlayableVideoType, playableVideoType, videoTypeFromExtension } from "./video.js";
 
 const DEFAULT_MAX_HEAD_BYTES = 1024 * 1024;
@@ -23,6 +24,7 @@ export type LinkPreviewOptions = {
 	dispatcher?: Dispatcher;
 	resolveHost?: HostResolver;
 	cache?: TtlCache<LinkEmbed> | null;
+	measureImage?: ImageMeasurer;
 };
 
 function resolveUrl(raw: string | undefined, base: URL): URL | undefined {
@@ -117,6 +119,25 @@ export function extractLinkMetadata(uri: string, html: string, base: URL): LinkE
 	};
 }
 
+async function withMeasuredImage(
+	embed: LinkEmbed,
+	measureImage: ImageMeasurer | undefined,
+): Promise<LinkEmbed> {
+	const image = embed.image;
+	if (!measureImage || !image) return embed;
+	if (image.width !== undefined && image.height !== undefined) return embed;
+
+	let measured: MeasuredImage | undefined;
+	try {
+		measured = await measureImage(image.url);
+	} catch {
+		return embed;
+	}
+	if (!measured) return embed;
+
+	return { ...embed, image: { ...image, width: measured.width, height: measured.height } };
+}
+
 export async function fetchLinkPreview(
 	rawUrl: string,
 	options: LinkPreviewOptions = {},
@@ -150,7 +171,8 @@ export async function fetchLinkPreview(
 	}
 
 	const html = result.body.toString("utf8");
-	const embed = extractLinkMetadata(rawUrl, html, result.url);
+	const extracted = extractLinkMetadata(rawUrl, html, result.url);
+	const embed = await withMeasuredImage(extracted, options.measureImage);
 
 	if (cache && cacheKey) cache.set(cacheKey, embed);
 	return embed;

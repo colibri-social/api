@@ -1,6 +1,12 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
+import { dimensionsOf } from "@colibri-social/blobs";
 import type { EmbedError, GifCategory, LinkEmbed, TtlCache } from "@colibri-social/embeds";
-import { fetchLinkPreview, gifsNotConfigured, isEmbedError } from "@colibri-social/embeds";
+import {
+	createImageMeasurer,
+	fetchLinkPreview,
+	gifsNotConfigured,
+	isEmbedError,
+} from "@colibri-social/embeds";
 import { asUri, asUriOrUndefined, social } from "@colibri-social/lexicons";
 import type { AppContext } from "../context.js";
 import { type EmbedMediaKind, embedMediaUrl } from "../embed-token.js";
@@ -68,7 +74,13 @@ export const handleGetMetadata = async (
 ): Promise<{ embed: LinkEmbedView }> => {
 	try {
 		const cache = ctx.previews as unknown as TtlCache<LinkEmbed>;
-		const embed = await fetchLinkPreview(uri, { cache });
+		const embed = await fetchLinkPreview(uri, {
+			cache,
+			measureImage: createImageMeasurer({
+				decode: dimensionsOf,
+				onMiss: (reason) => ctx.log.debug({ reason }, "embed.imageSizeUnknown"),
+			}),
+		});
 		return { embed: toLinkEmbedView(ctx, embed) };
 	} catch (cause) {
 		if (isEmbedError(cause)) throw embedErrorToXrpc(cause);

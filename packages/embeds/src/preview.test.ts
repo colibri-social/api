@@ -1,5 +1,24 @@
-import { describe, expect, it } from "vitest";
-import { extractLinkMetadata } from "./preview.js";
+import type { MockAgent } from "undici";
+import { MockAgent as UndiciMockAgent } from "undici";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createPreviewCache } from "./cache.js";
+import { extractLinkMetadata, fetchLinkPreview } from "./preview.js";
+import type { LinkEmbed } from "./types.js";
+
+let agent: MockAgent | undefined;
+
+afterEach(async () => {
+	if (agent) {
+		await agent.close();
+		agent = undefined;
+	}
+});
+
+function newMockAgent(): MockAgent {
+	agent = new UndiciMockAgent();
+	agent.disableNetConnect();
+	return agent;
+}
 
 describe("extractLinkMetadata", () => {
 	it("extracts open graph tags with precedence over twitter and the title tag", () => {
@@ -141,5 +160,124 @@ describe("extractLinkMetadata", () => {
 		const base = new URL("https://example.com");
 		const embed = extractLinkMetadata(base.href, "<html><head></head><body>hi</body></html>", base);
 		expect(embed).toEqual({ uri: base.href, siteName: "example.com" });
+	});
+});
+
+describe("fetchLinkPreview image measurement", () => {
+	const page = (extraMeta = "") => `
+		<html><head>
+			<meta property="og:title" content="A Livestream" />
+			<meta property="og:image" content="https://1.1.1.1/card.jpg" />
+			${extraMeta}
+		</head></html>
+	`;
+
+	const servePage = (mockAgent: MockAgent, extraMeta = ""): void => {
+		mockAgent
+			.get("http://93.184.216.34")
+			.intercept({ path: "/watch", method: "GET" })
+			.reply(200, page(extraMeta), { headers: { "content-type": "text/html" } });
+	};
+
+	it("fills in dimensions the page never declared", async () => {
+		const mockAgent = newMockAgent();
+		servePage(mockAgent);
+		const measureImage = vi.fn(async () => ({ width: 1200, height: 630 }));
+
+		const embed = await fetchLinkPreview("http://93.184.216.34/watch", {
+			dispatcher: mockAgent,
+			cache: null,
+			measureImage,
+		});
+
+		expect(measureImage).toHaveBeenCalledWith("https://1.1.1.1/card.jpg");
+		expect(embed.image?.width).toBe(1200);
+		expect(embed.image?.height).toBe(630);
+	});
+
+	it("leaves declared dimensions alone", async () => {
+		const mockAgent = newMockAgent();
+		servePage(
+			mockAgent,
+			`<meta property="og:image:width" content="64" />
+			 <meta property="og:image:height" content="64" />`,
+		);
+		const measureImage = vi.fn(async () => ({ width: 1200, height: 630 }));
+
+		const embed = await fetchLinkPreview("http://93.184.216.34/watch", {
+			dispatcher: mockAgent,
+			cache: null,
+			measureImage,
+		});
+
+		expect(measureImage).not.toHaveBeenCalled();
+		expect(embed.image?.width).toBe(64);
+	});
+
+	it("measures again when only one dimension is declared", async () => {
+		const mockAgent = newMockAgent();
+		servePage(mockAgent, '<meta property="og:image:width" content="1200" />');
+		const measureImage = vi.fn(async () => ({ width: 1200, height: 630 }));
+
+		const embed = await fetchLinkPreview("http://93.184.216.34/watch", {
+			dispatcher: mockAgent,
+			cache: null,
+			measureImage,
+		});
+
+		expect(embed.image?.height).toBe(630);
+	});
+
+	it("keeps the preview when the measurer throws", async () => {
+		const mockAgent = newMockAgent();
+		servePage(mockAgent);
+		const measureImage = vi.fn(async () => {
+			throw new Error("image host is down");
+		});
+
+		const embed = await fetchLinkPreview("http://93.184.216.34/watch", {
+			dispatcher: mockAgent,
+			cache: null,
+			measureImage,
+		});
+
+		expect(embed.title).toBe("A Livestream");
+		expect(embed.image?.url).toBe("https://1.1.1.1/card.jpg");
+		expect(embed.image?.width).toBeUndefined();
+	});
+
+	it("keeps the preview when the measurer finds no dimensions", async () => {
+		const mockAgent = newMockAgent();
+		servePage(mockAgent);
+
+		const embed = await fetchLinkPreview("http://93.184.216.34/watch", {
+			dispatcher: mockAgent,
+			cache: null,
+			measureImage: async () => undefined,
+		});
+
+		expect(embed.image?.width).toBeUndefined();
+	});
+
+	it("serves measured dimensions from the cache without measuring twice", async () => {
+		const mockAgent = newMockAgent();
+		servePage(mockAgent);
+		const cache = createPreviewCache<LinkEmbed>();
+		const measureImage = vi.fn(async () => ({ width: 1200, height: 630 }));
+
+		const first = await fetchLinkPreview("http://93.184.216.34/watch", {
+			dispatcher: mockAgent,
+			cache,
+			measureImage,
+		});
+		const second = await fetchLinkPreview("http://93.184.216.34/watch", {
+			dispatcher: mockAgent,
+			cache,
+			measureImage,
+		});
+
+		expect(measureImage).toHaveBeenCalledTimes(1);
+		expect(first.image?.height).toBe(630);
+		expect(second.image?.height).toBe(630);
 	});
 });

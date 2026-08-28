@@ -1,9 +1,14 @@
-import { guardedFetch, isEmbedError } from "@colibri-social/embeds";
+import {
+	baseContentType,
+	guardedFetch,
+	isEmbedError,
+	PROXYABLE_IMAGE_TYPES,
+} from "@colibri-social/embeds";
 import type { Request, Response, Router } from "express";
 import type { AppContext } from "../context.js";
 import { type EmbedMediaKind, verifyEmbedToken } from "../embed-token.js";
 
-const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "image/avif"]);
+const IMAGE_TYPES = new Set<string>(PROXYABLE_IMAGE_TYPES);
 
 const VIDEO_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime"]);
 
@@ -13,9 +18,6 @@ const CACHE_CONTROL = "public, max-age=900, immutable";
 
 const asString = (value: unknown): string | undefined =>
 	typeof value === "string" && value.length > 0 ? value : undefined;
-
-const baseType = (header: string | undefined): string =>
-	(header ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
 
 const fail = (res: Response, status: number, error: string, message: string): void => {
 	res.status(status).json({ error, message });
@@ -63,7 +65,7 @@ export const mountEmbedMediaRoutes = (ctx: AppContext, app: Router): void => {
 			return;
 		}
 
-		const mimeType = baseType(upstream.headers["content-type"]);
+		const mimeType = baseContentType(upstream.headers["content-type"]);
 		if (!allowed.has(mimeType)) {
 			fail(res, 415, "UnsupportedImage", `the origin served ${mimeType || "no content type"}`);
 			return;
