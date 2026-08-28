@@ -7,6 +7,7 @@ import {
 import type { Request, Response, Router } from "express";
 import type { AppContext } from "../context.js";
 import { type EmbedMediaKind, verifyEmbedToken } from "../embed-token.js";
+import { asyncHandler } from "./async-handler.js";
 
 const IMAGE_TYPES = new Set<string>(PROXYABLE_IMAGE_TYPES);
 
@@ -82,11 +83,13 @@ export const mountEmbedMediaRoutes = (ctx: AppContext, app: Router): void => {
 		res.end(upstream.body);
 	};
 
-	app.get("/xrpc/social.colibri.beta.embed.getImage", (req, res) => {
-		void serve("image", req, res);
-	});
+	app.get(
+		"/xrpc/social.colibri.beta.embed.getImage",
+		asyncHandler(ctx, "embed.getImage.failed", (req, res) => serve("image", req, res)),
+	);
 
-	app.get("/xrpc/social.colibri.beta.embed.getVideo", (req, res) => {
-		void serve("video", req, res);
-	});
+	app.get(
+		"/xrpc/social.colibri.beta.embed.getVideo",
+		asyncHandler(ctx, "embed.getVideo.failed", (req, res) => serve("video", req, res)),
+	);
 };

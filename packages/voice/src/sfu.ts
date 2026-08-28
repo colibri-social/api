@@ -26,6 +26,7 @@ import { WorkerPool, type WorkerPoolLike } from "./worker-pool.js";
 export type VoiceSfuEvents = {
 	"room-created": [{ channel: string }];
 	"room-closed": [{ channel: string }];
+	"room-close-failed": [{ channel: string; error: unknown }];
 	"worker-died": [{ pid: number; error: Error }];
 	"worker-restarted": [{ pid: number }];
 	"participant-joined": [{ channel: string; did: string }];
@@ -253,7 +254,11 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 
 		this.rooms.set(channel, room);
 		this.wireRoomEvents(channel, room);
-		router.on("workerclose", () => void this.discardRoom(channel, room));
+		router.on("workerclose", () => {
+			void this.discardRoom(channel, room).catch((error: unknown) =>
+				this.emit("room-close-failed", { channel, error }),
+			);
+		});
 		this.emit("room-created", { channel });
 		return room;
 	}
@@ -314,7 +319,9 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 			}
 			this.rooms.delete(channel);
 			this.emit("room-closed", { channel });
-			void room.close();
+			void room
+				.close()
+				.catch((error: unknown) => this.emit("room-close-failed", { channel, error }));
 		}, this.config.roomGraceMs);
 		timer.unref?.();
 		this.roomGraceTimers.set(channel, timer);

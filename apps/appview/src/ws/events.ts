@@ -8,6 +8,7 @@ import { type WebSocket, WebSocketServer } from "ws";
 import { backfillActivity } from "../activity.js";
 import { channelEvent, communityEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
+import { fireAndForget } from "../fire-and-forget.js";
 import { isOnlineState, PresenceTracker } from "../presence.js";
 import { ActorViews } from "../views/actor.js";
 import { CommunityViews } from "../views/community.js";
@@ -94,10 +95,11 @@ export class EventServer {
 
 	attach(http: HttpServer): void {
 		http.on("upgrade", (request, socket, head) => {
-			const url = new URL(request.url ?? "/", "http://localhost");
-			if (url.pathname !== EVENTS_PATH) return;
+			fireAndForget(this.ctx.log, "events.upgrade.failed", async () => {
+				const url = new URL(request.url ?? "/", "http://localhost");
+				if (url.pathname !== EVENTS_PATH) return;
 
-			void this.authenticate(request.headers, url).then((did) => {
+				const did = await this.authenticate(request.headers, url);
 				if (!did) {
 					socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
 					socket.destroy();
@@ -157,7 +159,14 @@ export class EventServer {
 		socket.on("pong", () => {
 			connection.alive = true;
 		});
-		socket.on("message", (raw) => void this.receive(connection, raw.toString()));
+		socket.on("message", (raw) => {
+			fireAndForget(
+				this.ctx.log,
+				"events.frame.failed",
+				() => this.receive(connection, raw.toString()),
+				{ did: connection.did },
+			);
+		});
 		socket.on("close", () => {
 			this.topics.forget(connection);
 			this.connections.delete(connection);

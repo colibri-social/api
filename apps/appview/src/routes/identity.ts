@@ -1,5 +1,6 @@
 import type { Request, Response, Router } from "express";
 import type { AppContext } from "../context.js";
+import { asyncHandler } from "./async-handler.js";
 
 const CACHE_CONTROL = "public, max-age=300";
 
@@ -45,11 +46,13 @@ export const mountIdentityRoutes = (ctx: AppContext, app: Router): void => {
 		}
 	};
 
-	app.get("/xrpc/com.atproto.identity.resolveHandle", (req, res) => {
-		void resolveHandle(req, res);
-	});
+	app.get(
+		"/xrpc/com.atproto.identity.resolveHandle",
+		asyncHandler(ctx, "identity.resolveHandle.failed", resolveHandle),
+	);
 
-	app.get("/xrpc/com.atproto.identity.resolveDid", (req, res) => {
-		void resolveDid(req, res);
-	});
+	app.get(
+		"/xrpc/com.atproto.identity.resolveDid",
+		asyncHandler(ctx, "identity.resolveDid.failed", resolveDid),
+	);
 };

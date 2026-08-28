@@ -61,6 +61,11 @@ export const configSchema = z.object({
 	JETSTREAM_ENABLED: boolish(true),
 
 	SYNC_WORKERS: z.coerce.number().int().positive().default(16),
+	SYNC_MAX_CAR_BYTES: z.coerce
+		.number()
+		.int()
+		.positive()
+		.default(64 * 1024 * 1024),
 	SYNC_WORKER_THREADS: z.coerce.number().int().nonnegative().default(0),
 	SYNC_SWEEP_SECONDS: z.coerce.number().int().positive().default(300),
 	SERVICE_AUTH_MAX_LIFETIME_SECONDS: z.coerce.number().int().positive().default(300),

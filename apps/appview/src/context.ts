@@ -140,6 +140,7 @@ export const createContext = async (config: Config) => {
 		},
 		syncerService: serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.syncer),
 		concurrency: config.SYNC_WORKERS,
+		maxCarBytes: config.SYNC_MAX_CAR_BYTES,
 		workerThreads: config.SYNC_WORKER_THREADS,
 		sweepIntervalMs: config.SYNC_SWEEP_SECONDS * 1000,
 		log: (event, detail, level = "warn") => log[level](detail, event),
@@ -183,6 +184,10 @@ export const createContext = async (config: Config) => {
 	const videoArtwork = config.VIDEO_ARTWORK_ENABLED ? createVideoArtworkClient({ log }) : null;
 
 	const voice = config.VOICE_ENABLED ? await createVoiceSfu(voiceSfuConfigFromEnv()) : null;
+	voice?.on("room-close-failed", ({ channel, error }) =>
+		log.error({ channel, err: error }, "voice.roomCloseFailed"),
+	);
+	voice?.on("worker-died", ({ pid, error }) => log.error({ pid, err: error }, "voice.workerDied"));
 
 	const didDocument = buildDidDocument(
 		{ did: config.APPVIEW_DID, publicUrl: config.PUBLIC_URL },

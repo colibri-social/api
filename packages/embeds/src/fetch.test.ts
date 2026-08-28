@@ -45,6 +45,34 @@ class DelayedEndDispatcher extends Dispatcher {
 	}
 }
 
+class StreamingDelayedEndDispatcher extends Dispatcher {
+	constructor(private readonly chunks: ReadonlyArray<string>) {
+		super();
+	}
+
+	override dispatch(
+		_options: Dispatcher.DispatchOptions,
+		handler: Dispatcher.DispatchHandler,
+	): boolean {
+		const controller = new FakeController();
+		handler.onRequestStart?.(controller, {});
+		handler.onResponseStart?.(controller, 200, { "content-type": "text/plain" }, "OK");
+		for (const chunk of this.chunks) {
+			handler.onResponseData?.(controller, Buffer.from(chunk));
+		}
+		setImmediate(() => handler.onResponseEnd?.(controller, {}));
+		return true;
+	}
+
+	override close(): Promise<void> {
+		return Promise.resolve();
+	}
+
+	override destroy(): Promise<void> {
+		return Promise.resolve();
+	}
+}
+
 function fakeResolver(map: Record<string, string>) {
 	return async (hostname: string) => {
 		const address = map[hostname];
@@ -231,5 +259,46 @@ describe("guardedFetch response size cap", () => {
 
 		expect(result.truncated).toBe(false);
 		expect(result.body.toString("utf8")).toContain("STOP");
+	});
+
+	it("does not crash the process when the cap is hit before the body ends", async () => {
+		const dispatcher = new StreamingDelayedEndDispatcher(["aaaaaaaaaa", "bbbbbbbbbb"]);
+
+		const onUncaught = vi.fn();
+		process.once("uncaughtException", onUncaught);
+		try {
+			const result = await guardedFetch("http://93.184.216.34/big", {
+				dispatcher,
+				maxResponseBytes: 5,
+			});
+
+			expect(result.truncated).toBe(true);
+			expect(result.body.length).toBe(5);
+			await new Promise((resolve) => setImmediate(resolve));
+			expect(onUncaught).not.toHaveBeenCalled();
+		} finally {
+			process.removeListener("uncaughtException", onUncaught);
+		}
+	});
+
+	it("does not crash the process when stopStreaming ends the read before the body ends", async () => {
+		const dispatcher = new StreamingDelayedEndDispatcher(["before-", "STOP", "-after"]);
+
+		const onUncaught = vi.fn();
+		process.once("uncaughtException", onUncaught);
+		try {
+			const result = await guardedFetch("http://93.184.216.34/marker", {
+				dispatcher,
+				maxResponseBytes: 1_000_000,
+				stopStreaming: (accumulated) => accumulated.includes("STOP"),
+			});
+
+			expect(result.truncated).toBe(false);
+			expect(result.body.toString("utf8")).toContain("STOP");
+			await new Promise((resolve) => setImmediate(resolve));
+			expect(onUncaught).not.toHaveBeenCalled();
+		} finally {
+			process.removeListener("uncaughtException", onUncaught);
+		}
 	});
 });

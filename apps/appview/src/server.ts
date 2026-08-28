@@ -1,10 +1,12 @@
 import { createServer, type Server, XRPCError } from "@atproto/xrpc-server";
+import { sql } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { authVerifiers } from "./auth.js";
 import type { AppContext } from "./context.js";
 import { corsMiddleware } from "./cors.js";
 import { registerActorRoutes } from "./routes/actor.js";
 import { registerActorWriteRoutes } from "./routes/actor-write.js";
+import { asyncHandler } from "./routes/async-handler.js";
 import { mountBlobRoutes } from "./routes/blob.js";
 import { registerCategoryRoutes } from "./routes/category.js";
 import { registerChannelRoutes } from "./routes/channel.js";
@@ -91,9 +93,19 @@ export const createAppServer = (ctx: AppContext): Server => {
 		res.type("text/plain").send(BANNER);
 	});
 
-	app.get("/health", (_req: Request, res: Response) => {
-		res.json({ status: "ok", did: ctx.config.APPVIEW_DID });
-	});
+	app.get(
+		"/health",
+		asyncHandler(ctx, "health.failed", async (_req: Request, res: Response) => {
+			try {
+				await ctx.database.db.run(sql`select 1`);
+			} catch (error) {
+				ctx.log.error({ err: error }, "health.databaseUnreachable");
+				res.status(503).json({ status: "degraded", did: ctx.config.APPVIEW_DID, database: "down" });
+				return;
+			}
+			res.json({ status: "ok", did: ctx.config.APPVIEW_DID, database: "up" });
+		}),
+	);
 
 	app.get("/.well-known/did.json", (_req: Request, res: Response) => {
 		res.json(ctx.didDocument);

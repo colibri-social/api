@@ -1,7 +1,12 @@
 import * as Sentry from "@sentry/node";
 import type { Config } from "./config.js";
+import type { Logger } from "./logger.js";
+
+const FLUSH_TIMEOUT_MS = 2000;
 
 let reporting = false;
+let fatalLogger: Logger | undefined;
+let handlingFatal = false;
 
 export const startErrorReporting = (config: Config, release: string): boolean => {
 	if (!config.SENTRY_DSN) return false;
@@ -16,15 +21,28 @@ export const startErrorReporting = (config: Config, release: string): boolean =>
 	Sentry.setTag("appview.flavor", config.APPVIEW_FLAVOR);
 	Sentry.setTag("appview.did", config.APPVIEW_DID);
 
-	process.on("unhandledRejection", (reason) => {
-		Sentry.captureException(reason, { tags: { stage: "unhandledRejection" } });
-	});
-	process.on("uncaughtException", (error) => {
-		Sentry.captureException(error, { tags: { stage: "uncaughtException" } });
-	});
-
 	reporting = true;
 	return true;
+};
+
+const onFatal = async (error: unknown, stage: string): Promise<never> => {
+	if (handlingFatal) return process.exit(1);
+	handlingFatal = true;
+
+	fatalLogger?.fatal({ err: error, stage }, "fatal");
+
+	if (reporting) {
+		Sentry.captureException(error, { tags: { stage } });
+		await Sentry.close(FLUSH_TIMEOUT_MS).catch(() => undefined);
+	}
+
+	return process.exit(1);
+};
+
+export const installFatalHandlers = (logger: Logger): void => {
+	fatalLogger = logger;
+	process.on("uncaughtException", (error) => void onFatal(error, "uncaughtException"));
+	process.on("unhandledRejection", (reason) => void onFatal(reason, "unhandledRejection"));
 };
 
 export const reportFailure = (
@@ -43,5 +61,5 @@ export const reportFailure = (
 export const stopErrorReporting = async (): Promise<void> => {
 	if (!reporting) return;
 	reporting = false;
-	await Sentry.close(2000).catch(() => undefined);
+	await Sentry.close(FLUSH_TIMEOUT_MS).catch(() => undefined);
 };

@@ -6,6 +6,7 @@ import { parseSpaceRef } from "@colibri-social/space";
 import type { VoiceSfu } from "@colibri-social/voice";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { AppContext } from "../context.js";
+import { fireAndForget } from "../fire-and-forget.js";
 import { voiceStateIn } from "../views/voice-state.js";
 import { bearerToken, selectSubprotocol } from "./auth.js";
 import type { EventServer, ServerFrame } from "./events.js";
@@ -128,16 +129,17 @@ export class VoiceServer {
 
 	attach(http: HttpServer): void {
 		http.on("upgrade", (request, socket, head) => {
-			const url = new URL(request.url ?? "/", "http://localhost");
-			if (url.pathname !== VOICE_PATH) return;
+			fireAndForget(this.ctx.log, "voice.upgrade.failed", async () => {
+				const url = new URL(request.url ?? "/", "http://localhost");
+				if (url.pathname !== VOICE_PATH) return;
 
-			if (!this.ctx.voice) {
-				socket.write("HTTP/1.1 503 Service Unavailable\r\n\r\n");
-				socket.destroy();
-				return;
-			}
+				if (!this.ctx.voice) {
+					socket.write("HTTP/1.1 503 Service Unavailable\r\n\r\n");
+					socket.destroy();
+					return;
+				}
 
-			void this.authenticate(request.headers, url).then((did) => {
+				const did = await this.authenticate(request.headers, url);
 				if (!did) {
 					socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
 					socket.destroy();
@@ -212,7 +214,14 @@ export class VoiceServer {
 		this.connections.delete(connection);
 		const channel = this.forgetChannel(connection);
 		this.topics.forget(connection);
-		if (channel) void this.ctx.voice?.leave(channel, connection.did);
+		if (channel) {
+			fireAndForget(
+				this.ctx.log,
+				"voice.leave.failed",
+				async () => this.ctx.voice?.leave(channel, connection.did),
+				{ did: connection.did, channel },
+			);
+		}
 	}
 
 	private forgetChannel(connection: Connection): string | null {

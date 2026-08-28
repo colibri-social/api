@@ -3,7 +3,7 @@ import type { LexMap } from "@atproto/lex-data";
 import { RepoCommit, type SignedCommit, serializeRecord, serializeRepo } from "@atproto/space";
 import { XrpcError } from "@colibri-social/space";
 import { beforeEach, describe, expect, it } from "vitest";
-import { RepoSync } from "./repo-sync.js";
+import { CarTooLargeError, RepoSync } from "./repo-sync.js";
 import type { RepoChange, RepoCursor, SyncStore } from "./types.js";
 
 const SPACE = "at://did:plc:2hnjxkqm6bpuvvpjbztkxxxx/space/social.colibri.beta.channel.text/3lkabc";
@@ -136,13 +136,14 @@ const fakeClient = (behaviour: FakeBehaviour) => {
 	return { client, calls };
 };
 
-const syncerFor = (behaviour: FakeBehaviour, store: SyncStore) => {
+const syncerFor = (behaviour: FakeBehaviour, store: SyncStore, maxCarBytes?: number) => {
 	const { client, calls } = fakeClient(behaviour);
 	const sync = new RepoSync({
 		client: client as never,
 		store,
 		hosts: { hostFor: async () => HOST },
 		keys: { signingKeyFor: async () => keypair.did() },
+		...(maxCarBytes === undefined ? {} : { maxCarBytes }),
 	});
 	return { sync, calls };
 };
@@ -165,6 +166,15 @@ describe("first sync", () => {
 		expect([...stored.keys()].sort()).toEqual([`${MESSAGE}/3a`, `${MESSAGE}/3b`]);
 		expect(cursors.get(AUTHOR)?.appliedRev).toBe("3rev1");
 		expect(cursors.get(AUTHOR)?.setHashBase64).toBeTruthy();
+	});
+
+	it("refuses a car that exceeds the byte cap instead of buffering it", async () => {
+		const records = await cidsFor([message("3a", "hello"), message("3b", "world")]);
+		const { store, records: stored } = memoryStore();
+		const { sync } = syncerFor({ car: () => carFor(records, "3rev1") }, store, 8);
+
+		await expect(sync.sync(SPACE, AUTHOR)).rejects.toBeInstanceOf(CarTooLargeError);
+		expect(stored.size).toBe(0);
 	});
 
 	it("refuses a car signed by the wrong key", async () => {

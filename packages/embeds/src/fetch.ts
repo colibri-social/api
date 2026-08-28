@@ -161,12 +161,12 @@ async function readCapped(
 		total += slice.length;
 
 		if (slice.length < chunk.length) {
-			body.destroy();
+			discardBody(body);
 			return { buffer: Buffer.concat(chunks), truncated: true };
 		}
 
 		if (stopStreaming?.(Buffer.concat(chunks))) {
-			body.destroy();
+			discardBody(body);
 			return { buffer: Buffer.concat(chunks), truncated: false };
 		}
 	}

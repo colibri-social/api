@@ -26,6 +26,7 @@ export type RepoSyncDeps = {
 	keys: SigningKeyResolver;
 	pageLimit?: number;
 	verifier?: Verifier;
+	maxCarBytes?: number;
 };
 
 const OPLOG_UNUSABLE = new Set(["InvalidRequest", "CursorNotFound", "RevNotFound"]);
@@ -37,12 +38,31 @@ const isGone = (error: unknown): boolean =>
 const needsRecovery = (error: unknown): boolean =>
 	error instanceof XrpcError && OPLOG_UNUSABLE.has(error.code);
 
-const collectCar = async (car: AsyncIterable<Uint8Array>): Promise<Uint8Array> => {
+export const DEFAULT_MAX_CAR_BYTES = 64 * 1024 * 1024;
+
+export class CarTooLargeError extends Error {
+	constructor(
+		readonly limitBytes: number,
+		readonly space: string,
+		readonly author: string,
+	) {
+		super(`repo car for ${author} in ${space} exceeds ${limitBytes} bytes`);
+		this.name = "CarTooLargeError";
+	}
+}
+
+const collectCar = async (
+	car: AsyncIterable<Uint8Array>,
+	limitBytes: number,
+	space: string,
+	author: string,
+): Promise<Uint8Array> => {
 	const chunks: Uint8Array[] = [];
 	let total = 0;
 	for await (const chunk of car) {
-		chunks.push(chunk);
 		total += chunk.byteLength;
+		if (total > limitBytes) throw new CarTooLargeError(limitBytes, space, author);
+		chunks.push(chunk);
 	}
 
 	const bytes = new Uint8Array(total);
@@ -164,7 +184,7 @@ export class RepoSync {
 			space,
 			author,
 			didKey: await this.deps.keys.signingKeyFor(author),
-			car: await collectCar(car),
+			car: await collectCar(car, this.deps.maxCarBytes ?? DEFAULT_MAX_CAR_BYTES, space, author),
 		});
 
 		const puts = verified.records;

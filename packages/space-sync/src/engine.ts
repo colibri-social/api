@@ -33,6 +33,7 @@ export type SyncEngineOptions = {
 	sweepIntervalMs?: number;
 	maxBackoffMs?: number;
 	pageLimit?: number;
+	maxCarBytes?: number;
 	registrationRenewMarginMs?: number;
 	maxChaseAttempts?: number;
 	workerThreads?: number;
@@ -118,6 +119,7 @@ export class SpaceSyncEngine {
 				keys: options.keys,
 				verifier: this.verifier,
 				...(options.pageLimit === undefined ? {} : { pageLimit: options.pageLimit }),
+				...(options.maxCarBytes === undefined ? {} : { maxCarBytes: options.maxCarBytes }),
 			});
 		this.queue = new KeyedWorkQueue((key) => this.syncOne(key), {
 			concurrency: options.concurrency ?? 16,
@@ -224,6 +226,8 @@ export class SpaceSyncEngine {
 					this.log("sweep.failed", { space: space.uri, error });
 				});
 			}
+		} catch (error) {
+			this.log("sweep.aborted", { error });
 		} finally {
 			this.sweeping = false;
 		}
@@ -368,7 +372,9 @@ export class SpaceSyncEngine {
 		const now = this.now();
 		for (const [space, state] of this.registrations) {
 			if (!this.registrationDue(state, now)) continue;
-			await this.register(space, state);
+			await this.register(space, state).catch((error: unknown) =>
+				this.log("registration.renewFailed", { space, error }),
+			);
 		}
 	}
 

@@ -3,9 +3,10 @@ import { eventAnnouncer } from "./announce.js";
 import { describeConfig, loadConfig } from "./config.js";
 import { createContext } from "./context.js";
 import { Jetstream } from "./jetstream.js";
+import { createLogger } from "./logger.js";
 import { connectPipeline } from "./pipeline.js";
 import { resolveVersion } from "./routes/server.js";
-import { startErrorReporting, stopErrorReporting } from "./sentry.js";
+import { installFatalHandlers, startErrorReporting, stopErrorReporting } from "./sentry.js";
 import { createAppServer } from "./server.js";
 import { EventServer } from "./ws/events.js";
 import { VoiceServer } from "./ws/voice.js";
@@ -14,6 +15,7 @@ const SHUTDOWN_DEADLINE_MS = 15_000;
 
 const main = async (): Promise<void> => {
 	const config = loadConfig();
+	installFatalHandlers(createLogger(config));
 	const reporting = startErrorReporting(config, `appview@${resolveVersion()}`);
 	const ctx = await createContext(config);
 	ctx.log.info({ errorReporting: reporting ? "enabled" : "disabled" }, "config.sentry");
