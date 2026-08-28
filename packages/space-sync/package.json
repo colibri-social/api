@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/space-sync",
-	"version": "0.3.1",
+	"version": "0.3.2",
 	"description": "Keeps a local copy of an atproto space in sync: writer set discovery, operation log replay, LtHash reconciliation and CAR recovery",
 	"type": "module",
 	"exports": {

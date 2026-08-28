@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/embeds",
-	"version": "0.0.0",
+	"version": "0.0.1",
 	"description": "SSRF-guarded outbound fetching, OpenGraph extraction, video probing and the GIF picker proxy",
 	"type": "module",
 	"private": true,

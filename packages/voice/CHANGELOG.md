@@ -1,5 +1,11 @@
 # @colibri-social/voice
 
+## 0.1.3
+
+### Patch Changes
+
+- b03c206: Exit on a fatal error so the container restarts clean, guard the async paths that could reach one, and cap the repo CAR buffer
+
 ## 0.1.2
 
 ### Patch Changes
