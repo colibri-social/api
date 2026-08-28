@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/voice",
-	"version": "0.1.2",
+	"version": "0.1.3",
 	"description": "mediasoup-backed voice SFU for Colibri voice channels.",
 	"type": "module",
 	"private": true,
