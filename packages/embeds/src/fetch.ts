@@ -135,13 +135,18 @@ function flattenHeaders(headers: Dispatcher.ResponseData["headers"]): Record<str
 
 type BodyStream = Dispatcher.ResponseData["body"];
 
+function discardBody(body: BodyStream): void {
+	body.on("error", () => {});
+	body.destroy();
+}
+
 async function readCapped(
 	body: BodyStream,
 	maxBytes: number,
 	stopStreaming?: (accumulated: Buffer) => boolean,
 ): Promise<{ buffer: Buffer; truncated: boolean }> {
 	if (maxBytes <= 0) {
-		body.destroy();
+		discardBody(body);
 		return { buffer: Buffer.alloc(0), truncated: true };
 	}
 
@@ -219,7 +224,7 @@ export async function guardedFetch(
 			}
 
 			if (isRedirectStatus(response.statusCode)) {
-				response.body.destroy();
+				discardBody(response.body);
 				if (ownsDispatcher) dispatcher.close().catch(() => undefined);
 
 				if (attempt === maxRedirects) throw notFetchable("too many redirects");

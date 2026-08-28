@@ -1,7 +1,46 @@
-import { MockAgent } from "undici";
-import { afterEach, describe, expect, it } from "vitest";
+import { Dispatcher, MockAgent } from "undici";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { EmbedError } from "./errors.js";
 import { assertFetchable, guardedFetch } from "./fetch.js";
+
+class FakeController implements Dispatcher.DispatchController {
+	get aborted(): boolean {
+		return false;
+	}
+	get paused(): boolean {
+		return false;
+	}
+	get reason(): Error | null {
+		return null;
+	}
+	abort(): void {}
+	pause(): void {}
+	resume(): void {}
+}
+
+class DelayedEndDispatcher extends Dispatcher {
+	dispatch(options: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler): boolean {
+		const controller = new FakeController();
+		handler.onRequestStart?.(controller, {});
+		if (options.path === "/start") {
+			handler.onResponseStart?.(controller, 302, { location: "http://1.1.1.1/final" }, "Found");
+			handler.onResponseData?.(controller, Buffer.from("Redirecting..."));
+		} else {
+			handler.onResponseStart?.(controller, 200, { "content-type": "text/plain" }, "OK");
+			handler.onResponseData?.(controller, Buffer.from("hello"));
+		}
+		setImmediate(() => handler.onResponseEnd?.(controller, {}));
+		return true;
+	}
+
+	close(): Promise<void> {
+		return Promise.resolve();
+	}
+
+	destroy(): Promise<void> {
+		return Promise.resolve();
+	}
+}
 
 function fakeResolver(map: Record<string, string>) {
 	return async (hostname: string) => {
@@ -121,6 +160,22 @@ describe("guardedFetch redirect handling", () => {
 		await expect(
 			guardedFetch("http://93.184.216.34/hop0", { dispatcher: mockAgent, maxRedirects: 2 }),
 		).rejects.toMatchObject({ code: "NotFetchable" });
+	});
+
+	it("does not crash the process when a redirect response body ends after being destroyed", async () => {
+		const dispatcher = new DelayedEndDispatcher();
+
+		const onUncaught = vi.fn();
+		process.once("uncaughtException", onUncaught);
+		try {
+			const result = await guardedFetch("http://93.184.216.34/start", { dispatcher });
+			expect(result.statusCode).toBe(200);
+			expect(result.body.toString("utf8")).toBe("hello");
+			await new Promise((resolve) => setImmediate(resolve));
+			expect(onUncaught).not.toHaveBeenCalled();
+		} finally {
+			process.removeListener("uncaughtException", onUncaught);
+		}
 	});
 });
 

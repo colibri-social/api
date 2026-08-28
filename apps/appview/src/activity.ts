@@ -34,9 +34,14 @@ const sameTrack = (
 	left: Pick<ActivityDraft, "title" | "subtitle" | "detail">,
 	right: Pick<ActivityDraft, "title" | "subtitle" | "detail">,
 ): boolean =>
-	left.title === right.title && left.subtitle === right.subtitle && left.detail === right.detail;
+	left.title === right.title &&
+	left.subtitle === right.subtitle &&
+	left.detail === right.detail;
 
-const extendsWindow = (stored: string | null, incoming: string | null): boolean => {
+const extendsWindow = (
+	stored: string | null,
+	incoming: string | null,
+): boolean => {
 	const next = incoming ? Date.parse(incoming) : Number.NaN;
 	if (Number.isNaN(next)) return false;
 
@@ -47,7 +52,10 @@ const extendsWindow = (stored: string | null, incoming: string | null): boolean 
 const startedFirst = (left: ActivityDraft, right: ActivityDraft): number =>
 	Date.parse(right.startedAt ?? "") - Date.parse(left.startedAt ?? "");
 
-export const sharesActivity = async (ctx: AppContext, did: string): Promise<boolean> => {
+export const sharesActivity = async (
+	ctx: AppContext,
+	did: string,
+): Promise<boolean> => {
 	const [row] = await ctx.database.db
 		.select({ shareActivity: ctx.database.tables.actorSettings.shareActivity })
 		.from(ctx.database.tables.actorSettings)
@@ -65,7 +73,10 @@ const storedActivity = async (ctx: AppContext, did: string) => {
 	return row;
 };
 
-export const announceActivity = async (ctx: AppContext, did: string): Promise<void> => {
+export const announceActivity = async (
+	ctx: AppContext,
+	did: string,
+): Promise<void> => {
 	const [presence] = await ctx.database.db
 		.select()
 		.from(ctx.database.tables.userPresence)
@@ -87,20 +98,31 @@ export const announceActivity = async (ctx: AppContext, did: string): Promise<vo
 	await announceToCommunities(ctx, did, presenceEvent(did, view));
 };
 
-const removeActivity = async (ctx: AppContext, did: string, source?: string): Promise<boolean> => {
+const removeActivity = async (
+	ctx: AppContext,
+	did: string,
+	source?: string,
+): Promise<boolean> => {
 	const { db, tables } = ctx.database;
 	const removed = await db
 		.delete(tables.actorActivity)
 		.where(
 			source
-				? and(eq(tables.actorActivity.did, did), eq(tables.actorActivity.source, source))
+				? and(
+						eq(tables.actorActivity.did, did),
+						eq(tables.actorActivity.source, source),
+					)
 				: eq(tables.actorActivity.did, did),
 		)
 		.returning();
 	return removed.length > 0;
 };
 
-const writeDraft = async (ctx: AppContext, did: string, draft: ActivityDraft): Promise<boolean> => {
+const writeDraft = async (
+	ctx: AppContext,
+	did: string,
+	draft: ActivityDraft,
+): Promise<boolean> => {
 	const existing = await storedActivity(ctx, did);
 	const continues = existing !== undefined && sameTrack(existing, draft);
 	if (continues && !extendsWindow(existing.endsAt, draft.endsAt)) return false;
@@ -128,7 +150,9 @@ const writeDraft = async (ctx: AppContext, did: string, draft: ActivityDraft): P
 		detail: draft.detail,
 		imageUrl,
 		linkUri: continues ? (existing.linkUri ?? draft.linkUri) : draft.linkUri,
-		startedAt: continues ? (existing.startedAt ?? draft.startedAt) : draft.startedAt,
+		startedAt: continues
+			? (existing.startedAt ?? draft.startedAt)
+			: draft.startedAt,
 		endsAt: draft.endsAt,
 		source: continues ? existing.source : draft.source,
 		updatedAt: new Date().toISOString(),
@@ -137,12 +161,19 @@ const writeDraft = async (ctx: AppContext, did: string, draft: ActivityDraft): P
 	await ctx.database.db
 		.insert(ctx.database.tables.actorActivity)
 		.values(row)
-		.onConflictDoUpdate({ target: ctx.database.tables.actorActivity.did, set: row });
+		.onConflictDoUpdate({
+			target: ctx.database.tables.actorActivity.did,
+			set: row,
+		});
 
 	return true;
 };
 
-const refill = async (ctx: AppContext, did: string, skipSource?: string): Promise<boolean> => {
+const refill = async (
+	ctx: AppContext,
+	did: string,
+	skipSource?: string,
+): Promise<boolean> => {
 	const pds = (await ctx.identity.resolveDid(did).catch(() => null))?.pds;
 	if (!pds) return false;
 
@@ -174,7 +205,11 @@ export const clearActivity = (ctx: AppContext, did: string): Promise<void> =>
 		await announceActivity(ctx, did);
 	});
 
-export const clearActivityFrom = (ctx: AppContext, did: string, source: string): Promise<void> =>
+export const clearActivityFrom = (
+	ctx: AppContext,
+	did: string,
+	source: string,
+): Promise<void> =>
 	enqueue(did, async () => {
 		if (!(await removeActivity(ctx, did, source))) return;
 		await refill(ctx, did, source);
@@ -221,7 +256,9 @@ export const setActivitySharing = async (
 	await backfillActivity(ctx, did);
 };
 
-export const sweepLapsedActivities = async (ctx: AppContext): Promise<number> => {
+export const sweepLapsedActivities = async (
+	ctx: AppContext,
+): Promise<number> => {
 	const now = new Date().toISOString();
 	const lapsed = await ctx.database.db
 		.select({ did: ctx.database.tables.actorActivity.did })
