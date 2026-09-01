@@ -1,5 +1,11 @@
 # @colibri-social/lexicons
 
+## 2.9.0
+
+### Minor Changes
+
+- 305fd99: Add the thread space type, the thread and follow records, the thread methods, and the `moved` label that serves a message from another space
+
 ## 2.8.0
 
 ### Minor Changes
