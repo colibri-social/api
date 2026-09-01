@@ -13,6 +13,7 @@ export * as putReadCursors from "./channel/putReadCursors.js";
 export * as read from "./channel/read.js";
 export * as reorder from "./channel/reorder.js";
 export * as text from "./channel/text.js";
+export * as thread from "./channel/thread.js";
 export * as update from "./channel/update.js";
 export * as voice from "./channel/voice.js";
 export * from "./channel.defs.js";

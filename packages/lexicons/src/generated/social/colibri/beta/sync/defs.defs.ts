@@ -6,6 +6,7 @@ import { l } from "@atproto/lex";
 import * as ChannelDefs from "../channel/defs.defs.js";
 import * as BetaDefs from "../defs.defs.js";
 import * as CommunityDefs from "../community/defs.defs.js";
+import * as ThreadDefs from "../thread/defs.defs.js";
 import * as BetaLabel from "../label.defs.js";
 import * as NotificationDefs from "../notification/defs.defs.js";
 import * as ActorDefs from "../actor/defs.defs.js";
@@ -16,7 +17,7 @@ type $nsid = typeof $nsid;
 
 export { $nsid };
 
-/** Adds communities and channels to what this connection receives. Subscription is explicit: a connection is sent nothing it did not ask for. */
+/** Adds communities, channels and threads to what this connection receives. Subscription is explicit: a connection is sent nothing it did not ask for. */
 type Subscribe = { $type?: "social.colibri.beta.sync.defs#subscribe";
 
   /**
@@ -25,18 +26,18 @@ type Subscribe = { $type?: "social.colibri.beta.sync.defs#subscribe";
   "communities"?:(l.DidString)[];
 
   /**
-   * Channels to start receiving messages for.
+   * Channels and threads to start receiving messages for.
    */
   "channels"?:(l.SpaceRefString)[] };
 
 export type { Subscribe };
 
-/** Adds communities and channels to what this connection receives. Subscription is explicit: a connection is sent nothing it did not ask for. */
+/** Adds communities, channels and threads to what this connection receives. Subscription is explicit: a connection is sent nothing it did not ask for. */
 const subscribe = /*#__PURE__*/ l.typedObject<Subscribe>($nsid, "subscribe", /*#__PURE__*/ l.object({"communities":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"channels":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"space-ref"}), ))}));
 
 export { subscribe };
 
-/** Removes communities and channels from what this connection receives. */
+/** Removes communities, channels and threads from what this connection receives. */
 type Unsubscribe = { $type?: "social.colibri.beta.sync.defs#unsubscribe";
 
   /**
@@ -45,13 +46,13 @@ type Unsubscribe = { $type?: "social.colibri.beta.sync.defs#unsubscribe";
   "communities"?:(l.DidString)[];
 
   /**
-   * Channels to stop receiving messages for.
+   * Channels and threads to stop receiving messages for.
    */
   "channels"?:(l.SpaceRefString)[] };
 
 export type { Unsubscribe };
 
-/** Removes communities and channels from what this connection receives. */
+/** Removes communities, channels and threads from what this connection receives. */
 const unsubscribe = /*#__PURE__*/ l.typedObject<Unsubscribe>($nsid, "unsubscribe", /*#__PURE__*/ l.object({"communities":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"channels":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"space-ref"}), ))}));
 
 export { unsubscribe };
@@ -200,7 +201,7 @@ type Subscribed = { $type?: "social.colibri.beta.sync.defs#subscribed";
   "communities":(l.DidString)[];
 
   /**
-   * Channels being received.
+   * Channels and threads being received.
    */
   "channels":(l.SpaceRefString)[] };
 
@@ -305,6 +306,46 @@ export type { ChannelEvent };
 const channelEvent = /*#__PURE__*/ l.typedObject<ChannelEvent>($nsid, "channelEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["create","update","delete"]}>(),"community":/*#__PURE__*/ l.string({"format":"did"}),"channel":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<CommunityDefs.ChannelView>((() => CommunityDefs.channelView) as any)),"space":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"}))}));
 
 export { channelEvent };
+
+/** A thread was opened, changed, deleted, or written to. This rides the community's topic rather than a topic per thread, so a client keeps every thread's activity age and unread dot live without subscribing to each one. */
+type ThreadEvent = { $type?: "social.colibri.beta.sync.defs#threadEvent";
+
+  /**
+   * What happened. `activity` means someone posted, which moves the thread's last activity and nothing else.
+   */
+  "event":"create" | "update" | "delete" | "activity" | l.UnknownString;
+
+  /**
+   * The community it belongs to.
+   */
+  "community":l.DidString;
+
+  /**
+   * The channel the thread belongs to.
+   */
+  "channel"?:l.SpaceRefString;
+
+  /**
+   * The thread. Absent on delete and on activity.
+   */
+  "thread"?:ThreadDefs.ThreadView;
+
+  /**
+   * Which thread, for deletes and for activity.
+   */
+  "space"?:l.SpaceRefString;
+
+  /**
+   * The thread's new last activity, on activity events.
+   */
+  "lastActivityAt"?:l.DatetimeString };
+
+export type { ThreadEvent };
+
+/** A thread was opened, changed, deleted, or written to. This rides the community's topic rather than a topic per thread, so a client keeps every thread's activity age and unread dot live without subscribing to each one. */
+const threadEvent = /*#__PURE__*/ l.typedObject<ThreadEvent>($nsid, "threadEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["create","update","delete","activity"]}>(),"community":/*#__PURE__*/ l.string({"format":"did"}),"channel":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"})),"thread":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ThreadDefs.ThreadView>((() => ThreadDefs.threadView) as any)),"space":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"})),"lastActivityAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"}))}));
+
+export { threadEvent };
 
 /** A category was created, changed, or deleted. */
 type CategoryEvent = { $type?: "social.colibri.beta.sync.defs#categoryEvent";

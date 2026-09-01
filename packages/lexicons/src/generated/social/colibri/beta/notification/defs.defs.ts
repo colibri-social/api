@@ -36,6 +36,11 @@ type NotificationView = { $type?: "social.colibri.beta.notification.defs#notific
   "channel":l.SpaceRefString;
 
   /**
+   * The thread it happened in, when it happened in a thread rather than in the channel itself. `channel` stays the thread's parent channel, so a client can route to the thread inside it.
+   */
+  "thread"?:l.SpaceRefString;
+
+  /**
    * The community it happened in.
    */
   "community":l.DidString;
@@ -63,6 +68,6 @@ type NotificationView = { $type?: "social.colibri.beta.notification.defs#notific
 export type { NotificationView };
 
 /** A notification for the requesting user. */
-const notificationView = /*#__PURE__*/ l.typedObject<NotificationView>($nsid, "notificationView", /*#__PURE__*/ l.object({"id":/*#__PURE__*/ l.string(),"kind":/*#__PURE__*/ l.string<{"knownValues":["mention","reply","message"]}>(),"author":/*#__PURE__*/ l.ref<ActorDefs.ProfileView>((() => ActorDefs.profileView) as any),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"community":/*#__PURE__*/ l.string({"format":"did"}),"message":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ChannelDefs.MessageView>((() => ChannelDefs.messageView) as any)),"mentionRole":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"indexedAt":/*#__PURE__*/ l.string({"format":"datetime"}),"seenAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"}))}));
+const notificationView = /*#__PURE__*/ l.typedObject<NotificationView>($nsid, "notificationView", /*#__PURE__*/ l.object({"id":/*#__PURE__*/ l.string(),"kind":/*#__PURE__*/ l.string<{"knownValues":["mention","reply","message"]}>(),"author":/*#__PURE__*/ l.ref<ActorDefs.ProfileView>((() => ActorDefs.profileView) as any),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"thread":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"})),"community":/*#__PURE__*/ l.string({"format":"did"}),"message":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ChannelDefs.MessageView>((() => ChannelDefs.messageView) as any)),"mentionRole":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"indexedAt":/*#__PURE__*/ l.string({"format":"datetime"}),"seenAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"}))}));
 
 export { notificationView };

@@ -18,6 +18,9 @@ export const PERMISSIONS = [
 	"approval.manage",
 	"voice.moderate",
 	"mention.roles",
+	"thread.create",
+	"thread.manage",
+	"thread.move",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];

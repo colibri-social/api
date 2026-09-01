@@ -24,4 +24,5 @@ export * as richtext from "./beta/richtext.js";
 export * as role from "./beta/role.js";
 export * as server from "./beta/server.js";
 export * as sync from "./beta/sync.js";
+export * as thread from "./beta/thread.js";
 export * as voice from "./beta/voice.js";

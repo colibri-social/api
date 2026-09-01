@@ -4,6 +4,7 @@
 
 import { l } from "@atproto/lex";
 import * as ChannelDefs from "./defs.defs.js";
+import * as ThreadDefs from "../thread/defs.defs.js";
 
 const $nsid = "social.colibri.beta.channel.listMessages";
 
@@ -15,12 +16,12 @@ export const $params = /*#__PURE__*/ l.params({"channel":/*#__PURE__*/ l.string(
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $output = /*#__PURE__*/ l.jsonPayload({"cursor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"messages":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ChannelDefs.MessageView>((() => ChannelDefs.messageView) as any), )});
+export const $output = /*#__PURE__*/ l.jsonPayload({"cursor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"messages":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ChannelDefs.MessageView>((() => ChannelDefs.messageView) as any), ),"threads":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ThreadDefs.ThreadView>((() => ThreadDefs.threadView) as any), ))});
 
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Lists messages in a channel, newest first by default. Messages from the repo-backed channel this one was migrated from are included and marked legacy. */
+/** Lists messages in a channel or in a thread, newest first by default. Messages from the repo-backed channel this one was migrated from are included and marked legacy. Messages moved in from another space are included in their move order, and messages moved out are absent. */
 const main = /*#__PURE__*/ l.query($nsid, $params, $output, ["AuthRequired","Forbidden","ChannelNotFound"]);
 
 export { main };

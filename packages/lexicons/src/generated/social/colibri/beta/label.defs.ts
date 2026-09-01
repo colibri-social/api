@@ -19,14 +19,24 @@ type Main = { $type: "social.colibri.beta.label";
   "subject":Subject;
 
   /**
-   * The label value. `hidden` is enforced: the AppView withholds a hidden record instead of serving it. `spoiler` and `embeds-suppressed` are display hints the AppView passes through for the client to honour.
+   * The label value. `hidden` is enforced: the AppView withholds a hidden record instead of serving it. `moved` is enforced too: the AppView withholds the record from this space and serves it in the space named by `destination` instead, ordered by `batch` and then by the record's own key. `spoiler` and `embeds-suppressed` are display hints the AppView passes through for the client to honour.
    */
-  "val":"hidden" | "spoiler" | "embeds-suppressed" | l.UnknownString;
+  "val":"hidden" | "spoiler" | "embeds-suppressed" | "moved" | l.UnknownString;
 
   /**
    * URIs within the subject record the label narrows to, for values that can apply to part of a record. Absent means the whole record.
    */
   "scope"?:(l.UriString)[];
+
+  /**
+   * Where a `moved` record is served instead of here. Honoured only on a `moved` label.
+   */
+  "destination"?:l.SpaceRefString;
+
+  /**
+   * Shared by every `moved` label written in one move, and what orders the moved records in the destination ahead of their own record keys. A selection moved together therefore keeps the order it had.
+   */
+  "batch"?:l.TidString;
 
   /**
    * Whether this record retracts an earlier label of the same value.
@@ -46,7 +56,7 @@ type Main = { $type: "social.colibri.beta.label";
 export type { Main };
 
 /** A label applied to a record in the same space. Permissioned content cannot be taken down by anyone but its author, so moderation of content is advisory: a reader honours the labels published by the labelers its community names. */
-const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"subject":/*#__PURE__*/ l.ref<Subject>((() => subject) as any),"val":/*#__PURE__*/ l.string<{"maxLength":128,"knownValues":["hidden","spoiler","embeds-suppressed"]}>({"maxLength":128}),"scope":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"uri"}), )),"neg":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"reason":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":512})),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
+const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"subject":/*#__PURE__*/ l.ref<Subject>((() => subject) as any),"val":/*#__PURE__*/ l.string<{"maxLength":128,"knownValues":["hidden","spoiler","embeds-suppressed","moved"]}>({"maxLength":128}),"scope":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"uri"}), )),"destination":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"})),"batch":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"tid"})),"neg":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"reason":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":512})),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
 
 export { main };
 

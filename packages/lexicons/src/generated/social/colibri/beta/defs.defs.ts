@@ -29,3 +29,33 @@ export type { RecordRef };
 const recordRef = /*#__PURE__*/ l.typedObject<RecordRef>($nsid, "recordRef", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"rkey":/*#__PURE__*/ l.string({"format":"record-key"})}));
 
 export { recordRef };
+
+/** A reference to a record in a named space, for pointing at something outside the space the pointer lives in. */
+type SpaceRecordRef = { $type?: "social.colibri.beta.defs#spaceRecordRef";
+
+  /**
+   * The space holding the referenced record.
+   */
+  "space":l.SpaceRefString;
+
+  /**
+   * DID of the repo holding the referenced record.
+   */
+  "did":l.DidString;
+
+  /**
+   * Record key of the referenced record.
+   */
+  "rkey":l.RecordKeyString;
+
+  /**
+   * The referenced record's CID as it stood when the reference was made.
+   */
+  "cid"?:l.CidString };
+
+export type { SpaceRecordRef };
+
+/** A reference to a record in a named space, for pointing at something outside the space the pointer lives in. */
+const spaceRecordRef = /*#__PURE__*/ l.typedObject<SpaceRecordRef>($nsid, "spaceRecordRef", /*#__PURE__*/ l.object({"space":/*#__PURE__*/ l.string({"format":"space-ref"}),"did":/*#__PURE__*/ l.string({"format":"did"}),"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"cid":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"cid"}))}));
+
+export { spaceRecordRef };

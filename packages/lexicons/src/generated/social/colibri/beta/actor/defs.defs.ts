@@ -256,9 +256,9 @@ export { preferences };
 type Mute = { $type?: "social.colibri.beta.actor.defs#mute";
 
   /**
-   * What is muted. A user or a community is named by DID, a channel by its space.
+   * What is muted. A user or a community is named by DID, a channel or a thread by its space.
    */
-  "subject":l.$Typed<MutedActor> | l.$Typed<MutedChannel>;
+  "subject":l.$Typed<MutedActor> | l.$Typed<MutedChannel> | l.$Typed<MutedThread>;
 
   /**
    * When the mute was created.
@@ -268,7 +268,7 @@ type Mute = { $type?: "social.colibri.beta.actor.defs#mute";
 export type { Mute };
 
 /** A muted subject. */
-const mute = /*#__PURE__*/ l.typedObject<Mute>($nsid, "mute", /*#__PURE__*/ l.object({"subject":/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<MutedActor>((() => mutedActor) as any),/*#__PURE__*/ l.typedRef<MutedChannel>((() => mutedChannel) as any)], true),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
+const mute = /*#__PURE__*/ l.typedObject<Mute>($nsid, "mute", /*#__PURE__*/ l.object({"subject":/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<MutedActor>((() => mutedActor) as any),/*#__PURE__*/ l.typedRef<MutedChannel>((() => mutedChannel) as any),/*#__PURE__*/ l.typedRef<MutedThread>((() => mutedThread) as any)], true),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
 
 export { mute };
 
@@ -301,3 +301,18 @@ export type { MutedChannel };
 const mutedChannel = /*#__PURE__*/ l.typedObject<MutedChannel>($nsid, "mutedChannel", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"})}));
 
 export { mutedChannel };
+
+/** A muted thread. Muting a thread silences it without leaving the channel it sits beside. */
+type MutedThread = { $type?: "social.colibri.beta.actor.defs#mutedThread";
+
+  /**
+   * The muted thread's space.
+   */
+  "thread":l.SpaceRefString };
+
+export type { MutedThread };
+
+/** A muted thread. Muting a thread silences it without leaving the channel it sits beside. */
+const mutedThread = /*#__PURE__*/ l.typedObject<MutedThread>($nsid, "mutedThread", /*#__PURE__*/ l.object({"thread":/*#__PURE__*/ l.string({"format":"space-ref"})}));
+
+export { mutedThread };

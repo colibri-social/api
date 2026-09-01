@@ -5,6 +5,7 @@ export const SPACE_TYPES = {
 	communityModeration: "social.colibri.beta.community.moderation",
 	channelText: "social.colibri.beta.channel.text",
 	channelVoice: "social.colibri.beta.channel.voice",
+	channelThread: "social.colibri.beta.channel.thread",
 	actorPreferences: "social.colibri.beta.actor.preferences",
 } as const;
 
@@ -18,6 +19,9 @@ const CHANNEL_SPACE_TYPE_SET: ReadonlySet<string> = new Set(CHANNEL_SPACE_TYPES)
 
 export const isChannelSpaceType = (value: string): value is ChannelSpaceType =>
 	CHANNEL_SPACE_TYPE_SET.has(value);
+
+export const isThreadSpaceType = (value: string): value is typeof SPACE_TYPES.channelThread =>
+	value === SPACE_TYPES.channelThread;
 
 export const COMMUNITY_SPACE_TYPES = [
 	SPACE_TYPES.communityProfile,
@@ -40,6 +44,8 @@ export const COLLECTIONS = {
 	reaction: "social.colibri.beta.reaction",
 	role: "social.colibri.beta.role",
 	settings: "social.colibri.beta.actor.settings",
+	thread: "social.colibri.beta.thread",
+	threadFollow: "social.colibri.beta.thread.follow",
 	profile: "social.colibri.beta.actor.profile",
 } as const;
 
@@ -72,6 +78,7 @@ export const LABEL_VALUES = {
 	hidden: "hidden",
 	spoiler: "spoiler",
 	embedsSuppressed: "embeds-suppressed",
+	moved: "moved",
 } as const;
 
 export type LabelValue = (typeof LABEL_VALUES)[keyof typeof LABEL_VALUES];
@@ -98,3 +105,8 @@ export const preferencesSpace = (actor: string) =>
 
 export const channelSpace = (community: string, type: ChannelSpaceType, skey: string) =>
 	spaceUri(community, type, skey);
+
+export const threadSpace = (community: string, skey: string) =>
+	spaceUri(community, SPACE_TYPES.channelThread, skey);
+
+export const spaceTypeOf = (uri: string): string | undefined => uri.split("/")[4];
