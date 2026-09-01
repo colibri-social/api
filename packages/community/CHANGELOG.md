@@ -1,5 +1,20 @@
 # @colibri-social/community
 
+## 2.5.0
+
+### Minor Changes
+
+- 58aea35: Give the owner role every permission, including ones added after the community was made: permission checks now treat the protected role the way they already treated the community itself, and a sweep at startup writes any missing permissions back onto the record
+- 58aea35: Serve threads: a thread space projects to its own table, access follows the parent channel and the thread's own visibility, and the thread methods create, rename, repoint, delete and move messages between spaces. Notifications now check that the recipient may read the space, which stops a mention in a private channel or thread reaching someone outside it.
+
+### Patch Changes
+
+- Updated dependencies [58aea35]
+- Updated dependencies [58aea35]
+  - @colibri-social/lexicons@2.9.1
+  - @colibri-social/appview-db@0.4.0
+  - @colibri-social/projections@1.4.0
+
 ## 2.4.1
 
 ### Patch Changes

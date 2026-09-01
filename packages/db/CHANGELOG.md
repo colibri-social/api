@@ -1,5 +1,11 @@
 # @colibri-social/appview-db
 
+## 0.4.0
+
+### Minor Changes
+
+- 58aea35: Serve threads: a thread space projects to its own table, access follows the parent channel and the thread's own visibility, and the thread methods create, rename, repoint, delete and move messages between spaces. Notifications now check that the recipient may read the space, which stops a mention in a private channel or thread reaching someone outside it.
+
 ## 0.3.0
 
 ### Minor Changes
