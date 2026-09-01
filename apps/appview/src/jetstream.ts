@@ -2,7 +2,10 @@ import { asDatetime, asRecordKey, COLLECTIONS } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import { WebSocket } from "ws";
 import { applyActivityRecord, clearActivityFrom } from "./activity.js";
-import { ACTIVITY_COLLECTIONS, activityProviderFor } from "./activity-providers.js";
+import {
+	ACTIVITY_COLLECTIONS,
+	activityProviderFor,
+} from "./activity-providers.js";
 import { memberEvent } from "./announce.js";
 import type { AppContext } from "./context.js";
 import { JETSTREAM_SUBPROTOCOL, jetstreamEndpoint } from "./jetstream-url.js";
@@ -16,7 +19,11 @@ const EVENTS_PER_CURSOR_SAVE = 500;
 const EVENT_TYPE_PREFIX = "network.bsky.jetstream.subscribeEvents#";
 const WANTED_KINDS = ["commit", "identity", "account"] as const;
 const BSKY_PROFILE = "app.bsky.actor.profile";
-const WANTED_COLLECTIONS = [COLLECTIONS.profile, BSKY_PROFILE, ...ACTIVITY_COLLECTIONS];
+const WANTED_COLLECTIONS = [
+	COLLECTIONS.profile,
+	BSKY_PROFILE,
+	...ACTIVITY_COLLECTIONS,
+];
 
 type IdentityPayload = {
 	seq: number;
@@ -54,7 +61,8 @@ type Frame = {
 
 const payloadKind = (payload: Payload): string | null => {
 	const type = payload.$type;
-	if (typeof type !== "string" || !type.startsWith(EVENT_TYPE_PREFIX)) return null;
+	if (typeof type !== "string" || !type.startsWith(EVENT_TYPE_PREFIX))
+		return null;
 	return type.slice(EVENT_TYPE_PREFIX.length);
 };
 
@@ -79,7 +87,9 @@ export class Jetstream {
 
 	async start(): Promise<void> {
 		if (!this.ctx.config.JETSTREAM_ENABLED) {
-			this.ctx.log.info("jetstream disabled, identity changes resolve on demand only");
+			this.ctx.log.info(
+				"jetstream disabled, identity changes resolve on demand only",
+			);
 			return;
 		}
 		this.stopped = false;
@@ -129,8 +139,10 @@ export class Jetstream {
 	private url(): string {
 		const url = jetstreamEndpoint(this.ctx.config.JETSTREAM_URL);
 		for (const kind of WANTED_KINDS) url.searchParams.append("kinds", kind);
-		for (const collection of WANTED_COLLECTIONS) url.searchParams.append("collections", collection);
-		if (this.cursor !== null) url.searchParams.set("cursor", String(this.cursor));
+		for (const collection of WANTED_COLLECTIONS)
+			url.searchParams.append("collections", collection);
+		if (this.cursor !== null)
+			url.searchParams.set("cursor", String(this.cursor));
 		return url.toString();
 	}
 
@@ -157,16 +169,21 @@ export class Jetstream {
 			);
 			this.scheduleReconnect();
 		});
+
 		socket.on("error", (error) => {
 			this.ctx.log.warn({ error: error.message }, "jetstream.error");
 			socket.close();
+			this.scheduleReconnect();
 		});
 	}
 
 	private scheduleReconnect(): void {
 		if (this.stopped) return;
 		this.attempt += 1;
-		const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** Math.min(this.attempt, 6));
+		const delay = Math.min(
+			RECONNECT_MAX_MS,
+			RECONNECT_MIN_MS * 2 ** Math.min(this.attempt, 6),
+		);
 		this.reconnectTimer = setTimeout(() => this.connect(), delay);
 		this.reconnectTimer.unref?.();
 	}
@@ -180,7 +197,10 @@ export class Jetstream {
 		}
 
 		if (frame.$type === "error") {
-			this.ctx.log.warn({ error: frame.error, detail: frame.message }, "jetstream.streamError");
+			this.ctx.log.warn(
+				{ error: frame.error, detail: frame.message },
+				"jetstream.streamError",
+			);
 			return;
 		}
 		if (frame.$type !== "message" || !frame.payload) return;
@@ -189,7 +209,10 @@ export class Jetstream {
 		const kind = payloadKind(payload);
 
 		if (kind === "info") {
-			this.ctx.log.warn({ name: payload.name, detail: payload.message }, "jetstream.info");
+			this.ctx.log.warn(
+				{ name: payload.name, detail: payload.message },
+				"jetstream.info",
+			);
 			return;
 		}
 
@@ -225,7 +248,11 @@ export class Jetstream {
 
 	private async refreshProfile(payload: Payload): Promise<void> {
 		const did = payload.did as string;
-		if (payload.collection !== COLLECTIONS.profile && payload.collection !== BSKY_PROFILE) return;
+		if (
+			payload.collection !== COLLECTIONS.profile &&
+			payload.collection !== BSKY_PROFILE
+		)
+			return;
 
 		const deleted = payload.operation === "delete";
 		if (!deleted && !payload.record) return;
@@ -234,7 +261,9 @@ export class Jetstream {
 		await this.ctx.database.db
 			.update(this.ctx.database.tables.profileCache)
 			.set({
-				...(payload.collection === COLLECTIONS.profile ? { colibri: value } : { bsky: value }),
+				...(payload.collection === COLLECTIONS.profile
+					? { colibri: value }
+					: { bsky: value }),
 				fetchedAt: new Date().toISOString(),
 			})
 			.where(eq(this.ctx.database.tables.profileCache.did, did));
@@ -259,7 +288,10 @@ export class Jetstream {
 
 	private async announceProfile(did: string): Promise<void> {
 		const { db, tables } = this.ctx.database;
-		const rows = await db.select().from(tables.members).where(eq(tables.members.did, did));
+		const rows = await db
+			.select()
+			.from(tables.members)
+			.where(eq(tables.members.did, did));
 		if (rows.length === 0) return;
 
 		const actor = await new ActorViews(this.ctx).one(did);
