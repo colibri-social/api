@@ -153,7 +153,7 @@ export class Moderation {
 		space: string,
 		subject: LabelSubject,
 		val: LabelValue | string,
-		options: { scope?: string[]; reason?: string } = {},
+		options: { scope?: string[]; reason?: string; destination?: string; batch?: string } = {},
 	): Promise<{ rkey: string }> {
 		const { rkey } = await this.deps.writer.put(community, {
 			space,
@@ -165,6 +165,8 @@ export class Moderation {
 				createdAt: this.now().toISOString(),
 				...(options.scope?.length ? { scope: options.scope } : {}),
 				...(options.reason ? { reason: options.reason } : {}),
+				...(options.destination ? { destination: options.destination } : {}),
+				...(options.batch ? { batch: options.batch } : {}),
 			},
 		});
 		return { rkey };

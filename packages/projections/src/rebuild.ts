@@ -10,6 +10,8 @@ const PROJECTION_TABLES = [
 	"roles",
 	"categories",
 	"channels",
+	"threads",
+	"threadFollows",
 	"communities",
 	"moderationLog",
 	"mutes",

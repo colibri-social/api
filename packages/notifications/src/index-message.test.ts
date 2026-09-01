@@ -12,6 +12,7 @@ const NOW = "2026-08-23T00:00:00.000Z";
 
 let database: TestDatabase;
 let deps: NotificationDeps;
+let readable: Set<string> | null;
 
 const member = async (did: string, roles: string[] = []) => {
 	await database.db.insert(database.tables.members).values({
@@ -75,7 +76,13 @@ const roleFacet = (roleKey: string) => ({
 
 beforeEach(async () => {
 	database = await openTestDatabase();
-	deps = { db: database.db, tables: database.tables, now: () => NOW };
+	readable = null;
+	deps = {
+		db: database.db,
+		tables: database.tables,
+		now: () => NOW,
+		mayRead: async (_space, did) => readable === null || readable.has(did),
+	};
 	await member(AUTHOR);
 });
 
@@ -101,6 +108,42 @@ describe("indexMessage", () => {
 		const rows = await rowsFor(recipient);
 		expect(rows).toHaveLength(1);
 		expect(rows[0]?.kind).toBe("mention");
+	});
+
+	it("does not notify a member who may not read the space", async () => {
+		const recipient = "did:plc:recipient000000000000000";
+		await member(recipient);
+		readable = new Set([AUTHOR]);
+
+		await indexMessage(deps, {
+			space: CHANNEL,
+			community: COMMUNITY,
+			author: AUTHOR,
+			rkey: "3lkmsg1",
+			facets: [mentionFacet(recipient)],
+			parentAuthor: null,
+			parentRkey: null,
+		});
+
+		expect(await rowsFor(recipient)).toHaveLength(0);
+	});
+
+	it("does not notify a reply's author when they lost access to the space", async () => {
+		const recipient = "did:plc:recipient000000000000000";
+		await member(recipient);
+		readable = new Set([AUTHOR]);
+
+		await indexMessage(deps, {
+			space: CHANNEL,
+			community: COMMUNITY,
+			author: AUTHOR,
+			rkey: "3lkmsg1",
+			facets: null,
+			parentAuthor: recipient,
+			parentRkey: "3lkmsg0",
+		});
+
+		expect(await rowsFor(recipient)).toHaveLength(0);
 	});
 
 	it("notifies the parent author as a reply", async () => {

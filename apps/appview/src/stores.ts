@@ -4,7 +4,7 @@ import {
 	type IdentityStore,
 	mapWithConcurrency,
 } from "@colibri-social/identity";
-import { isChannelSpaceType, toJsonForm } from "@colibri-social/lexicons";
+import { isChannelSpaceType, isThreadSpaceType, toJsonForm } from "@colibri-social/lexicons";
 import { applyChange, type ProjectionDeps } from "@colibri-social/projections";
 import type { CredentialStorage } from "@colibri-social/space";
 import type { RepoChange, RepoCursor, SyncStore } from "@colibri-social/space-sync";
@@ -102,7 +102,15 @@ const toCursor = (row: {
 	retryAfter: row.retryAfter ? new Date(row.retryAfter) : null,
 });
 
-export const drizzleSyncStore = (database: Database, projections: ProjectionDeps): SyncStore => {
+export type SyncStoreOptions = {
+	threadIdleSeconds: number;
+};
+
+export const drizzleSyncStore = (
+	database: Database,
+	projections: ProjectionDeps,
+	options: SyncStoreOptions,
+): SyncStore => {
 	const { db, tables } = database;
 	const now = () => new Date().toISOString();
 
@@ -198,6 +206,15 @@ export const drizzleSyncStore = (database: Database, projections: ProjectionDeps
 				.where(eq(tables.spaces.uri, space))
 				.limit(1);
 			if (!row) return [];
+
+			if (isThreadSpaceType(row.spaceType)) {
+				const writers = await db
+					.select({ author: tables.spaceRepos.author })
+					.from(tables.spaceRepos)
+					.where(eq(tables.spaceRepos.space, space));
+				return [...new Set([row.authority, ...writers.map((writer) => writer.author)])];
+			}
+
 			if (!row.community || !isChannelSpaceType(row.spaceType)) return [row.authority];
 
 			const members = await db
@@ -205,6 +222,25 @@ export const drizzleSyncStore = (database: Database, projections: ProjectionDeps
 				.from(tables.members)
 				.where(eq(tables.members.community, row.community));
 			return [row.authority, ...members.map((member) => member.did)];
+		},
+
+		sweepEligible: async (space) => {
+			const [row] = await db
+				.select({ spaceType: tables.spaces.spaceType })
+				.from(tables.spaces)
+				.where(eq(tables.spaces.uri, space))
+				.limit(1);
+			if (!row || !isThreadSpaceType(row.spaceType)) return true;
+
+			const [thread] = await db
+				.select({ lastActivityAt: tables.threads.lastActivityAt })
+				.from(tables.threads)
+				.where(eq(tables.threads.space, space))
+				.limit(1);
+			if (!thread) return true;
+
+			const idleFor = Date.now() - Date.parse(thread.lastActivityAt);
+			return !Number.isFinite(idleFor) || idleFor < options.threadIdleSeconds * 1000;
 		},
 
 		listCursors: async (space) => {

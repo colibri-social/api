@@ -221,6 +221,10 @@ export class SpaceSyncEngine {
 			const spaces = await this.options.store.listSpaces();
 			for (const space of spaces) {
 				if (this.registrations.get(space.uri)?.dormant) continue;
+				if (!(await this.sweepEligible(space.uri))) {
+					this.log("sweep.idle", { space: space.uri }, "debug");
+					continue;
+				}
 				await this.sweepSpace(space.uri).catch(async (error) => {
 					if (await this.park(space.uri, error)) return;
 					this.log("sweep.failed", { space: space.uri, error });
@@ -277,6 +281,14 @@ export class SpaceSyncEngine {
 		}
 
 		this.queue.pushAll(stale);
+	}
+
+	private async sweepEligible(space: string): Promise<boolean> {
+		if (!this.options.store.sweepEligible) return true;
+		return this.options.store.sweepEligible(space).catch((error: unknown) => {
+			this.log("sweepEligible.failed", { space, error });
+			return true;
+		});
 	}
 
 	private async expectedRepos(space: string): Promise<string[]> {

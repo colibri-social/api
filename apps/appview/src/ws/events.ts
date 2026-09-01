@@ -1,12 +1,12 @@
 import type { Server as HttpServer, IncomingHttpHeaders } from "node:http";
-import { canRead, has } from "@colibri-social/community";
+import { decideSpaceAccess, has } from "@colibri-social/community";
 import { ServiceAuthError } from "@colibri-social/identity";
 import type { Permission } from "@colibri-social/lexicons";
-import { social } from "@colibri-social/lexicons";
-import { parseSpaceRef } from "@colibri-social/space";
+import { isThreadSpaceType, social, spaceTypeOf } from "@colibri-social/lexicons";
+import { parseSpaceRef, tryParseSpaceRef } from "@colibri-social/space";
 import { type WebSocket, WebSocketServer } from "ws";
 import { backfillActivity } from "../activity.js";
-import { channelEvent, communityEvent } from "../announce.js";
+import { channelEvent, communityEvent, threadEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { fireAndForget } from "../fire-and-forget.js";
 import { isOnlineState, PresenceTracker } from "../presence.js";
@@ -229,7 +229,7 @@ export class EventServer {
 				await this.applyViewChannel(connection, result.value as never);
 				return;
 			case "wroteTo":
-				this.applyWroteTo(connection, result.value as never);
+				await this.applyWroteTo(connection, result.value as never);
 				return;
 			default:
 				return;
@@ -285,9 +285,10 @@ export class EventServer {
 		}
 	}
 
-	private mayHint(connection: Connection, space: string): boolean {
+	private async mayHint(connection: Connection, space: string): Promise<boolean> {
 		if (this.topics.topicsOf(connection).includes(channelTopic(space))) return true;
-		return this.authorityOf(space) === connection.did;
+		if (this.authorityOf(space) === connection.did) return true;
+		return this.mayReadSpace(connection.did, space);
 	}
 
 	private withinHintBudget(connection: Connection, now: number): boolean {
@@ -300,9 +301,12 @@ export class EventServer {
 		return budget.count <= HINT_BUDGET;
 	}
 
-	private applyWroteTo(connection: Connection, frame: { space: string; rev?: string }): void {
+	private async applyWroteTo(
+		connection: Connection,
+		frame: { space: string; rev?: string },
+	): Promise<void> {
 		const notifiedAt = Date.now();
-		if (!this.mayHint(connection, frame.space)) return;
+		if (!(await this.mayHint(connection, frame.space))) return;
 		if (!this.withinHintBudget(connection, notifiedAt)) {
 			this.error(connection, "RateLimited", "too many write hints, slow down");
 			return;
@@ -358,11 +362,7 @@ export class EventServer {
 				}
 			}
 			for (const channel of frame.channels ?? []) {
-				const state = await this.ctx.loader.channel(channel);
-				if (!state) continue;
-				const community = channel.slice("at://".length).split("/")[0] as string;
-				const authz = await this.ctx.loader.authz(community, connection.did);
-				if (!canRead(authz, state)) continue;
+				if (!(await this.mayReadSpace(connection.did, channel))) continue;
 				topics.push(channelTopic(channel));
 				channels.push(channel);
 			}
@@ -370,6 +370,20 @@ export class EventServer {
 		}
 
 		this.confirmSubscription(connection);
+	}
+
+	private async mayReadSpace(did: string, space: string): Promise<boolean> {
+		const parsed = tryParseSpaceRef(space);
+		if (!parsed) return false;
+		const authz = await this.ctx.loader.authz(parsed.authority, did);
+		const states = await this.ctx.loader.spaceStates(parsed.uri, parsed.spaceType);
+		return decideSpaceAccess({
+			spaceType: parsed.spaceType,
+			authz,
+			visibility: { profileIsPublic: false },
+			channel: states.channel,
+			thread: states.thread,
+		}).authorized;
 	}
 
 	private subscribedCommunities(connection: Connection): string[] {
@@ -392,6 +406,12 @@ export class EventServer {
 		);
 	}
 
+	private threadsHeldIn(connection: Connection, community: string): string[] {
+		return this.channelsHeldIn(connection, community).filter((space) =>
+			isThreadSpaceType(spaceTypeOf(space) ?? ""),
+		);
+	}
+
 	private confirmSubscription(connection: Connection): void {
 		this.send(connection, {
 			$type: "social.colibri.beta.sync.defs#subscribed",
@@ -411,14 +431,25 @@ export class EventServer {
 					? await this.communities.readableChannels(community, authz)
 					: [];
 			const wanted = new Set(readable);
-			const held = new Set(this.channelsHeldIn(connection, community));
+			const threads = this.threadsHeldIn(connection, community);
+			const held = new Set(
+				this.channelsHeldIn(connection, community).filter((space) => !threads.includes(space)),
+			);
 
 			const gained = readable.filter((space) => !held.has(space));
 			const lost = [...held].filter((space) => !wanted.has(space));
+			for (const space of threads) {
+				if (!(await this.mayReadSpace(connection.did, space))) lost.push(space);
+			}
 			if (gained.length === 0 && lost.length === 0) continue;
 
 			for (const space of lost) {
-				this.send(connection, channelEvent("delete", community, space));
+				this.send(
+					connection,
+					isThreadSpaceType(spaceTypeOf(space) ?? "")
+						? threadEvent("delete", community, { space })
+						: channelEvent("delete", community, space),
+				);
 			}
 			this.topics.unsubscribe(connection, lost.map(channelTopic));
 			this.topics.subscribe(connection, gained.map(channelTopic));
@@ -432,6 +463,13 @@ export class EventServer {
 	channelChanged(community: string, space: string, event: "update" | "delete"): void {
 		this.publishToChannel(space, channelEvent(event, community, space));
 		if (event !== "delete") return;
+		for (const connection of [...this.topics.subscribersOf(channelTopic(space))]) {
+			this.topics.unsubscribe(connection, [channelTopic(space)]);
+			this.confirmSubscription(connection);
+		}
+	}
+
+	threadDeleted(space: string): void {
 		for (const connection of [...this.topics.subscribersOf(channelTopic(space))]) {
 			this.topics.unsubscribe(connection, [channelTopic(space)]);
 			this.confirmSubscription(connection);
@@ -500,6 +538,25 @@ export class EventServer {
 			}
 
 			if (permitted) connection.socket.send(payload);
+		}
+	}
+
+	async publishToCommunityViewers(
+		community: string,
+		build: (did: string) => Promise<ServerFrame | null>,
+	): Promise<void> {
+		const subscribers = [...this.topics.subscribersOf(communityTopic(community))];
+		if (subscribers.length === 0) return;
+
+		const payloads = new Map<string, string | null>();
+		for (const connection of subscribers) {
+			if (connection.socket.readyState !== connection.socket.OPEN) continue;
+			if (!payloads.has(connection.did)) {
+				const frame = await build(connection.did);
+				payloads.set(connection.did, frame ? JSON.stringify(frame) : null);
+			}
+			const payload = payloads.get(connection.did);
+			if (payload) connection.socket.send(payload);
 		}
 	}
 

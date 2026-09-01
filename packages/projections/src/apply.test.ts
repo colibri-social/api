@@ -4,6 +4,7 @@ import {
 	communitySpaces,
 	preferencesSpace,
 	SELF,
+	threadSpace,
 	toLexForm,
 } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
@@ -16,6 +17,7 @@ const MEMBER = "did:plc:7fkdlwjqmzcuvvpjbztkyyyy";
 const OUTSIDER = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
 const SPACES = communitySpaces(COMMUNITY);
 const TEXT_CHANNEL = channelSpace(COMMUNITY, "social.colibri.beta.channel.text", "3lkchannel1");
+const THREAD = threadSpace(COMMUNITY, "3lkthread1");
 const NOW = "2026-08-23T00:00:00.000Z";
 const PICTURE_CID = "bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiibsojllbf5xhqzy6a";
 
@@ -588,5 +590,95 @@ describe("authz changes", () => {
 
 		expect(skipped).toHaveLength(1);
 		expect(authzChanges).toEqual([]);
+	});
+});
+
+describe("thread projection", () => {
+	const record = (overrides: Record<string, unknown> = {}) => ({
+		$type: "social.colibri.beta.thread",
+		name: "side conversation",
+		channel: TEXT_CHANNEL,
+		createdBy: MEMBER,
+		createdAt: NOW,
+		...overrides,
+	});
+
+	const threadRows = () =>
+		database.db
+			.select()
+			.from(database.tables.threads)
+			.where(eq(database.tables.threads.space, THREAD));
+
+	it("projects a thread the community wrote", async () => {
+		await applyChange(deps, put(THREAD, COMMUNITY, "social.colibri.beta.thread", SELF, record()));
+
+		const [row] = await threadRows();
+		expect(row).toMatchObject({
+			space: THREAD,
+			community: COMMUNITY,
+			channel: TEXT_CHANNEL,
+			name: "side conversation",
+			createdBy: MEMBER,
+			lastActivityAt: NOW,
+		});
+	});
+
+	it("refuses a thread record written by anyone but the community", async () => {
+		await applyChange(deps, put(THREAD, MEMBER, "social.colibri.beta.thread", SELF, record()));
+
+		expect(await threadRows()).toHaveLength(0);
+		expect(skipped[0]?.reason).toBe("collection may only be written by the space authority");
+	});
+
+	it("refuses a thread record outside a thread space", async () => {
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.thread", SELF, record()),
+		);
+
+		expect(skipped[0]?.reason).toBe(
+			"collection is not expected in a social.colibri.beta.channel.text space",
+		);
+	});
+
+	it("moves a thread's last activity forward when a message lands", async () => {
+		const later = "2026-08-24T00:00:00.000Z";
+		await applyChange(deps, put(THREAD, COMMUNITY, "social.colibri.beta.thread", SELF, record()));
+		await applyChange(
+			deps,
+			put(THREAD, MEMBER, "social.colibri.beta.message", "3lkmessage1", {
+				$type: "social.colibri.beta.message",
+				text: "over here",
+				createdAt: later,
+			}),
+		);
+
+		const [row] = await threadRows();
+		expect(row?.lastActivityAt).toBe(later);
+	});
+
+	it("records a follow written by the follower and forgets it on delete", async () => {
+		const follows = () =>
+			database.db
+				.select()
+				.from(database.tables.threadFollows)
+				.where(eq(database.tables.threadFollows.space, THREAD));
+
+		await applyChange(
+			deps,
+			put(THREAD, MEMBER, "social.colibri.beta.thread.follow", SELF, {
+				$type: "social.colibri.beta.thread.follow",
+				createdAt: NOW,
+			}),
+		);
+		expect(await follows()).toHaveLength(1);
+
+		await applyChange(deps, {
+			space: THREAD,
+			author: MEMBER,
+			puts: [],
+			deletes: [{ collection: "social.colibri.beta.thread.follow", rkey: SELF }],
+		});
+		expect(await follows()).toHaveLength(0);
 	});
 });

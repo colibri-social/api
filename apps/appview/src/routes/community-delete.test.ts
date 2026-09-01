@@ -111,9 +111,11 @@ beforeEach(async () => {
 	const announcer: Announcer = {
 		toCommunity: () => {},
 		toCommunityPermission: async () => {},
+		toCommunityViewers: async () => {},
 		toChannel: () => {},
 		toUser: () => {},
 		channelChanged: () => {},
+		threadDeleted: () => {},
 		communityDeleted: (community) => announced.push({ kind: "communityDeleted", community }),
 	};
 

@@ -264,12 +264,55 @@ export const labels = sqliteTable(
 		scope: json<string[]>("scope"),
 		negated: flag("negated").notNull().default(false),
 		reason: text("reason"),
+		destination: text("destination"),
+		batch: text("batch"),
 		createdAt: timestamp("created_at").notNull(),
 	},
 	(t) => [
 		primaryKey({ columns: [t.space, t.src, t.rkey] }),
 		index("labels_subject_idx").on(t.space, t.subjectDid, t.subjectRkey),
+		index("labels_destination_idx").on(t.destination, t.batch),
 	],
+);
+
+export const threads = sqliteTable(
+	"threads",
+	{
+		space: text("space").primaryKey(),
+		community: text("community").notNull(),
+		channel: text("channel").notNull(),
+		skey: text("skey").notNull(),
+		name: text("name").notNull(),
+		anchorSpace: text("anchor_space"),
+		anchorAuthor: text("anchor_author"),
+		anchorRkey: text("anchor_rkey"),
+		anchorCid: text("anchor_cid"),
+		createdBy: text("created_by").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+		visibleToRoles: json<string[]>("visible_to_roles")
+			.notNull()
+			.$defaultFn(() => []),
+		visibleToMembers: json<string[]>("visible_to_members")
+			.notNull()
+			.$defaultFn(() => []),
+		lastActivityAt: timestamp("last_activity_at").notNull(),
+		indexedAt: timestamp("indexed_at").notNull(),
+	},
+	(t) => [
+		index("threads_channel_idx").on(t.community, t.channel),
+		index("threads_activity_idx").on(t.community, t.lastActivityAt),
+		index("threads_anchor_idx").on(t.anchorSpace, t.anchorAuthor, t.anchorRkey),
+	],
+);
+
+export const threadFollows = sqliteTable(
+	"thread_follows",
+	{
+		space: text("space").notNull(),
+		did: text("did").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [primaryKey({ columns: [t.space, t.did] }), index("thread_follows_did_idx").on(t.did)],
 );
 
 export const moderationLog = sqliteTable(
@@ -489,6 +532,8 @@ export const schema = {
 	communities,
 	categories,
 	channels,
+	threads,
+	threadFollows,
 	roles,
 	members,
 	messages,

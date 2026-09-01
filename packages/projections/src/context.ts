@@ -31,7 +31,11 @@ export type ProjectionDeps = {
 	onAuthzChanged?: (change: AuthzChange) => void;
 };
 
-const COMMUNITY_SPACES: readonly string[] = [...COMMUNITY_SPACE_TYPES, ...CHANNEL_SPACE_TYPES];
+const COMMUNITY_SPACES: readonly string[] = [
+	...COMMUNITY_SPACE_TYPES,
+	...CHANNEL_SPACE_TYPES,
+	SPACE_TYPES.channelThread,
+];
 
 export const isCommunitySpaceType = (spaceType: string): boolean =>
 	COMMUNITY_SPACES.includes(spaceType);
@@ -50,6 +54,9 @@ export const spaceContextFor = (uri: string): SpaceContext | null => {
 
 export const isChannelSpace = (space: SpaceContext): boolean =>
 	space.spaceType === SPACE_TYPES.channelText || space.spaceType === SPACE_TYPES.channelVoice;
+
+export const isThreadSpace = (space: SpaceContext): boolean =>
+	space.spaceType === SPACE_TYPES.channelThread;
 
 export const isPersonalSpace = (space: SpaceContext): boolean =>
 	space.spaceType === SPACE_TYPES.actorPreferences;

@@ -131,7 +131,9 @@ export const createContext = async (config: Config) => {
 	const sync = new SpaceSyncEngine({
 		client: spaceClient,
 		credentials: spaceCredentials,
-		store: drizzleSyncStore(database, projections),
+		store: drizzleSyncStore(database, projections, {
+			threadIdleSeconds: config.THREAD_IDLE_SECONDS,
+		}),
 		hosts: {
 			hostFor: async (did) => (await identity.resolveDid(did)).pds ?? config.PDS_URL,
 		},

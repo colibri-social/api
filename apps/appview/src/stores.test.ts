@@ -54,10 +54,12 @@ const storedMessages = () =>
 		.from(database.tables.messages)
 		.where(eq(database.tables.messages.space, SPACE));
 
+const SYNC_OPTIONS = { threadIdleSeconds: 7 * 24 * 60 * 60 };
+
 beforeEach(async () => {
 	database = await openTestDatabase();
 	projections = { db: database.db, tables: database.tables, now: () => NOW };
-	store = drizzleSyncStore(database, projections);
+	store = drizzleSyncStore(database, projections, SYNC_OPTIONS);
 
 	await database.db.insert(database.tables.channels).values({
 		space: SPACE,
@@ -129,12 +131,16 @@ describe("commit", () => {
 	it("leaves neither records nor the cursor behind when projection fails", async () => {
 		await store.commit(change([message("3lkmsg1", "hello")]), cursor("rev1"));
 
-		const broken = drizzleSyncStore(database, {
-			...projections,
-			now: () => {
-				throw new Error("projection exploded");
+		const broken = drizzleSyncStore(
+			database,
+			{
+				...projections,
+				now: () => {
+					throw new Error("projection exploded");
+				},
 			},
-		});
+			SYNC_OPTIONS,
+		);
 
 		await expect(
 			broken.commit(change([message("3lkmsg2", "world")]), cursor("rev2")),

@@ -35,6 +35,15 @@ export type ChannelState = {
 	visibleToMembers: string[];
 };
 
+export type ThreadState = {
+	space: string;
+	skey: string;
+	channel: string;
+	createdBy: string;
+	visibleToRoles: string[];
+	visibleToMembers: string[];
+};
+
 export type ActorAuthz = {
 	actor: string;
 	community: string;
@@ -48,8 +57,10 @@ export const OWNER_POSITION = Number.POSITIVE_INFINITY;
 
 export const isMember = (authz: ActorAuthz): boolean => authz.member !== null;
 
-export const isAdmin = (authz: ActorAuthz): boolean =>
-	authz.isOwner || authz.roles.some((role) => role.protected);
+export const holdsOwnerRole = (authz: ActorAuthz): boolean =>
+	authz.roles.some((role) => role.protected);
+
+export const isAdmin = (authz: ActorAuthz): boolean => authz.isOwner || holdsOwnerRole(authz);
 
 export const highestPosition = (authz: ActorAuthz): number | null => {
 	if (authz.isOwner) return OWNER_POSITION;
@@ -60,6 +71,7 @@ export const highestPosition = (authz: ActorAuthz): number | null => {
 export const has = (authz: ActorAuthz, permission: Permission, channel?: string): boolean => {
 	if (authz.isOwner) return true;
 	if (authz.isBanned) return false;
+	if (holdsOwnerRole(authz)) return true;
 
 	let base = false;
 	let allowed = false;
@@ -81,6 +93,7 @@ export const has = (authz: ActorAuthz, permission: Permission, channel?: string)
 
 export const effectivePermissions = (authz: ActorAuthz, channel?: string): Permission[] => {
 	if (authz.isOwner) return [...PERMISSIONS];
+	if (!authz.isBanned && holdsOwnerRole(authz)) return [...PERMISSIONS];
 	return PERMISSIONS.filter((permission) => has(authz, permission, channel));
 };
 
@@ -123,6 +136,33 @@ export const canPost = (authz: ActorAuthz, channel: ChannelState): boolean => {
 	if (channel.allowedMembers.includes(authz.actor)) return true;
 	return holdsAny(authz, channel.allowedRoles);
 };
+
+export const isPrivateThread = (thread: ThreadState): boolean =>
+	thread.visibleToRoles.length > 0 || thread.visibleToMembers.length > 0;
+
+export const canReadThread = (
+	authz: ActorAuthz,
+	channel: ChannelState,
+	thread: ThreadState,
+): boolean => {
+	if (!canRead(authz, channel)) return false;
+	if (authz.isOwner) return true;
+	if (isAdmin(authz)) return true;
+	if (!isPrivateThread(thread)) return true;
+	if (thread.visibleToMembers.includes(authz.actor)) return true;
+	return holdsAny(authz, thread.visibleToRoles);
+};
+
+export const canPostInThread = (
+	authz: ActorAuthz,
+	channel: ChannelState,
+	thread: ThreadState,
+): boolean => canReadThread(authz, channel, thread) && canPost(authz, channel);
+
+export const canManageThread = (authz: ActorAuthz): boolean => has(authz, "thread.manage");
+
+export const canRenameThread = (authz: ActorAuthz, thread: ThreadState): boolean =>
+	canManageThread(authz) || thread.createdBy === authz.actor;
 
 export const anonymousAuthz = (actor: string, community: string): ActorAuthz => ({
 	actor,

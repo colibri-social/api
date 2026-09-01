@@ -13,6 +13,7 @@ import {
 	outranks,
 	outranksPosition,
 	type RoleState,
+	type ThreadState,
 } from "./authz.js";
 
 const COMMUNITY = "did:plc:community";
@@ -121,6 +122,13 @@ describe("permissions", () => {
 			],
 		});
 		expect(has(scoped, "label.apply", "3lkchan")).toBe(true);
+	});
+
+	it("grants everything to a holder of the protected role, whatever it lists", () => {
+		const owner = authz({ roles: [role({ protected: true, permissions: [] })] });
+		expect(has(owner, "community.delete")).toBe(true);
+		expect(has(owner, "thread.create")).toBe(true);
+		expect(effectivePermissions(owner)).toEqual(expect.arrayContaining(["thread.create"]));
 	});
 
 	it("grants nothing to a banned actor, whatever roles they still hold", () => {
@@ -237,14 +245,69 @@ describe("space access decisions", () => {
 	const decide = (
 		spaceType: string,
 		state: ActorAuthz,
-		options: Partial<{ profileIsPublic: boolean; channel: ChannelState | null }> = {},
+		options: Partial<{
+			profileIsPublic: boolean;
+			channel: ChannelState | null;
+			thread: ThreadState | null;
+		}> = {},
 	) =>
 		decideSpaceAccess({
 			spaceType,
 			authz: state,
 			visibility: { profileIsPublic: options.profileIsPublic ?? true },
 			channel: options.channel ?? null,
+			thread: options.thread ?? null,
 		});
+
+	const thread = (overrides: Partial<ThreadState> = {}): ThreadState => ({
+		space: "at://did:plc:community/space/social.colibri.beta.channel.thread/3lkthread",
+		skey: "3lkthread",
+		channel: "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchan",
+		createdBy: ACTOR,
+		visibleToRoles: [],
+		visibleToMembers: [],
+		...overrides,
+	});
+
+	it("lets a member read a thread beside a channel they can read", () => {
+		expect(
+			decide(SPACE_TYPES.channelThread, authz(), { channel: channel(), thread: thread() })
+				.authorized,
+		).toBe(true);
+	});
+
+	it("refuses a thread whose channel the member cannot read", () => {
+		expect(
+			decide(SPACE_TYPES.channelThread, authz(), {
+				channel: channel({ visibleToRoles: ["3lkinsiders"] }),
+				thread: thread(),
+			}).authorized,
+		).toBe(false);
+	});
+
+	it("refuses a private thread to a member outside its list", () => {
+		expect(
+			decide(SPACE_TYPES.channelThread, authz(), {
+				channel: channel(),
+				thread: thread({ visibleToMembers: [OTHER] }),
+			}).authorized,
+		).toBe(false);
+	});
+
+	it("lets a named member read a private thread", () => {
+		expect(
+			decide(SPACE_TYPES.channelThread, authz(), {
+				channel: channel(),
+				thread: thread({ visibleToMembers: [ACTOR] }),
+			}).authorized,
+		).toBe(true);
+	});
+
+	it("refuses a thread that has no record yet", () => {
+		expect(decide(SPACE_TYPES.channelThread, authz(), { channel: channel() }).authorized).toBe(
+			false,
+		);
+	});
 
 	it("lets anyone read a public profile", () => {
 		expect(decide(SPACE_TYPES.communityProfile, stranger()).authorized).toBe(true);

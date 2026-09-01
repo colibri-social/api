@@ -1,6 +1,13 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { CommunityLoader } from "@colibri-social/community";
-import { COLLECTIONS, channelSpace, SPACE_TYPES, type social } from "@colibri-social/lexicons";
+import {
+	COLLECTIONS,
+	channelSpace,
+	LABEL_VALUES,
+	SPACE_TYPES,
+	type social,
+	threadSpace,
+} from "@colibri-social/lexicons";
 import { nextTid } from "@colibri-social/space";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -15,6 +22,10 @@ const LABELER = "did:plc:labelerlabelerlabelerlabl";
 const OTHER_LABELER = "did:plc:notallowednotallowednota";
 const CHANNEL_SKEY = "3lkchanneltest0";
 const SPACE = channelSpace(COMMUNITY, SPACE_TYPES.channelText, CHANNEL_SKEY);
+const THREAD_SKEY = "3lkthreadtest00";
+const THREAD = threadSpace(COMMUNITY, THREAD_SKEY);
+const SECOND_THREAD_SKEY = "3lkthreadtest01";
+const SECOND_THREAD = threadSpace(COMMUNITY, SECOND_THREAD_SKEY);
 const NOW = "2026-08-23T00:00:00.000Z";
 const ATTACHMENT_CID = "bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiibsojllbf5xhqzy6a";
 
@@ -51,6 +62,43 @@ const putLabel = async (
 		val,
 		negated: overrides.negated ?? false,
 		createdAt: NOW,
+	});
+};
+
+const putMovedLabel = async (
+	subjectRkey: string,
+	destination: string,
+	batch: string,
+	overrides: { space?: string; negated?: boolean } = {},
+) => {
+	await database.db.insert(database.tables.labels).values({
+		space: overrides.space ?? SPACE,
+		src: COMMUNITY,
+		rkey: nextTid(),
+		subjectDid: AUTHOR_A,
+		subjectCollection: COLLECTIONS.message,
+		subjectRkey,
+		val: LABEL_VALUES.moved,
+		negated: overrides.negated ?? false,
+		destination,
+		batch,
+		createdAt: NOW,
+	});
+};
+
+const putThread = async (overrides: { space?: string; skey?: string } = {}) => {
+	await database.db.insert(database.tables.threads).values({
+		space: overrides.space ?? THREAD,
+		community: COMMUNITY,
+		channel: SPACE,
+		skey: overrides.skey ?? THREAD_SKEY,
+		name: "side conversation",
+		createdBy: AUTHOR_A,
+		createdAt: NOW,
+		visibleToRoles: [],
+		visibleToMembers: [],
+		lastActivityAt: NOW,
+		indexedAt: NOW,
 	});
 };
 
@@ -443,6 +491,30 @@ describe("ChannelViews attachments", () => {
 		expect(attachment?.url).toContain(`cid=${ATTACHMENT_CID}`);
 		expect(attachment?.url).toContain(`space=${encodeURIComponent(SPACE)}`);
 	});
+
+	it("points a moved message's attachment at the space it is being read in", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey, {
+			attachments: [
+				{
+					name: "shot.png",
+					blob: {
+						$type: "blob",
+						ref: { $link: ATTACHMENT_CID },
+						mimeType: "image/png",
+						size: 1234,
+					},
+				},
+			],
+		});
+		await putThread();
+		await putMovedLabel(rkey, THREAD, nextTid());
+
+		const { messages } = await views.messages(THREAD, null, { limit: 1 });
+		const [attachment] = messages[0]?.attachments ?? [];
+		expect(messages[0]?.channel).toBe(SPACE);
+		expect(attachment?.url).toContain(`space=${encodeURIComponent(THREAD)}`);
+	});
 });
 
 describe("ChannelViews.unreadStatus", () => {
@@ -536,5 +608,68 @@ describe("ChannelViews.unreadStatus", () => {
 
 		const after = await views.unreadStatus(AUTHOR_B, { community: COMMUNITY });
 		expect(after[0]).toMatchObject({ hasUnread: false, unreadMentions: 0 });
+	});
+});
+
+describe("ChannelViews.messages with moved messages", () => {
+	it("withholds a moved message from the space it came from", async () => {
+		const rkeys = [nextTid(), nextTid()];
+		for (const rkey of rkeys) await putMessage(rkey);
+		await putThread();
+		await putMovedLabel(rkeys[0] as string, THREAD, nextTid());
+
+		const page = await views.messages(SPACE, null, { limit: 10 });
+		expect(page.messages.map((message) => message.rkey)).toEqual([rkeys[1]]);
+	});
+
+	it("serves a moved message in its destination, ordered by batch then record key", async () => {
+		const older = nextTid();
+		const newer = nextTid();
+		await putMessage(older);
+		await putMessage(newer);
+		await putThread();
+
+		const native = nextTid();
+		await putMessage(native, { space: THREAD });
+
+		const batch = nextTid();
+		await putMovedLabel(older, THREAD, batch);
+		await putMovedLabel(newer, THREAD, batch);
+
+		const page = await views.messages(THREAD, null, { limit: 10, reverse: true });
+		expect(page.messages.map((message) => message.rkey)).toEqual([native, older, newer]);
+		expect(page.messages.map((message) => message.channel)).toEqual([THREAD, SPACE, SPACE]);
+	});
+
+	it("follows the newest move when a message is moved on to a second thread", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey);
+		await putThread();
+		await putThread({ space: SECOND_THREAD, skey: SECOND_THREAD_SKEY });
+		await putMovedLabel(rkey, THREAD, nextTid());
+		await putMovedLabel(rkey, SECOND_THREAD, nextTid());
+
+		const first = await views.messages(THREAD, null, { limit: 10 });
+		expect(first.messages).toEqual([]);
+
+		const second = await views.messages(SECOND_THREAD, null, { limit: 10 });
+		expect(second.messages.map((message) => message.rkey)).toEqual([rkey]);
+
+		const source = await views.messages(SPACE, null, { limit: 10 });
+		expect(source.messages).toEqual([]);
+	});
+
+	it("keeps a message whose move was retracted", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey);
+		await putThread();
+		await putMovedLabel(rkey, THREAD, nextTid());
+		await putMovedLabel(rkey, THREAD, nextTid(), { negated: true });
+
+		const source = await views.messages(SPACE, null, { limit: 10 });
+		expect(source.messages.map((message) => message.rkey)).toEqual([rkey]);
+
+		const destination = await views.messages(THREAD, null, { limit: 10 });
+		expect(destination.messages).toEqual([]);
 	});
 });

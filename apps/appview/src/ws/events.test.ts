@@ -142,6 +142,10 @@ describe("EventServer", () => {
 			authzChanges,
 			loader: {
 				channel: async (space: string) => channels.get(space) ?? null,
+				spaceStates: async (space: string) => ({
+					channel: channels.get(space) ?? null,
+					thread: null,
+				}),
 				authz: async (community: string, actor: string) =>
 					authz.get(actor) ?? anonymousAuthz(actor, community),
 			},
@@ -568,12 +572,33 @@ describe("EventServer", () => {
 		alice.close();
 	});
 
-	it("ignores a write hint for a channel the caller never subscribed to", async () => {
+	it("pulls a readable space the caller never subscribed to", async () => {
 		const alice = connect("alice-token");
 		await waitForOpen(alice);
 		await subscribed(alice, CHANNEL);
 
 		send(alice, { $type: "social.colibri.beta.sync.defs#wroteTo", space: OTHER });
+
+		await vi.waitFor(() =>
+			expect(notifyWrite).toHaveBeenCalledWith(
+				OTHER,
+				ALICE,
+				expect.objectContaining({ trigger: "clientHint" }),
+			),
+		);
+
+		alice.close();
+	});
+
+	it("ignores a write hint for a space the caller cannot read", async () => {
+		const alice = connect("alice-token");
+		await waitForOpen(alice);
+		await subscribed(alice, CHANNEL);
+
+		send(alice, {
+			$type: "social.colibri.beta.sync.defs#wroteTo",
+			space: channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkunknown"),
+		});
 		send(alice, { $type: "social.colibri.beta.sync.defs#typing", channel: CHANNEL });
 		await new Promise((resolve) => setTimeout(resolve, 20));
 

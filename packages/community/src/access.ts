@@ -1,5 +1,13 @@
 import { SPACE_TYPES } from "@colibri-social/lexicons";
-import { type ActorAuthz, type ChannelState, canRead, has, isMember } from "./authz.js";
+import {
+	type ActorAuthz,
+	type ChannelState,
+	canRead,
+	canReadThread,
+	has,
+	isMember,
+	type ThreadState,
+} from "./authz.js";
 
 export type AccessDecision = {
 	authorized: boolean;
@@ -15,13 +23,14 @@ export type SpaceAccessInput = {
 	authz: ActorAuthz;
 	visibility: CommunityVisibility;
 	channel: ChannelState | null;
+	thread?: ThreadState | null;
 };
 
 const allow = (reason: string): AccessDecision => ({ authorized: true, reason });
 const deny = (reason: string): AccessDecision => ({ authorized: false, reason });
 
 export const decideSpaceAccess = (input: SpaceAccessInput): AccessDecision => {
-	const { spaceType, authz, visibility, channel } = input;
+	const { spaceType, authz, visibility, channel, thread } = input;
 
 	if (authz.isOwner) return allow("the requester is the community itself");
 	if (authz.isBanned) return deny("the requester is banned from this community");
@@ -51,6 +60,13 @@ export const decideSpaceAccess = (input: SpaceAccessInput): AccessDecision => {
 			return canRead(authz, channel)
 				? allow("the requester may read this channel")
 				: deny("this channel is not visible to the requester");
+
+		case SPACE_TYPES.channelThread:
+			if (!thread) return deny("no such thread in this community");
+			if (!channel) return deny("this thread's channel no longer exists");
+			return canReadThread(authz, channel, thread)
+				? allow("the requester may read this thread")
+				: deny("this thread is not visible to the requester");
 
 		default:
 			return deny(`unrecognised space type ${spaceType}`);

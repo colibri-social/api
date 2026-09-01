@@ -1,5 +1,5 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
-import { canRead } from "@colibri-social/community";
+import { canRead, decideSpaceAccess } from "@colibri-social/community";
 import { social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import { and, eq } from "drizzle-orm";
@@ -7,24 +7,34 @@ import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
 import { ChannelViews } from "../views/channel.js";
 import { CommunityViews } from "../views/community.js";
+import { ThreadViews } from "../views/thread.js";
 import type { RouteDeps } from "./types.js";
 
 export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 	const actors = new ActorViews(ctx);
 	const communities = new CommunityViews(ctx, actors);
 	const channels = new ChannelViews(ctx, actors);
+	const threads = new ThreadViews(ctx, channels);
 
 	const requireReadableChannel = async (space: string, viewer: string) => {
-		const channel = await ctx.loader.channel(space);
-		if (!channel) {
+		const parsed = parseSpaceRef(space);
+		const states = await ctx.loader.spaceStates(parsed.uri, parsed.spaceType);
+		if (!states.channel) {
 			throw new InvalidRequestError(`no channel matches ${space}`, "ChannelNotFound");
 		}
-		const community = parseSpaceRef(space).authority;
+		const community = parsed.authority;
 		const authz = await ctx.loader.authz(community, viewer);
-		if (!canRead(authz, channel)) {
-			throw new InvalidRequestError("the requester may not read this channel", "Forbidden");
+		const decision = decideSpaceAccess({
+			spaceType: parsed.spaceType,
+			authz,
+			visibility: { profileIsPublic: false },
+			channel: states.channel,
+			thread: states.thread,
+		});
+		if (!decision.authorized) {
+			throw new InvalidRequestError(decision.reason, "Forbidden");
 		}
-		return { channel, community, authz };
+		return { channel: states.channel, community, authz };
 	};
 
 	route(server, social.colibri.beta.channel.getChannel, {
@@ -49,13 +59,22 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 	route(server, social.colibri.beta.channel.listMessages, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => {
-			await requireReadableChannel(params.channel, caller.credentials.did);
-			const result = await channels.messages(params.channel, caller.credentials.did, {
+			const viewer = caller.credentials.did;
+			const { authz } = await requireReadableChannel(params.channel, viewer);
+			const result = await channels.messages(params.channel, viewer, {
 				limit: params.limit,
 				cursor: params.cursor,
 				reverse: params.reverse,
 			});
-			return { encoding: "application/json" as const, body: result };
+			const anchored = await threads.anchoredIn(
+				params.channel,
+				result.messages.map((message) => ({ author: message.author.did, rkey: message.rkey })),
+			);
+			const views = await threads.views(anchored, authz, viewer);
+			return {
+				encoding: "application/json" as const,
+				body: { ...result, ...(views.length > 0 ? { threads: views } : {}) },
+			};
 		},
 	});
 

@@ -20,9 +20,15 @@ export const communitySpaceUris = async (deps: PurgeDeps, community: string): Pr
 		.from(tables.channels)
 		.where(eq(tables.channels.community, community));
 
+	const threads = await db
+		.select({ uri: tables.threads.space })
+		.from(tables.threads)
+		.where(eq(tables.threads.community, community));
+
 	const uris = new Set<string>(Object.values(communitySpaces(community)));
 	for (const { uri } of registered) uris.add(uri);
 	for (const { uri } of projected) uris.add(uri);
+	for (const { uri } of threads) uris.add(uri);
 
 	return [...uris].sort();
 };
@@ -44,6 +50,7 @@ export const purgeCommunity = async (
 			{ table: tables.applications, column: tables.applications.community },
 			{ table: tables.categories, column: tables.categories.community },
 			{ table: tables.channels, column: tables.channels.community },
+			{ table: tables.threads, column: tables.threads.community },
 			{ table: tables.roles, column: tables.roles.community },
 			{ table: tables.members, column: tables.members.community },
 			{ table: tables.communities, column: tables.communities.did },
@@ -57,6 +64,7 @@ export const purgeCommunity = async (
 
 		const bySpace = [
 			{ table: tables.reactions, column: tables.reactions.space },
+			{ table: tables.threadFollows, column: tables.threadFollows.space },
 			{ table: tables.labels, column: tables.labels.space },
 			{ table: tables.records, column: tables.records.space },
 			{ table: tables.spaceRepos, column: tables.spaceRepos.space },

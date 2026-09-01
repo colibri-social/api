@@ -206,7 +206,7 @@ const filterRecipients = async (
 		);
 	const alreadyNotified = new Set(alreadyNotifiedRows.map((row) => row.recipient));
 
-	return recipients.filter((recipient) => {
+	const eligible = recipients.filter((recipient) => {
 		if (!memberDids.has(recipient.did)) return false;
 		if (mutedDids.has(recipient.did)) return false;
 		if (recipient.kind === "message" && mentionsAndRepliesOnly.has(recipient.did)) return false;
@@ -214,6 +214,12 @@ const filterRecipients = async (
 		if (alreadyNotified.has(recipient.did)) return false;
 		return true;
 	});
+
+	const readable: Recipient[] = [];
+	for (const recipient of eligible) {
+		if (await deps.mayRead(message.space, recipient.did)) readable.push(recipient);
+	}
+	return readable;
 };
 
 export const indexMessage = async (

@@ -1,7 +1,7 @@
 import type { Permission, social } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import type { AppContext } from "./context.js";
-import type { EventServer, ServerFrame } from "./ws/events.js";
+import type { ChannelFrame, EventServer, ServerFrame } from "./ws/events.js";
 
 export type Announcer = {
 	toCommunity(community: string, frame: ServerFrame): void;
@@ -10,18 +10,25 @@ export type Announcer = {
 		permission: Permission,
 		frame: ServerFrame,
 	): Promise<void>;
-	toChannel(space: string, frame: ServerFrame): void;
+	toCommunityViewers(
+		community: string,
+		build: (did: string) => Promise<ServerFrame | null>,
+	): Promise<void>;
+	toChannel(space: string, frame: ChannelFrame): void;
 	toUser(did: string, frame: ServerFrame): void;
 	channelChanged(community: string, space: string, event: "update" | "delete"): void;
+	threadDeleted(space: string): void;
 	communityDeleted(community: string): void;
 };
 
 export const silentAnnouncer: Announcer = {
 	toCommunity: () => {},
 	toCommunityPermission: async () => {},
+	toCommunityViewers: async () => {},
 	toChannel: () => {},
 	toUser: () => {},
 	channelChanged: () => {},
+	threadDeleted: () => {},
 	communityDeleted: () => {},
 };
 
@@ -29,9 +36,11 @@ export const eventAnnouncer = (events: EventServer): Announcer => ({
 	toCommunity: (community, frame) => events.publishToCommunity(community, frame),
 	toCommunityPermission: (community, permission, frame) =>
 		events.publishToCommunityPermission(community, permission, frame),
+	toCommunityViewers: (community, build) => events.publishToCommunityViewers(community, build),
 	toChannel: (space, frame) => events.publishToChannel(space, frame),
 	toUser: (did, frame) => events.publishToUser(did, frame),
 	channelChanged: (community, space, event) => events.channelChanged(community, space, event),
+	threadDeleted: (space) => events.threadDeleted(space),
 	communityDeleted: (community) => events.communityDeleted(community),
 });
 
@@ -42,6 +51,46 @@ export const channelEvent = (event: Lifecycle, community: string, space: string)
 	event,
 	community,
 	space,
+});
+
+export const threadEvent = (
+	event: "create" | "update" | "delete" | "activity",
+	community: string,
+	detail: {
+		channel?: string;
+		thread?: social.colibri.beta.thread.defs.ThreadView;
+		space?: string;
+		lastActivityAt?: string;
+	},
+): ServerFrame => ({
+	$type: "social.colibri.beta.sync.defs#threadEvent",
+	event,
+	community,
+	...(detail.channel ? { channel: detail.channel } : {}),
+	...(detail.thread ? { thread: detail.thread } : {}),
+	...(detail.space ? { space: detail.space } : {}),
+	...(detail.lastActivityAt ? { lastActivityAt: detail.lastActivityAt } : {}),
+});
+
+export const messageEvent = (
+	event: "create" | "update",
+	channel: string,
+	message: social.colibri.beta.channel.defs.MessageView,
+): ServerFrame => ({
+	$type: "social.colibri.beta.sync.defs#messageEvent",
+	event,
+	channel,
+	message,
+});
+
+export const messageGone = (
+	channel: string,
+	subject: { did: string; rkey: string },
+): ServerFrame => ({
+	$type: "social.colibri.beta.sync.defs#messageEvent",
+	event: "delete",
+	channel,
+	subject: { did: subject.did, rkey: subject.rkey },
 });
 
 export const categoryEvent = (event: Lifecycle, community: string, rkey: string): ServerFrame => ({

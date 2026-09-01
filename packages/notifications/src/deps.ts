@@ -4,4 +4,5 @@ export type NotificationDeps = {
 	db: Queryable;
 	tables: Schema;
 	now: () => string;
+	mayRead: (space: string, did: string) => Promise<boolean>;
 };

@@ -1,11 +1,11 @@
 import { COLLECTIONS, SPACE_TYPES, social, toJsonForm } from "@colibri-social/lexicons";
-import { and, eq } from "drizzle-orm";
+import { and, eq, lt } from "drizzle-orm";
 import { communityOf, type Projector } from "../projector.js";
 
 export const message: Projector<social.colibri.beta.message.Main> = {
 	collection: COLLECTIONS.message,
 	writer: "any",
-	spaceTypes: [SPACE_TYPES.channelText],
+	spaceTypes: [SPACE_TYPES.channelText, SPACE_TYPES.channelThread],
 	schema: social.colibri.beta.message,
 	put: async (deps, ref, value) => {
 		const row = {
@@ -35,6 +35,17 @@ export const message: Projector<social.colibri.beta.message.Main> = {
 				],
 				set: row,
 			});
+
+		if (ref.space.spaceType !== SPACE_TYPES.channelThread) return;
+		await deps.db
+			.update(deps.tables.threads)
+			.set({ lastActivityAt: value.createdAt })
+			.where(
+				and(
+					eq(deps.tables.threads.space, ref.space.uri),
+					lt(deps.tables.threads.lastActivityAt, value.createdAt),
+				),
+			);
 	},
 	remove: async (deps, ref) => {
 		await deps.db
@@ -52,7 +63,7 @@ export const message: Projector<social.colibri.beta.message.Main> = {
 export const reaction: Projector<social.colibri.beta.reaction.Main> = {
 	collection: COLLECTIONS.reaction,
 	writer: "any",
-	spaceTypes: [SPACE_TYPES.channelText],
+	spaceTypes: [SPACE_TYPES.channelText, SPACE_TYPES.channelThread],
 	schema: social.colibri.beta.reaction,
 	put: async (deps, ref, value) => {
 		const row = {
@@ -105,6 +116,8 @@ export const label: Projector<social.colibri.beta.label.Main> = {
 			scope: value.scope ? [...value.scope] : null,
 			negated: value.neg ?? false,
 			reason: value.reason ?? null,
+			destination: value.destination ?? null,
+			batch: value.batch ?? null,
 			createdAt: value.createdAt,
 		};
 		await deps.db

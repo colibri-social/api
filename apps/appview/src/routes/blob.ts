@@ -1,6 +1,8 @@
 import { BlobNotFoundError, BlobRejectedError, type Variant } from "@colibri-social/blobs";
 import { decideSpaceAccess } from "@colibri-social/community";
+import { movedInto } from "@colibri-social/projections";
 import { tryParseSpaceRef } from "@colibri-social/space";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Request, Response, Router } from "express";
 import type { AppContext } from "../context.js";
 import { verifyMediaGrant } from "../media-token.js";
@@ -19,6 +21,48 @@ const asVariant = (value: unknown): Variant | undefined => {
 const bearerToken = (value: string | string[] | undefined): string | null => {
 	if (!value || Array.isArray(value)) return null;
 	return value.startsWith("Bearer ") ? value.slice("Bearer ".length) : null;
+};
+
+type RawAttachment = { blob?: { ref?: { $link?: string } } };
+
+const carriesBlob = (attachments: unknown, cid: string): boolean =>
+	((attachments as RawAttachment[] | null) ?? []).some(
+		(attachment) => attachment.blob?.ref?.$link === cid,
+	);
+
+const movedSourceFor = async (
+	ctx: AppContext,
+	did: string,
+	cid: string,
+	destination: string,
+): Promise<string | undefined> => {
+	const parsed = tryParseSpaceRef(destination);
+	if (!parsed) return undefined;
+
+	const community = await ctx.loader.community(parsed.authority);
+	const sources = [...new Set([...(community?.labelers ?? []), parsed.authority])];
+	const moved = (await movedInto(ctx.database, parsed.uri, sources)).filter(
+		(entry) => entry.author === did,
+	);
+	if (moved.length === 0) return undefined;
+
+	const table = ctx.database.tables.messages;
+	const rows = await ctx.database.db
+		.select({ space: table.space, rkey: table.rkey, attachments: table.attachments })
+		.from(table)
+		.where(
+			and(
+				eq(table.author, did),
+				inArray(table.space, [...new Set(moved.map((entry) => entry.source))]),
+				inArray(table.rkey, [...new Set(moved.map((entry) => entry.rkey))]),
+			),
+		);
+
+	const wanted = new Set(moved.map((entry) => `${entry.source} ${entry.rkey}`));
+	const holder = rows.find(
+		(row) => wanted.has(`${row.space} ${row.rkey}`) && carriesBlob(row.attachments, cid),
+	);
+	return holder?.space;
 };
 
 type SpaceViewer =
@@ -88,12 +132,13 @@ export const mountBlobRoutes = (ctx: AppContext, app: Router): void => {
 		}
 
 		const authz = await ctx.loader.authz(parsed.authority, viewer);
-		const channel = await ctx.loader.channel(parsed.uri);
+		const { channel, thread } = await ctx.loader.spaceStates(parsed.uri, parsed.spaceType);
 		const decision = decideSpaceAccess({
 			spaceType: parsed.spaceType,
 			authz,
 			visibility: { profileIsPublic: false },
 			channel,
+			thread,
 		});
 		if (!decision.authorized) return forbid(decision.reason);
 		return { authorized: true };
@@ -121,14 +166,26 @@ export const mountBlobRoutes = (ctx: AppContext, app: Router): void => {
 				}
 			}
 
-			try {
-				const blob = await ctx.blobs.fetch({
+			const fetchBlob = (from: string | undefined) =>
+				ctx.blobs.fetch({
 					did,
 					cid,
-					...(space ? { space } : {}),
+					...(from ? { space: from } : {}),
 					...(variant ? { variant } : {}),
 					...(range ? { range } : {}),
 				});
+
+			try {
+				const blob = await (async () => {
+					try {
+						return await fetchBlob(space);
+					} catch (error) {
+						if (!(error instanceof BlobNotFoundError) || !space) throw error;
+						const holder = await movedSourceFor(ctx, did, cid, space);
+						if (!holder) throw error;
+						return await fetchBlob(holder);
+					}
+				})();
 
 				if (blob.status === "rangeNotSatisfiable") {
 					res.setHeader("content-range", `bytes */${blob.totalSize}`);

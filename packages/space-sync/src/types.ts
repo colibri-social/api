@@ -62,6 +62,7 @@ export type SyncStore = {
 	isOrphaned?(space: string): Promise<boolean>;
 	listCursors(space: string): Promise<RepoCursor[]>;
 	expectedRepos?(space: string): Promise<string[]>;
+	sweepEligible?(space: string): Promise<boolean>;
 	loadCursor(space: string, author: string): Promise<RepoCursor | null>;
 	saveCursor(cursor: RepoCursor): Promise<void>;
 	commit(change: RepoChange, cursor: CommittedCursor): Promise<void>;

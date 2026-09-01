@@ -4,6 +4,7 @@ import { spaceContextFor } from "./context.js";
 import * as channel from "./mappers/channel.js";
 import * as community from "./mappers/community.js";
 import * as personal from "./mappers/personal.js";
+import * as thread from "./mappers/thread.js";
 import { type ErasedProjector, erase, refusalFor } from "./projector.js";
 
 const ALL: ErasedProjector[] = [
@@ -17,6 +18,8 @@ const ALL: ErasedProjector[] = [
 	erase(channel.message),
 	erase(channel.reaction),
 	erase(channel.label),
+	erase(thread.thread),
+	erase(thread.threadFollow),
 	erase(personal.mute),
 	erase(personal.settings),
 	erase(personal.readCursors),
@@ -28,6 +31,7 @@ const AUTHZ_COLLECTIONS: ReadonlySet<string> = new Set<string>([
 	COLLECTIONS.role,
 	COLLECTIONS.member,
 	COLLECTIONS.channel,
+	COLLECTIONS.thread,
 	COLLECTIONS.moderation,
 ]);
 

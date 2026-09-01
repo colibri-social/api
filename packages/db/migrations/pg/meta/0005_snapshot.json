@@ -1,0 +1,2592 @@
+{
+	"id": "b0792680-39c5-4926-8d57-454f5e1c6dd8",
+	"prevId": "8e47d65e-0dde-4045-9dbe-b3a23d92d838",
+	"version": "7",
+	"dialect": "postgresql",
+	"tables": {
+		"public.actor_activity": {
+			"name": "actor_activity",
+			"schema": "",
+			"columns": {
+				"did": {
+					"name": "did",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"kind": {
+					"name": "kind",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"title": {
+					"name": "title",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"subtitle": {
+					"name": "subtitle",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"detail": {
+					"name": "detail",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"image_url": {
+					"name": "image_url",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"link_uri": {
+					"name": "link_uri",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"started_at": {
+					"name": "started_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"ends_at": {
+					"name": "ends_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"source": {
+					"name": "source",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"updated_at": {
+					"name": "updated_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {
+				"actor_activity_ends_at_idx": {
+					"name": "actor_activity_ends_at_idx",
+					"columns": [
+						{
+							"expression": "ends_at",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.actor_settings": {
+			"name": "actor_settings",
+			"schema": "",
+			"columns": {
+				"did": {
+					"name": "did",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"notification_level": {
+					"name": "notification_level",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "'all'"
+				},
+				"community_order": {
+					"name": "community_order",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"gif_favorites": {
+					"name": "gif_favorites",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"share_activity": {
+					"name": "share_activity",
+					"type": "boolean",
+					"primaryKey": false,
+					"notNull": true,
+					"default": false
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.applications": {
+			"name": "applications",
+			"schema": "",
+			"columns": {
+				"community": {
+					"name": "community",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"did": {
+					"name": "did",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"invitation": {
+					"name": "invitation",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"created_at": {
+					"name": "created_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"dismissed_at": {
+					"name": "dismissed_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				}
+			},
+			"indexes": {
+				"applications_pending_idx": {
+					"name": "applications_pending_idx",
+					"columns": [
+						{
+							"expression": "community",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "dismissed_at",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"applications_community_did_pk": {
+					"name": "applications_community_did_pk",
+					"columns": ["community", "did"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.categories": {
+			"name": "categories",
+			"schema": "",
+			"columns": {
+				"community": {
+					"name": "community",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"rkey": {
+					"name": "rkey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"name": {
+					"name": "name",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"channel_order": {
+					"name": "channel_order",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"position": {
+					"name": "position",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"default": 0
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"categories_community_rkey_pk": {
+					"name": "categories_community_rkey_pk",
+					"columns": ["community", "rkey"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.channels": {
+			"name": "channels",
+			"schema": "",
+			"columns": {
+				"space": {
+					"name": "space",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"community": {
+					"name": "community",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"space_type": {
+					"name": "space_type",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"skey": {
+					"name": "skey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"name": {
+					"name": "name",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"description": {
+					"name": "description",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"category": {
+					"name": "category",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"position": {
+					"name": "position",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"default": 0
+				},
+				"owner_only": {
+					"name": "owner_only",
+					"type": "boolean",
+					"primaryKey": false,
+					"notNull": true,
+					"default": false
+				},
+				"allowed_roles": {
+					"name": "allowed_roles",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"allowed_members": {
+					"name": "allowed_members",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"visible_to_roles": {
+					"name": "visible_to_roles",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"visible_to_members": {
+					"name": "visible_to_members",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"link_embeds": {
+					"name": "link_embeds",
+					"type": "boolean",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"migrated_from": {
+					"name": "migrated_from",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				}
+			},
+			"indexes": {
+				"channels_community_idx": {
+					"name": "channels_community_idx",
+					"columns": [
+						{
+							"expression": "community",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "category",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.communities": {
+			"name": "communities",
+			"schema": "",
+			"columns": {
+				"did": {
+					"name": "did",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"handle": {
+					"name": "handle",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"name": {
+					"name": "name",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"description": {
+					"name": "description",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"managing_app": {
+					"name": "managing_app",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"picture_cid": {
+					"name": "picture_cid",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"banner_cid": {
+					"name": "banner_cid",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"requires_approval": {
+					"name": "requires_approval",
+					"type": "boolean",
+					"primaryKey": false,
+					"notNull": true,
+					"default": false
+				},
+				"link_embeds": {
+					"name": "link_embeds",
+					"type": "boolean",
+					"primaryKey": false,
+					"notNull": true,
+					"default": true
+				},
+				"labelers": {
+					"name": "labelers",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"migrated_from": {
+					"name": "migrated_from",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"profile_space": {
+					"name": "profile_space",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"config_space": {
+					"name": "config_space",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"members_space": {
+					"name": "members_space",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"moderation_space": {
+					"name": "moderation_space",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"indexed_at": {
+					"name": "indexed_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {
+				"communities_handle_idx": {
+					"name": "communities_handle_idx",
+					"columns": [
+						{
+							"expression": "handle",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": true,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.community_credentials": {
+			"name": "community_credentials",
+			"schema": "",
+			"columns": {
+				"community": {
+					"name": "community",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"pds_endpoint": {
+					"name": "pds_endpoint",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"identifier": {
+					"name": "identifier",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"password_ciphertext_base64": {
+					"name": "password_ciphertext_base64",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"password_nonce_base64": {
+					"name": "password_nonce_base64",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"source": {
+					"name": "source",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"created_at": {
+					"name": "created_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.identity_cache": {
+			"name": "identity_cache",
+			"schema": "",
+			"columns": {
+				"did": {
+					"name": "did",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"handle": {
+					"name": "handle",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"handle_verified": {
+					"name": "handle_verified",
+					"type": "boolean",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"pds": {
+					"name": "pds",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"signing_key": {
+					"name": "signing_key",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"fetched_at": {
+					"name": "fetched_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {
+				"identity_handle_idx": {
+					"name": "identity_handle_idx",
+					"columns": [
+						{
+							"expression": "handle",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.invitations": {
+			"name": "invitations",
+			"schema": "",
+			"columns": {
+				"code": {
+					"name": "code",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"community": {
+					"name": "community",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"created_by": {
+					"name": "created_by",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"active": {
+					"name": "active",
+					"type": "boolean",
+					"primaryKey": false,
+					"notNull": true,
+					"default": true
+				},
+				"uses": {
+					"name": "uses",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"default": 0
+				},
+				"max_uses": {
+					"name": "max_uses",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"created_at": {
+					"name": "created_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"expires_at": {
+					"name": "expires_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				}
+			},
+			"indexes": {
+				"invitations_community_idx": {
+					"name": "invitations_community_idx",
+					"columns": [
+						{
+							"expression": "community",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.labels": {
+			"name": "labels",
+			"schema": "",
+			"columns": {
+				"space": {
+					"name": "space",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"src": {
+					"name": "src",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"rkey": {
+					"name": "rkey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"subject_did": {
+					"name": "subject_did",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"subject_collection": {
+					"name": "subject_collection",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"subject_rkey": {
+					"name": "subject_rkey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"val": {
+					"name": "val",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"scope": {
+					"name": "scope",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"negated": {
+					"name": "negated",
+					"type": "boolean",
+					"primaryKey": false,
+					"notNull": true,
+					"default": false
+				},
+				"reason": {
+					"name": "reason",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"destination": {
+					"name": "destination",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"batch": {
+					"name": "batch",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"created_at": {
+					"name": "created_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {
+				"labels_subject_idx": {
+					"name": "labels_subject_idx",
+					"columns": [
+						{
+							"expression": "space",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "subject_did",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "subject_rkey",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"labels_destination_idx": {
+					"name": "labels_destination_idx",
+					"columns": [
+						{
+							"expression": "destination",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "batch",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"labels_space_src_rkey_pk": {
+					"name": "labels_space_src_rkey_pk",
+					"columns": ["space", "src", "rkey"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.legacy_records": {
+			"name": "legacy_records",
+			"schema": "",
+			"columns": {
+				"did": {
+					"name": "did",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"collection": {
+					"name": "collection",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"rkey": {
+					"name": "rkey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"value": {
+					"name": "value",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"indexed_at": {
+					"name": "indexed_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {
+				"legacy_collection_idx": {
+					"name": "legacy_collection_idx",
+					"columns": [
+						{
+							"expression": "collection",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"legacy_records_did_collection_rkey_pk": {
+					"name": "legacy_records_did_collection_rkey_pk",
+					"columns": ["did", "collection", "rkey"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.members": {
+			"name": "members",
+			"schema": "",
+			"columns": {
+				"community": {
+					"name": "community",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"did": {
+					"name": "did",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"roles": {
+					"name": "roles",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"joined_at": {
+					"name": "joined_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"nickname": {
+					"name": "nickname",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				}
+			},
+			"indexes": {
+				"members_did_idx": {
+					"name": "members_did_idx",
+					"columns": [
+						{
+							"expression": "did",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"members_community_did_pk": {
+					"name": "members_community_did_pk",
+					"columns": ["community", "did"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.messages": {
+			"name": "messages",
+			"schema": "",
+			"columns": {
+				"space": {
+					"name": "space",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"author": {
+					"name": "author",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"rkey": {
+					"name": "rkey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"community": {
+					"name": "community",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"text": {
+					"name": "text",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"facets": {
+					"name": "facets",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"created_at": {
+					"name": "created_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"updated_at": {
+					"name": "updated_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"parent_author": {
+					"name": "parent_author",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"parent_rkey": {
+					"name": "parent_rkey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"attachments": {
+					"name": "attachments",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"suppressed_embeds": {
+					"name": "suppressed_embeds",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"from_legacy_repo": {
+					"name": "from_legacy_repo",
+					"type": "boolean",
+					"primaryKey": false,
+					"notNull": true,
+					"default": false
+				},
+				"indexed_at": {
+					"name": "indexed_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {
+				"messages_channel_page_idx": {
+					"name": "messages_channel_page_idx",
+					"columns": [
+						{
+							"expression": "space",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "rkey",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"messages_parent_idx": {
+					"name": "messages_parent_idx",
+					"columns": [
+						{
+							"expression": "space",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "parent_author",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "parent_rkey",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"messages_author_idx": {
+					"name": "messages_author_idx",
+					"columns": [
+						{
+							"expression": "author",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"messages_space_author_rkey_pk": {
+					"name": "messages_space_author_rkey_pk",
+					"columns": ["space", "author", "rkey"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.moderation_log": {
+			"name": "moderation_log",
+			"schema": "",
+			"columns": {
+				"community": {
+					"name": "community",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"rkey": {
+					"name": "rkey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"action": {
+					"name": "action",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"subject": {
+					"name": "subject",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"reason": {
+					"name": "reason",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"created_by": {
+					"name": "created_by",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"created_at": {
+					"name": "created_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {
+				"moderation_subject_idx": {
+					"name": "moderation_subject_idx",
+					"columns": [
+						{
+							"expression": "community",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "subject",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "created_at",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"moderation_log_community_rkey_pk": {
+					"name": "moderation_log_community_rkey_pk",
+					"columns": ["community", "rkey"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.mutes": {
+			"name": "mutes",
+			"schema": "",
+			"columns": {
+				"did": {
+					"name": "did",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"rkey": {
+					"name": "rkey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"subject": {
+					"name": "subject",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"created_at": {
+					"name": "created_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {
+				"mutes_one_per_subject_idx": {
+					"name": "mutes_one_per_subject_idx",
+					"columns": [
+						{
+							"expression": "did",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "subject",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": true,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"mutes_did_rkey_pk": {
+					"name": "mutes_did_rkey_pk",
+					"columns": ["did", "rkey"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.notifications": {
+			"name": "notifications",
+			"schema": "",
+			"columns": {
+				"id": {
+					"name": "id",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"recipient": {
+					"name": "recipient",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"kind": {
+					"name": "kind",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"community": {
+					"name": "community",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"space": {
+					"name": "space",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"author": {
+					"name": "author",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"message_author": {
+					"name": "message_author",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"message_rkey": {
+					"name": "message_rkey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"mention_role": {
+					"name": "mention_role",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"indexed_at": {
+					"name": "indexed_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"seen_at": {
+					"name": "seen_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				}
+			},
+			"indexes": {
+				"notifications_recipient_idx": {
+					"name": "notifications_recipient_idx",
+					"columns": [
+						{
+							"expression": "recipient",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "indexed_at",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"notifications_unseen_idx": {
+					"name": "notifications_unseen_idx",
+					"columns": [
+						{
+							"expression": "recipient",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "space",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "seen_at",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"notifications_message_idx": {
+					"name": "notifications_message_idx",
+					"columns": [
+						{
+							"expression": "message_author",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "message_rkey",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.notify_registrations": {
+			"name": "notify_registrations",
+			"schema": "",
+			"columns": {
+				"space": {
+					"name": "space",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"service": {
+					"name": "service",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"expires_at": {
+					"name": "expires_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.profile_cache": {
+			"name": "profile_cache",
+			"schema": "",
+			"columns": {
+				"did": {
+					"name": "did",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"colibri": {
+					"name": "colibri",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"bsky": {
+					"name": "bsky",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"fetched_at": {
+					"name": "fetched_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.push_subscriptions": {
+			"name": "push_subscriptions",
+			"schema": "",
+			"columns": {
+				"id": {
+					"name": "id",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"actor": {
+					"name": "actor",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"provider": {
+					"name": "provider",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"platform": {
+					"name": "platform",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"endpoint": {
+					"name": "endpoint",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"p256dh": {
+					"name": "p256dh",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"auth": {
+					"name": "auth",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"token": {
+					"name": "token",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"created_at": {
+					"name": "created_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {
+				"push_actor_idx": {
+					"name": "push_actor_idx",
+					"columns": [
+						{
+							"expression": "actor",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"push_endpoint_idx": {
+					"name": "push_endpoint_idx",
+					"columns": [
+						{
+							"expression": "provider",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "endpoint",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": true,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"push_token_idx": {
+					"name": "push_token_idx",
+					"columns": [
+						{
+							"expression": "provider",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "token",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": true,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.reactions": {
+			"name": "reactions",
+			"schema": "",
+			"columns": {
+				"space": {
+					"name": "space",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"author": {
+					"name": "author",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"rkey": {
+					"name": "rkey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"target_author": {
+					"name": "target_author",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"target_rkey": {
+					"name": "target_rkey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"emoji": {
+					"name": "emoji",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {
+				"reactions_target_idx": {
+					"name": "reactions_target_idx",
+					"columns": [
+						{
+							"expression": "space",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "target_author",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "target_rkey",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"reactions_one_per_author_and_emoji_idx": {
+					"name": "reactions_one_per_author_and_emoji_idx",
+					"columns": [
+						{
+							"expression": "space",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "target_author",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "target_rkey",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "author",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "emoji",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": true,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"reactions_space_author_rkey_pk": {
+					"name": "reactions_space_author_rkey_pk",
+					"columns": ["space", "author", "rkey"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.read_cursors": {
+			"name": "read_cursors",
+			"schema": "",
+			"columns": {
+				"did": {
+					"name": "did",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"community": {
+					"name": "community",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"channel": {
+					"name": "channel",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"cursor": {
+					"name": "cursor",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {
+				"read_cursors_did_idx": {
+					"name": "read_cursors_did_idx",
+					"columns": [
+						{
+							"expression": "did",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"read_cursors_did_channel_pk": {
+					"name": "read_cursors_did_channel_pk",
+					"columns": ["did", "channel"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.records": {
+			"name": "records",
+			"schema": "",
+			"columns": {
+				"space": {
+					"name": "space",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"author": {
+					"name": "author",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"collection": {
+					"name": "collection",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"rkey": {
+					"name": "rkey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"cid": {
+					"name": "cid",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"value": {
+					"name": "value",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"indexed_at": {
+					"name": "indexed_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {
+				"records_collection_idx": {
+					"name": "records_collection_idx",
+					"columns": [
+						{
+							"expression": "space",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "collection",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"records_space_author_collection_rkey_pk": {
+					"name": "records_space_author_collection_rkey_pk",
+					"columns": ["space", "author", "collection", "rkey"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.roles": {
+			"name": "roles",
+			"schema": "",
+			"columns": {
+				"community": {
+					"name": "community",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"rkey": {
+					"name": "rkey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"name": {
+					"name": "name",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"color": {
+					"name": "color",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"permissions": {
+					"name": "permissions",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"position": {
+					"name": "position",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"default": 0
+				},
+				"hoisted": {
+					"name": "hoisted",
+					"type": "boolean",
+					"primaryKey": false,
+					"notNull": true,
+					"default": false
+				},
+				"mentionable": {
+					"name": "mentionable",
+					"type": "boolean",
+					"primaryKey": false,
+					"notNull": true,
+					"default": false
+				},
+				"protected": {
+					"name": "protected",
+					"type": "boolean",
+					"primaryKey": false,
+					"notNull": true,
+					"default": false
+				},
+				"channel_overrides": {
+					"name": "channel_overrides",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {
+				"roles_position_idx": {
+					"name": "roles_position_idx",
+					"columns": [
+						{
+							"expression": "community",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "position",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"roles_community_rkey_pk": {
+					"name": "roles_community_rkey_pk",
+					"columns": ["community", "rkey"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.service_state": {
+			"name": "service_state",
+			"schema": "",
+			"columns": {
+				"key": {
+					"name": "key",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"value": {
+					"name": "value",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"updated_at": {
+					"name": "updated_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.space_credentials": {
+			"name": "space_credentials",
+			"schema": "",
+			"columns": {
+				"space": {
+					"name": "space",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"credential": {
+					"name": "credential",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"bound_key_thumbprint": {
+					"name": "bound_key_thumbprint",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"bound_private_jwk": {
+					"name": "bound_private_jwk",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"expires_at": {
+					"name": "expires_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.space_repos": {
+			"name": "space_repos",
+			"schema": "",
+			"columns": {
+				"space": {
+					"name": "space",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"author": {
+					"name": "author",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"applied_rev": {
+					"name": "applied_rev",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"set_hash_base64": {
+					"name": "set_hash_base64",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"remote_commit_hash": {
+					"name": "remote_commit_hash",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"state": {
+					"name": "state",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "'pending'"
+				},
+				"error": {
+					"name": "error",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"consecutive_failures": {
+					"name": "consecutive_failures",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"default": 0
+				},
+				"retry_after": {
+					"name": "retry_after",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"synced_at": {
+					"name": "synced_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				}
+			},
+			"indexes": {
+				"space_repos_state_idx": {
+					"name": "space_repos_state_idx",
+					"columns": [
+						{
+							"expression": "state",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "retry_after",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"space_repos_space_author_pk": {
+					"name": "space_repos_space_author_pk",
+					"columns": ["space", "author"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.spaces": {
+			"name": "spaces",
+			"schema": "",
+			"columns": {
+				"uri": {
+					"name": "uri",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"authority": {
+					"name": "authority",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"space_type": {
+					"name": "space_type",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"skey": {
+					"name": "skey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"community": {
+					"name": "community",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"host": {
+					"name": "host",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"created_at": {
+					"name": "created_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {
+				"spaces_community_idx": {
+					"name": "spaces_community_idx",
+					"columns": [
+						{
+							"expression": "community",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"spaces_type_idx": {
+					"name": "spaces_type_idx",
+					"columns": [
+						{
+							"expression": "space_type",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.thread_follows": {
+			"name": "thread_follows",
+			"schema": "",
+			"columns": {
+				"space": {
+					"name": "space",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"did": {
+					"name": "did",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"created_at": {
+					"name": "created_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {
+				"thread_follows_did_idx": {
+					"name": "thread_follows_did_idx",
+					"columns": [
+						{
+							"expression": "did",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"thread_follows_space_did_pk": {
+					"name": "thread_follows_space_did_pk",
+					"columns": ["space", "did"]
+				}
+			},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.threads": {
+			"name": "threads",
+			"schema": "",
+			"columns": {
+				"space": {
+					"name": "space",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"community": {
+					"name": "community",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"channel": {
+					"name": "channel",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"skey": {
+					"name": "skey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"name": {
+					"name": "name",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"anchor_space": {
+					"name": "anchor_space",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"anchor_author": {
+					"name": "anchor_author",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"anchor_rkey": {
+					"name": "anchor_rkey",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"anchor_cid": {
+					"name": "anchor_cid",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"created_by": {
+					"name": "created_by",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"created_at": {
+					"name": "created_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"visible_to_roles": {
+					"name": "visible_to_roles",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"visible_to_members": {
+					"name": "visible_to_members",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"last_activity_at": {
+					"name": "last_activity_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				},
+				"indexed_at": {
+					"name": "indexed_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {
+				"threads_channel_idx": {
+					"name": "threads_channel_idx",
+					"columns": [
+						{
+							"expression": "community",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "channel",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"threads_activity_idx": {
+					"name": "threads_activity_idx",
+					"columns": [
+						{
+							"expression": "community",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "last_activity_at",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"threads_anchor_idx": {
+					"name": "threads_anchor_idx",
+					"columns": [
+						{
+							"expression": "anchor_space",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "anchor_author",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "anchor_rkey",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
+		"public.user_presence": {
+			"name": "user_presence",
+			"schema": "",
+			"columns": {
+				"did": {
+					"name": "did",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"derived_state": {
+					"name": "derived_state",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "'offline'"
+				},
+				"requested_state": {
+					"name": "requested_state",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"status_text": {
+					"name": "status_text",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"status_emoji": {
+					"name": "status_emoji",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"voice_channel": {
+					"name": "voice_channel",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"voice_muted": {
+					"name": "voice_muted",
+					"type": "boolean",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"voice_deafened": {
+					"name": "voice_deafened",
+					"type": "boolean",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"viewing_channel": {
+					"name": "viewing_channel",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"updated_at": {
+					"name": "updated_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		}
+	},
+	"enums": {},
+	"schemas": {},
+	"sequences": {},
+	"roles": {},
+	"policies": {},
+	"views": {},
+	"_meta": {
+		"columns": {},
+		"schemas": {},
+		"tables": {}
+	}
+}

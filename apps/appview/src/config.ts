@@ -68,6 +68,11 @@ export const configSchema = z.object({
 		.default(64 * 1024 * 1024),
 	SYNC_WORKER_THREADS: z.coerce.number().int().nonnegative().default(0),
 	SYNC_SWEEP_SECONDS: z.coerce.number().int().positive().default(300),
+	THREAD_IDLE_SECONDS: z.coerce
+		.number()
+		.int()
+		.positive()
+		.default(7 * 24 * 60 * 60),
 	SERVICE_AUTH_MAX_LIFETIME_SECONDS: z.coerce.number().int().positive().default(300),
 	HANDLE_CACHE_TTL_SECONDS: z.coerce
 		.number()

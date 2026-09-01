@@ -7,6 +7,7 @@ import {
 	SELF,
 	SPACE_TYPES,
 	spaceUri,
+	threadSpace,
 } from "@colibri-social/lexicons";
 import {
 	managingAppPolicy,
@@ -414,7 +415,33 @@ export class CommunityProvisioner {
 		return space;
 	}
 
+	async createThreadSpace(
+		host: CommunityHost,
+		community: string,
+	): Promise<{ space: string; skey: string }> {
+		const skey = nextTid();
+		const space = threadSpace(community, skey);
+
+		await host.pds.createSpace(host.session, {
+			type: SPACE_TYPES.channelThread,
+			skey,
+			policy: managingAppPolicy(this.deps.appviewService),
+			appAccess: openAppAccess(),
+		});
+		await this.deps.spaces.register({ uri: space, community, host: host.pds.service });
+
+		return { space, skey };
+	}
+
 	async deleteChannel(host: CommunityHost, space: string): Promise<void> {
+		await this.destroySpace(host, space);
+	}
+
+	async deleteThread(host: CommunityHost, space: string): Promise<void> {
+		await this.destroySpace(host, space);
+	}
+
+	private async destroySpace(host: CommunityHost, space: string): Promise<void> {
 		await host.pds.deleteSpace(host.session, space);
 		await this.deps.spaces.forget(space);
 	}

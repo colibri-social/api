@@ -1,7 +1,7 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
 import type { PushPlatform } from "@colibri-social/appview-db";
 import { social } from "@colibri-social/lexicons";
-import type { ActorHydrator, NotificationDeps } from "@colibri-social/notifications";
+import type { ActorHydrator } from "@colibri-social/notifications";
 import {
 	hydrateNotifications,
 	listNotifications,
@@ -17,6 +17,7 @@ import {
 import { and, eq } from "drizzle-orm";
 import { seenEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
+import { mayReadSpace, notificationDeps } from "../notification-deps.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
 import type { RouteDeps } from "./types.js";
@@ -24,15 +25,14 @@ import type { RouteDeps } from "./types.js";
 const channelNotFound = (channel: string) =>
 	new InvalidRequestError(`no channel matches ${channel}`, "ChannelNotFound");
 
-const notificationDeps = (ctx: AppContext): NotificationDeps => ({
-	db: ctx.database.db,
-	tables: ctx.database.tables,
-	now: () => new Date().toISOString(),
-});
-
-const requireChannel = async (ctx: AppContext, channel: string): Promise<void> => {
+const requireChannel = async (
+	ctx: AppContext,
+	channel: string,
+	callerDid: string,
+): Promise<void> => {
 	const row = await ctx.loader.channel(channel);
 	if (!row) throw channelNotFound(channel);
+	if (!(await mayReadSpace(ctx, channel, callerDid))) throw channelNotFound(channel);
 };
 
 const requireMessage = async (
@@ -83,7 +83,7 @@ export const handleGetUnseen = async (
 	channel: string,
 	limit: number,
 ) => {
-	await requireChannel(ctx, channel);
+	await requireChannel(ctx, channel, callerDid);
 	const deps = notificationDeps(ctx);
 	const page = await unseenForChannelPage(deps, callerDid, channel, limit);
 	return {
@@ -104,7 +104,7 @@ export const handleUpdateSeenForMessage = async (
 	messageAuthor: string,
 	messageRkey: string,
 ) => {
-	await requireChannel(ctx, channel);
+	await requireChannel(ctx, channel, callerDid);
 	await requireMessage(ctx, channel, messageAuthor, messageRkey);
 	const seenAt = new Date().toISOString();
 	const unread = await markSeenForMessage(

@@ -1,6 +1,15 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
+import { BlobNotFoundError } from "@colibri-social/blobs";
 import { CommunityLoader } from "@colibri-social/community";
-import { channelSpace, communitySpaces, SPACE_TYPES } from "@colibri-social/lexicons";
+import {
+	COLLECTIONS,
+	channelSpace,
+	communitySpaces,
+	LABEL_VALUES,
+	SPACE_TYPES,
+	threadSpace,
+} from "@colibri-social/lexicons";
+import { nextTid } from "@colibri-social/space";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AppContext } from "../context.js";
 import { signMediaGrant } from "../media-token.js";
@@ -15,6 +24,8 @@ const OUTSIDER = "did:plc:outsiderxxxxxxxxxxxxxxxxxxxxx";
 const CID = "bafkreiblobxxxxxxxxxxxxxxxxxxxxxxxxxx";
 const SKEY = "3lkchannelblob1";
 const SPACE = channelSpace(COMMUNITY, SPACE_TYPES.channelText, SKEY);
+const THREAD_SKEY = "3lkthreadblob01";
+const THREAD = threadSpace(COMMUNITY, THREAD_SKEY);
 
 type Handler = (req: unknown, res: unknown) => Promise<void>;
 
@@ -27,6 +38,8 @@ type Captured = {
 let database: TestDatabase;
 let handler: Handler;
 let served: number;
+let fetchedFrom: Array<string | undefined>;
+let missingIn: Set<string>;
 
 const fakeResponse = () => {
 	const captured: Captured = { status: 200, headers: {}, body: undefined };
@@ -50,13 +63,54 @@ const fakeResponse = () => {
 	return { res, captured };
 };
 
-const signedFor = (viewer: string) => {
+const signedFor = (viewer: string, space: string = SPACE) => {
 	const { expiresAt, signature } = signMediaGrant(
 		SIGNING_KEY,
-		{ did: AUTHOR, cid: CID, space: SPACE, viewer },
+		{ did: AUTHOR, cid: CID, space, viewer },
 		Math.floor(Date.now() / 1000),
 	);
 	return { viewer, exp: String(expiresAt), sig: signature };
+};
+
+const putMovedMessage = async (destination: string, cid: string) => {
+	const rkey = nextTid();
+	await database.db.insert(database.tables.threads).values({
+		space: THREAD,
+		community: COMMUNITY,
+		channel: SPACE,
+		skey: THREAD_SKEY,
+		name: "side conversation",
+		createdBy: AUTHOR,
+		createdAt: NOW,
+		visibleToRoles: [],
+		visibleToMembers: [],
+		lastActivityAt: NOW,
+		indexedAt: NOW,
+	});
+	await database.db.insert(database.tables.messages).values({
+		space: SPACE,
+		author: AUTHOR,
+		rkey,
+		community: COMMUNITY,
+		text: "with a picture",
+		createdAt: NOW,
+		fromLegacyRepo: false,
+		indexedAt: NOW,
+		attachments: [{ name: "shot.png", blob: { $type: "blob", ref: { $link: cid } } }],
+	});
+	await database.db.insert(database.tables.labels).values({
+		space: SPACE,
+		src: COMMUNITY,
+		rkey: nextTid(),
+		subjectDid: AUTHOR,
+		subjectCollection: COLLECTIONS.message,
+		subjectRkey: rkey,
+		val: LABEL_VALUES.moved,
+		negated: false,
+		destination,
+		batch: nextTid(),
+		createdAt: NOW,
+	});
 };
 
 const get = async (
@@ -71,6 +125,8 @@ const get = async (
 beforeEach(async () => {
 	database = await openTestDatabase();
 	served = 0;
+	fetchedFrom = [];
+	missingIn = new Set();
 	const spaces = communitySpaces(COMMUNITY);
 
 	await database.db.insert(database.tables.communities).values({
@@ -117,7 +173,9 @@ beforeEach(async () => {
 			},
 		},
 		blobs: {
-			fetch: async () => {
+			fetch: async ({ space }: { space?: string }) => {
+				fetchedFrom.push(space);
+				if (space && missingIn.has(space)) throw new BlobNotFoundError();
 				served += 1;
 				return {
 					status: "ok" as const,
@@ -204,6 +262,35 @@ describe("blob.get authorization", () => {
 		);
 		expect(result.status).toBe(403);
 		expect(served).toBe(0);
+	});
+
+	it("serves a moved message's attachment from the space it came from", async () => {
+		await putMovedMessage(THREAD, CID);
+		missingIn.add(THREAD);
+
+		const captured = await get({
+			did: AUTHOR,
+			cid: CID,
+			space: THREAD,
+			...signedFor(MEMBER, THREAD),
+		});
+
+		expect(captured.status).toBe(200);
+		expect(fetchedFrom).toEqual([THREAD, SPACE]);
+	});
+
+	it("still reports a missing blob when nothing was moved into the space", async () => {
+		missingIn.add(SPACE);
+
+		const captured = await get({
+			did: AUTHOR,
+			cid: CID,
+			space: SPACE,
+			...signedFor(MEMBER),
+		});
+
+		expect(captured.status).toBe(404);
+		expect(fetchedFrom).toEqual([SPACE]);
 	});
 
 	it("refuses an unverifiable bearer token", async () => {

@@ -3,6 +3,7 @@
  */
 
 import { l } from "@atproto/lex";
+import * as BetaDefs from "../defs.defs.js";
 import * as ThreadDefs from "./defs.defs.js";
 
 const $nsid = "social.colibri.beta.thread.repoint";
@@ -15,7 +16,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"thread":/*#__PURE__*/ l.string({"format":"space-ref"}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"})});
+export const $input = /*#__PURE__*/ l.jsonPayload({"thread":/*#__PURE__*/ l.string({"format":"space-ref"}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"anchor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.SpaceRecordRef>((() => BetaDefs.spaceRecordRef) as any))});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;
@@ -25,7 +26,7 @@ export const $output = /*#__PURE__*/ l.jsonPayload({"thread":/*#__PURE__*/ l.ref
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Moves a thread to another channel by rewriting the channel its record links to. Who may read the thread follows the new channel. The anchor is left as it was, so the thread's marker leaves the old channel's river while the thread itself still quotes the message it came from. */
+/** Moves a thread to another channel by rewriting the channel its record links to, and optionally repoints it at another message. Who may read the thread follows the new channel. Left without an anchor the thread keeps the one it has, so its marker sits wherever that message now lives. */
 const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","Forbidden","ThreadNotFound","ChannelNotFound","InvalidRequest","CredentialsUnavailable"]);
 
 export { main };

@@ -2,6 +2,7 @@ export * from "./access.js";
 export * from "./authz.js";
 export * from "./credentials.js";
 export * from "./crypto.js";
+export * from "./heal.js";
 export * from "./legacy.js";
 export * from "./loader.js";
 export * from "./membership.js";

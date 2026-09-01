@@ -17,7 +17,12 @@ let deps: NotificationDeps;
 
 beforeEach(async () => {
 	database = await openTestDatabase();
-	deps = { db: database.db, tables: database.tables, now: () => NOW };
+	deps = {
+		db: database.db,
+		tables: database.tables,
+		now: () => NOW,
+		mayRead: async () => true,
+	};
 });
 
 afterEach(async () => {

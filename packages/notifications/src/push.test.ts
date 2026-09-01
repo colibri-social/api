@@ -22,7 +22,12 @@ const fakeSender = (outcome: DeliveryOutcome): PushSender => ({
 
 beforeEach(async () => {
 	database = await openTestDatabase();
-	deps = { db: database.db, tables: database.tables, now: () => NOW };
+	deps = {
+		db: database.db,
+		tables: database.tables,
+		now: () => NOW,
+		mayRead: async () => true,
+	};
 });
 
 afterEach(async () => {

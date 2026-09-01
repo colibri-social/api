@@ -107,3 +107,106 @@ export const isMessageHidden = async (
 	const hidden = await hiddenMessageKeys(deps, space, sources, [subject]);
 	return hidden.has(messageRefKey(subject.author, subject.rkey));
 };
+
+export type MovedMessage = {
+	source: string;
+	author: string;
+	rkey: string;
+	batch: string;
+	movedAt: string;
+	reason: string | null;
+};
+
+type LabelRow = Schema["labels"]["$inferSelect"];
+
+const latestPerSubject = (rows: readonly LabelRow[]): Map<string, LabelRow> => {
+	const latest = new Map<string, LabelRow>();
+	for (const row of rows) {
+		latest.set(`${row.space} ${row.subjectDid} ${row.subjectRkey} ${row.src}`, row);
+	}
+	return latest;
+};
+
+const movedLabelsIn = async (
+	deps: SuppressionDeps,
+	space: string,
+	sources: readonly string[],
+): Promise<LabelRow[]> => {
+	const table = deps.tables.labels;
+	return deps.db
+		.select()
+		.from(table)
+		.where(
+			and(
+				eq(table.space, space),
+				eq(table.val, LABEL_VALUES.moved),
+				eq(table.subjectCollection, COLLECTIONS.message),
+				inArray(table.src, [...sources]),
+			),
+		)
+		.orderBy(asc(table.rkey));
+};
+
+export const movedOutOf = async (
+	deps: SuppressionDeps,
+	space: string,
+	sources: readonly string[],
+): Promise<Set<string>> => {
+	const gone = new Set<string>();
+	if (sources.length === 0) return gone;
+	for (const row of latestPerSubject(await movedLabelsIn(deps, space, sources)).values()) {
+		if (row.negated || !row.destination) continue;
+		gone.add(messageRefKey(row.subjectDid, row.subjectRkey));
+	}
+	return gone;
+};
+
+export const movedInto = async (
+	deps: SuppressionDeps,
+	destination: string,
+	sources: readonly string[],
+): Promise<MovedMessage[]> => {
+	if (sources.length === 0) return [];
+	const table = deps.tables.labels;
+
+	const candidates = await deps.db
+		.select({ space: table.space })
+		.from(table)
+		.where(
+			and(
+				eq(table.destination, destination),
+				eq(table.val, LABEL_VALUES.moved),
+				eq(table.subjectCollection, COLLECTIONS.message),
+				inArray(table.src, [...sources]),
+			),
+		);
+	const spaces = [...new Set(candidates.map((row) => row.space))];
+	if (spaces.length === 0) return [];
+
+	const rows = await deps.db
+		.select()
+		.from(table)
+		.where(
+			and(
+				inArray(table.space, spaces),
+				eq(table.val, LABEL_VALUES.moved),
+				eq(table.subjectCollection, COLLECTIONS.message),
+				inArray(table.src, [...sources]),
+			),
+		)
+		.orderBy(asc(table.rkey));
+
+	const moved: MovedMessage[] = [];
+	for (const row of latestPerSubject(rows).values()) {
+		if (row.negated || row.destination !== destination || !row.batch) continue;
+		moved.push({
+			source: row.space,
+			author: row.subjectDid,
+			rkey: row.subjectRkey,
+			batch: row.batch,
+			movedAt: row.createdAt,
+			reason: row.reason,
+		});
+	}
+	return moved;
+};

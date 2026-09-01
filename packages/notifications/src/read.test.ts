@@ -21,6 +21,7 @@ const RECIPIENT = "did:plc:recipient000000000000000";
 
 let database: TestDatabase;
 let deps: NotificationDeps;
+let readable: Set<string> | null;
 
 const insertMessage = async (rkey: string, text = "hello world") => {
 	await database.db.insert(database.tables.messages).values({
@@ -77,7 +78,13 @@ const insertNotification = async (
 
 beforeEach(async () => {
 	database = await openTestDatabase();
-	deps = { db: database.db, tables: database.tables, now: () => "2026-08-23T00:00:00.000Z" };
+	readable = null;
+	deps = {
+		db: database.db,
+		tables: database.tables,
+		now: () => "2026-08-23T00:00:00.000Z",
+		mayRead: async (space) => readable === null || readable.has(space),
+	};
 });
 
 afterEach(async () => {
@@ -95,6 +102,12 @@ describe("unreadCount", () => {
 
 	it("ignores notifications already marked seen", async () => {
 		await insertNotification({ kind: "mention", seenAt: "2026-08-23T00:00:01.000Z" });
+		expect(await unreadCount(deps, RECIPIENT)).toBe(0);
+	});
+
+	it("ignores a notification in a space the recipient may no longer read", async () => {
+		await insertNotification({ kind: "mention" });
+		readable = new Set();
 		expect(await unreadCount(deps, RECIPIENT)).toBe(0);
 	});
 });
@@ -229,6 +242,15 @@ describe("hydrateNotifications", () => {
 		expect(view?.author).toEqual(profile);
 		expect(view?.message?.text).toBe("hello world");
 		expect(view?.channel).toBe(CHANNEL);
+	});
+
+	it("withholds a notification in a space the recipient may no longer read", async () => {
+		await insertNotification({ kind: "mention" });
+		readable = new Set();
+
+		const rows = await database.db.select().from(database.tables.notifications);
+		expect(await hydrateNotifications(deps, rows, async () => new Map())).toHaveLength(0);
+		expect(await listNotifications(deps, RECIPIENT)).toMatchObject({ notifications: [] });
 	});
 
 	it("falls back to a stub profile when the actor hydrator doesn't resolve a DID", async () => {

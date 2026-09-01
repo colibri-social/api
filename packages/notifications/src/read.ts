@@ -9,6 +9,8 @@ import {
 	asRecordKey,
 	asSpaceRef,
 	COLLECTIONS,
+	isThreadSpaceType,
+	spaceTypeOf,
 } from "@colibri-social/lexicons";
 import {
 	type CurrentLabel,
@@ -68,13 +70,33 @@ const withoutWithheld = (rows: readonly NotificationRow[], labels: LabelIndex): 
 		return !hidden.has(messageRefKey(row.messageAuthor, row.messageRkey));
 	});
 
+const withoutUnreadable = async (
+	deps: NotificationDeps,
+	rows: readonly NotificationRow[],
+): Promise<NotificationRow[]> => {
+	const decided = new Map<string, boolean>();
+	const out: NotificationRow[] = [];
+	for (const row of rows) {
+		const key = `${row.space} ${row.recipient}`;
+		let allowed = decided.get(key);
+		if (allowed === undefined) {
+			allowed = await deps.mayRead(row.space, row.recipient);
+			decided.set(key, allowed);
+		}
+		if (allowed) out.push(row);
+	}
+	return out;
+};
+
 const suppress = async (
 	deps: NotificationDeps,
 	rows: readonly NotificationRow[],
 ): Promise<SuppressedRows> => {
 	if (rows.length === 0) return { rows: [], labels: new Map() };
-	const labels = await labelsBySpace(deps, rows);
-	return { rows: withoutWithheld(rows, labels), labels };
+	const visible = await withoutUnreadable(deps, rows);
+	if (visible.length === 0) return { rows: [], labels: new Map() };
+	const labels = await labelsBySpace(deps, visible);
+	return { rows: withoutWithheld(visible, labels), labels };
 };
 
 const dropWithheld = async (
@@ -272,6 +294,22 @@ const toMessageView = (
 	labels: toLabelViews(labels),
 });
 
+const parentChannels = async (
+	deps: NotificationDeps,
+	spaces: readonly string[],
+): Promise<Map<string, string>> => {
+	const threads = [...new Set(spaces)].filter((space) =>
+		isThreadSpaceType(spaceTypeOf(space) ?? ""),
+	);
+	if (threads.length === 0) return new Map();
+
+	const rows = await deps.db
+		.select({ space: deps.tables.threads.space, channel: deps.tables.threads.channel })
+		.from(deps.tables.threads)
+		.where(inArray(deps.tables.threads.space, threads));
+	return new Map(rows.map((row) => [row.space, row.channel]));
+};
+
 export const hydrateNotifications = async (
 	deps: NotificationDeps,
 	rows: readonly NotificationRow[],
@@ -286,9 +324,13 @@ export const hydrateNotifications = async (
 	if (servable.length === 0) return [];
 
 	const authorDids = [...new Set(servable.map((row) => row.author))];
-	const [profiles, messages] = await Promise.all([
+	const [profiles, messages, channels] = await Promise.all([
 		hydrateActors(authorDids),
 		loadMessages(deps, servable),
+		parentChannels(
+			deps,
+			servable.map((row) => row.space),
+		),
 	]);
 
 	return servable.map((row) => {
@@ -296,11 +338,13 @@ export const hydrateNotifications = async (
 		const messageRow = messages.get(messageKey(row.space, row.messageAuthor, row.messageRkey));
 		const messageLabelsForRow =
 			labels.get(row.space)?.get(messageRefKey(row.messageAuthor, row.messageRkey)) ?? [];
+		const parent = channels.get(row.space);
 		return {
 			id: row.id,
 			kind: row.kind,
 			author,
-			channel: asSpaceRef(row.space),
+			channel: asSpaceRef(parent ?? row.space),
+			thread: parent ? asSpaceRef(row.space) : undefined,
 			community: asDid(row.community),
 			message: messageRow ? toMessageView(messageRow, author, messageLabelsForRow) : undefined,
 			mentionRole: row.mentionRole ?? undefined,

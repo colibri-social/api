@@ -15,11 +15,14 @@ import {
 import {
 	type CurrentLabel,
 	hiddenFrom,
+	type MovedMessage,
 	messageLabels,
 	messageRefKey,
+	movedInto,
+	movedOutOf,
 } from "@colibri-social/projections";
 import { parseSpaceRef, spaceRecordUri } from "@colibri-social/space";
-import { and, asc, desc, eq, gt, inArray, lt, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, lte, ne, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { signBlobUrl } from "../media-token.js";
 import type { ActorViews } from "./actor.js";
@@ -36,6 +39,24 @@ type MessageRow = Schema["messages"]["$inferSelect"];
 type ReactionRow = Schema["reactions"]["$inferSelect"];
 
 type MessageKey = { author: string; rkey: string };
+
+type Placed = { row: MessageRow; key: string };
+
+const placementKey = (primary: string, secondary: string): string => `${primary} ${secondary}`;
+
+const placementRefKey = (row: MessageRow): string => `${row.space} ${row.author} ${row.rkey}`;
+
+const primaryOf = (cursor: string): string => cursor.split(" ")[0] as string;
+
+const asCursor = (key: string): string => {
+	const [primary, secondary] = key.split(" ");
+	return primary === secondary ? (primary as string) : key;
+};
+
+const beyond = (key: string, cursor: string, reverse: boolean): boolean => {
+	const from = cursor.includes(" ") ? cursor : placementKey(cursor, cursor);
+	return reverse ? key > from : key < from;
+};
 
 type RawAttachment = {
 	blob?: { ref?: { $link?: string }; mimeType?: string; size?: number };
@@ -124,7 +145,7 @@ export class ChannelViews {
 			);
 	}
 
-	private async labelSources(community: string): Promise<string[]> {
+	async labelSources(community: string): Promise<string[]> {
 		const row = await this.ctx.loader.community(community);
 		return [...new Set([...(row?.labelers ?? []), community])];
 	}
@@ -208,36 +229,109 @@ export class ChannelViews {
 	): Promise<{ messages: MessageView[]; cursor?: string }> {
 		const limit = options.limit;
 		const reverse = options.reverse ?? false;
+		const community = parseSpaceRef(space).authority;
+		const sources = await this.labelSources(community);
+
+		const [gone, arrived] = await Promise.all([
+			movedOutOf(this.ctx.database, space, sources),
+			movedInto(this.ctx.database, space, sources),
+		]);
+
 		const table = this.ctx.database.tables.messages;
 		const order = reverse ? asc(table.rkey) : desc(table.rkey);
-		const boundary = options.cursor
-			? reverse
-				? gt(table.rkey, options.cursor)
-				: lt(table.rkey, options.cursor)
-			: undefined;
+		const from = options.cursor ? primaryOf(options.cursor) : undefined;
+		const boundary = from ? (reverse ? gte(table.rkey, from) : lte(table.rkey, from)) : undefined;
 
-		const rows = await this.ctx.database.db
+		const native = await this.ctx.database.db
 			.select()
 			.from(table)
 			.where(boundary ? and(eq(table.space, space), boundary) : eq(table.space, space))
 			.orderBy(order)
 			.limit(limit + 1);
 
-		const page = rows.slice(0, limit);
-		const cursor = rows.length > limit ? page.at(-1)?.rkey : undefined;
+		const placed: Placed[] = native
+			.filter((row) => !gone.has(messageRefKey(row.author, row.rkey)))
+			.map((row) => ({ row, key: placementKey(row.rkey, row.rkey) }));
 
-		return { messages: await this.hydrate(space, viewer, page), cursor };
+		for (const moved of await this.fetchMoved(arrived)) {
+			placed.push({ row: moved.row, key: placementKey(moved.batch, moved.row.rkey) });
+		}
+
+		const ordered = placed
+			.filter((entry) => (options.cursor ? beyond(entry.key, options.cursor, reverse) : true))
+			.sort((a, b) => (reverse ? a.key.localeCompare(b.key) : b.key.localeCompare(a.key)));
+
+		const page = ordered.slice(0, limit);
+		const last = ordered.length > limit ? page.at(-1)?.key : undefined;
+		const cursor = last ? asCursor(last) : undefined;
+
+		const views = await this.hydrateAcrossSpaces(
+			viewer,
+			page.map((entry) => entry.row),
+			space,
+		);
+		const messages: MessageView[] = [];
+		for (const entry of page) {
+			const view = views.get(placementRefKey(entry.row));
+			if (view) messages.push(view);
+		}
+
+		return { messages, cursor };
+	}
+
+	private async fetchMoved(
+		moved: readonly MovedMessage[],
+	): Promise<Array<{ row: MessageRow; batch: string }>> {
+		if (moved.length === 0) return [];
+		const bySpace = new Map<string, MovedMessage[]>();
+		for (const entry of moved) {
+			const held = bySpace.get(entry.source) ?? [];
+			held.push(entry);
+			bySpace.set(entry.source, held);
+		}
+
+		const out: Array<{ row: MessageRow; batch: string }> = [];
+		for (const [source, entries] of bySpace) {
+			const rows = await this.fetchMessagesByKey(source, entries);
+			for (const entry of entries) {
+				const row = rows.get(messageRefKey(entry.author, entry.rkey));
+				if (row) out.push({ row, batch: entry.batch });
+			}
+		}
+		return out;
+	}
+
+	private async hydrateAcrossSpaces(
+		viewer: string | null,
+		rows: MessageRow[],
+		readingSpace: string,
+	): Promise<Map<string, MessageView>> {
+		const bySpace = new Map<string, MessageRow[]>();
+		for (const row of rows) {
+			const held = bySpace.get(row.space) ?? [];
+			held.push(row);
+			bySpace.set(row.space, held);
+		}
+
+		const views = new Map<string, MessageView>();
+		for (const [space, group] of bySpace) {
+			for (const view of await this.hydrate(space, viewer, group, readingSpace)) {
+				views.set(`${space} ${view.author.did} ${view.rkey}`, view);
+			}
+		}
+		return views;
 	}
 
 	async message(
 		space: string,
 		viewer: string | null,
 		key: MessageKey,
+		readingSpace: string = space,
 	): Promise<MessageView | null> {
 		const rows = await this.fetchMessagesByKey(space, [key]);
 		const row = rows.get(messageRefKey(key.author, key.rkey));
 		if (!row) return null;
-		const [view] = await this.hydrate(space, viewer, [row]);
+		const [view] = await this.hydrate(space, viewer, [row], readingSpace);
 		return view ?? null;
 	}
 
@@ -245,6 +339,7 @@ export class ChannelViews {
 		space: string,
 		viewer: string | null,
 		page: MessageRow[],
+		readingSpace: string = space,
 	): Promise<MessageView[]> {
 		if (page.length === 0) return [];
 
@@ -302,7 +397,7 @@ export class ChannelViews {
 				createdAt: asDatetime(row.createdAt),
 				updatedAt: asDatetimeOrUndefined(row.updatedAt ?? undefined),
 				parent,
-				attachments: this.attachments(space, row, viewer),
+				attachments: this.attachments(readingSpace, row, viewer),
 				reactions: this.aggregateReactions(
 					reactionRows.filter(
 						(reaction) => reaction.targetAuthor === row.author && reaction.targetRkey === row.rkey,
@@ -374,7 +469,7 @@ export class ChannelViews {
 		return { reactions: page, cursor };
 	}
 
-	private async hasUnreadMessages(
+	async hasUnreadMessages(
 		space: string,
 		did: string,
 		sources: readonly string[],
@@ -403,7 +498,7 @@ export class ChannelViews {
 		}
 	}
 
-	private async countUnreadMentions(
+	async countUnreadMentions(
 		space: string,
 		did: string,
 		sources: readonly string[],

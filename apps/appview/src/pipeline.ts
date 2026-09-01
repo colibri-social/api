@@ -7,7 +7,12 @@ import {
 	type IndexedNotificationRow,
 	indexMessage,
 } from "@colibri-social/notifications";
-import { isChannelSpace, isPersonalSpace, spaceContextFor } from "@colibri-social/projections";
+import {
+	isChannelSpace,
+	isPersonalSpace,
+	isThreadSpace,
+	spaceContextFor,
+} from "@colibri-social/projections";
 import type { RepoChange } from "@colibri-social/space-sync";
 import { and, eq, inArray } from "drizzle-orm";
 import {
@@ -18,13 +23,16 @@ import {
 	notificationEvent,
 	preferencesEvent,
 	roleEvent,
+	threadEvent,
 } from "./announce.js";
 import type { AppContext } from "./context.js";
+import { notificationDeps as buildNotificationDeps } from "./notification-deps.js";
 import { loadPreferences } from "./routes/actor.js";
 import { reportFailure } from "./sentry.js";
 import { ActorViews } from "./views/actor.js";
 import { ChannelViews } from "./views/channel.js";
 import { CommunityViews } from "./views/community.js";
+import { ThreadViews } from "./views/thread.js";
 import type { EventServer, ServerFrame } from "./ws/events.js";
 
 const SLOW_DELIVERY_MS = 2_000;
@@ -79,6 +87,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 	const actors = new ActorViews(ctx);
 	const channels = new ChannelViews(ctx, actors);
 	const communities = new CommunityViews(ctx, actors);
+	const threads = new ThreadViews(ctx, channels);
 
 	const reconcileDeletedCommunity = async (community: string): Promise<void> => {
 		if (!(await ctx.loader.community(community))) return;
@@ -100,6 +109,15 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			return;
 		}
 
+		if (isThreadSpace(space)) {
+			events.publishToCommunity(
+				space.community,
+				threadEvent("delete", space.community, { space: uri }),
+			);
+			events.threadDeleted(uri);
+			return;
+		}
+
 		if (space.spaceType !== SPACE_TYPES.communityProfile) return;
 
 		const community = space.community;
@@ -118,20 +136,14 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 
 	const senders = createSenders(ctx.config.notifications);
 
-	const notificationDeps = {
-		db: ctx.database.db,
-		tables: ctx.database.tables,
-		now: () => new Date().toISOString(),
-	};
+	const notifications = buildNotificationDeps(ctx);
 
 	const publishNotifications = async (
 		rows: IndexedNotificationRow[],
 		text: string,
 	): Promise<void> => {
 		if (rows.length === 0) return;
-		const views = await hydrateNotifications(notificationDeps, rows, (dids) =>
-			actors.hydrate(dids),
-		);
+		const views = await hydrateNotifications(notifications, rows, (dids) => actors.hydrate(dids));
 		const byId = new Map(rows.map((row) => [row.id, row]));
 		const servable: IndexedNotificationRow[] = [];
 		for (const view of views) {
@@ -151,7 +163,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			rows
 				.filter((row) => !quiet.has(row.recipient))
 				.map((row) =>
-					deliverNotification(notificationDeps, senders, row, { text }).catch((error) =>
+					deliverNotification(notifications, senders, row, { text }).catch((error) =>
 						ctx.log.warn({ error }, "push.deliveryFailed"),
 					),
 				),
@@ -211,6 +223,37 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		}));
 	};
 
+	const publishThread = async (
+		space: string,
+		community: string,
+		event: "create" | "update",
+	): Promise<void> => {
+		const row = await threads.row(space);
+		if (!row) return;
+		await events.publishToCommunityViewers(community, async (did) => {
+			const authz = await ctx.loader.authz(community, did);
+			const view = await threads.view(row, authz, did);
+			return view ? threadEvent(event, community, { channel: row.channel, thread: view }) : null;
+		});
+	};
+
+	const publishThreadActivity = async (space: string, community: string): Promise<void> => {
+		const row = await threads.row(space);
+		if (!row) return;
+		await events.publishToCommunityViewers(community, async (did) => {
+			const authz = await ctx.loader.authz(community, did);
+			const view = await threads.view(row, authz, did);
+			return view
+				? threadEvent("activity", community, {
+						channel: row.channel,
+						space,
+						lastActivityAt: row.lastActivityAt,
+						thread: view,
+					})
+				: null;
+		});
+	};
+
 	const handle = async (change: RepoChange): Promise<void> => {
 		const space = spaceContextFor(change.space);
 		if (!space) return;
@@ -229,9 +272,10 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			if (put.collection === COLLECTIONS.message && space.community) {
 				await publishMessage(change.space, change.author, put.rkey);
 				publishedMessages += 1;
+				if (isThreadSpace(space)) await publishThreadActivity(change.space, space.community);
 
 				const parent = put.value.parent as { did?: string; rkey?: string } | undefined;
-				void indexMessage(notificationDeps, {
+				void indexMessage(notifications, {
 					space: change.space,
 					community: space.community,
 					author: change.author,
@@ -269,6 +313,10 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 				events.channelChanged(space.community, change.space, "update");
 			}
 
+			if (space.community && put.collection === COLLECTIONS.thread) {
+				await publishThread(change.space, space.community, "update");
+			}
+
 			if (space.community && put.collection === COLLECTIONS.category) {
 				events.publishToCommunity(
 					space.community,
@@ -299,6 +347,13 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			}
 			if (space.community && entry.collection === COLLECTIONS.channel) {
 				events.channelChanged(space.community, change.space, "delete");
+			}
+
+			if (space.community && entry.collection === COLLECTIONS.thread) {
+				events.publishToCommunity(
+					space.community,
+					threadEvent("delete", space.community, { space: change.space }),
+				);
 			}
 
 			if (space.community && entry.collection === COLLECTIONS.category) {

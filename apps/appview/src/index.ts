@@ -2,6 +2,7 @@ import { ActivitySweeper } from "./activity.js";
 import { eventAnnouncer } from "./announce.js";
 import { describeConfig, loadConfig } from "./config.js";
 import { createContext } from "./context.js";
+import { healOwnerRolePermissions } from "./heal.js";
 import { Jetstream } from "./jetstream.js";
 import { createLogger } from "./logger.js";
 import { connectPipeline } from "./pipeline.js";
@@ -43,6 +44,10 @@ const main = async (): Promise<void> => {
 	await ctx.sync.start();
 	await jetstream.start();
 	activities.start();
+
+	void healOwnerRolePermissions(ctx).catch((error: unknown) =>
+		ctx.log.warn({ err: error }, "heal.ownerPermissionsSweepFailed"),
+	);
 
 	let shuttingDown = false;
 

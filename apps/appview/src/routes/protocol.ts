@@ -17,13 +17,14 @@ export const registerProtocolRoutes = ({ server, ctx, auth }: RouteDeps): void =
 			if (!community) return refused;
 
 			const authz = await ctx.loader.authz(space.authority, params.user);
-			const channel = await ctx.loader.channel(space.uri);
+			const { channel, thread } = await ctx.loader.spaceStates(space.uri, space.spaceType);
 
 			const decision = decideSpaceAccess({
 				spaceType: space.spaceType,
 				authz,
 				visibility: { profileIsPublic: false },
 				channel,
+				thread,
 			});
 
 			ctx.log.debug(

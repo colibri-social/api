@@ -21,6 +21,8 @@ import { registerNotificationRoutes } from "./routes/notification.js";
 import { registerProtocolRoutes } from "./routes/protocol.js";
 import { registerRoleRoutes } from "./routes/role.js";
 import { registerServerRoutes } from "./routes/server.js";
+import { registerThreadRoutes } from "./routes/thread.js";
+import { registerThreadWriteRoutes } from "./routes/thread-write.js";
 import { registerVoiceRoutes } from "./routes/voice.js";
 import { reportFailure } from "./sentry.js";
 
@@ -83,6 +85,8 @@ export const createAppServer = (ctx: AppContext): Server => {
 	registerRoleRoutes(deps);
 	registerChannelRoutes(deps);
 	registerChannelWriteRoutes(deps);
+	registerThreadRoutes(deps);
+	registerThreadWriteRoutes(deps);
 	registerVoiceRoutes(deps);
 	registerEmbedRoutes(deps);
 	registerNotificationRoutes(deps);
