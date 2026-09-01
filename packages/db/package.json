@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/appview-db",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"description": "Drizzle schema, migrations and query helpers for the Colibri AppView",
 	"type": "module",
 	"private": true,

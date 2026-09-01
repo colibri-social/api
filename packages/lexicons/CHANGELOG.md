@@ -1,5 +1,11 @@
 # @colibri-social/lexicons
 
+## 2.9.1
+
+### Patch Changes
+
+- 58aea35: Let a thread follow the message it was opened from: thread.repoint takes an optional anchor so a rewritten message can be pointed at, and thread.moveMessages carries a thread whose anchor was moved into the destination channel
+
 ## 2.9.0
 
 ### Minor Changes

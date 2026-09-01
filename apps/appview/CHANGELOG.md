@@ -1,5 +1,27 @@
 # @colibri-social/appview
 
+## 2.8.0
+
+### Minor Changes
+
+- 58aea35: Give the owner role every permission, including ones added after the community was made: permission checks now treat the protected role the way they already treated the community itself, and a sweep at startup writes any missing permissions back onto the record
+- 58aea35: Serve threads: a thread space projects to its own table, access follows the parent channel and the thread's own visibility, and the thread methods create, rename, repoint, delete and move messages between spaces. Notifications now check that the recipient may read the space, which stops a mention in a private channel or thread reaching someone outside it.
+
+### Patch Changes
+
+- 58aea35: Stamp the type on a thread's anchor message so getThread can serve it, keep a failing anchor lookup from taking the thread with it, carry the thread itself on activity frames so message counts stay current without a reload, and let a moved message be sent back to the channel it came from
+- 58aea35: Let a thread follow the message it was opened from: thread.repoint takes an optional anchor so a rewritten message can be pointed at, and thread.moveMessages carries a thread whose anchor was moved into the destination channel
+- 58aea35: Honour a write hint for any space the writer can read rather than only one it is subscribed to, so a message written into a thread nobody is watching is picked up at once, and announce a retracted move to both spaces so the message returns to its channel and leaves the thread without a reload
+- Updated dependencies [58aea35]
+- Updated dependencies [58aea35]
+- Updated dependencies [58aea35]
+  - @colibri-social/community@2.5.0
+  - @colibri-social/lexicons@2.9.1
+  - @colibri-social/appview-db@0.4.0
+  - @colibri-social/notifications@1.2.0
+  - @colibri-social/projections@1.4.0
+  - @colibri-social/space-sync@0.4.0
+
 ## 2.7.2
 
 ### Patch Changes
