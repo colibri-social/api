@@ -19,7 +19,7 @@ type Main = { $type: "social.colibri.beta.label";
   "subject":Subject;
 
   /**
-   * The label value. `hidden` is enforced: the AppView withholds a hidden record instead of serving it. `moved` is enforced too: the AppView withholds the record from this space and serves it in the space named by `destination` instead, ordered by `batch` and then by the record's own key. `spoiler` and `embeds-suppressed` are display hints the AppView passes through for the client to honour.
+   * The label value. `hidden` is enforced: the AppView withholds a hidden record instead of serving it. `moved` is enforced too: the AppView withholds the record from this space and serves it in the space named by `destination` instead, at its own record key, so it reads in the order it was written. `spoiler` and `embeds-suppressed` are display hints the AppView passes through for the client to honour.
    */
   "val":"hidden" | "spoiler" | "embeds-suppressed" | "moved" | l.UnknownString;
 
@@ -34,7 +34,7 @@ type Main = { $type: "social.colibri.beta.label";
   "destination"?:l.SpaceRefString;
 
   /**
-   * Shared by every `moved` label written in one move, and what orders the moved records in the destination ahead of their own record keys. A selection moved together therefore keeps the order it had.
+   * Shared by every `moved` label written in one move, which is what groups a move for auditing. It does not affect the order the records read in.
    */
   "batch"?:l.TidString;
 

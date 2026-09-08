@@ -25,7 +25,7 @@ export const $output = /*#__PURE__*/ l.jsonPayload({"batch":/*#__PURE__*/ l.stri
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Moves messages written by other people into another thread or channel. A message lives in its author's own repo and cannot be rewritten by a moderator, so the move is a `moved` label written into the source space for each message. Every label in one call shares a batch key, and the destination serves the moved messages ordered by that batch key and then by the messages' own record keys, which is what keeps a selection in the order it was in. The AppView withholds a moved message from the space it came from. A user moving only their own messages rewrites the records instead and does not call this method. */
+/** Moves messages into another thread or channel. A message lives in its author's own repo and cannot be rewritten by a moderator, so the move is a `moved` label written into the source space for each message. The destination serves each moved message at its own record key, so a selection keeps the order it was written in and reads among the destination's own messages by send time. The AppView withholds a moved message from the space it came from. */
 const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","Forbidden","SpaceNotFound","MessageNotFound","InvalidRequest","CredentialsUnavailable"]);
 
 export { main };

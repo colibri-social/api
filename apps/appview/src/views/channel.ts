@@ -42,21 +42,7 @@ type MessageKey = { author: string; rkey: string };
 
 type Placed = { row: MessageRow; key: string };
 
-const placementKey = (primary: string, secondary: string): string => `${primary} ${secondary}`;
-
 const placementRefKey = (row: MessageRow): string => `${row.space} ${row.author} ${row.rkey}`;
-
-const primaryOf = (cursor: string): string => cursor.split(" ")[0] as string;
-
-const asCursor = (key: string): string => {
-	const [primary, secondary] = key.split(" ");
-	return primary === secondary ? (primary as string) : key;
-};
-
-const beyond = (key: string, cursor: string, reverse: boolean): boolean => {
-	const from = cursor.includes(" ") ? cursor : placementKey(cursor, cursor);
-	return reverse ? key > from : key < from;
-};
 
 type RawAttachment = {
 	blob?: { ref?: { $link?: string }; mimeType?: string; size?: number };
@@ -239,7 +225,7 @@ export class ChannelViews {
 
 		const table = this.ctx.database.tables.messages;
 		const order = reverse ? asc(table.rkey) : desc(table.rkey);
-		const from = options.cursor ? primaryOf(options.cursor) : undefined;
+		const from = options.cursor;
 		const boundary = from ? (reverse ? gte(table.rkey, from) : lte(table.rkey, from)) : undefined;
 
 		const native = await this.ctx.database.db
@@ -251,19 +237,21 @@ export class ChannelViews {
 
 		const placed: Placed[] = native
 			.filter((row) => !gone.has(messageRefKey(row.author, row.rkey)))
-			.map((row) => ({ row, key: placementKey(row.rkey, row.rkey) }));
+			.map((row) => ({ row, key: row.rkey }));
 
-		for (const moved of await this.fetchMoved(arrived)) {
-			placed.push({ row: moved.row, key: placementKey(moved.batch, moved.row.rkey) });
+		for (const row of await this.fetchMoved(arrived)) {
+			placed.push({ row, key: row.rkey });
 		}
 
+		const beyondCursor = (key: string): boolean =>
+			from === undefined ? true : reverse ? key > from : key < from;
+
 		const ordered = placed
-			.filter((entry) => (options.cursor ? beyond(entry.key, options.cursor, reverse) : true))
+			.filter((entry) => beyondCursor(entry.key))
 			.sort((a, b) => (reverse ? a.key.localeCompare(b.key) : b.key.localeCompare(a.key)));
 
 		const page = ordered.slice(0, limit);
-		const last = ordered.length > limit ? page.at(-1)?.key : undefined;
-		const cursor = last ? asCursor(last) : undefined;
+		const cursor = ordered.length > limit ? page.at(-1)?.key : undefined;
 
 		const views = await this.hydrateAcrossSpaces(
 			viewer,
@@ -279,9 +267,7 @@ export class ChannelViews {
 		return { messages, cursor };
 	}
 
-	private async fetchMoved(
-		moved: readonly MovedMessage[],
-	): Promise<Array<{ row: MessageRow; batch: string }>> {
+	private async fetchMoved(moved: readonly MovedMessage[]): Promise<MessageRow[]> {
 		if (moved.length === 0) return [];
 		const bySpace = new Map<string, MovedMessage[]>();
 		for (const entry of moved) {
@@ -290,12 +276,12 @@ export class ChannelViews {
 			bySpace.set(entry.source, held);
 		}
 
-		const out: Array<{ row: MessageRow; batch: string }> = [];
+		const out: MessageRow[] = [];
 		for (const [source, entries] of bySpace) {
 			const rows = await this.fetchMessagesByKey(source, entries);
 			for (const entry of entries) {
 				const row = rows.get(messageRefKey(entry.author, entry.rkey));
-				if (row) out.push({ row, batch: entry.batch });
+				if (row) out.push(row);
 			}
 		}
 		return out;

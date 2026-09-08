@@ -622,7 +622,7 @@ describe("ChannelViews.messages with moved messages", () => {
 		expect(page.messages.map((message) => message.rkey)).toEqual([rkeys[1]]);
 	});
 
-	it("serves a moved message in its destination, ordered by batch then record key", async () => {
+	it("serves a moved message in its destination at its own record key", async () => {
 		const older = nextTid();
 		const newer = nextTid();
 		await putMessage(older);
@@ -637,8 +637,27 @@ describe("ChannelViews.messages with moved messages", () => {
 		await putMovedLabel(newer, THREAD, batch);
 
 		const page = await views.messages(THREAD, null, { limit: 10, reverse: true });
-		expect(page.messages.map((message) => message.rkey)).toEqual([native, older, newer]);
-		expect(page.messages.map((message) => message.channel)).toEqual([THREAD, SPACE, SPACE]);
+		expect(page.messages.map((message) => message.rkey)).toEqual([older, newer, native]);
+		expect(page.messages.map((message) => message.channel)).toEqual([SPACE, SPACE, THREAD]);
+	});
+
+	it("pages a moved message that lands before the newest page", async () => {
+		const older = nextTid();
+		await putMessage(older);
+		await putThread();
+
+		const natives = [nextTid(), nextTid(), nextTid()];
+		for (const rkey of natives) await putMessage(rkey, { space: THREAD });
+
+		await putMovedLabel(older, THREAD, nextTid());
+
+		const first = await views.messages(THREAD, null, { limit: 2 });
+		expect(first.messages.map((message) => message.rkey)).toEqual([natives[2], natives[1]]);
+		expect(first.cursor).toBe(natives[1]);
+
+		const second = await views.messages(THREAD, null, { limit: 2, cursor: first.cursor });
+		expect(second.messages.map((message) => message.rkey)).toEqual([natives[0], older]);
+		expect(second.cursor).toBeUndefined();
 	});
 
 	it("follows the newest move when a message is moved on to a second thread", async () => {
