@@ -32,6 +32,7 @@ export type AttachmentView = social.colibri.beta.channel.defs.AttachmentView;
 export type ReactionView = social.colibri.beta.channel.defs.ReactionView;
 export type UnreadStatus = social.colibri.beta.channel.defs.UnreadStatus;
 export type DeletedMessageView = social.colibri.beta.channel.defs.DeletedMessageView;
+export type ForwardView = social.colibri.beta.channel.defs.ForwardView;
 type LabelView = social.colibri.beta.community.defs.LabelView;
 
 type ChannelRow = Schema["channels"]["$inferSelect"];
@@ -47,6 +48,14 @@ const placementRefKey = (row: MessageRow): string => `${row.space} ${row.author}
 type RawAttachment = {
 	blob?: { ref?: { $link?: string }; mimeType?: string; size?: number };
 	name?: string;
+};
+
+type RawForward = {
+	source?: { space?: string; did?: string; rkey?: string; cid?: string };
+	createdAt?: string;
+	text?: string;
+	facets?: unknown[];
+	attachments?: RawAttachment[];
 };
 
 const toChannelState = (row: ChannelRow): ChannelState => ({
@@ -82,33 +91,59 @@ export class ChannelViews {
 		const parent = isMessage
 			? this.forViewer(message.parent as MessageView, viewer)
 			: message.parent;
-		if (message.attachments.length === 0 && parent === message.parent) return message;
+		const signAll = (attachments: readonly AttachmentView[]): AttachmentView[] =>
+			attachments.map(
+				(attachment) =>
+					({ ...attachment, url: asUri(this.signFor(attachment.url, viewer)) }) as AttachmentView,
+			);
+		const forwardAttachments = message.forward?.attachments ?? [];
+		const forward = message.forward
+			? ({ ...message.forward, attachments: signAll(forwardAttachments) } as ForwardView)
+			: undefined;
+		if (
+			message.attachments.length === 0 &&
+			forwardAttachments.length === 0 &&
+			parent === message.parent
+		) {
+			return message;
+		}
 
 		return {
 			...message,
 			parent,
-			attachments: message.attachments.map(
-				(attachment) =>
-					({ ...attachment, url: asUri(this.signFor(attachment.url, viewer)) }) as AttachmentView,
-			),
+			forward: forward ?? message.forward,
+			attachments: signAll(message.attachments),
 		} as MessageView;
 	}
 
-	private attachments(space: string, row: MessageRow, viewer: string | null): AttachmentView[] {
-		const raw = (row.attachments as RawAttachment[] | null) ?? [];
+	private attachmentViews(
+		space: string,
+		author: string,
+		raw: RawAttachment[] | null,
+		viewer: string | null,
+	): AttachmentView[] {
 		const out: AttachmentView[] = [];
-		for (const item of raw) {
+		for (const item of raw ?? []) {
 			const cid = item.blob?.ref?.$link;
 			const mimeType = item.blob?.mimeType;
 			if (!cid || !mimeType) continue;
 			out.push({
-				url: asUri(this.blobUrl(row.author, cid, space, viewer)),
+				url: asUri(this.blobUrl(author, cid, space, viewer)),
 				name: item.name,
 				mimeType,
 				size: item.blob?.size,
 			} as AttachmentView);
 		}
 		return out;
+	}
+
+	private attachments(space: string, row: MessageRow, viewer: string | null): AttachmentView[] {
+		return this.attachmentViews(
+			space,
+			row.author,
+			row.attachments as RawAttachment[] | null,
+			viewer,
+		);
 	}
 
 	private aggregateReactions(rows: ReactionRow[], viewer: string | null): ReactionView[] {
@@ -321,6 +356,25 @@ export class ChannelViews {
 		return view ?? null;
 	}
 
+	private async spaceNames(spaces: string[]): Promise<Map<string, string>> {
+		const out = new Map<string, string>();
+		if (spaces.length === 0) return out;
+
+		const { db, tables } = this.ctx.database;
+		const [channelRows, threadRows] = await Promise.all([
+			db
+				.select({ space: tables.channels.space, name: tables.channels.name })
+				.from(tables.channels)
+				.where(inArray(tables.channels.space, spaces)),
+			db
+				.select({ space: tables.threads.space, name: tables.threads.name })
+				.from(tables.threads)
+				.where(inArray(tables.threads.space, spaces)),
+		]);
+		for (const row of [...channelRows, ...threadRows]) out.set(row.space, row.name);
+		return out;
+	}
+
 	private async hydrate(
 		space: string,
 		viewer: string | null,
@@ -343,10 +397,18 @@ export class ChannelViews {
 		const all = [...page, ...parents.values()];
 		const authors = [...new Set(all.map((row) => row.author))];
 		const subjects = all.map((row) => ({ author: row.author, rkey: row.rkey }));
-		const [profiles, labels, reactionRows] = await Promise.all([
+		const forwardSpaces = [
+			...new Set(
+				all
+					.map((row) => (row.forward as RawForward | null)?.source?.space)
+					.filter((ref): ref is string => typeof ref === "string"),
+			),
+		];
+		const [profiles, labels, reactionRows, sourceNames] = await Promise.all([
 			this.actors.hydrate(authors),
 			messageLabels(this.ctx.database, space, sources, subjects),
 			this.fetchReactionsByTargets(space, subjects),
+			this.spaceNames(forwardSpaces),
 		]);
 		const hidden = hiddenFrom(labels);
 
@@ -354,6 +416,39 @@ export class ChannelViews {
 			if (!hidden.has(messageRefKey(row.author, row.rkey))) return false;
 			if (seesHidden) return false;
 			return row.author !== viewer;
+		};
+
+		const buildForward = (row: MessageRow): ForwardView | undefined => {
+			const raw = row.forward as RawForward | null;
+			const source = raw?.source;
+			if (!raw || !source?.space || !source.did || !source.rkey) return undefined;
+
+			let sourceCommunity: string | undefined;
+			try {
+				sourceCommunity = parseSpaceRef(source.space).authority;
+			} catch {
+				sourceCommunity = undefined;
+			}
+
+			return {
+				source: {
+					space: asSpaceRef(source.space),
+					did: asDid(source.did),
+					rkey: asRecordKey(source.rkey),
+					cid: source.cid,
+				},
+				sourceName: sourceNames.get(source.space),
+				sourceCommunity: sourceCommunity ? asDid(sourceCommunity) : undefined,
+				createdAt: asDatetime(raw.createdAt ?? row.createdAt),
+				text: raw.text ?? "",
+				facets: (raw.facets as social.colibri.beta.richtext.facet.Main[] | undefined) ?? undefined,
+				attachments: this.attachmentViews(
+					readingSpace,
+					row.author,
+					raw.attachments ?? null,
+					viewer,
+				),
+			} as ForwardView;
 		};
 
 		const buildView = (row: MessageRow, includeParent: boolean): MessageView => {
@@ -383,6 +478,7 @@ export class ChannelViews {
 				createdAt: asDatetime(row.createdAt),
 				updatedAt: asDatetimeOrUndefined(row.updatedAt ?? undefined),
 				parent,
+				forward: buildForward(row),
 				attachments: this.attachments(readingSpace, row, viewer),
 				reactions: this.aggregateReactions(
 					reactionRows.filter(

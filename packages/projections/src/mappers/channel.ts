@@ -20,6 +20,7 @@ export const message: Projector<social.colibri.beta.message.Main> = {
 			parentAuthor: value.parent?.did ?? null,
 			parentRkey: value.parent?.rkey ?? null,
 			attachments: value.attachments ? toJsonForm([...value.attachments]) : null,
+			forward: value.forward ? toJsonForm({ ...value.forward }) : null,
 			suppressedEmbeds: value.suppressedEmbeds ? [...value.suppressedEmbeds] : null,
 			fromLegacyRepo: false,
 			indexedAt: deps.now(),

@@ -3,6 +3,7 @@ import { CommunityLoader } from "@colibri-social/community";
 import { COLLECTIONS, channelSpace, SPACE_TYPES } from "@colibri-social/lexicons";
 import { nextTid } from "@colibri-social/space";
 import type { RepoChange } from "@colibri-social/space-sync";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppContext } from "./context.js";
 import { verifyMediaGrant } from "./media-token.js";
@@ -28,6 +29,8 @@ const VIEWER = "did:plc:viewerviewerviewerviewer";
 const SIGNING_KEY = "f".repeat(64);
 const ATTACHMENT_CID = "bafkreiattachmentxxxxxxxxxxxxxxxxxxxx";
 const SPACE = channelSpace(COMMUNITY, SPACE_TYPES.channelText, CHANNEL_SKEY);
+const OTHER_SPACE = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkpipelineother");
+const OTHER_AUTHOR = "did:plc:originalauthor000000000";
 const NOW = "2026-08-23T00:00:00.000Z";
 
 let database: TestDatabase;
@@ -64,6 +67,32 @@ const putAttachedMessageRow = (rkey: string) =>
 		},
 	]);
 
+const putForwardedMessageRow = async (rkey: string, mentioned: string, attachments?: unknown[]) => {
+	await database.db.insert(database.tables.messages).values({
+		space: SPACE,
+		author: AUTHOR,
+		rkey,
+		community: COMMUNITY,
+		text: "",
+		createdAt: NOW,
+		forward: {
+			source: { space: OTHER_SPACE, did: OTHER_AUTHOR, rkey: "3lkmsgsource" },
+			createdAt: NOW,
+			text: "the original",
+			facets: [mentionFacet(mentioned)],
+			...(attachments ? { attachments } : {}),
+		},
+		fromLegacyRepo: false,
+		indexedAt: NOW,
+	});
+};
+
+const notificationsFor = (recipient: string) =>
+	database.db
+		.select()
+		.from(database.tables.notifications)
+		.where(eq(database.tables.notifications.recipient, recipient));
+
 const putLabelRow = async (subjectRkey: string, val: string, negated = false) => {
 	await database.db.insert(database.tables.labels).values({
 		space: SPACE,
@@ -87,6 +116,35 @@ const messageChange = (rkey: string): RepoChange => ({
 			rkey,
 			cid: "bafyreictest",
 			value: { $type: COLLECTIONS.message, text: "hello", createdAt: NOW },
+		},
+	],
+	deletes: [],
+});
+
+const mentionFacet = (did: string) => ({
+	index: { byteStart: 0, byteEnd: 1 },
+	features: [{ $type: "social.colibri.beta.richtext.facet#mention", did }],
+});
+
+const forwardedMessageChange = (rkey: string, mentioned: string): RepoChange => ({
+	space: SPACE,
+	author: AUTHOR,
+	puts: [
+		{
+			collection: COLLECTIONS.message,
+			rkey,
+			cid: "bafyreictestforward",
+			value: {
+				$type: COLLECTIONS.message,
+				text: "",
+				createdAt: NOW,
+				forward: {
+					source: { space: OTHER_SPACE, did: OTHER_AUTHOR, rkey: "3lkmsgsource" },
+					createdAt: NOW,
+					text: "the original",
+					facets: [mentionFacet(mentioned)],
+				},
+			},
 		},
 	],
 	deletes: [],
@@ -292,6 +350,77 @@ describe("connectPipeline", () => {
 			attachments: { url: string }[];
 		};
 		const url = new URL(message.attachments[0]?.url as string);
+		expect(url.searchParams.get("viewer")).toBe(VIEWER);
+		expect(
+			verifyMediaGrant(
+				SIGNING_KEY,
+				{ did: AUTHOR, cid: ATTACHMENT_CID, space: SPACE, viewer: VIEWER },
+				Number(url.searchParams.get("exp")),
+				url.searchParams.get("sig") as string,
+				Math.floor(Date.now() / 1000),
+			),
+		).toBe(true);
+	});
+
+	it("never notifies a mention that only appears inside a forwarded snapshot", async () => {
+		const mentioned = "did:plc:mentionedmentionedment";
+		await database.db.insert(database.tables.members).values([
+			{ community: COMMUNITY, did: AUTHOR, roles: [], joinedAt: NOW },
+			{ community: COMMUNITY, did: mentioned, roles: [], joinedAt: NOW },
+		]);
+
+		const rkey = nextTid();
+		await putForwardedMessageRow(rkey, mentioned);
+
+		emit(forwardedMessageChange(rkey, mentioned));
+		await vi.waitFor(() => expect(framesOfType("messageEvent")).toHaveLength(1));
+		await vi.waitFor(async () => expect(await notificationsFor(mentioned)).not.toHaveLength(0));
+
+		const kinds = (await notificationsFor(mentioned)).map((row) => row.kind);
+		expect(kinds).not.toContain("mention");
+	});
+
+	it("serves a forwarded snapshot with its source resolved", async () => {
+		await database.db.insert(database.tables.channels).values({
+			space: OTHER_SPACE,
+			community: COMMUNITY,
+			spaceType: SPACE_TYPES.channelText,
+			skey: "3lkpipelineother",
+			name: "off-topic",
+		});
+
+		const rkey = nextTid();
+		await putForwardedMessageRow(rkey, VIEWER);
+
+		emit(forwardedMessageChange(rkey, VIEWER));
+		await vi.waitFor(() => expect(framesOfType("messageEvent")).toHaveLength(1));
+
+		const message = framesOfType("messageEvent")[0]?.frame.message as {
+			forward: { text: string; sourceName?: string; sourceCommunity?: string };
+		};
+		expect(message.forward).toMatchObject({
+			text: "the original",
+			sourceName: "off-topic",
+			sourceCommunity: COMMUNITY,
+		});
+	});
+
+	it("signs a forwarded snapshot's attachment for each subscriber", async () => {
+		const rkey = nextTid();
+		await putForwardedMessageRow(rkey, VIEWER, [
+			{
+				blob: { ref: { $link: ATTACHMENT_CID }, mimeType: "image/png", size: 1234 },
+				name: "cat.png",
+			},
+		]);
+
+		emit(forwardedMessageChange(rkey, VIEWER));
+		await vi.waitFor(() => expect(framesOfType("messageEvent")).toHaveLength(1));
+
+		const message = framesOfType("messageEvent")[0]?.frame.message as {
+			forward: { attachments: { url: string }[] };
+		};
+		const url = new URL(message.forward.attachments[0]?.url as string);
 		expect(url.searchParams.get("viewer")).toBe(VIEWER);
 		expect(
 			verifyMediaGrant(

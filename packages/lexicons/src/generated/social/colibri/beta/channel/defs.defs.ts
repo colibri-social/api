@@ -7,6 +7,7 @@ import * as ActorDefs from "../actor/defs.defs.js";
 import * as RichtextFacet from "../richtext/facet.defs.js";
 import * as CommunityDefs from "../community/defs.defs.js";
 import * as EmbedDefs from "../embed/defs.defs.js";
+import * as BetaDefs from "../defs.defs.js";
 
 const $nsid = "social.colibri.beta.channel.defs";
 
@@ -78,6 +79,11 @@ type MessageView = { $type?: "social.colibri.beta.channel.defs#messageView";
   "labels":(CommunityDefs.LabelView)[];
 
   /**
+   * Content this message was forwarded from, when it is a forward. Never itself nested.
+   */
+  "forward"?:ForwardView;
+
+  /**
    * URLs whose preview the author chose not to show.
    */
   "suppressedEmbeds"?:(l.UriString)[];
@@ -95,9 +101,54 @@ type MessageView = { $type?: "social.colibri.beta.channel.defs#messageView";
 export type { MessageView };
 
 /** A message as the AppView serves it, with its author, reactions and labels resolved. */
-const messageView = /*#__PURE__*/ l.typedObject<MessageView>($nsid, "messageView", /*#__PURE__*/ l.object({"uri":/*#__PURE__*/ l.string({"format":"at-uri"}),"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"author":/*#__PURE__*/ l.ref<ActorDefs.ProfileView>((() => ActorDefs.profileView) as any),"text":/*#__PURE__*/ l.string(),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"updatedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"parent":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<MessageView>((() => messageView) as any),/*#__PURE__*/ l.typedRef<DeletedMessageView>((() => deletedMessageView) as any)], false)),"attachments":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<AttachmentView>((() => attachmentView) as any), ),"reactions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ReactionView>((() => reactionView) as any), ),"labels":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<CommunityDefs.LabelView>((() => CommunityDefs.labelView) as any), ),"suppressedEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"uri"}), )),"embeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.LinkEmbed>((() => EmbedDefs.linkEmbed) as any), )),"legacy":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
+const messageView = /*#__PURE__*/ l.typedObject<MessageView>($nsid, "messageView", /*#__PURE__*/ l.object({"uri":/*#__PURE__*/ l.string({"format":"at-uri"}),"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"author":/*#__PURE__*/ l.ref<ActorDefs.ProfileView>((() => ActorDefs.profileView) as any),"text":/*#__PURE__*/ l.string(),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"updatedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"parent":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<MessageView>((() => messageView) as any),/*#__PURE__*/ l.typedRef<DeletedMessageView>((() => deletedMessageView) as any)], false)),"attachments":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<AttachmentView>((() => attachmentView) as any), ),"reactions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ReactionView>((() => reactionView) as any), ),"labels":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<CommunityDefs.LabelView>((() => CommunityDefs.labelView) as any), ),"forward":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ForwardView>((() => forwardView) as any)),"suppressedEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"uri"}), )),"embeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.LinkEmbed>((() => EmbedDefs.linkEmbed) as any), )),"legacy":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
 
 export { messageView };
+
+/** The frozen copy a forwarded message carries, with its source resolved as far as this AppView can. Never itself nested, so a forward of a forward reports the message it was forwarded from rather than a chain. */
+type ForwardView = { $type?: "social.colibri.beta.channel.defs#forwardView";
+
+  /**
+   * The message this content was copied from.
+   */
+  "source":BetaDefs.SpaceRecordRef;
+
+  /**
+   * Name of the channel or thread the content came from. Absent when this AppView does not know that space.
+   */
+  "sourceName"?:string;
+
+  /**
+   * The community owning the source space, which is that space's authority. Absent when the source reference cannot be parsed.
+   */
+  "sourceCommunity"?:l.DidString;
+
+  /**
+   * When the message this content came from was sent.
+   */
+  "createdAt":l.DatetimeString;
+
+  /**
+   * The copied message body.
+   */
+  "text":string;
+
+  /**
+   * The copied annotations.
+   */
+  "facets"?:(RichtextFacet.Main)[];
+
+  /**
+   * The copied files, served from the forwarding author's own repo.
+   */
+  "attachments":(AttachmentView)[] };
+
+export type { ForwardView };
+
+/** The frozen copy a forwarded message carries, with its source resolved as far as this AppView can. Never itself nested, so a forward of a forward reports the message it was forwarded from rather than a chain. */
+const forwardView = /*#__PURE__*/ l.typedObject<ForwardView>($nsid, "forwardView", /*#__PURE__*/ l.object({"source":/*#__PURE__*/ l.ref<BetaDefs.SpaceRecordRef>((() => BetaDefs.spaceRecordRef) as any),"sourceName":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"sourceCommunity":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"did"})),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"text":/*#__PURE__*/ l.string(),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"attachments":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<AttachmentView>((() => attachmentView) as any), )}));
+
+export { forwardView };
 
 /** Stands in for a message the AppView will not serve: deleted by its author, or hidden by a moderator. The two cases are deliberately indistinguishable, so hiding does not leak what was hidden. Render it as an unavailable message. */
 type DeletedMessageView = { $type?: "social.colibri.beta.channel.defs#deletedMessageView";

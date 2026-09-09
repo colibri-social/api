@@ -46,6 +46,11 @@ type Main = { $type: "social.colibri.beta.message";
   "attachments"?:(Attachment)[];
 
   /**
+   * Content copied here from another message. Present only on a forwarded message.
+   */
+  "forward"?:Forward;
+
+  /**
    * URLs from this message's link facets whose preview the author chose not to show. Moderator suppression is a label instead.
    */
   "suppressedEmbeds"?:(l.UriString)[] };
@@ -53,7 +58,7 @@ type Main = { $type: "social.colibri.beta.message";
 export type { Main };
 
 /** A message in a channel. Lives in the author's own permissioned repo for the channel's space. */
-const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"text":/*#__PURE__*/ l.string({"maxLength":2048}),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"updatedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"parent":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any)),"attachments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Attachment>((() => attachment) as any), )),"suppressedEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"uri"}), ))}));
+const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"text":/*#__PURE__*/ l.string({"maxLength":2048}),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"updatedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"parent":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any)),"attachments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Attachment>((() => attachment) as any), )),"forward":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Forward>((() => forward) as any)),"suppressedEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"uri"}), ))}));
 
 export { main };
 
@@ -74,6 +79,41 @@ export const $parse = /*#__PURE__*/ main.parse.bind(main);
 export const $safeParse = /*#__PURE__*/ main.safeParse.bind(main);
 export const $validate = /*#__PURE__*/ main.validate.bind(main);
 export const $safeValidate = /*#__PURE__*/ main.safeValidate.bind(main);
+
+/** Another message's content, copied and frozen when the forward was made. The copy does not follow later edits, deletions or labels on the message it came from. Never itself nested: forwarding a forwarded message carries this content over and repoints `source` at the message it was forwarded from. */
+type Forward = { $type?: "social.colibri.beta.message#forward";
+
+  /**
+   * The message this content was copied from.
+   */
+  "source":BetaDefs.SpaceRecordRef;
+
+  /**
+   * When the message this content came from was sent.
+   */
+  "createdAt":l.DatetimeString;
+
+  /**
+   * The copied message body. Empty when the message that was forwarded carried only attachments.
+   */
+  "text":string;
+
+  /**
+   * The copied annotations. A mention here does not notify anyone, because the AppView reads only a message's own facets.
+   */
+  "facets"?:(RichtextFacet.Main)[];
+
+  /**
+   * The copied files, re-uploaded into the forwarding author's own repo so the forward stands on its own.
+   */
+  "attachments"?:(Attachment)[] };
+
+export type { Forward };
+
+/** Another message's content, copied and frozen when the forward was made. The copy does not follow later edits, deletions or labels on the message it came from. Never itself nested: forwarding a forwarded message carries this content over and repoints `source` at the message it was forwarded from. */
+const forward = /*#__PURE__*/ l.typedObject<Forward>($nsid, "forward", /*#__PURE__*/ l.object({"source":/*#__PURE__*/ l.ref<BetaDefs.SpaceRecordRef>((() => BetaDefs.spaceRecordRef) as any),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"text":/*#__PURE__*/ l.string({"maxLength":2048}),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"attachments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Attachment>((() => attachment) as any), ))}));
+
+export { forward };
 
 /** A file attached to a message. */
 type Attachment = { $type?: "social.colibri.beta.message#attachment";

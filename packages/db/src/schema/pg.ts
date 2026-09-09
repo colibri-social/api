@@ -222,6 +222,7 @@ export const messages = pgTable(
 		parentAuthor: text("parent_author"),
 		parentRkey: text("parent_rkey"),
 		attachments: json<unknown[]>("attachments"),
+		forward: json<Record<string, unknown>>("forward"),
 		suppressedEmbeds: json<string[]>("suppressed_embeds"),
 		fromLegacyRepo: flag("from_legacy_repo").notNull().default(false),
 		indexedAt: timestamp("indexed_at").notNull(),

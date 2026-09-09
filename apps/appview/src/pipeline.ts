@@ -138,6 +138,13 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 
 	const notifications = buildNotificationDeps(ctx);
 
+	const previewTextOf = (value: Record<string, unknown>): string => {
+		const own = String(value.text ?? "");
+		if (own.length > 0) return own;
+		const forward = value.forward as { text?: unknown } | undefined;
+		return String(forward?.text ?? "");
+	};
+
 	const publishNotifications = async (
 		rows: IndexedNotificationRow[],
 		text: string,
@@ -284,7 +291,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 					parentAuthor: parent?.did ?? null,
 					parentRkey: parent?.rkey ?? null,
 				})
-					.then((rows) => publishNotifications(rows, String(put.value.text ?? "")))
+					.then((rows) => publishNotifications(rows, previewTextOf(put.value)))
 					.catch((error) => ctx.log.warn({ error }, "notifications.indexFailed"));
 			}
 

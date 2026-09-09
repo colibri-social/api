@@ -33,6 +33,14 @@ export type Facet = social.colibri.beta.richtext.facet.Main;
 
 export type ActorHydrator = (dids: string[]) => Promise<Map<string, ProfileView>>;
 export type LabelView = social.colibri.beta.community.defs.LabelView;
+export type ForwardView = social.colibri.beta.channel.defs.ForwardView;
+
+type RawForward = {
+	source?: { space?: string; did?: string; rkey?: string; cid?: string };
+	createdAt?: string;
+	text?: string;
+	facets?: unknown[];
+};
 
 type SpaceGroup = { community: string; subjects: { author: string; rkey: string }[] };
 
@@ -276,6 +284,25 @@ const toLabelViews = (labels: readonly CurrentLabel[]): LabelView[] =>
 			}) as LabelView,
 	);
 
+const toForwardView = (row: MessageRow): ForwardView | undefined => {
+	const raw = row.forward as RawForward | null;
+	const source = raw?.source;
+	if (!raw || !source?.space || !source.did || !source.rkey) return undefined;
+
+	return {
+		source: {
+			space: asSpaceRef(source.space),
+			did: asDid(source.did),
+			rkey: asRecordKey(source.rkey),
+			cid: source.cid,
+		},
+		createdAt: asDatetime(raw.createdAt ?? row.createdAt),
+		text: raw.text ?? "",
+		facets: (raw.facets as Facet[] | undefined) ?? undefined,
+		attachments: [],
+	} as ForwardView;
+};
+
 const toMessageView = (
 	row: MessageRow,
 	author: ProfileView,
@@ -289,6 +316,7 @@ const toMessageView = (
 	facets: (row.facets as Facet[] | null) ?? undefined,
 	createdAt: asDatetime(row.createdAt),
 	updatedAt: asDatetimeOrUndefined(row.updatedAt),
+	forward: toForwardView(row),
 	attachments: [],
 	reactions: [],
 	labels: toLabelViews(labels),

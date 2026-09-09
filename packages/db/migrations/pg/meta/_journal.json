@@ -43,6 +43,13 @@
 			"when": 1788242178550,
 			"tag": "0005_spotty_legion",
 			"breakpoints": true
+		},
+		{
+			"idx": 6,
+			"version": "7",
+			"when": 1788939695052,
+			"tag": "0006_kind_tyger_tiger",
+			"breakpoints": true
 		}
 	]
 }

@@ -248,6 +248,40 @@ describe("member-written collections", () => {
 		expect(row?.attachments).toEqual([{ name: "shot.png", blob: jsonBlob(PICTURE_CID) }]);
 	});
 
+	it("stores a forwarded snapshot whole, blob refs included", async () => {
+		const source = {
+			space: channelSpace(COMMUNITY, "social.colibri.beta.channel.text", "3lkchannel2"),
+			did: OUTSIDER,
+			rkey: "3lkmsgsource",
+			cid: PICTURE_CID,
+		};
+
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3lkmsgfwd", {
+				$type: "social.colibri.beta.message",
+				text: "worth reading",
+				createdAt: NOW,
+				forward: {
+					source,
+					createdAt: NOW,
+					text: "the original",
+					attachments: [{ name: "shot.png", blob: jsonBlob(PICTURE_CID) }],
+				},
+			}),
+		);
+
+		expect(skipped).toEqual([]);
+		const [row] = await database.db.select().from(database.tables.messages);
+		expect(row?.text).toBe("worth reading");
+		expect(row?.forward).toEqual({
+			source,
+			createdAt: NOW,
+			text: "the original",
+			attachments: [{ name: "shot.png", blob: jsonBlob(PICTURE_CID) }],
+		});
+	});
+
 	it("keeps a reply pointing at both the author and the key of its parent", async () => {
 		await applyChange(
 			deps,
