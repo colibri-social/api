@@ -1,5 +1,11 @@
 # @colibri-social/appview-db
 
+## 0.5.0
+
+### Minor Changes
+
+- 4a7247d: A message can now carry a forwarded copy of another message, and the AppView serves it with its source channel or thread resolved
+
 ## 0.4.0
 
 ### Minor Changes
