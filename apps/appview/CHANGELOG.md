@@ -1,5 +1,22 @@
 # @colibri-social/appview
 
+## 2.9.0
+
+### Minor Changes
+
+- 4a7247d: A message can now carry a forwarded copy of another message, and the AppView serves it with its source channel or thread resolved
+
+### Patch Changes
+
+- b6f4239: Moved messages are now served at the correct point in time, not appended
+- Updated dependencies [4a7247d]
+- Updated dependencies [b6f4239]
+  - @colibri-social/lexicons@2.10.0
+  - @colibri-social/appview-db@0.5.0
+  - @colibri-social/projections@1.5.0
+  - @colibri-social/notifications@1.3.0
+  - @colibri-social/community@2.5.1
+
 ## 2.8.0
 
 ### Minor Changes

@@ -1,5 +1,19 @@
 # @colibri-social/notifications
 
+## 1.3.0
+
+### Minor Changes
+
+- 4a7247d: A message can now carry a forwarded copy of another message, and the AppView serves it with its source channel or thread resolved
+
+### Patch Changes
+
+- Updated dependencies [4a7247d]
+- Updated dependencies [b6f4239]
+  - @colibri-social/lexicons@2.10.0
+  - @colibri-social/appview-db@0.5.0
+  - @colibri-social/projections@1.5.0
+
 ## 1.2.0
 
 ### Minor Changes

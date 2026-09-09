@@ -1,5 +1,15 @@
 # @colibri-social/lexicons
 
+## 2.10.0
+
+### Minor Changes
+
+- 4a7247d: A message can now carry a forwarded copy of another message, and the AppView serves it with its source channel or thread resolved
+
+### Patch Changes
+
+- b6f4239: Moved messages are now served at the correct point in time, not appended
+
 ## 2.9.1
 
 ### Patch Changes
