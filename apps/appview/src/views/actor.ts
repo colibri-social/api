@@ -140,7 +140,7 @@ export class ActorViews {
 			const handle = handles.get(did) ?? null;
 			const presenceRow = presenceRows.get(did);
 			const presence = presenceRow
-				? presenceOf(this.ctx, did, presenceRow, activities.get(did))
+				? presenceOf(this.ctx, did, presenceRow, activities.get(did) ?? [])
 				: undefined;
 
 			out.set(did, {

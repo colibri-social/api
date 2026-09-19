@@ -1,6 +1,7 @@
+import { l } from "@atproto/lex-schema";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { CommunityLoader } from "@colibri-social/community";
-import { preferencesSpace } from "@colibri-social/lexicons";
+import { preferencesSpace, social } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { silentAnnouncer } from "../announce.js";
@@ -10,6 +11,7 @@ import {
 	handleGrantSpaceAccess,
 	handlePutMutes,
 	handlePutSettings,
+	handleSetStatus,
 } from "./actor-write.js";
 
 const NOW = "2026-08-23T00:00:00.000Z";
@@ -30,10 +32,15 @@ beforeEach(async () => {
 	const loader = new CommunityLoader({ db: database.db, tables: database.tables });
 	ctx = {
 		announce: silentAnnouncer,
-		config: { PUBLIC_URL: "https://appview.test", pushProviders: [] },
+		config: {
+			PUBLIC_URL: "https://appview.test",
+			SIGNING_KEY: "abcdef0123456789",
+			pushProviders: [],
+		},
 		database,
 		log: { warn: () => undefined, debug: () => undefined },
 		loader,
+		voice: null,
 		hosts: { hostFor: async () => "https://pds.test" },
 		sync: { notifyWrite: () => undefined },
 		spaceCredentials: {
@@ -278,5 +285,46 @@ describe("deleteAccount", () => {
 			.from(database.tables.mutes)
 			.where(eq(database.tables.mutes.did, CALLER));
 		expect(remainingMutes).toHaveLength(0);
+	});
+});
+
+describe("setStatus", () => {
+	const asSetStatusOutput = (body: unknown): void => {
+		const { output } = l.getMain(social.colibri.beta.actor.setStatus);
+		const result = output.schema.safeValidate(body);
+		if (!result.success) throw new Error(result.reason.message);
+	};
+
+	const shares = () =>
+		database.db.insert(database.tables.actorSettings).values({ did: CALLER, shareActivity: true });
+
+	const storeActivity = async (source: string, kind: "listening" | "playing") => {
+		await database.db.insert(database.tables.actorActivity).values({
+			did: CALLER,
+			kind,
+			title: kind === "playing" ? "Wuthering Waves" : "The Diary of Jane",
+			subtitle: null,
+			detail: null,
+			imageUrl: null,
+			linkUri: null,
+			startedAt: NOW,
+			endsAt: "2099-01-01T00:00:00.000Z",
+			source,
+			updatedAt: NOW,
+		});
+	};
+
+	it("answers with a presence the lexicon accepts", async () => {
+		await shares();
+		await storeActivity("atmosphere.games", "playing");
+		await storeActivity("teal.fm", "listening");
+
+		const body = await handleSetStatus(ctx, CALLER, { text: "back in a bit", onlineState: "away" });
+
+		asSetStatusOutput(body);
+		expect(body.presence.activities?.map((activity) => activity.source)).toEqual([
+			"atmosphere.games",
+			"teal.fm",
+		]);
 	});
 });

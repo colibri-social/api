@@ -50,6 +50,13 @@
 			"when": 1788939695052,
 			"tag": "0006_kind_tyger_tiger",
 			"breakpoints": true
+		},
+		{
+			"idx": 7,
+			"version": "7",
+			"when": 1789819314253,
+			"tag": "0007_friendly_miss_america",
+			"breakpoints": true
 		}
 	]
 }

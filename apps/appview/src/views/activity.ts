@@ -66,11 +66,19 @@ export const activityView = (ctx: AppContext, row: ActivityRow): ActivityView =>
 	source: row.source,
 });
 
+const startedFirst = (left: ActivityRow, right: ActivityRow): number => {
+	const started = Date.parse(right.startedAt ?? "") - Date.parse(left.startedAt ?? "");
+	if (!Number.isNaN(started) && started !== 0) return started;
+	if (left.startedAt && !right.startedAt) return -1;
+	if (!left.startedAt && right.startedAt) return 1;
+	return left.source.localeCompare(right.source);
+};
+
 export const loadActivities = async (
 	ctx: AppContext,
 	dids: readonly string[],
-): Promise<Map<string, ActivityView>> => {
-	const out = new Map<string, ActivityView>();
+): Promise<Map<string, ActivityView[]>> => {
+	const out = new Map<string, ActivityView[]>();
 	if (dids.length === 0) return out;
 
 	const { db, tables } = ctx.database;
@@ -86,14 +94,22 @@ export const loadActivities = async (
 		);
 
 	const now = Date.now();
+	const current = new Map<string, ActivityRow[]>();
 	for (const { activity } of rows) {
 		if (!activityIsCurrent(activity, now)) continue;
-		out.set(activity.did, activityView(ctx, activity));
+		const forDid = current.get(activity.did) ?? [];
+		forDid.push(activity);
+		current.set(activity.did, forDid);
+	}
+
+	for (const [did, forDid] of current) {
+		out.set(
+			did,
+			forDid.sort(startedFirst).map((row) => activityView(ctx, row)),
+		);
 	}
 	return out;
 };
 
-export const loadActivity = async (
-	ctx: AppContext,
-	did: string,
-): Promise<ActivityView | undefined> => (await loadActivities(ctx, [did])).get(did);
+export const loadActorActivities = async (ctx: AppContext, did: string): Promise<ActivityView[]> =>
+	(await loadActivities(ctx, [did])).get(did) ?? [];

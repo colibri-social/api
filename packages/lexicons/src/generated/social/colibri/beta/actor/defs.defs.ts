@@ -96,14 +96,14 @@ type Presence = { $type?: "social.colibri.beta.actor.defs#presence";
   "voice"?:VoiceState;
 
   /**
-   * What the user is doing right now, when they share it and the AppView has something current.
+   * What the user is doing right now, one entry per service they share from. Empty when the AppView has nothing current for them.
    */
-  "activity"?:Activity };
+  "activities"?:(Activity)[] };
 
 export type { Presence };
 
 /** A user's live, off-protocol state. */
-const presence = /*#__PURE__*/ l.typedObject<Presence>($nsid, "presence", /*#__PURE__*/ l.object({"onlineState":/*#__PURE__*/ l.string<{"knownValues":["online","away","dnd","offline"]}>(),"status":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Status>((() => status) as any)),"voice":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<VoiceState>((() => voiceState) as any)),"activity":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Activity>((() => activity) as any))}));
+const presence = /*#__PURE__*/ l.typedObject<Presence>($nsid, "presence", /*#__PURE__*/ l.object({"onlineState":/*#__PURE__*/ l.string<{"knownValues":["online","away","dnd","offline"]}>(),"status":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Status>((() => status) as any)),"voice":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<VoiceState>((() => voiceState) as any)),"activities":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Activity>((() => activity) as any), ))}));
 
 export { presence };
 

@@ -1,15 +1,17 @@
 import { PdsClient } from "@colibri-social/space";
 import { and, eq, lte } from "drizzle-orm";
 import { resolveArtwork } from "./activity-artwork.js";
+import { resolveGame } from "./activity-game.js";
 import {
 	ACTIVITY_PROVIDERS,
 	type ActivityDraft,
+	type ActivityProvider,
 	activityProviderFor,
 } from "./activity-providers.js";
 import { announceToCommunities, presenceEvent } from "./announce.js";
 import type { AppContext } from "./context.js";
 import { presenceOf } from "./presence.js";
-import { loadActivity } from "./views/activity.js";
+import { activityIsCurrent, loadActorActivities } from "./views/activity.js";
 
 export const ACTIVITY_SWEEP_MS = 30_000;
 
@@ -56,13 +58,38 @@ export const sharesActivity = async (ctx: AppContext, did: string): Promise<bool
 	return row?.shareActivity === true;
 };
 
-const storedActivity = async (ctx: AppContext, did: string) => {
+const storedActivity = async (ctx: AppContext, did: string, source: string) => {
 	const [row] = await ctx.database.db
 		.select()
 		.from(ctx.database.tables.actorActivity)
-		.where(eq(ctx.database.tables.actorActivity.did, did))
+		.where(
+			and(
+				eq(ctx.database.tables.actorActivity.did, did),
+				eq(ctx.database.tables.actorActivity.source, source),
+			),
+		)
 		.limit(1);
 	return row;
+};
+
+const sameTrackElsewhere = async (ctx: AppContext, did: string, draft: ActivityDraft) => {
+	const rows = await ctx.database.db
+		.select()
+		.from(ctx.database.tables.actorActivity)
+		.where(eq(ctx.database.tables.actorActivity.did, did));
+
+	const now = Date.now();
+	return rows.find(
+		(row) => row.source !== draft.source && activityIsCurrent(row, now) && sameTrack(row, draft),
+	);
+};
+
+const storedSources = async (ctx: AppContext, did: string): Promise<string[]> => {
+	const rows = await ctx.database.db
+		.select({ source: ctx.database.tables.actorActivity.source })
+		.from(ctx.database.tables.actorActivity)
+		.where(eq(ctx.database.tables.actorActivity.did, did));
+	return rows.map((row) => row.source);
 };
 
 export const announceActivity = async (ctx: AppContext, did: string): Promise<void> => {
@@ -72,7 +99,7 @@ export const announceActivity = async (ctx: AppContext, did: string): Promise<vo
 		.where(eq(ctx.database.tables.userPresence.did, did))
 		.limit(1);
 
-	const activity = await loadActivity(ctx, did);
+	const activities = await loadActorActivities(ctx, did);
 	const view = presenceOf(
 		ctx,
 		did,
@@ -82,7 +109,7 @@ export const announceActivity = async (ctx: AppContext, did: string): Promise<vo
 			statusText: null,
 			statusEmoji: null,
 		},
-		activity,
+		activities,
 	);
 	await announceToCommunities(ctx, did, presenceEvent(did, view));
 };
@@ -100,8 +127,30 @@ const removeActivity = async (ctx: AppContext, did: string, source?: string): Pr
 	return removed.length > 0;
 };
 
-const writeDraft = async (ctx: AppContext, did: string, draft: ActivityDraft): Promise<boolean> => {
-	const existing = await storedActivity(ctx, did);
+const enrich = async (ctx: AppContext, draft: ActivityDraft): Promise<ActivityDraft> => {
+	if (!draft.gameUri) return draft;
+
+	const game = await resolveGame(
+		{ cache: ctx.games, identity: ctx.identity, log: ctx.log },
+		draft.gameUri,
+	);
+	return {
+		...draft,
+		title: game.title ?? draft.title,
+		imageUrl: draft.imageUrl ?? game.imageUrl,
+	};
+};
+
+const writeDraft = async (
+	ctx: AppContext,
+	did: string,
+	incoming: ActivityDraft,
+): Promise<boolean> => {
+	const draft = await enrich(ctx, incoming);
+	if (!draft.title) return false;
+
+	const existing =
+		(await storedActivity(ctx, did, draft.source)) ?? (await sameTrackElsewhere(ctx, did, draft));
 	const continues = existing !== undefined && sameTrack(existing, draft);
 	if (continues && !extendsWindow(existing.endsAt, draft.endsAt)) return false;
 
@@ -137,9 +186,30 @@ const writeDraft = async (ctx: AppContext, did: string, draft: ActivityDraft): P
 	await ctx.database.db
 		.insert(ctx.database.tables.actorActivity)
 		.values(row)
-		.onConflictDoUpdate({ target: ctx.database.tables.actorActivity.did, set: row });
+		.onConflictDoUpdate({
+			target: [ctx.database.tables.actorActivity.did, ctx.database.tables.actorActivity.source],
+			set: row,
+		});
 
 	return true;
+};
+
+const currentRecord = async (
+	client: PdsClient,
+	did: string,
+	provider: ActivityProvider,
+): Promise<unknown> => {
+	if (provider.locate === "newest") {
+		const page = await client
+			.listPublicRecords<unknown>(did, provider.collection, { limit: 1 })
+			.catch(() => null);
+		return page?.records[0]?.value ?? null;
+	}
+
+	return await client
+		.getPublicRecord<{ value: unknown }>(did, provider.collection, SELF)
+		.then((found) => found.value)
+		.catch(() => null);
 };
 
 const refill = async (ctx: AppContext, did: string, skipSource?: string): Promise<boolean> => {
@@ -153,19 +223,28 @@ const refill = async (ctx: AppContext, did: string, skipSource?: string): Promis
 	for (const provider of ACTIVITY_PROVIDERS) {
 		if (provider.source === skipSource) continue;
 
-		const record = await client
-			.getPublicRecord<{ value: unknown }>(did, provider.collection, SELF)
-			.then((found) => found.value)
-			.catch(() => null);
+		const record = await currentRecord(client, did, provider);
 		if (!record) continue;
 
 		const draft = provider.read(record, now);
 		if (draft) drafts.push(draft);
 	}
 
-	const [best] = drafts.sort(startedFirst);
-	if (!best) return await removeActivity(ctx, did);
-	return await writeDraft(ctx, did, best);
+	let changed = false;
+	const filled = new Set<string>();
+
+	for (const draft of drafts.sort(startedFirst)) {
+		if (filled.has(draft.source)) continue;
+		filled.add(draft.source);
+		if (await writeDraft(ctx, did, draft)) changed = true;
+	}
+
+	for (const source of await storedSources(ctx, did)) {
+		if (source === skipSource || filled.has(source)) continue;
+		if (await removeActivity(ctx, did, source)) changed = true;
+	}
+
+	return changed;
 };
 
 export const clearActivity = (ctx: AppContext, did: string): Promise<void> =>
@@ -221,6 +300,17 @@ export const setActivitySharing = async (
 	await backfillActivity(ctx, did);
 };
 
+const removeLapsed = (ctx: AppContext, did: string, now: string): Promise<void> =>
+	enqueue(did, async () => {
+		const { db, tables } = ctx.database;
+		const removed = await db
+			.delete(tables.actorActivity)
+			.where(and(eq(tables.actorActivity.did, did), lte(tables.actorActivity.endsAt, now)))
+			.returning();
+		if (removed.length === 0) return;
+		await announceActivity(ctx, did);
+	});
+
 export const sweepLapsedActivities = async (ctx: AppContext): Promise<number> => {
 	const now = new Date().toISOString();
 	const lapsed = await ctx.database.db
@@ -228,8 +318,9 @@ export const sweepLapsedActivities = async (ctx: AppContext): Promise<number> =>
 		.from(ctx.database.tables.actorActivity)
 		.where(lte(ctx.database.tables.actorActivity.endsAt, now));
 
-	for (const { did } of lapsed) await clearActivity(ctx, did);
-	return lapsed.length;
+	const dids = [...new Set(lapsed.map((row) => row.did))];
+	for (const did of dids) await removeLapsed(ctx, did, now);
+	return dids.length;
 };
 
 export class ActivitySweeper {

@@ -19,6 +19,7 @@
 	"scripts": {
 		"build": "node scripts/generate-pg-schema.mjs && tsc --build",
 		"clean": "tsc --build --clean",
+		"generate": "pnpm generate:pg && pnpm generate:migrations",
 		"generate:pg": "node scripts/generate-pg-schema.mjs",
 		"generate:migrations": "drizzle-kit generate --config drizzle.sqlite.config.ts && drizzle-kit generate --config drizzle.pg.config.ts"
 	},

@@ -176,6 +176,7 @@ describe("subscription", () => {
 			"fm.teal.alpha.actor.status",
 			"app.rocksky.actor.status",
 			"fm.atradio.actor.status",
+			"games.atmosphere.status",
 		]);
 		expect(request.searchParams.has("wantedCollections")).toBe(false);
 	});
@@ -347,7 +348,12 @@ describe("profile commits", () => {
 	it("does not start caching a profile for someone it holds no row for", async () => {
 		const socket = await startAgainstServer();
 
-		socket.send(commitFrame(1, COLIBRI, "create", { $type: COLIBRI, displayName: "stranger" }));
+		socket.send(
+			commitFrame(1, COLIBRI, "create", {
+				$type: COLIBRI,
+				displayName: "stranger",
+			}),
+		);
 		await settle();
 
 		expect(await cachedProfile()).toBeNull();
@@ -379,6 +385,7 @@ describe("profile commits", () => {
 describe("listening commits", () => {
 	const ROCKSKY = "app.rocksky.actor.status";
 	const ATRADIO = "fm.atradio.actor.status";
+	const GAMES = "games.atmosphere.status";
 
 	const shares = () =>
 		database.db
@@ -427,7 +434,11 @@ describe("listening commits", () => {
 		socket.send(
 			commitFrame(1, ATRADIO, "create", {
 				$type: ATRADIO,
-				station: { name: "Rock Antenne", genre: "rock", homepage: "http://www.rockantenne.de/" },
+				station: {
+					name: "Rock Antenne",
+					genre: "rock",
+					homepage: "http://www.rockantenne.de/",
+				},
 				playedAt: new Date().toISOString(),
 			}),
 		);
@@ -436,6 +447,31 @@ describe("listening commits", () => {
 		const row = await storedActivity();
 		expect(row?.source).toBe("atradio.fm");
 		expect(row?.linkUri).toBe("http://www.rockantenne.de/");
+	});
+
+	it("stores the game a games commit carries", async () => {
+		await shares();
+		const socket = await startAgainstServer();
+
+		socket.send(
+			commitFrame(1, GAMES, "create", {
+				$type: GAMES,
+				embed: {
+					external: {
+						uri: "https://cartridge.dev/game/wuthering-waves",
+						title: "Wuthering Waves",
+					},
+				},
+				createdAt: new Date().toISOString(),
+				staleAt: new Date(Date.now() + 600_000).toISOString(),
+			}),
+		);
+		await settle();
+
+		const row = await storedActivity();
+		expect(row?.source).toBe("atmosphere.games");
+		expect(row?.kind).toBe("playing");
+		expect(row?.title).toBe("Wuthering Waves");
 	});
 
 	it("clears the activity when the record is deleted", async () => {

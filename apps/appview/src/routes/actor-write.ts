@@ -8,7 +8,7 @@ import { announceToCommunities, preferencesEvent, presenceEvent } from "../annou
 import type { AppContext } from "../context.js";
 import { isOnlineState, presenceOf } from "../presence.js";
 import { route } from "../route.js";
-import { loadActivity } from "../views/activity.js";
+import { loadActorActivities } from "../views/activity.js";
 import { toGifFavorite } from "../views/gif.js";
 import { findSoleOwnedCommunities, loadPreferences } from "./actor.js";
 import type { RouteDeps } from "./types.js";
@@ -156,7 +156,7 @@ export const handleSetStatus = async (
 		.values(row)
 		.onConflictDoUpdate({ target: ctx.database.tables.userPresence.did, set: row });
 
-	const presence = presenceOf(ctx, callerDid, row, await loadActivity(ctx, callerDid));
+	const presence = presenceOf(ctx, callerDid, row, await loadActorActivities(ctx, callerDid));
 
 	await announceToCommunities(ctx, callerDid, presenceEvent(callerDid, presence));
 

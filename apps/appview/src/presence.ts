@@ -2,7 +2,7 @@ import type { OnlineState } from "@colibri-social/appview-db";
 import type { social } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import type { AppContext } from "./context.js";
-import { type ActivityView, loadActivity } from "./views/activity.js";
+import { type ActivityView, loadActorActivities } from "./views/activity.js";
 import { liveVoiceState } from "./views/voice-state.js";
 import type { ServerFrame } from "./ws/events.js";
 
@@ -30,7 +30,7 @@ export const presenceOf = (
 	ctx: AppContext,
 	did: string,
 	row: PresenceParts,
-	activity?: ActivityView,
+	activities: ActivityView[],
 ): social.colibri.beta.actor.defs.Presence =>
 	({
 		onlineState: effectiveOnlineState(row),
@@ -38,7 +38,7 @@ export const presenceOf = (
 			? { text: row.statusText, emoji: row.statusEmoji ?? undefined }
 			: undefined,
 		voice: liveVoiceState(ctx.voice, did),
-		activity,
+		activities,
 	}) as social.colibri.beta.actor.defs.Presence;
 
 export const isOnlineState = (value: string): value is OnlineState =>
@@ -155,7 +155,12 @@ export class PresenceTracker {
 			{
 				$type: "social.colibri.beta.sync.defs#presenceEvent",
 				did,
-				presence: presenceOf(this.deps.ctx, did, row, await loadActivity(this.deps.ctx, did)),
+				presence: presenceOf(
+					this.deps.ctx,
+					did,
+					row,
+					await loadActorActivities(this.deps.ctx, did),
+				),
 			},
 		);
 	}
