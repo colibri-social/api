@@ -1,5 +1,11 @@
 # @colibri-social/appview-db
 
+## 0.6.0
+
+### Minor Changes
+
+- 1ed3c64: Presence now carries one activity per service an actor shares from, including what they are playing on atmosphere.games
+
 ## 0.5.0
 
 ### Minor Changes

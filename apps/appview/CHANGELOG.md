@@ -1,5 +1,23 @@
 # @colibri-social/appview
 
+## 2.10.0
+
+### Minor Changes
+
+- 1ed3c64: Presence now carries one activity per service an actor shares from, including what they are playing on atmosphere.games
+
+### Patch Changes
+
+- Updated dependencies [1ed3c64]
+  - @colibri-social/lexicons@2.11.0
+  - @colibri-social/appview-db@0.6.0
+  - @colibri-social/space@0.3.0
+  - @colibri-social/community@2.5.2
+  - @colibri-social/notifications@1.3.1
+  - @colibri-social/projections@1.5.1
+  - @colibri-social/blobs@0.0.5
+  - @colibri-social/space-sync@0.4.1
+
 ## 2.9.0
 
 ### Minor Changes
