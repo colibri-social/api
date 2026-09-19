@@ -24,7 +24,7 @@ export const $output = /*#__PURE__*/ l.payload();
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Remove a member from a space's member list. The member list is host-internal state consulted at credential-mint time when the space's policy is 'member-list'. Requires auth as the space owner. */
+/** Remove a member from a space's host-internal member list. Requires auth as the space owner. */
 const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["SpaceNotFound","NotSpaceOwner"]);
 
 export { main };

@@ -1,6 +1,6 @@
 import { SPACE_TYPES } from "@colibri-social/lexicons";
 import { describe, expect, it } from "vitest";
-import { decideSpaceAccess } from "./access.js";
+import { decideSpaceAccess, type SpaceAccess } from "./access.js";
 import {
 	type ActorAuthz,
 	type ChannelState,
@@ -249,6 +249,7 @@ describe("space access decisions", () => {
 			profileIsPublic: boolean;
 			channel: ChannelState | null;
 			thread: ThreadState | null;
+			access: SpaceAccess;
 		}> = {},
 	) =>
 		decideSpaceAccess({
@@ -257,6 +258,7 @@ describe("space access decisions", () => {
 			visibility: { profileIsPublic: options.profileIsPublic ?? true },
 			channel: options.channel ?? null,
 			thread: options.thread ?? null,
+			access: options.access,
 		});
 
 	const thread = (overrides: Partial<ThreadState> = {}): ThreadState => ({
@@ -368,6 +370,100 @@ describe("space access decisions", () => {
 	it("refuses an unrecognised space type", () => {
 		expect(
 			decide("com.example.something", authz({ roles: [role({ protected: true })] })).authorized,
+		).toBe(false);
+	});
+});
+
+describe("write access decisions", () => {
+	const decide = (
+		spaceType: string,
+		state: ActorAuthz,
+		options: Partial<{ channel: ChannelState | null; thread: ThreadState | null }> = {},
+	) =>
+		decideSpaceAccess({
+			spaceType,
+			authz: state,
+			visibility: { profileIsPublic: true },
+			channel: options.channel ?? null,
+			thread: options.thread ?? null,
+			access: "write",
+		});
+
+	const thread = (overrides: Partial<ThreadState> = {}): ThreadState => ({
+		space: "at://did:plc:community/space/social.colibri.beta.channel.thread/3lkthread",
+		skey: "3lkthread",
+		channel: "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchan",
+		createdBy: ACTOR,
+		visibleToRoles: [],
+		visibleToMembers: [],
+		...overrides,
+	});
+
+	it("leaves the community's own spaces to the community", () => {
+		for (const type of [
+			SPACE_TYPES.communityProfile,
+			SPACE_TYPES.communityConfiguration,
+			SPACE_TYPES.communityMembers,
+			SPACE_TYPES.communityModeration,
+		]) {
+			expect(
+				decide(type, authz({ roles: [role({ permissions: ["community.manage"] })] })).authorized,
+			).toBe(false);
+			expect(decide(type, authz({ isOwner: true })).authorized).toBe(true);
+		}
+	});
+
+	it("lets a member post in a channel they may read and post in", () => {
+		expect(decide(SPACE_TYPES.channelText, authz(), { channel: channel() }).authorized).toBe(true);
+	});
+
+	it("refuses a member who may read an owner-only channel but not post in it", () => {
+		const readable = channel({ ownerOnly: true });
+
+		expect(canRead(authz(), readable)).toBe(true);
+		expect(decide(SPACE_TYPES.channelText, authz(), { channel: readable }).authorized).toBe(false);
+	});
+
+	it("refuses a member outside a channel's allow list", () => {
+		expect(
+			decide(SPACE_TYPES.channelText, authz(), {
+				channel: channel({ allowedRoles: ["3lkspeaker"] }),
+			}).authorized,
+		).toBe(false);
+		expect(
+			decide(SPACE_TYPES.channelText, authz({ roles: [role({ rkey: "3lkspeaker" })] }), {
+				channel: channel({ allowedRoles: ["3lkspeaker"] }),
+			}).authorized,
+		).toBe(true);
+	});
+
+	it("refuses a thread whose channel the member may read but not post in", () => {
+		const readable = channel({ ownerOnly: true });
+
+		expect(
+			decide(SPACE_TYPES.channelThread, authz(), { channel: readable, thread: thread() })
+				.authorized,
+		).toBe(false);
+	});
+
+	it("lets a member post in a thread they may read beside a channel they may post in", () => {
+		expect(
+			decide(SPACE_TYPES.channelThread, authz(), {
+				channel: channel(),
+				thread: thread({ visibleToMembers: [ACTOR] }),
+			}).authorized,
+		).toBe(true);
+	});
+
+	it("refuses an access kind it does not recognise", () => {
+		expect(
+			decideSpaceAccess({
+				spaceType: SPACE_TYPES.channelText,
+				authz: authz(),
+				visibility: { profileIsPublic: true },
+				channel: channel(),
+				access: "append",
+			}).authorized,
 		).toBe(false);
 	});
 });

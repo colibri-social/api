@@ -1,11 +1,17 @@
-import { AtUri, ensureValidDid, ensureValidNsid, SpaceRef } from "@atproto/syntax";
+import {
+	AtUri,
+	type DidString,
+	ensureValidDid,
+	ensureValidNsid,
+	ensureValidRecordKey,
+	type NsidString,
+	type RecordKeyString,
+	SpaceRef,
+} from "@atproto/syntax";
 import { SpaceRefError } from "./errors.js";
 
 export type SpaceRefString = string;
 export type SpaceRecordUri = string;
-
-type DidString = `did:${string}:${string}`;
-type NsidString = `${string}.${string}.${string}`;
 
 const asDid = (value: string): DidString => {
 	ensureValidDid(value);
@@ -15,6 +21,11 @@ const asDid = (value: string): DidString => {
 const asNsid = (value: string): NsidString => {
 	ensureValidNsid(value);
 	return value as NsidString;
+};
+
+const asRecordKey = (value: string): RecordKeyString => {
+	ensureValidRecordKey(value);
+	return value as RecordKeyString;
 };
 
 export type ParsedSpaceRef = {
@@ -31,7 +42,7 @@ export type ParsedSpaceRecord = ParsedSpaceRef & {
 };
 
 export const spaceRef = (authority: string, spaceType: string, skey: string): SpaceRefString =>
-	new SpaceRef(asDid(authority), asNsid(spaceType), skey).toString();
+	new SpaceRef(asDid(authority), asNsid(spaceType), asRecordKey(skey)).toString();
 
 export const parseSpaceRef = (value: string): ParsedSpaceRef => {
 	let parsed: SpaceRef;
@@ -63,13 +74,26 @@ export const spaceRecordUri = (
 	rkey: string,
 ): SpaceRecordUri => {
 	const { authority, spaceType, skey } = parseSpaceRef(space);
-	return AtUri.makeSpace(authority, spaceType, skey, author, collection, rkey).toString();
+	return AtUri.makeSpace(
+		asDid(authority),
+		asNsid(spaceType),
+		asRecordKey(skey),
+		asDid(author),
+		asNsid(collection),
+		asRecordKey(rkey),
+	).toString();
 };
 
 export const parseSpaceRecordUri = (value: string): ParsedSpaceRecord => {
-	const uri = new AtUri(value);
-	const ref = uri.spaceRef();
-	if (!ref || !uri.authorDid || !uri.collection || !uri.rkey) throw new SpaceRefError(value);
+	let uri: AtUri;
+	let ref: SpaceRef;
+	try {
+		uri = new AtUri(value);
+		ref = SpaceRef.for(value);
+	} catch {
+		throw new SpaceRefError(value);
+	}
+	if (!uri.authorDid || !uri.collection || !uri.rkey) throw new SpaceRefError(value);
 	return {
 		authority: ref.spaceDid,
 		spaceType: ref.spaceType,

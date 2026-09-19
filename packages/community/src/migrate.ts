@@ -158,10 +158,11 @@ export const migrateCommunity = async (
 			.createSpace(session, {
 				type,
 				skey,
-				policy:
+				readPolicy:
 					type === SPACE_TYPES.communityProfile && !isPrivate
 						? publicPolicy()
 						: managingAppPolicy(deps.appviewService),
+				writePolicy: managingAppPolicy(deps.appviewService),
 				appAccess: openAppAccess(),
 			})
 			.catch((error: unknown) => {

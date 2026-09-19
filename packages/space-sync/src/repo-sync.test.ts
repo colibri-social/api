@@ -1,6 +1,7 @@
 import { Secp256k1Keypair } from "@atproto/crypto";
 import type { LexMap } from "@atproto/lex-data";
 import { RepoCommit, type SignedCommit, serializeRecord, serializeRepo } from "@atproto/space";
+import type { NsidString, RecordKeyString } from "@atproto/syntax";
 import { XrpcError } from "@colibri-social/space";
 import { beforeEach, describe, expect, it } from "vitest";
 import { CarTooLargeError, RepoSync } from "./repo-sync.js";
@@ -69,7 +70,11 @@ const sign = async (
 ): Promise<{ commit: SignedCommit; serialized: Awaited<ReturnType<typeof serializeRecord>>[] }> => {
 	const serialized = await Promise.all(
 		records.map((record) =>
-			serializeRecord(record.collection, record.rkey, record.value as LexMap),
+			serializeRecord(
+				record.collection as NsidString,
+				record.rkey as RecordKeyString,
+				record.value as LexMap,
+			),
 		),
 	);
 	const commit = await RepoCommit.fromRecords(serialized).sign(
@@ -94,7 +99,11 @@ const message = (rkey: string, text: string): StoredRecord => ({
 const cidsFor = async (records: StoredRecord[]): Promise<StoredRecord[]> => {
 	const serialized = await Promise.all(
 		records.map((record) =>
-			serializeRecord(record.collection, record.rkey, record.value as LexMap),
+			serializeRecord(
+				record.collection as NsidString,
+				record.rkey as RecordKeyString,
+				record.value as LexMap,
+			),
 		),
 	);
 	return records.map((record, index) => ({

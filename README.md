@@ -123,10 +123,10 @@ credentials and answers `checkUserAccess` for every one of its spaces, so it is
 the only one that can serve the community. A client that finds a community whose
 `managingApp` is not the AppView it is talking to must talk to that AppView
 instead, for reads, writes, events and voice alike. The field lives on the record
-rather than being read from the space policy because
-`com.atproto.simplespace.getSpace` only serves a policy to a caller already
+rather than being read from the space policies because
+`com.atproto.simplespace.getSpace` only serves them to a caller already
 authorized for that space, and a prospective member is not. The profile space is
-public, so the record can be read before joining.
+publicly readable, so the record can be read before joining.
 
 `social.colibri.beta.community.create` provisions an account on this AppView's
 PDS and needs `PDS_ADMIN_PASSWORD`.

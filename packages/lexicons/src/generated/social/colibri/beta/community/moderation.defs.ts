@@ -11,6 +11,6 @@ type $nsid = typeof $nsid;
 export { $nsid };
 
 /** A community's moderation audit log. Kept in its own space so it can be read by moderators without being readable by the whole membership. */
-const main = /*#__PURE__*/ l.space($nsid, "literal:self", "Colibri community moderation log", ["social.colibri.beta.moderation"], {"description":"A community's moderation audit log. Kept in its own space so it can be read by moderators without being readable by the whole membership."});
+const main = /*#__PURE__*/ l.space($nsid, "literal:self", ["social.colibri.beta.moderation"], {"name":"Colibri community moderation log"});
 
 export { main };

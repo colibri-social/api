@@ -116,9 +116,16 @@ export class CommunityProvisioner {
 		return this.deps.appviewService.split("#")[0] as string;
 	}
 
-	private policyFor(spaceType: string, isPrivate: boolean): SpacePolicy {
-		if (spaceType === SPACE_TYPES.communityProfile && !isPrivate) return publicPolicy();
-		return managingAppPolicy(this.deps.appviewService);
+	private policiesFor(
+		spaceType: string,
+		isPrivate: boolean,
+	): { readPolicy: SpacePolicy; writePolicy: SpacePolicy } {
+		const managed = managingAppPolicy(this.deps.appviewService);
+		const profileIsPublic = spaceType === SPACE_TYPES.communityProfile && !isPrivate;
+		return {
+			readPolicy: profileIsPublic ? publicPolicy() : managed,
+			writePolicy: managed,
+		};
 	}
 
 	async create(
@@ -229,7 +236,7 @@ export class CommunityProvisioner {
 			await host.pds.createSpace(host.session, {
 				type: spaceType,
 				skey: SELF,
-				policy: this.policyFor(spaceType, isPrivate),
+				...this.policiesFor(spaceType, isPrivate),
 				appAccess: openAppAccess(),
 			});
 			await this.deps.spaces.register({
@@ -391,7 +398,8 @@ export class CommunityProvisioner {
 		await host.pds.createSpace(host.session, {
 			type: channel.type,
 			skey,
-			policy: managingAppPolicy(this.deps.appviewService),
+			readPolicy: managingAppPolicy(this.deps.appviewService),
+			writePolicy: managingAppPolicy(this.deps.appviewService),
 			appAccess: openAppAccess(),
 		});
 		await this.deps.spaces.register({ uri: space, community, host: host.pds.service });
@@ -425,7 +433,8 @@ export class CommunityProvisioner {
 		await host.pds.createSpace(host.session, {
 			type: SPACE_TYPES.channelThread,
 			skey,
-			policy: managingAppPolicy(this.deps.appviewService),
+			readPolicy: managingAppPolicy(this.deps.appviewService),
+			writePolicy: managingAppPolicy(this.deps.appviewService),
 			appAccess: openAppAccess(),
 		});
 		await this.deps.spaces.register({ uri: space, community, host: host.pds.service });

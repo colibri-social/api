@@ -49,15 +49,17 @@ describe("provisioning a community", () => {
 		expect(uris).toContain(textChannel);
 	});
 
-	it("makes the profile space public and the rest managed by this AppView", async () => {
+	it("makes the profile space publicly readable and the rest managed by this AppView", async () => {
 		const session = await harness.credentials.session(community);
 		const spaces = communitySpaces(community);
 
 		const profile = await harness.pds.getSpace(session, spaces.profile);
-		expect(profile.policy.$type).toBe("com.atproto.simplespace.defs#publicPolicy");
+		expect(profile.readPolicy.$type).toBe("com.atproto.simplespace.defs#publicPolicy");
+		expect(profile.writePolicy.$type).toBe("com.atproto.simplespace.defs#managingAppPolicy");
 
 		const members = await harness.pds.getSpace(session, spaces.members);
-		expect(members.policy.$type).toBe("com.atproto.simplespace.defs#managingAppPolicy");
+		expect(members.readPolicy.$type).toBe("com.atproto.simplespace.defs#managingAppPolicy");
+		expect(members.writePolicy.$type).toBe("com.atproto.simplespace.defs#managingAppPolicy");
 	});
 
 	it("seeds the community so it is usable immediately", async () => {
@@ -227,7 +229,8 @@ describe("a personal space", () => {
 		await harness.pds.createSpace(user.session, {
 			type: SPACE_TYPES.actorPreferences,
 			skey: SELF,
-			policy: { $type: "com.atproto.simplespace.defs#memberListPolicy" },
+			readPolicy: { $type: "com.atproto.simplespace.defs#memberListPolicy" },
+			writePolicy: { $type: "com.atproto.simplespace.defs#memberListPolicy" },
 			appAccess: { $type: "com.atproto.simplespace.defs#open" },
 		});
 

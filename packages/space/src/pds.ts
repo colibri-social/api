@@ -27,6 +27,22 @@ export const allowListAppAccess = (allowed: string[]): SpaceAppAccess => ({
 	allowed,
 });
 
+export type SpaceConfiguration = {
+	uri: SpaceRefString;
+	readPolicy: SpacePolicy;
+	writePolicy: SpacePolicy;
+	appAccess: SpaceAppAccess;
+};
+
+export type SpaceMemberAccess = {
+	read: boolean;
+	write: boolean;
+};
+
+export type SpaceMember = SpaceMemberAccess & {
+	did: string;
+};
+
 export type CreatedAccount = {
 	did: string;
 	handle: string;
@@ -137,7 +153,13 @@ export class PdsClient {
 
 	createSpace(
 		session: PdsSession,
-		params: { type: string; skey?: string; policy: SpacePolicy; appAccess: SpaceAppAccess },
+		params: {
+			type: string;
+			skey?: string;
+			readPolicy: SpacePolicy;
+			writePolicy: SpacePolicy;
+			appAccess: SpaceAppAccess;
+		},
 	): Promise<{ uri: SpaceRefString }> {
 		return session.run((auth) =>
 			this.xrpc.procedure<{ uri: SpaceRefString }>(
@@ -150,7 +172,12 @@ export class PdsClient {
 
 	updateSpace(
 		session: PdsSession,
-		params: { space: SpaceRefString; policy?: SpacePolicy; appAccess?: SpaceAppAccess },
+		params: {
+			space: SpaceRefString;
+			readPolicy?: SpacePolicy;
+			writePolicy?: SpacePolicy;
+			appAccess?: SpaceAppAccess;
+		},
 	): Promise<void> {
 		return session.run(async (auth) => {
 			await this.xrpc.procedure("com.atproto.simplespace.updateSpace", params, auth);
@@ -163,23 +190,39 @@ export class PdsClient {
 		});
 	}
 
-	getSpace(
-		session: PdsSession,
-		space: SpaceRefString,
-	): Promise<{ uri: SpaceRefString; policy: SpacePolicy; appAccess: SpaceAppAccess }> {
+	getSpace(session: PdsSession, space: SpaceRefString): Promise<SpaceConfiguration> {
 		return session.run((auth) =>
-			this.xrpc.query<{ uri: SpaceRefString; policy: SpacePolicy; appAccess: SpaceAppAccess }>(
-				"com.atproto.simplespace.getSpace",
-				{ space },
-				auth,
-			),
+			this.xrpc.query<SpaceConfiguration>("com.atproto.simplespace.getSpace", { space }, auth),
 		);
 	}
 
-	addMember(session: PdsSession, space: SpaceRefString, did: string): Promise<void> {
+	putMember(
+		session: PdsSession,
+		space: SpaceRefString,
+		did: string,
+		access: SpaceMemberAccess,
+	): Promise<void> {
 		return session.run(async (auth) => {
-			await this.xrpc.procedure("com.atproto.simplespace.addMember", { space, did }, auth);
+			await this.xrpc.procedure(
+				"com.atproto.simplespace.putMember",
+				{ space, did, read: access.read, write: access.write },
+				auth,
+			);
 		});
+	}
+
+	listMembers(
+		session: PdsSession,
+		space: SpaceRefString,
+		options: { limit?: number; cursor?: string } = {},
+	): Promise<{ members: SpaceMember[]; cursor?: string }> {
+		return session.run((auth) =>
+			this.xrpc.query<{ members: SpaceMember[]; cursor?: string }>(
+				"com.atproto.simplespace.listMembers",
+				{ space, ...options },
+				auth,
+			),
+		);
 	}
 
 	removeMember(session: PdsSession, space: SpaceRefString, did: string): Promise<void> {

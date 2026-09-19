@@ -1,4 +1,4 @@
-import { communitySpaces } from "@colibri-social/lexicons";
+import { communitySpaces, SPACE_TYPES } from "@colibri-social/lexicons";
 import { type PdsAdmin, type PdsClient, type PdsSession, XrpcError } from "@colibri-social/space";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { CommunityCredentials, StoredCredentials } from "./credentials.js";
@@ -20,7 +20,13 @@ type Write = {
 };
 
 let writes: Write[];
-let createdSpaces: Array<{ service: string; type: string; skey: string; policy: unknown }>;
+let createdSpaces: Array<{
+	service: string;
+	type: string;
+	skey: string;
+	readPolicy: unknown;
+	writePolicy: unknown;
+}>;
 let stored: StoredCredentials[];
 let forgotten: string[];
 let existingSpaces: string[];
@@ -36,7 +42,7 @@ const fakeClient = (service: string): PdsClient =>
 		listSpaces: async () => ({ spaces: existingSpaces.map((uri) => ({ uri })) }),
 		createSpace: async (
 			_session: PdsSession,
-			params: { type: string; skey: string; policy: unknown },
+			params: { type: string; skey: string; readPolicy: unknown; writePolicy: unknown },
 		) => {
 			createdSpaces.push({ service, ...params });
 			return { uri: `at://${COMMUNITY}/${params.type}/${params.skey}` };
@@ -307,6 +313,35 @@ describe("adopting an existing account", () => {
 		await expect(provisioner().create({ name: "Nope", creator: CREATOR })).rejects.toMatchObject({
 			reason: "adminUnavailable",
 		});
+	});
+});
+
+describe("space policies", () => {
+	it("makes the profile readable by anyone but writable only through this AppView", async () => {
+		await adopt();
+		const profile = createdSpaces.find((space) => space.type === SPACE_TYPES.communityProfile);
+
+		expect(profile?.readPolicy).toEqual({
+			$type: "com.atproto.simplespace.defs#publicPolicy",
+		});
+		expect(profile?.writePolicy).toEqual({
+			$type: "com.atproto.simplespace.defs#managingAppPolicy",
+			managingApp: APPVIEW_SERVICE,
+		});
+	});
+
+	it("routes both sides of every other space through this AppView", async () => {
+		await adopt();
+		const managed = {
+			$type: "com.atproto.simplespace.defs#managingAppPolicy",
+			managingApp: APPVIEW_SERVICE,
+		};
+
+		for (const space of createdSpaces) {
+			if (space.type === SPACE_TYPES.communityProfile) continue;
+			expect(space.readPolicy).toEqual(managed);
+			expect(space.writePolicy).toEqual(managed);
+		}
 	});
 });
 

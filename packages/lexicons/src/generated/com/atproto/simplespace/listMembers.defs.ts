@@ -19,7 +19,7 @@ export const $output = /*#__PURE__*/ l.jsonPayload({"cursor":/*#__PURE__*/ l.opt
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** List the members in a space's host-internal member list. Must be called on the space authority's PDS. Requires OAuth with a covering read grant; a space credential is not sufficient, so members hosted elsewhere cannot enumerate the list. This reflects the simplespace member list, not a protocol-level reader set. */
+/** List the members in a space's host-internal member list and their read and write access. Must be called on the space authority's PDS. Requires OAuth with a covering read grant; a space credential is not sufficient, so members hosted elsewhere cannot enumerate the list. */
 const main = /*#__PURE__*/ l.query($nsid, $params, $output, ["SpaceNotFound"]);
 
 export { main };
@@ -30,10 +30,10 @@ type $lxm = typeof $lxm;
 
 export { $lxm };
 
-type Member = { $type?: "com.atproto.simplespace.listMembers#member";"did":l.DidString };
+type Member = { $type?: "com.atproto.simplespace.listMembers#member";"did":l.DidString;"read":boolean;"write":boolean };
 
 export type { Member };
 
-const member = /*#__PURE__*/ l.typedObject<Member>($nsid, "member", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"})}));
+const member = /*#__PURE__*/ l.typedObject<Member>($nsid, "member", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"read":/*#__PURE__*/ l.boolean(),"write":/*#__PURE__*/ l.boolean()}));
 
 export { member };

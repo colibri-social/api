@@ -35,13 +35,17 @@ export const readVerifiedRepoCar = async (
 	return {
 		commit: verified.commit,
 		records: (async function* () {
-			for await (const record of verified.records) {
-				yield {
-					collection: record.collection,
-					rkey: record.rkey,
-					cid: record.cid.toString(),
-					value: record.record as Record<string, unknown>,
-				};
+			try {
+				for await (const record of verified.records) {
+					yield {
+						collection: record.collection,
+						rkey: record.rkey,
+						cid: record.cid.toString(),
+						value: record.record as Record<string, unknown>,
+					};
+				}
+			} finally {
+				await verified[Symbol.asyncDispose]();
 			}
 		})(),
 	};

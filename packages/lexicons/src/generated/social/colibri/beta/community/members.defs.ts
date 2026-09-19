@@ -11,6 +11,6 @@ type $nsid = typeof $nsid;
 export { $nsid };
 
 /** A community's membership and the roles that can be assigned within it. */
-const main = /*#__PURE__*/ l.space($nsid, "literal:self", "Colibri community members", ["social.colibri.beta.member","social.colibri.beta.role","social.colibri.beta.label"], {"description":"A community's membership and the roles that can be assigned within it."});
+const main = /*#__PURE__*/ l.space($nsid, "literal:self", ["social.colibri.beta.member","social.colibri.beta.role","social.colibri.beta.label"], {"name":"Colibri community members"});
 
 export { main };

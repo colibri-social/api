@@ -4,7 +4,7 @@
 
 import { l } from "@atproto/lex";
 
-const $nsid = "com.atproto.simplespace.addMember";
+const $nsid = "com.atproto.simplespace.putMember";
 
 type $nsid = typeof $nsid;
 
@@ -14,7 +14,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"space":/*#__PURE__*/ l.string({"format":"space-ref"}),"did":/*#__PURE__*/ l.string({"format":"did"})});
+export const $input = /*#__PURE__*/ l.jsonPayload({"space":/*#__PURE__*/ l.string({"format":"space-ref"}),"did":/*#__PURE__*/ l.string({"format":"did"}),"read":/*#__PURE__*/ l.boolean(),"write":/*#__PURE__*/ l.boolean()});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;
@@ -24,7 +24,7 @@ export const $output = /*#__PURE__*/ l.payload();
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Add a member to a space's member list. The member list is host-internal state consulted at credential-mint time when the space's policy is 'member-list'. It is not a synced protocol structure and is not enumerated to the network. Requires auth as the space owner. */
+/** Add a member to a space's host-internal member list or replace their read and write access. Requires auth as the space owner. */
 const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["SpaceNotFound","NotSpaceOwner"]);
 
 export { main };

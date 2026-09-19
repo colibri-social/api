@@ -25,10 +25,17 @@ export const registerProtocolRoutes = ({ server, ctx, auth }: RouteDeps): void =
 				visibility: { profileIsPublic: false },
 				channel,
 				thread,
+				access: params.access,
 			});
 
 			ctx.log.debug(
-				{ space: space.uri, user: params.user, client: params.clientId, reason: decision.reason },
+				{
+					space: space.uri,
+					user: params.user,
+					access: params.access,
+					client: params.clientId,
+					reason: decision.reason,
+				},
 				decision.authorized ? "access.granted" : "access.refused",
 			);
 

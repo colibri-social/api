@@ -11,6 +11,6 @@ type $nsid = typeof $nsid;
 export { $nsid };
 
 /** A text channel. The space key is the channel's identity, and the channel's own configuration is the social.colibri.beta.channel record at key 'self' inside it. */
-const main = /*#__PURE__*/ l.space($nsid, "tid", "Colibri text channel", ["social.colibri.beta.channel","social.colibri.beta.message","social.colibri.beta.reaction","social.colibri.beta.label"], {"description":"A text channel. The space key is the channel's identity, and the channel's own configuration is the social.colibri.beta.channel record at key 'self' inside it."});
+const main = /*#__PURE__*/ l.space($nsid, "tid", ["social.colibri.beta.channel","social.colibri.beta.message","social.colibri.beta.reaction","social.colibri.beta.label"], {"name":"Colibri text channel"});
 
 export { main };
