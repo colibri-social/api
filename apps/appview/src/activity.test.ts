@@ -10,17 +10,20 @@ import {
 	sweepLapsedActivities,
 } from "./activity.js";
 import { type ArtworkEntry, artworkCacheKey } from "./activity-artwork.js";
+import type { GameEntry } from "./activity-game.js";
 import {
 	ATRADIO_STATUS_COLLECTION,
+	GAMES_STATUS_COLLECTION,
 	ROCKSKY_STATUS_COLLECTION,
 	readAtradioStatus,
+	readGamesStatus,
 	readRockskyStatus,
 	readTealStatus,
 	TEAL_ALPHA_STATUS_COLLECTION,
 	TEAL_STATUS_COLLECTION,
 } from "./activity-providers.js";
 import type { AppContext } from "./context.js";
-import { loadActivity } from "./views/activity.js";
+import { loadActorActivities } from "./views/activity.js";
 import type { ServerFrame } from "./ws/events.js";
 
 const published = new Map<string, unknown>();
@@ -32,6 +35,11 @@ vi.mock("@colibri-social/space", async (importOriginal) => ({
 			const value = published.get(collection);
 			if (!value) throw new Error(`no ${collection} record`);
 			return { value };
+		}
+
+		async listPublicRecords(_did: string, collection: string) {
+			const value = published.get(collection);
+			return { records: value ? [{ uri: "at://record", cid: "cid", value }] : [] };
 		}
 	},
 }));
@@ -94,8 +102,38 @@ const atradioStatus = (
 	playedAt = "2026-08-25T13:15:00.000Z",
 ) => ({ $type: "fm.atradio.actor.status", station, playedAt });
 
+const GAME_COLLECTION = "games.gamesgamesgamesgames.game";
+const GAME_URI = `at://did:web:gamesgamesgamesgames.games/${GAME_COLLECTION}/3mgiamqx3l62d`;
+
+const GAME = {
+	name: "Wuthering Waves",
+	media: [
+		{ blob: { ref: { $link: "bafkreiscreenshot" } }, mediaType: "screenshot" },
+		{ blob: { ref: { $link: "bafkreicover" } }, mediaType: "cover" },
+	],
+	createdAt: "2026-01-01T00:00:00.000Z",
+} as const;
+
+const gamesStatus = (extra: Record<string, unknown> = {}) => ({
+	$type: "games.atmosphere.status",
+	via: "sync.atplay.games",
+	game: GAME_URI,
+	embed: {
+		external: {
+			uri: "https://cartridge.dev/game/wuthering-waves",
+			title: "Wuthering Waves",
+			description: "A story-rich open-world action RPG.",
+		},
+	},
+	playing: {},
+	createdAt: "2026-08-25T13:10:00.000Z",
+	staleAt: "2026-08-25T14:30:00.000Z",
+	...extra,
+});
+
 let database: TestDatabase;
 let artwork: TtlCache<ArtworkEntry>;
+let games: TtlCache<GameEntry>;
 let announced: Array<{ to: string; frame: ServerFrame }>;
 let ctx: AppContext;
 
@@ -122,6 +160,14 @@ const sharing = async (shareActivity: boolean) => {
 		.onConflictDoUpdate({ target: database.tables.actorSettings.did, set: { shareActivity } });
 };
 
+const storedRows = async () => {
+	const rows = await database.db
+		.select()
+		.from(database.tables.actorActivity)
+		.where(eq(database.tables.actorActivity.did, ACTOR));
+	return rows.sort((left, right) => left.source.localeCompare(right.source));
+};
+
 const storedRow = async () => {
 	const [row] = await database.db
 		.select()
@@ -133,7 +179,9 @@ const storedRow = async () => {
 
 const activities = () =>
 	announced.map(
-		(entry) => (entry.frame.presence as { activity?: { title: string } } | undefined)?.activity,
+		(entry) =>
+			(entry.frame.presence as { activities?: Array<{ title: string }> } | undefined)?.activities ??
+			[],
 	);
 
 const applyTeal = (record: unknown) =>
@@ -144,6 +192,7 @@ beforeEach(async () => {
 	vi.useFakeTimers({ toFake: ["Date"] });
 	vi.setSystemTime(NOW);
 	artwork = createTtlCache<ArtworkEntry>();
+	games = createTtlCache<GameEntry>();
 	announced = [];
 	published.clear();
 	ctx = {
@@ -155,6 +204,7 @@ beforeEach(async () => {
 		config: { PUBLIC_URL: "https://appview.test", SIGNING_KEY: "abcdef0123456789" },
 		database,
 		artwork,
+		games,
 		identity: { resolveDid: async () => ({ pds: "https://pds.test" }) },
 		voice: null,
 		log: { warn: () => undefined, debug: () => undefined },
@@ -183,6 +233,7 @@ describe("readTealStatus", () => {
 			endsAt: "2026-08-25T13:21:11.000Z",
 			source: "teal.fm",
 			releaseMbId: "mbid:fcdb5202-27a2-4500-90c6-5264a2cd2756",
+			gameUri: null,
 			searchArtwork: true,
 		});
 	});
@@ -249,6 +300,7 @@ describe("readRockskyStatus", () => {
 			endsAt: "2026-08-25T13:22:11.597Z",
 			source: "rocksky.app",
 			releaseMbId: null,
+			gameUri: null,
 			searchArtwork: true,
 		});
 	});
@@ -289,6 +341,7 @@ describe("readAtradioStatus", () => {
 			endsAt: "2026-08-25T19:15:00.000Z",
 			source: "atradio.fm",
 			releaseMbId: null,
+			gameUri: null,
 			searchArtwork: false,
 		});
 	});
@@ -328,6 +381,48 @@ describe("readAtradioStatus", () => {
 	});
 });
 
+describe("readGamesStatus", () => {
+	it("reads a status into an activity", () => {
+		expect(readGamesStatus(gamesStatus(), NOW)).toEqual({
+			kind: "playing",
+			title: "Wuthering Waves",
+			subtitle: null,
+			detail: null,
+			imageUrl: null,
+			linkUri: "https://cartridge.dev/game/wuthering-waves",
+			startedAt: "2026-08-25T13:10:00.000Z",
+			endsAt: "2026-08-25T14:30:00.000Z",
+			source: "atmosphere.games",
+			releaseMbId: null,
+			gameUri: GAME_URI,
+			searchArtwork: false,
+		});
+	});
+
+	it("falls back to the default window when the status names no staleAt", () => {
+		const draft = readGamesStatus(
+			gamesStatus({ createdAt: "2026-08-25T13:19:00.000Z", staleAt: undefined }),
+			NOW,
+		);
+		expect(draft?.endsAt).toBe("2026-08-25T13:29:00.000Z");
+	});
+
+	it("keeps the game it can still name when the embed is empty", () => {
+		const draft = readGamesStatus(gamesStatus({ embed: {} }), NOW);
+		expect(draft?.gameUri).toBe(GAME_URI);
+		expect(draft?.title).toBeNull();
+		expect(draft?.linkUri).toBeNull();
+	});
+
+	it("reads nothing from a status that names neither a game nor a title", () => {
+		expect(readGamesStatus({ createdAt: "2026-08-25T13:10:00.000Z" }, NOW)).toBeNull();
+	});
+
+	it("reads nothing from a status whose window has closed", () => {
+		expect(readGamesStatus(gamesStatus({ staleAt: "2026-08-25T13:00:00.000Z" }), NOW)).toBeNull();
+	});
+});
+
 describe("applyActivityRecord", () => {
 	it("ignores a status from someone who does not share their listening", async () => {
 		await sharing(false);
@@ -344,7 +439,7 @@ describe("applyActivityRecord", () => {
 
 		expect((await storedRow())?.title).toBe("Sick Like You");
 		expect(announced.map((entry) => entry.to)).toEqual([ACTOR, COMMUNITY]);
-		expect(activities()[0]?.title).toBe("Sick Like You");
+		expect(activities()[0]?.[0]?.title).toBe("Sick Like You");
 	});
 
 	it("serves the artwork through this appview rather than the origin", async () => {
@@ -352,7 +447,7 @@ describe("applyActivityRecord", () => {
 		seedArtwork("https://coverartarchive.org/release/fcdb5202/front-500");
 		await applyTeal(status(PLAY));
 
-		const activity = await loadActivity(ctx, ACTOR);
+		const [activity] = await loadActorActivities(ctx, ACTOR);
 		expect(activity?.imageUri).toContain(
 			"https://appview.test/xrpc/social.colibri.beta.embed.getImage",
 		);
@@ -365,7 +460,7 @@ describe("applyActivityRecord", () => {
 		await applyTeal(status(PLAY));
 
 		expect((await storedRow())?.imageUrl).toBeNull();
-		expect((await loadActivity(ctx, ACTOR))?.imageUri).toBeUndefined();
+		expect((await loadActorActivities(ctx, ACTOR))[0]?.imageUri).toBeUndefined();
 	});
 
 	it("looks the artwork up again for a track stored without any", async () => {
@@ -412,8 +507,47 @@ describe("applyActivityRecord", () => {
 		await applyTeal(status({ trackName: "", artists: [] }, { expiry: "2026-08-25T13:19:00Z" }));
 
 		expect(await storedRow()).toBeUndefined();
-		expect(activities()[0]).toBeUndefined();
+		expect(activities()[0]).toEqual([]);
 		expect(announced).toHaveLength(2);
+	});
+
+	it("names a game from the record its status points at", async () => {
+		await sharing(true);
+		published.set(GAME_COLLECTION, GAME);
+
+		await applyActivityRecord(ctx, ACTOR, GAMES_STATUS_COLLECTION, gamesStatus());
+
+		const row = await storedRow();
+		expect(row?.kind).toBe("playing");
+		expect(row?.title).toBe("Wuthering Waves");
+		expect(row?.source).toBe("atmosphere.games");
+		expect(row?.imageUrl).toContain("https://pds.test/xrpc/com.atproto.sync.getBlob");
+		expect(row?.imageUrl).toContain("cid=bafkreicover");
+	});
+
+	it("keeps the title the status carried when the game record is gone", async () => {
+		await sharing(true);
+
+		await applyActivityRecord(ctx, ACTOR, GAMES_STATUS_COLLECTION, gamesStatus());
+
+		const row = await storedRow();
+		expect(row?.title).toBe("Wuthering Waves");
+		expect(row?.imageUrl).toBeNull();
+	});
+
+	it("shows what someone listens to and what they play side by side", async () => {
+		await sharing(true);
+		seedArtwork(null);
+		published.set(GAME_COLLECTION, GAME);
+
+		await applyTeal(status(PLAY));
+		await applyActivityRecord(ctx, ACTOR, GAMES_STATUS_COLLECTION, gamesStatus());
+
+		expect((await storedRows()).map((row) => row.source)).toEqual(["atmosphere.games", "teal.fm"]);
+		expect((await loadActorActivities(ctx, ACTOR)).map((view) => view.kind)).toEqual([
+			"listening",
+			"playing",
+		]);
 	});
 
 	it("reads the alpha collection with the same parser", async () => {
@@ -532,7 +666,7 @@ describe("backfillActivity", () => {
 		expect((await storedRow())?.source).toBe("rocksky.app");
 	});
 
-	it("prefers the service whose track started most recently", async () => {
+	it("keeps a row for every service that has something current", async () => {
 		await sharing(true);
 		seedArtwork(null);
 		published.set(TEAL_STATUS_COLLECTION, status(PLAY));
@@ -540,7 +674,21 @@ describe("backfillActivity", () => {
 
 		await backfillActivity(ctx, ACTOR);
 
-		expect((await storedRow())?.source).toBe("teal.fm");
+		expect((await storedRows()).map((row) => row.source)).toEqual(["atradio.fm", "teal.fm"]);
+	});
+
+	it("serves the service whose track started most recently first", async () => {
+		await sharing(true);
+		seedArtwork(null);
+		published.set(TEAL_STATUS_COLLECTION, status(PLAY));
+		published.set(ATRADIO_STATUS_COLLECTION, atradioStatus());
+
+		await backfillActivity(ctx, ACTOR);
+
+		expect((await loadActorActivities(ctx, ACTOR)).map((view) => view.source)).toEqual([
+			"teal.fm",
+			"atradio.fm",
+		]);
 	});
 
 	it("ignores every stale record it finds", async () => {
@@ -563,14 +711,14 @@ describe("backfillActivity", () => {
 	});
 });
 
-describe("loadActivity", () => {
+describe("loadActorActivities", () => {
 	it("hides an activity from someone who stopped sharing", async () => {
 		await sharing(true);
 		seedArtwork(null);
 		await applyTeal(status(PLAY));
 		await sharing(false);
 
-		expect(await loadActivity(ctx, ACTOR)).toBeUndefined();
+		expect(await loadActorActivities(ctx, ACTOR)).toEqual([]);
 	});
 
 	it("hides an activity that has lapsed", async () => {
@@ -583,7 +731,7 @@ describe("loadActivity", () => {
 			.set({ endsAt: "2020-01-01T00:00:00.000Z" })
 			.where(eq(database.tables.actorActivity.did, ACTOR));
 
-		expect(await loadActivity(ctx, ACTOR)).toBeUndefined();
+		expect(await loadActorActivities(ctx, ACTOR)).toEqual([]);
 	});
 });
 
@@ -613,5 +761,19 @@ describe("clearing", () => {
 
 		expect(await sweepLapsedActivities(ctx)).toBe(1);
 		expect(await storedRow()).toBeUndefined();
+	});
+	it("sweeps only the service whose activity lapsed", async () => {
+		await sharing(true);
+		seedArtwork(null);
+		published.set(GAME_COLLECTION, GAME);
+		await applyTeal(status(PLAY));
+		await applyActivityRecord(ctx, ACTOR, GAMES_STATUS_COLLECTION, gamesStatus());
+		await database.db
+			.update(database.tables.actorActivity)
+			.set({ endsAt: "2020-01-01T00:00:00.000Z" })
+			.where(eq(database.tables.actorActivity.source, "atmosphere.games"));
+
+		expect(await sweepLapsedActivities(ctx)).toBe(1);
+		expect((await storedRows()).map((row) => row.source)).toEqual(["teal.fm"]);
 	});
 });

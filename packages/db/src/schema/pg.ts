@@ -474,7 +474,7 @@ export const userPresence = pgTable("user_presence", {
 export const actorActivity = pgTable(
 	"actor_activity",
 	{
-		did: text("did").primaryKey(),
+		did: text("did").notNull(),
 		kind: text("kind").notNull().$type<ActivityKind>(),
 		title: text("title").notNull(),
 		subtitle: text("subtitle"),
@@ -486,7 +486,10 @@ export const actorActivity = pgTable(
 		source: text("source").notNull(),
 		updatedAt: timestamp("updated_at").notNull(),
 	},
-	(t) => [index("actor_activity_ends_at_idx").on(t.endsAt)],
+	(t) => [
+		primaryKey({ columns: [t.did, t.source] }),
+		index("actor_activity_ends_at_idx").on(t.endsAt),
+	],
 );
 
 export const identityCache = pgTable(

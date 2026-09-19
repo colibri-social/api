@@ -96,7 +96,7 @@ type Presence = { $type?: "social.colibri.beta.actor.defs#presence";
   "voice"?:VoiceState;
 
   /**
-   * What the user is doing right now, when they share it and the AppView has something current.
+   * What the user is doing right now, one entry per service they share from. Empty when the AppView has nothing current for them.
    */
   "activities"?:(Activity)[] };
 

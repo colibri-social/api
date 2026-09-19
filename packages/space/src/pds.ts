@@ -192,6 +192,14 @@ export class PdsClient {
 		return this.xrpc.query<T>("com.atproto.repo.getRecord", { repo, collection, rkey });
 	}
 
+	listPublicRecords<T>(
+		repo: string,
+		collection: string,
+		options: { limit?: number; cursor?: string; reverse?: boolean } = {},
+	): Promise<{ records: Array<{ uri: string; cid: string; value: T }>; cursor?: string }> {
+		return this.xrpc.query("com.atproto.repo.listRecords", { repo, collection, ...options });
+	}
+
 	resolveHandle(handle: string): Promise<{ did: string }> {
 		return this.xrpc.query<{ did: string }>("com.atproto.identity.resolveHandle", { handle });
 	}
