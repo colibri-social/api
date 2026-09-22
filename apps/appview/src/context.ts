@@ -22,6 +22,7 @@ import {
 	DidDocumentSpaceHostResolver,
 	PdsAdmin,
 	PdsClient,
+	parseSpaceRef,
 	SpaceClient,
 	SpaceCredentials,
 } from "@colibri-social/space";
@@ -44,6 +45,14 @@ import type { VoiceRoster } from "./ws/voice.js";
 const emptyVoiceRoster: VoiceRoster = {
 	isJoined: () => false,
 	disconnect: async () => {},
+};
+
+const authorityOf = (space: string): string | null => {
+	try {
+		return parseSpaceRef(space).authority;
+	} catch {
+		return null;
+	}
 };
 
 export type AppContext = Awaited<ReturnType<typeof createContext>>;
@@ -142,6 +151,10 @@ export const createContext = async (config: Config) => {
 			signingKeyFor: async (did) => (await identity.resolveDid(did)).signingKey,
 		},
 		syncerService: serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.syncer),
+		canRenew: async (space) => {
+			const authority = authorityOf(space);
+			return authority !== null && (await credentials.load(authority)) !== null;
+		},
 		concurrency: config.SYNC_WORKERS,
 		maxCarBytes: config.SYNC_MAX_CAR_BYTES,
 		workerThreads: config.SYNC_WORKER_THREADS,
@@ -202,7 +215,7 @@ export const createContext = async (config: Config) => {
 	);
 
 	async function delegationFor(space: string): Promise<string | null> {
-		const authority = space.slice("at://".length).split("/")[0];
+		const authority = authorityOf(space);
 		if (!authority) return null;
 		const stored = await credentials.load(authority);
 		if (!stored) return null;

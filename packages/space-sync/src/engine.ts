@@ -35,6 +35,7 @@ export type SyncEngineOptions = {
 	pageLimit?: number;
 	maxCarBytes?: number;
 	registrationRenewMarginMs?: number;
+	canRenew?: (space: string) => Promise<boolean>;
 	maxChaseAttempts?: number;
 	workerThreads?: number;
 	verifier?: Verifier;
@@ -337,7 +338,7 @@ export class SpaceSyncEngine {
 				registeredAt: null,
 				retryAt: null,
 				failures: 0,
-				dormant: false,
+				dormant: !(await this.renewable(row.space)),
 			});
 		}
 	}
@@ -347,6 +348,10 @@ export class SpaceSyncEngine {
 		if (state.dormant) return false;
 		if (this.registrationDue(state, this.now())) await this.register(space, state);
 		return this.registrations.get(space)?.dormant === false;
+	}
+
+	private async renewable(space: string): Promise<boolean> {
+		return (await this.options.canRenew?.(space)) ?? true;
 	}
 
 	private trackSpace(space: string): RegistrationState {
@@ -403,7 +408,8 @@ export class SpaceSyncEngine {
 		if (state.dormant) return true;
 		state.dormant = true;
 		state.retryAt = null;
-		this.log("space.dormant", { space, failures: state.failures });
+		const level = (await this.renewable(space)) ? "warn" : "debug";
+		this.log("space.dormant", { space, failures: state.failures }, level);
 		return true;
 	}
 

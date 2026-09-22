@@ -5,6 +5,7 @@ import type { RepoSyncOutcome } from "./repo-sync.js";
 import type { ChangeTiming, RepoCursor, SyncStore } from "./types.js";
 
 const SPACE = "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchan";
+const SYNCER = "did:web:appview#atproto_space_syncer";
 const AUTHORITY = "did:plc:community";
 const ALICE = "did:plc:alice";
 const BOB = "did:plc:bob";
@@ -86,7 +87,7 @@ const engineFor = (
 		store: store(options.expected),
 		hosts: { hostFor: async () => "https://pds.test" },
 		keys: { signingKeyFor: async () => "did:key:z" },
-		syncerService: "did:web:appview#atproto_space_syncer",
+		syncerService: SYNCER,
 		concurrency: 4,
 		...(options.now ? { now: options.now } : {}),
 		...(options.engine ?? {}),
@@ -650,6 +651,56 @@ describe("spaces the appview cannot mint a credential for", () => {
 		await engine.sweepSpace(SPACE);
 
 		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(2);
+	});
+
+	it("parks it quietly when the appview says the space cannot be renewed", async () => {
+		const logged: Array<{ event: string; level: string }> = [];
+		const { engine, spaceClient } = engineFor([], async () => undefined, {
+			engine: {
+				canRenew: async () => false,
+				log: (event, _detail, level = "warn") => void logged.push({ event, level }),
+			},
+		});
+		spaceClient.registerNotify.mockRejectedValue(noToken());
+
+		await engine.sweepSpace(SPACE);
+
+		expect(logged).toContainEqual({ event: "space.dormant", level: "debug" });
+	});
+
+	it("warns when a space it should be able to renew goes dormant", async () => {
+		const logged: Array<{ event: string; level: string }> = [];
+		const { engine, spaceClient } = engineFor([], async () => undefined, {
+			engine: { log: (event, _detail, level = "warn") => void logged.push({ event, level }) },
+		});
+		spaceClient.registerNotify.mockRejectedValue(noToken());
+
+		await engine.sweepSpace(SPACE);
+
+		expect(logged).toContainEqual({ event: "space.dormant", level: "warn" });
+	});
+
+	it("leaves a lapsed registration alone when the space cannot be renewed", async () => {
+		const events: string[] = [];
+		const { engine, spaceClient } = engineFor([], async () => undefined, {
+			engine: {
+				canRenew: async () => false,
+				log: (event) => void events.push(event),
+				store: {
+					...store(),
+					listRegistrations: async () => [
+						{ space: SPACE, service: SYNCER, expiresAt: new Date(Date.now() - 86_400_000) },
+					],
+				},
+			},
+		});
+
+		await engine.start();
+		await engine.stop();
+
+		expect(spaceClient.registerNotify).not.toHaveBeenCalled();
+		expect(events).not.toContain("registerNotify.lapsed");
+		expect(events).not.toContain("space.dormant");
 	});
 
 	it("drops a space whose community is gone rather than parking it", async () => {
