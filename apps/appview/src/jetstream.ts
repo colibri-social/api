@@ -1,3 +1,4 @@
+import type { ClientRequest, IncomingMessage } from "node:http";
 import { asDatetime, asRecordKey, COLLECTIONS } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import { WebSocket } from "ws";
@@ -12,6 +13,9 @@ const CURSOR_KEY = "jetstream.cursor";
 const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 60_000;
 const EVENTS_PER_CURSOR_SAVE = 500;
+const CURSOR_TOO_OLD = "CursorTooOld";
+const REJECTION_BODY_MAX_BYTES = 4_096;
+const REJECTION_BODY_TIMEOUT_MS = 5_000;
 
 const EVENT_TYPE_PREFIX = "network.bsky.jetstream.subscribeEvents#";
 const WANTED_KINDS = ["commit", "identity", "account"] as const;
@@ -50,6 +54,38 @@ type Frame = {
 	payload?: Payload;
 	error?: string;
 	message?: string;
+};
+
+type Rejection = { error?: string; message?: string };
+
+const readRejectionBody = async (response: IncomingMessage): Promise<string> => {
+	response.setTimeout(REJECTION_BODY_TIMEOUT_MS, () => response.destroy());
+
+	const chunks: Buffer[] = [];
+	let total = 0;
+	try {
+		for await (const chunk of response) {
+			const buffer = chunk as Buffer;
+			total += buffer.byteLength;
+			if (total > REJECTION_BODY_MAX_BYTES) break;
+			chunks.push(buffer);
+		}
+	} catch {
+		return Buffer.concat(chunks).toString("utf8");
+	} finally {
+		response.destroy();
+	}
+	return Buffer.concat(chunks).toString("utf8");
+};
+
+const parseRejection = (body: string): Rejection | null => {
+	try {
+		const parsed: unknown = JSON.parse(body);
+		if (typeof parsed !== "object" || parsed === null) return null;
+		return parsed as Rejection;
+	} catch {
+		return null;
+	}
 };
 
 const payloadKind = (payload: Payload): string | null => {
@@ -91,6 +127,7 @@ export class Jetstream {
 	async stop(): Promise<void> {
 		this.stopped = true;
 		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+		this.reconnectTimer = null;
 		this.socket?.close();
 		this.socket = null;
 		await this.flushCursor();
@@ -141,6 +178,7 @@ export class Jetstream {
 		this.socket = socket;
 
 		socket.on("open", () => {
+			if (this.socket !== socket) return;
 			this.attempt = 0;
 			this.ctx.log.info({ cursor: this.cursor }, "jetstream.connected");
 		});
@@ -151,7 +189,13 @@ export class Jetstream {
 			);
 		});
 
+		socket.on("unexpected-response", (request, response) => {
+			void this.rejected(socket, request, response);
+		});
+
 		socket.on("close", () => {
+			if (this.socket !== socket) return;
+			this.socket = null;
 			void this.flushCursor().catch((error) =>
 				this.ctx.log.warn({ error }, "jetstream.cursorSaveFailed"),
 			);
@@ -160,16 +204,62 @@ export class Jetstream {
 
 		socket.on("error", (error) => {
 			this.ctx.log.warn({ error: error.message }, "jetstream.error");
+			if (this.socket !== socket) return;
 			socket.close();
-			this.scheduleReconnect();
 		});
 	}
 
+	private async rejected(
+		socket: WebSocket,
+		request: ClientRequest,
+		response: IncomingMessage,
+	): Promise<void> {
+		const status = response.statusCode ?? 0;
+		const body = await readRejectionBody(response);
+		const rejection = parseRejection(body);
+
+		request.destroy();
+		if (this.socket === socket) this.socket = null;
+
+		this.ctx.log.warn(
+			{
+				status,
+				error: rejection?.error,
+				detail: rejection?.message ?? (rejection ? undefined : body.slice(0, 200)),
+				cursor: this.cursor,
+			},
+			"jetstream.rejected",
+		);
+
+		if (rejection?.error === CURSOR_TOO_OLD) {
+			await this.dropCursor().catch((error) =>
+				this.ctx.log.error({ err: error }, "jetstream.cursorResetFailed"),
+			);
+		}
+
+		this.scheduleReconnect();
+	}
+
+	private async dropCursor(): Promise<void> {
+		const stale = this.cursor;
+		this.cursor = null;
+		this.savedCursor = null;
+		this.sinceSave = 0;
+		await this.ctx.database.db
+			.delete(this.ctx.database.tables.serviceState)
+			.where(eq(this.ctx.database.tables.serviceState.key, CURSOR_KEY));
+		this.attempt = 0;
+		this.ctx.log.warn({ cursor: stale }, "jetstream.cursorDropped");
+	}
+
 	private scheduleReconnect(): void {
-		if (this.stopped) return;
+		if (this.stopped || this.reconnectTimer) return;
 		this.attempt += 1;
 		const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** Math.min(this.attempt, 6));
-		this.reconnectTimer = setTimeout(() => this.connect(), delay);
+		this.reconnectTimer = setTimeout(() => {
+			this.reconnectTimer = null;
+			this.connect();
+		}, delay);
 		this.reconnectTimer.unref?.();
 	}
 

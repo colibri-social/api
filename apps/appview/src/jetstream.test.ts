@@ -1,3 +1,4 @@
+import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { createTtlCache } from "@colibri-social/embeds";
@@ -17,6 +18,7 @@ let server: WebSocketServer;
 let connections: WebSocket[];
 let requests: URL[];
 let jetstream: Jetstream;
+let upgradeServer: Server | null;
 
 const identityFrame = (seq: number, did = DID) =>
 	JSON.stringify({
@@ -122,6 +124,7 @@ beforeEach(async () => {
 	database = await openTestDatabase();
 	connections = [];
 	requests = [];
+	upgradeServer = null;
 
 	server = new WebSocketServer({ port: 0 });
 	server.on("connection", (socket, request) => {
@@ -134,6 +137,7 @@ beforeEach(async () => {
 afterEach(async () => {
 	await jetstream?.stop();
 	await new Promise((resolve) => server.close(resolve));
+	if (upgradeServer) await new Promise((resolve) => upgradeServer?.close(() => resolve(null)));
 	await database.destroy();
 });
 
@@ -143,6 +147,82 @@ const startAgainstServer = async (options = {}) => {
 	await jetstream.start();
 	return waitForConnection();
 };
+
+const waitFor = async (done: () => boolean, attempts = 160) => {
+	for (let attempt = 0; attempt < attempts && !done(); attempt += 1) await settle();
+	return done();
+};
+
+type Rejection = { status: number; body: string };
+
+const startRejectingJetstream = async (rejectionFor: (url: URL) => Rejection | null) => {
+	const sockets = new WebSocketServer({ noServer: true });
+	const http = createServer();
+	upgradeServer = http;
+
+	http.on("upgrade", (request, socket, head) => {
+		const url = new URL(request.url ?? "/", "http://localhost");
+		requests.push(url);
+
+		const rejection = rejectionFor(url);
+		if (rejection) {
+			socket.end(
+				`HTTP/1.1 ${rejection.status} Bad Request\r\n` +
+					"content-type: application/json\r\n" +
+					`content-length: ${Buffer.byteLength(rejection.body)}\r\n` +
+					"connection: close\r\n\r\n" +
+					rejection.body,
+			);
+			return;
+		}
+
+		sockets.handleUpgrade(request, socket, head, (accepted) => connections.push(accepted));
+	});
+
+	await new Promise((resolve) => http.listen(0, () => resolve(null)));
+	const { port } = http.address() as AddressInfo;
+	jetstream = new Jetstream(contextFor(`ws://127.0.0.1:${port}`));
+	await jetstream.start();
+};
+
+describe("rejected handshakes", () => {
+	const cursorTooOld: Rejection = {
+		status: 400,
+		body: JSON.stringify({
+			error: "CursorTooOld",
+			message: "subscribe: cursor too old: cursor 1 below lookback floor 26138756062",
+		}),
+	};
+
+	it("drops a cursor the server says is too old and resubscribes from live", async () => {
+		await database.db.insert(database.tables.serviceState).values({
+			key: CURSOR_KEY,
+			value: "1",
+			updatedAt: new Date().toISOString(),
+		});
+
+		await startRejectingJetstream((url) => (url.searchParams.has("cursor") ? cursorTooOld : null));
+
+		expect(await waitFor(() => connections.length === 1)).toBe(true);
+		expect((requests[0] as URL).searchParams.get("cursor")).toBe("1");
+		expect((requests[1] as URL).searchParams.has("cursor")).toBe(false);
+		expect(await storedCursor()).toBeNull();
+	});
+
+	it("keeps one reconnect in flight instead of forking on every rejection", async () => {
+		let rejectFirst = true;
+		await startRejectingJetstream(() => {
+			if (!rejectFirst) return null;
+			rejectFirst = false;
+			return cursorTooOld;
+		});
+
+		expect(await waitFor(() => connections.length === 1)).toBe(true);
+		await waitFor(() => false, 60);
+		expect(requests).toHaveLength(2);
+		expect(connections).toHaveLength(1);
+	}, 12_000);
+});
 
 describe("endpoint", () => {
 	it("appends the v2 subscription path to a bare host", () => {
