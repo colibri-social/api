@@ -14,10 +14,11 @@ import {
 	unregisterWebPush,
 	unseenForChannelPage,
 } from "@colibri-social/notifications";
+import { spaceContextFor } from "@colibri-social/projections";
 import { and, eq } from "drizzle-orm";
 import { seenEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
-import { mayReadSpace, notificationDeps } from "../notification-deps.js";
+import { mayReadStates, notificationDeps } from "../notification-deps.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
 import type { RouteDeps } from "./types.js";
@@ -30,9 +31,14 @@ const requireChannel = async (
 	channel: string,
 	callerDid: string,
 ): Promise<void> => {
-	const row = await ctx.loader.channel(channel);
-	if (!row) throw channelNotFound(channel);
-	if (!(await mayReadSpace(ctx, channel, callerDid))) throw channelNotFound(channel);
+	const context = spaceContextFor(channel);
+	if (!context?.community) throw channelNotFound(channel);
+
+	const states = await ctx.loader.spaceStates(context.uri, context.spaceType);
+	if (!states.channel) throw channelNotFound(channel);
+
+	const space = { spaceType: context.spaceType, community: context.community };
+	if (!(await mayReadStates(ctx, space, states, callerDid))) throw channelNotFound(channel);
 };
 
 const requireMessage = async (
