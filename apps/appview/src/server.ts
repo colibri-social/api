@@ -1,4 +1,4 @@
-import { createServer, type Server, XRPCError } from "@atproto/xrpc-server";
+import { createServer, type Server } from "@atproto/xrpc-server";
 import { sql } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { authVerifiers } from "./auth.js";
@@ -24,7 +24,7 @@ import { registerServerRoutes } from "./routes/server.js";
 import { registerThreadRoutes } from "./routes/thread.js";
 import { registerThreadWriteRoutes } from "./routes/thread-write.js";
 import { registerVoiceRoutes } from "./routes/voice.js";
-import { reportFailure } from "./sentry.js";
+import { respondWithError } from "./xrpc-errors.js";
 
 const BANNER = `           _ _ _          _                  _       _
           | (_) |        (_)                (_)     | |
@@ -47,26 +47,6 @@ export const createAppServer = (ctx: AppContext): Server => {
 	const server = createServer(undefined, {
 		payload: { jsonLimit: 1_000_000, blobLimit: 20 * 1024 * 1024 },
 		catchall: undefined,
-		errorParser: (error) => {
-			const xrpcError = XRPCError.fromError(error);
-			if (xrpcError.statusCode >= 500) {
-				reportFailure(error, { stage: "route", status: xrpcError.statusCode });
-				ctx.log.error(
-					{
-						name: error instanceof Error ? error.name : typeof error,
-						status: xrpcError.statusCode,
-						reason: error instanceof Error ? error.message : String(error),
-						cause:
-							error instanceof Error && error.cause instanceof Error
-								? error.cause.message
-								: undefined,
-						stack: error instanceof Error ? error.stack : undefined,
-					},
-					"route.unhandled",
-				);
-			}
-			return xrpcError;
-		},
 	});
 
 	const app = server.routes;
@@ -118,6 +98,8 @@ export const createAppServer = (ctx: AppContext): Server => {
 	mountBlobRoutes(ctx, app);
 	mountEmbedMediaRoutes(ctx, app);
 	mountIdentityRoutes(ctx, app);
+
+	app.use(respondWithError(ctx.log));
 
 	return server;
 };
