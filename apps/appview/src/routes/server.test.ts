@@ -35,4 +35,15 @@ describe("describeServer", () => {
 			describeServer(contextWith({ VOICE_ENABLED: true, gifsEnabled: true })).features,
 		).toEqual(["voice", "gifs", "embeds"]);
 	});
+
+	it("leaves out the default community when none is configured", () => {
+		expect(describeServer(contextWith()).defaultCommunity).toBeUndefined();
+	});
+
+	it("reports the configured default community", () => {
+		const description = describeServer(
+			contextWith({ DEFAULT_COMMUNITY_DID: "did:plc:mprdjqjluoswa7awzggaggj3" }),
+		);
+		expect(description.defaultCommunity).toBe("did:plc:mprdjqjluoswa7awzggaggj3");
+	});
 });

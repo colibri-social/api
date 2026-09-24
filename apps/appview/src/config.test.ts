@@ -31,3 +31,27 @@ describe("APPVIEW_DID", () => {
 		expect(() => load("did:plc:mprdjqjluoswa7awzggaggj3")).toThrow(ConfigError);
 	});
 });
+
+describe("DEFAULT_COMMUNITY_DID", () => {
+	const withDefault = (value: string | undefined) =>
+		loadConfig({
+			...REQUIRED,
+			APPVIEW_DID: "did:web:appview.example.com",
+			DEFAULT_COMMUNITY_DID: value,
+		});
+
+	it("is off when unset or empty", () => {
+		expect(withDefault(undefined).DEFAULT_COMMUNITY_DID).toBeUndefined();
+		expect(withDefault("").DEFAULT_COMMUNITY_DID).toBeUndefined();
+	});
+
+	it("accepts a DID", () => {
+		expect(withDefault("did:plc:mprdjqjluoswa7awzggaggj3").DEFAULT_COMMUNITY_DID).toBe(
+			"did:plc:mprdjqjluoswa7awzggaggj3",
+		);
+	});
+
+	it("refuses a value that is not a DID", () => {
+		expect(() => withDefault("colibri.social")).toThrow(ConfigError);
+	});
+});

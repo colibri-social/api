@@ -37,6 +37,9 @@ export const describeServer = (ctx: AppContext): ServerDescription => {
 		pds: asUri(ctx.config.PDS_URL),
 		features,
 		spaceTypes: Object.values(SPACE_TYPES).map(asNsid),
+		...(ctx.config.DEFAULT_COMMUNITY_DID
+			? { defaultCommunity: asDid(ctx.config.DEFAULT_COMMUNITY_DID) }
+			: {}),
 	};
 };
 

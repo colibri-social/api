@@ -50,6 +50,11 @@
 								"knownValues": ["voice", "push", "gifs", "embeds"]
 							}
 						},
+						"defaultCommunity": {
+							"type": "string",
+							"format": "did",
+							"description": "A community every user joins after creating their profile for the first time."
+						},
 						"spaceTypes": {
 							"type": "array",
 							"description": "The space types this AppView understands.",

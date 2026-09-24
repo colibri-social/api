@@ -104,6 +104,12 @@ export const configSchema = z.object({
 	SFU_ICE_SERVERS: optionalString,
 
 	APPVIEW_FLAVOR: z.string().trim().min(1).default("vanilla"),
+	DEFAULT_COMMUNITY_DID: z
+		.string()
+		.trim()
+		.regex(/^did:[a-z]+:[a-zA-Z0-9._:%-]+$/, "expected a DID such as did:plc:...")
+		.optional()
+		.or(z.literal("").transform(() => undefined)),
 
 	SENTRY_DSN: optionalString,
 	ADMIN_PASSWORD: optionalString,
