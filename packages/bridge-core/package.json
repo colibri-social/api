@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/bridge-core",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "Connect Colibri communities to other chat services: the connector interface, AppView client, message mapping, echo suppression and rich text conversion",
 	"type": "module",
 	"exports": {

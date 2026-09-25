@@ -1,5 +1,18 @@
 # @colibri-social/space-sync
 
+## 0.5.0
+
+### Minor Changes
+
+- d8e32d1: Spaces now carry separate read and write policies, and a space credential no longer implies the right to post
+
+### Patch Changes
+
+- c13dd17: The sync engine can now ask the appview whether a space is renewable at all, and parks the ones that are not without warning on every startup
+- Updated dependencies [6e75d20]
+- Updated dependencies [d8e32d1]
+  - @colibri-social/space@0.4.0
+
 ## 0.4.1
 
 ### Patch Changes
