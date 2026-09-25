@@ -535,6 +535,104 @@ describe("bridged threads", () => {
 	});
 });
 
+describe("leaving", () => {
+	it("lets a bridge revoke its own registration and nobody else's", async () => {
+		const registration = await linked();
+
+		await expectFailure(bridges.leave(OTHER_BRIDGE, keyOf(registration)), "forbidden");
+		expect((await bridges.leave(BRIDGE, keyOf(registration))).id).toBe(registration.id);
+		expect(await bridges.registrationsHeldBy(BRIDGE)).toEqual([]);
+	});
+});
+
+describe("avatar replacement", () => {
+	const OLD_CID = "bafkreif62j6x5eug3jub6ympnpsoqzzz5wrqnvxzrna4c4watqfkdxms4e";
+	const NEW_CID = "bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiibsojllbf5xhqzy6a";
+	const blob = (link: string) => ({
+		$type: "blob" as const,
+		ref: { $link: link },
+		mimeType: "image/png",
+		size: 1,
+	});
+
+	it("swaps one author's avatar on their messages and threads", async () => {
+		const registration = await linked();
+		const old = blob(OLD_CID);
+		await bridges.postMessage(BRIDGE, {
+			...keyOf(registration),
+			channel: GENERAL,
+			author: { ...ALICE, avatar: old },
+			text: "alice",
+		});
+		await bridges.postMessage(BRIDGE, {
+			...keyOf(registration),
+			channel: GENERAL,
+			author: { ...BOB, avatar: old },
+			text: "bob",
+		});
+		const thread = await openThread("3lkthread0010", GENERAL, {
+			bridged: {
+				registration: registration.id,
+				platform: "chat",
+				remoteId: "alice-1",
+				name: "Alice",
+				avatar: old,
+			},
+		});
+
+		const replaced = await bridges.replaceAvatar(BRIDGE, {
+			...keyOf(registration),
+			remoteId: "alice-1",
+			avatar: blob(NEW_CID),
+		});
+
+		expect(replaced.messages).toHaveLength(1);
+		expect(replaced.threads).toEqual([thread]);
+		const rows = await messages();
+		expect(rows.find((row) => row.text === "alice")?.bridged?.avatar).toMatchObject({
+			ref: { $link: NEW_CID },
+		});
+		expect(rows.find((row) => row.text === "bob")?.bridged?.avatar).toMatchObject({
+			ref: { $link: OLD_CID },
+		});
+		const threadRecord = await writer.currentRecord(COMMUNITY, thread, COLLECTIONS.thread, SELF);
+		expect(threadRecord?.bridged).toMatchObject({ avatar: { ref: { $link: NEW_CID } } });
+	});
+
+	it("removes the avatar when none is given and skips records already up to date", async () => {
+		const registration = await linked();
+		await bridges.postMessage(BRIDGE, {
+			...keyOf(registration),
+			channel: GENERAL,
+			author: { ...ALICE, avatar: blob(OLD_CID) },
+			text: "alice",
+		});
+
+		const removed = await bridges.replaceAvatar(BRIDGE, {
+			...keyOf(registration),
+			remoteId: "alice-1",
+		});
+		const again = await bridges.replaceAvatar(BRIDGE, {
+			...keyOf(registration),
+			remoteId: "alice-1",
+		});
+
+		expect(removed.messages).toHaveLength(1);
+		expect(again.messages).toEqual([]);
+		const [row] = await messages();
+		expect(row?.bridged).not.toHaveProperty("avatar");
+	});
+
+	it("refuses a bridge that does not hold the registration", async () => {
+		const registration = await linked();
+
+		await expectFailure(
+			bridges.replaceAvatar(OTHER_BRIDGE, { ...keyOf(registration), remoteId: "alice-1" }),
+			"forbidden",
+		);
+	});
+});
+
 describe("moderation mirroring", () => {
 	const memberMessage = async () => {
 		await applyChange(

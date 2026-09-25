@@ -1,0 +1,24 @@
+services:
+  bridge:
+    build:
+      context: ../..
+      dockerfile: apps/bridge/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: ../../.env.bridge
+        required: false
+    environment:
+      BRIDGE_DATABASE_PATH: /data/bridge.sqlite
+      BRIDGE_HTTP_PORT: ${BRIDGE_HTTP_PORT:-8080}
+    ports:
+      - "${BRIDGE_HTTP_PORT:-8080}:${BRIDGE_HTTP_PORT:-8080}"
+    volumes:
+      - bridge-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+process.env.BRIDGE_HTTP_PORT+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+volumes:
+  bridge-data:

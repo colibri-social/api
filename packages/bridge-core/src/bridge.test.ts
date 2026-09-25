@@ -148,6 +148,8 @@ const fakeClient = (registrations: () => RegistrationView[]) => {
 		deleteThread: vi.fn(async () => {}),
 		hideMessage: vi.fn(async () => {}),
 		listMessages: vi.fn(async (): Promise<MessageView[]> => []),
+		leave: vi.fn(async () => {}),
+		replaceAvatar: vi.fn(async () => 0),
 	};
 	return client;
 };
@@ -158,16 +160,18 @@ let bridge: Bridge;
 let deliver: (frame: ServerFrame) => void;
 let subscribed: string[];
 let current: RegistrationView[];
+let store: MemoryBridgeStore;
 
 beforeEach(async () => {
 	connector = new FakeConnector();
 	current = [registration()];
 	client = fakeClient(() => current);
 	subscribed = [];
+	store = new MemoryBridgeStore();
 	bridge = new Bridge({
 		client: client as unknown as ColibriClient,
 		connector,
-		store: new MemoryBridgeStore(),
+		store,
 		sleep: async () => {},
 		createEventStream: (options: EventStreamOptions) => {
 			deliver = options.onFrame;
@@ -229,6 +233,30 @@ describe("configuration", () => {
 
 		expect(later.getConfiguration).toHaveBeenCalledTimes(3);
 		expect(later.putRemoteRooms).toHaveBeenCalled();
+	});
+
+	it("purges what it stored for a registration that was revoked", async () => {
+		inboundMessage("m1", "hello");
+		await bridge.idle();
+		expect(await store.registrations()).toEqual([`${COMMUNITY} ${REGISTRATION}`]);
+
+		current = [];
+		await bridge.refresh();
+
+		expect(await store.registrations()).toEqual([]);
+	});
+
+	it("revokes its registrations for a remote space that removed it", async () => {
+		client.leave.mockImplementation(async () => {
+			current = [];
+		});
+		connector.context?.emit({ type: "spaceLeft", remoteSpace: GUILD });
+		await vi.waitFor(() => expect(subscribed).toEqual([]));
+
+		expect(client.leave).toHaveBeenCalledWith({
+			community: COMMUNITY,
+			registration: REGISTRATION,
+		});
 	});
 
 	it("ignores registrations for other platforms", async () => {
@@ -347,6 +375,55 @@ describe("from the other service into Colibri", () => {
 				emoji: "👍",
 			}),
 		);
+	});
+});
+
+describe("avatars", () => {
+	const withAvatar = (id: string, avatarUrl?: string) =>
+		inboundMessage(id, "hi", {
+			author: { id: "alice-1", name: "Alice", ...(avatarUrl ? { avatarUrl } : {}) },
+		});
+
+	it("uploads an avatar once while it stays the same", async () => {
+		withAvatar("m1", "https://cdn.test/a.png");
+		withAvatar("m2", "https://cdn.test/a.png");
+		await bridge.idle();
+
+		expect(client.uploadBlob).toHaveBeenCalledTimes(1);
+		expect(client.replaceAvatar).not.toHaveBeenCalled();
+	});
+
+	it("swaps the old avatar out of earlier records when it changes", async () => {
+		withAvatar("m1", "https://cdn.test/a.png");
+		await bridge.idle();
+		client.uploadBlob.mockResolvedValueOnce({
+			$type: "blob",
+			ref: { $link: "bafynew" },
+			mimeType: "image/png",
+			size: 1,
+		});
+		withAvatar("m2", "https://cdn.test/b.png");
+		await bridge.idle();
+
+		expect(client.replaceAvatar).toHaveBeenCalledWith({
+			community: COMMUNITY,
+			registration: REGISTRATION,
+			remoteId: "alice-1",
+			avatar: expect.objectContaining({ ref: { $link: "bafynew" } }),
+		});
+	});
+
+	it("removes the avatar from earlier records when the author drops it", async () => {
+		withAvatar("m1", "https://cdn.test/a.png");
+		await bridge.idle();
+		withAvatar("m2");
+		await bridge.idle();
+
+		expect(client.replaceAvatar).toHaveBeenCalledWith({
+			community: COMMUNITY,
+			registration: REGISTRATION,
+			remoteId: "alice-1",
+		});
 	});
 });
 

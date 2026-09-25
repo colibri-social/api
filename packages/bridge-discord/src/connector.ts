@@ -137,6 +137,9 @@ export class DiscordConnector
 			context.log.error({ error: error.message }, "discord.client.error"),
 		);
 		this.client.on(Events.GuildCreate, (guild) => this.roomsChanged(guild.id));
+		this.client.on(Events.GuildDelete, (guild) =>
+			context.emit({ type: "spaceLeft", remoteSpace: guild.id }),
+		);
 		this.client.on(Events.ChannelCreate, (channel) => this.roomsChanged(channel.guildId));
 		this.client.on(Events.ChannelUpdate, (_, channel) => {
 			if ("guildId" in channel && channel.guildId) this.roomsChanged(channel.guildId);

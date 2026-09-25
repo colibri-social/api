@@ -286,6 +286,20 @@ export class ColibriClient {
 		await this.procedure("social.colibri.beta.bridge.reportBackfill", input);
 	}
 
+	async leave(ref: RegistrationRef): Promise<void> {
+		await this.procedure("social.colibri.beta.bridge.leave", ref);
+	}
+
+	async replaceAvatar(
+		ref: RegistrationRef & { remoteId: string; avatar?: BlobRef },
+	): Promise<number> {
+		const { updated } = await this.procedure<{ updated: number }>(
+			"social.colibri.beta.bridge.replaceAvatar",
+			ref,
+		);
+		return updated;
+	}
+
 	async listMessages(channel: string, limit = 50): Promise<MessageView[]> {
 		const { messages } = await this.query<{ messages: MessageView[] }>(
 			"social.colibri.beta.channel.listMessages",

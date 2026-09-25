@@ -254,6 +254,7 @@ export class Bridge {
 	private async loadConfiguration(): Promise<void> {
 		const all = await this.options.client.getConfiguration();
 		this.registrations = all.filter((registration) => registration.platform === this.platform);
+		await this.purgeRevoked(all);
 		const byChannel = new Map<string, Portal[]>();
 		const byRemote = new Map<string, Portal[]>();
 		for (const registration of this.registrations) {
@@ -320,6 +321,32 @@ export class Bridge {
 			{ registrations: this.registrations.length, channels: byChannel.size },
 			"bridge.configured",
 		);
+	}
+
+	private async purgeRevoked(registrations: RegistrationView[]): Promise<void> {
+		const held = new Set(
+			registrations.map((registration) => registrationKey(registration.community, registration.id)),
+		);
+		for (const registration of await this.options.store.registrations()) {
+			if (held.has(registration)) continue;
+			await this.options.store.purge(registration);
+			this.log.info({ registration }, "bridge.registration.purged");
+		}
+	}
+
+	private async leave(remoteSpace: string): Promise<void> {
+		for (const registration of this.registrations) {
+			if (registration.remoteSpace !== remoteSpace) continue;
+			await this.options.client.leave({
+				community: registration.community,
+				registration: registration.id,
+			});
+			this.log.info(
+				{ community: registration.community, registration: registration.id },
+				"bridge.registration.left",
+			);
+		}
+		await this.refresh();
 	}
 
 	private async pushRooms(registration: RegistrationView): Promise<void> {
@@ -409,6 +436,15 @@ export class Bridge {
 					this.log.warn({ error: String(error) }, "bridge.rooms.pushFailed"),
 				);
 			}
+			return;
+		}
+		if (event.type === "spaceLeft") {
+			void this.leave(event.remoteSpace).catch((error) =>
+				this.log.warn(
+					{ remoteSpace: event.remoteSpace, error: String(error) },
+					"bridge.registration.leaveFailed",
+				),
+			);
 			return;
 		}
 		for (const portal of this.byRemote.get(
@@ -558,6 +594,7 @@ export class Bridge {
 				await this.inboundThreadDelete(parent, event.id);
 				return;
 			case "roomsChanged":
+			case "spaceLeft":
 				return;
 			default:
 				break;
@@ -592,18 +629,46 @@ export class Bridge {
 	}
 
 	private async avatarFor(portal: Portal, author: RemoteAuthor): Promise<BlobRef | undefined> {
-		if (!author.avatarUrl) return undefined;
-		const cached = await this.options.store.avatar(portal.community, author.avatarUrl);
-		if (cached) return cached;
+		const { store } = this.options;
+		const registration = this.mappingRegistration(portal);
+		const cached = await store.avatar(registration, author.id);
+		if (cached && cached.url === author.avatarUrl) return cached.blob;
+		if (!author.avatarUrl) {
+			if (cached) {
+				await store.removeAvatar(registration, author.id);
+				this.replaceAvatar(portal, author.id);
+			}
+			return undefined;
+		}
 		try {
 			const { bytes, mimeType } = await this.options.client.fetchBytes(author.avatarUrl);
 			const blob = await this.options.client.uploadBlob(this.ref(portal), bytes, mimeType);
-			await this.options.store.putAvatar(portal.community, author.avatarUrl, blob);
+			await store.putAvatar(registration, author.id, { url: author.avatarUrl, blob });
+			if (cached) this.replaceAvatar(portal, author.id, blob);
 			return blob;
 		} catch (error) {
 			this.log.debug({ error: String(error) }, "bridge.avatar.failed");
 			return undefined;
 		}
+	}
+
+	private replaceAvatar(portal: Portal, remoteId: string, avatar?: BlobRef): void {
+		const registration = this.mappingRegistration(portal);
+		void this.queues.run(`${registration} avatars`, async () => {
+			try {
+				const updated = await this.options.client.replaceAvatar({
+					...this.ref(portal),
+					remoteId,
+					...(avatar ? { avatar } : {}),
+				});
+				this.log.debug({ registration, remoteId, updated }, "bridge.avatar.replaced");
+			} catch (error) {
+				this.log.warn(
+					{ registration, remoteId, error: String(error) },
+					"bridge.avatar.replaceFailed",
+				);
+			}
+		});
 	}
 
 	private async attachmentsFor(

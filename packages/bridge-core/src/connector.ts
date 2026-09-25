@@ -65,7 +65,8 @@ export type InboundEvent =
 	| (RemoteLocation & RemoteThread & { type: "threadCreate"; author: RemoteAuthor })
 	| (RemoteLocation & { type: "threadUpdate"; id: string; name: string })
 	| (RemoteLocation & { type: "threadDelete"; id: string })
-	| { type: "roomsChanged"; remoteSpace: string };
+	| { type: "roomsChanged"; remoteSpace: string }
+	| { type: "spaceLeft"; remoteSpace: string };
 
 export type HistoryMessage = Omit<
 	Extract<InboundEvent, { type: "message" }>,

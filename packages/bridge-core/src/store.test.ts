@@ -72,4 +72,67 @@ describe.each([
 		expect(await store.backfill("portal 1")).toMatchObject({ state: "done" });
 		await store.close();
 	});
+
+	it("keeps one avatar per remote author and forgets it on removal", async () => {
+		const store = create();
+		const blob = {
+			$type: "blob" as const,
+			ref: { $link: "bafyold" },
+			mimeType: "image/png",
+			size: 1,
+		};
+
+		await store.putAvatar("community registration", "alice", { url: "https://cdn/a.png", blob });
+		await store.putAvatar("community registration", "alice", { url: "https://cdn/b.png", blob });
+		expect(await store.avatar("community registration", "alice")).toEqual({
+			url: "https://cdn/b.png",
+			blob,
+		});
+
+		await store.removeAvatar("community registration", "alice");
+		expect(await store.avatar("community registration", "alice")).toBeNull();
+		await store.close();
+	});
+
+	it("purges everything one registration stored and leaves the others", async () => {
+		const store = create();
+		const blob = { $type: "blob" as const, ref: { $link: "bafy" }, mimeType: "image/png", size: 1 };
+		for (const registration of ["community gone", "community kept"]) {
+			await store.put({
+				registration,
+				channel: "at://channel",
+				kind: "message",
+				remoteId: "remote-1",
+				rkey: "at://channel did:plc:x 3lkmsg",
+				origin: "remote",
+			});
+			await store.putAvatar(registration, "alice", { url: "https://cdn/a.png", blob });
+			await store.addReactor(`${registration} remote-1 👍`, "alice");
+			await store.putBackfill(`${registration} at://channel 2026-09-24`, {
+				state: "done",
+				from: "2026-09-01T00:00:00.000Z",
+				until: "2026-09-24T00:00:00.000Z",
+				threadsDone: [],
+				imported: 1,
+			});
+		}
+
+		expect((await store.registrations()).sort()).toEqual(["community gone", "community kept"]);
+		await store.purge("community gone");
+
+		expect(await store.registrations()).toEqual(["community kept"]);
+		expect(
+			await store.byRemote({
+				registration: "community gone",
+				kind: "message",
+				remoteId: "remote-1",
+			}),
+		).toBeNull();
+		expect(await store.avatar("community gone", "alice")).toBeNull();
+		expect(await store.backfill("community gone at://channel 2026-09-24")).toBeNull();
+		expect(await store.addReactor("community gone remote-1 👍", "bob")).toBe(1);
+		expect(await store.avatar("community kept", "alice")).not.toBeNull();
+		expect(await store.addReactor("community kept remote-1 👍", "bob")).toBe(2);
+		await store.close();
+	});
 });

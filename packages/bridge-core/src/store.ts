@@ -25,28 +25,35 @@ export type BackfillProgress = {
 	reached?: string;
 };
 
+export type CachedAvatar = { url: string; blob: BlobRef };
+
 export interface BridgeStore {
 	byRemote(key: MappingKey & { remoteId: string }): Promise<Mapping | null>;
 	byColibri(key: MappingKey & { rkey: string }): Promise<Mapping | null>;
 	list(key: MappingKey): Promise<Mapping[]>;
 	put(mapping: Mapping): Promise<void>;
 	remove(key: MappingKey & { rkey: string }): Promise<void>;
-	avatar(community: string, url: string): Promise<BlobRef | null>;
-	putAvatar(community: string, url: string, blob: BlobRef): Promise<void>;
+	avatar(registration: string, remoteId: string): Promise<CachedAvatar | null>;
+	putAvatar(registration: string, remoteId: string, avatar: CachedAvatar): Promise<void>;
+	removeAvatar(registration: string, remoteId: string): Promise<void>;
 	addReactor(key: string, reactor: string): Promise<number>;
 	removeReactor(key: string, reactor: string): Promise<number>;
 	backfill(key: string): Promise<BackfillProgress | null>;
 	putBackfill(key: string, progress: BackfillProgress): Promise<void>;
+	registrations(): Promise<string[]>;
+	purge(registration: string): Promise<void>;
 	close(): Promise<void>;
 }
 
 const mappingKey = (registration: string, kind: string, id: string) =>
 	`${registration} ${kind} ${id}`;
 
+const registrationOf = (key: string): string => key.split(" ").slice(0, 2).join(" ");
+
 export class MemoryBridgeStore implements BridgeStore {
 	private readonly remote = new Map<string, Mapping>();
 	private readonly colibri = new Map<string, Mapping>();
-	private readonly avatars = new Map<string, BlobRef>();
+	private readonly avatars = new Map<string, CachedAvatar>();
 	private readonly reactors = new Map<string, Set<string>>();
 	private readonly backfills = new Map<string, BackfillProgress>();
 
@@ -76,12 +83,16 @@ export class MemoryBridgeStore implements BridgeStore {
 		this.remote.delete(mappingKey(key.registration, key.kind, mapping.remoteId));
 	}
 
-	async avatar(community: string, url: string): Promise<BlobRef | null> {
-		return this.avatars.get(`${community} ${url}`) ?? null;
+	async avatar(registration: string, remoteId: string): Promise<CachedAvatar | null> {
+		return this.avatars.get(`${registration} ${remoteId}`) ?? null;
 	}
 
-	async putAvatar(community: string, url: string, blob: BlobRef): Promise<void> {
-		this.avatars.set(`${community} ${url}`, blob);
+	async putAvatar(registration: string, remoteId: string, avatar: CachedAvatar): Promise<void> {
+		this.avatars.set(`${registration} ${remoteId}`, avatar);
+	}
+
+	async removeAvatar(registration: string, remoteId: string): Promise<void> {
+		this.avatars.delete(`${registration} ${remoteId}`);
 	}
 
 	async addReactor(key: string, reactor: string): Promise<number> {
@@ -106,6 +117,26 @@ export class MemoryBridgeStore implements BridgeStore {
 
 	async putBackfill(key: string, progress: BackfillProgress): Promise<void> {
 		this.backfills.set(key, structuredClone(progress));
+	}
+
+	async registrations(): Promise<string[]> {
+		return [
+			...new Set(
+				[
+					...this.colibri.keys(),
+					...this.avatars.keys(),
+					...this.reactors.keys(),
+					...this.backfills.keys(),
+				].map(registrationOf),
+			),
+		];
+	}
+
+	async purge(registration: string): Promise<void> {
+		const prefix = `${registration} `;
+		for (const map of [this.remote, this.colibri, this.avatars, this.reactors, this.backfills]) {
+			for (const key of map.keys()) if (key.startsWith(prefix)) map.delete(key);
+		}
 	}
 
 	async close(): Promise<void> {}
@@ -149,11 +180,13 @@ export class SqliteBridgeStore implements BridgeStore {
 				PRIMARY KEY (registration, kind, remote_id)
 			);
 			CREATE UNIQUE INDEX IF NOT EXISTS mappings_rkey_idx ON mappings (registration, kind, rkey);
-			CREATE TABLE IF NOT EXISTS avatars (
-				community TEXT NOT NULL,
+			DROP TABLE IF EXISTS avatars;
+			CREATE TABLE IF NOT EXISTS author_avatars (
+				registration TEXT NOT NULL,
+				remote_id TEXT NOT NULL,
 				url TEXT NOT NULL,
 				blob TEXT NOT NULL,
-				PRIMARY KEY (community, url)
+				PRIMARY KEY (registration, remote_id)
 			);
 			CREATE TABLE IF NOT EXISTS reactors (
 				key TEXT NOT NULL,
@@ -212,17 +245,25 @@ export class SqliteBridgeStore implements BridgeStore {
 			.run(key.registration, key.kind, key.rkey);
 	}
 
-	async avatar(community: string, url: string): Promise<BlobRef | null> {
+	async avatar(registration: string, remoteId: string): Promise<CachedAvatar | null> {
 		const row = this.db
-			.prepare("SELECT blob FROM avatars WHERE community = ? AND url = ?")
-			.get(community, url) as { blob: string } | undefined;
-		return row ? (JSON.parse(row.blob) as BlobRef) : null;
+			.prepare("SELECT url, blob FROM author_avatars WHERE registration = ? AND remote_id = ?")
+			.get(registration, remoteId) as { url: string; blob: string } | undefined;
+		return row ? { url: row.url, blob: JSON.parse(row.blob) as BlobRef } : null;
 	}
 
-	async putAvatar(community: string, url: string, blob: BlobRef): Promise<void> {
+	async putAvatar(registration: string, remoteId: string, avatar: CachedAvatar): Promise<void> {
 		this.db
-			.prepare("INSERT OR REPLACE INTO avatars (community, url, blob) VALUES (?, ?, ?)")
-			.run(community, url, JSON.stringify(blob));
+			.prepare(
+				"INSERT OR REPLACE INTO author_avatars (registration, remote_id, url, blob) VALUES (?, ?, ?, ?)",
+			)
+			.run(registration, remoteId, avatar.url, JSON.stringify(avatar.blob));
+	}
+
+	async removeAvatar(registration: string, remoteId: string): Promise<void> {
+		this.db
+			.prepare("DELETE FROM author_avatars WHERE registration = ? AND remote_id = ?")
+			.run(registration, remoteId);
 	}
 
 	private reactorCount(key: string): number {
@@ -255,6 +296,37 @@ export class SqliteBridgeStore implements BridgeStore {
 		this.db
 			.prepare("INSERT OR REPLACE INTO backfills (key, progress) VALUES (?, ?)")
 			.run(key, JSON.stringify(progress));
+	}
+
+	async registrations(): Promise<string[]> {
+		const rows = this.db
+			.prepare(
+				`SELECT registration AS key FROM mappings
+				UNION SELECT registration FROM author_avatars
+				UNION SELECT key FROM reactors
+				UNION SELECT key FROM backfills`,
+			)
+			.all() as { key: string }[];
+		return [...new Set(rows.map((row) => registrationOf(row.key)))];
+	}
+
+	async purge(registration: string): Promise<void> {
+		const prefix = `${registration} `;
+		this.db.exec("BEGIN");
+		try {
+			this.db.prepare("DELETE FROM mappings WHERE registration = ?").run(registration);
+			this.db.prepare("DELETE FROM author_avatars WHERE registration = ?").run(registration);
+			this.db
+				.prepare("DELETE FROM reactors WHERE substr(key, 1, ?) = ?")
+				.run(prefix.length, prefix);
+			this.db
+				.prepare("DELETE FROM backfills WHERE substr(key, 1, ?) = ?")
+				.run(prefix.length, prefix);
+			this.db.exec("COMMIT");
+		} catch (error) {
+			this.db.exec("ROLLBACK");
+			throw error;
+		}
 	}
 
 	async close(): Promise<void> {

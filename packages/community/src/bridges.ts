@@ -133,6 +133,16 @@ export type BridgedRecordKey = RegistrationKey & {
 	rkey: string;
 };
 
+export type AvatarReplacement = RegistrationKey & {
+	remoteId: string;
+	avatar?: BlobRef;
+};
+
+export type AvatarReplaced = {
+	messages: { space: string; rkey: string }[];
+	threads: string[];
+};
+
 export type BridgedHideInput = RegistrationKey & {
 	channel: string;
 	subject: { did: string; rkey: string };
@@ -415,6 +425,81 @@ export class Bridges {
 			collection: COLLECTIONS.bridgeRegistration,
 			rkey: key.registration,
 		});
+	}
+
+	async leave(bridge: string, key: RegistrationKey): Promise<BridgeRegistration> {
+		const registration = await this.held(bridge, key, "import");
+		await this.revoke(key);
+		return registration;
+	}
+
+	async replaceAvatar(bridge: string, input: AvatarReplacement): Promise<AvatarReplaced> {
+		const registration = await this.held(bridge, input);
+		const { db, tables } = this.deps;
+		const attributedHere = (bridged: unknown): boolean => {
+			const held = bridged as { registration?: unknown; remoteId?: unknown } | null | undefined;
+			return held?.registration === registration.id && held.remoteId === input.remoteId;
+		};
+		const replaced = (bridged: unknown): Record<string, unknown> | null => {
+			if (!attributedHere(bridged)) return null;
+			const { avatar, ...rest } = bridged as Record<string, unknown>;
+			if (JSON.stringify(avatar ?? null) === JSON.stringify(input.avatar ?? null)) return null;
+			return input.avatar ? { ...rest, avatar: input.avatar } : rest;
+		};
+		const rewrite = (space: string, collection: string, rkey: string) =>
+			this.queues.run(input.community, async () => {
+				const current = await this.deps.writer.currentRecord(
+					input.community,
+					space,
+					collection,
+					rkey,
+				);
+				const bridged = current ? replaced(current.bridged) : null;
+				if (!current || !bridged) return false;
+				await this.deps.writer.put(input.community, {
+					space,
+					collection,
+					rkey,
+					record: { ...current, bridged },
+				});
+				return true;
+			});
+
+		const messages: { space: string; rkey: string }[] = [];
+		const messageRows = await db
+			.select({
+				space: tables.messages.space,
+				rkey: tables.messages.rkey,
+				bridged: tables.messages.bridged,
+			})
+			.from(tables.messages)
+			.where(
+				and(
+					eq(tables.messages.community, input.community),
+					eq(tables.messages.author, input.community),
+				),
+			);
+		for (const row of messageRows) {
+			if (!attributedHere(row.bridged)) continue;
+			if (await rewrite(row.space, COLLECTIONS.message, row.rkey)) {
+				messages.push({ space: row.space, rkey: row.rkey });
+			}
+		}
+
+		const threads: string[] = [];
+		const threadRows = await db
+			.select({ space: tables.threads.space })
+			.from(tables.threads)
+			.where(
+				and(
+					eq(tables.threads.community, input.community),
+					eq(tables.threads.createdBy, input.community),
+				),
+			);
+		for (const row of threadRows) {
+			if (await rewrite(row.space, COLLECTIONS.thread, SELF)) threads.push(row.space);
+		}
+		return { messages, threads };
 	}
 
 	async remoteRooms(key: RegistrationKey): Promise<BridgeRemoteRoom[]> {

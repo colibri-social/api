@@ -396,6 +396,42 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 		},
 	});
 
+	route(server, social.colibri.beta.bridge.leave, {
+		auth: auth.service,
+		handler: async ({ input, auth: caller }) => {
+			const registration = await translated(() =>
+				ctx.bridges.leave(caller.credentials.did, key(input.body)),
+			);
+			announceToBridge(registration, "delete");
+			return { encoding: "application/json" as const, body: {} };
+		},
+	});
+
+	route(server, social.colibri.beta.bridge.replaceAvatar, {
+		auth: auth.service,
+		handler: async ({ input, auth: caller }) => {
+			const body = input.body;
+			const replaced = await translated(() =>
+				ctx.bridges.replaceAvatar(caller.credentials.did, {
+					...key(body),
+					remoteId: body.remoteId,
+					...(body.avatar ? { avatar: toJsonForm(body.avatar) as never } : {}),
+				}),
+			);
+			for (const message of replaced.messages) {
+				await announceMessage(message.space, body.community, message.rkey);
+			}
+			for (const space of replaced.threads) {
+				const row = await threads.row(space);
+				if (row) await announceThread(ctx, threads, row, "update");
+			}
+			return {
+				encoding: "application/json" as const,
+				body: { updated: replaced.messages.length + replaced.threads.length },
+			};
+		},
+	});
+
 	route(server, social.colibri.beta.bridge.listRemoteRooms, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => {

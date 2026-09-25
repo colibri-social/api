@@ -27,6 +27,8 @@
 						"social.colibri.beta.bridge.hideMessage",
 						"social.colibri.beta.bridge.importMessages",
 						"social.colibri.beta.bridge.reportBackfill",
+						"social.colibri.beta.bridge.replaceAvatar",
+						"social.colibri.beta.bridge.leave",
 						"social.colibri.beta.channel.listMessages",
 						"social.colibri.beta.channel.getChannel",
 						"social.colibri.beta.blob.get"
