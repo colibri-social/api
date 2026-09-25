@@ -1,5 +1,14 @@
 # @colibri-social/community
 
+## 2.6.1
+
+### Patch Changes
+
+- 326c689: Adds `bridge.leave` and `bridge.replaceAvatar`, so a bridge revokes its registration when a Discord server removes it, purges its local data for revoked registrations, and swaps a changed avatar on the author's earlier bridged records
+- Updated dependencies [326c689]
+  - @colibri-social/lexicons@2.12.1
+  - @colibri-social/projections@1.6.1
+
 ## 2.6.0
 
 ### Minor Changes
