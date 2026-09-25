@@ -1,5 +1,20 @@
 # @colibri-social/projections
 
+## 1.6.0
+
+### Minor Changes
+
+- 6e75d20: Adds bridges that relay channels, their threads, mentions, forwards and optionally moderation between a community and another chat service, starting with Discord, and can import a channel's earlier history, and indexes a message or reaction only when its author may post in that channel
+
+### Patch Changes
+
+- Updated dependencies [6e75d20]
+- Updated dependencies [c80c110]
+- Updated dependencies [d8e32d1]
+  - @colibri-social/appview-db@0.7.0
+  - @colibri-social/lexicons@2.12.0
+  - @colibri-social/space@0.4.0
+
 ## 1.5.1
 
 ### Patch Changes

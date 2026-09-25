@@ -1,5 +1,32 @@
 # @colibri-social/appview
 
+## 2.11.0
+
+### Minor Changes
+
+- 6e75d20: Adds bridges that relay channels, their threads, mentions, forwards and optionally moderation between a community and another chat service, starting with Discord, and can import a channel's earlier history, and indexes a message or reaction only when its author may post in that channel
+- c80c110: Adds the optional `DEFAULT_COMMUNITY_DID` setting, which `describeServer` reports as `defaultCommunity` so clients can join new users to it
+
+### Patch Changes
+
+- 88fba3e: Jetstream now drops a cursor the server rejects as too old and keeps a single reconnect in flight
+- 68649af: The appview answers XRPC errors itself, so client errors no longer print a stack trace to the console
+- c13dd17: The sync engine can now ask the appview whether a space is renewable at all, and parks the ones that are not without warning on every startup
+- a949e8a: The notification routes now accept a thread space, so unseen counts and seen markers work inside threads
+- Updated dependencies [6e75d20]
+- Updated dependencies [c80c110]
+- Updated dependencies [c13dd17]
+- Updated dependencies [d8e32d1]
+  - @colibri-social/appview-db@0.7.0
+  - @colibri-social/community@2.6.0
+  - @colibri-social/identity@0.2.0
+  - @colibri-social/lexicons@2.12.0
+  - @colibri-social/projections@1.6.0
+  - @colibri-social/space@0.4.0
+  - @colibri-social/space-sync@0.5.0
+  - @colibri-social/notifications@1.3.2
+  - @colibri-social/blobs@0.0.6
+
 ## 2.10.0
 
 ### Minor Changes
