@@ -6,7 +6,7 @@ WORKDIR /app
 
 FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY apps/bridge/package.json apps/bridge/
+COPY package.json apps/bridge/
 COPY packages/bridge-core/package.json packages/bridge-core/
 COPY packages/bridge-discord/package.json packages/bridge-discord/
 COPY packages/lexicons/package.json packages/lexicons/
@@ -17,8 +17,8 @@ COPY tsconfig.base.json ./
 COPY packages/lexicons packages/lexicons
 COPY packages/bridge-core packages/bridge-core
 COPY packages/bridge-discord packages/bridge-discord
-COPY apps/bridge apps/bridge
-RUN pnpm exec tsc --build apps/bridge
+COPY . apps/bridge
+RUN pnpm exec tsc --build
 
 FROM base AS runtime
 ENV NODE_ENV=production
