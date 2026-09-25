@@ -10,6 +10,8 @@ const ALLOWED_HEADERS = [
 	"atproto-accept-labelers",
 	"content-type",
 	"range",
+	"sentry-trace",
+	"baggage",
 ].join(", ");
 
 const EXPOSED_HEADERS = ["atproto-repo-rev", "accept-ranges", "content-range"].join(", ");

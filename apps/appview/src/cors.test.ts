@@ -85,6 +85,14 @@ describe("corsMiddleware", () => {
 		expect(allowed).toContain("content-type");
 	});
 
+	it("permits the trace headers the client's Sentry SDK attaches", () => {
+		const allowed = call(DEVELOPMENT_ORIGINS, "OPTIONS", DEV_ORIGIN).headers[
+			"access-control-allow-headers"
+		];
+		expect(allowed).toContain("sentry-trace");
+		expect(allowed).toContain("baggage");
+	});
+
 	it("allows no origin at all when the list is empty", () => {
 		expect(call([], "GET", DEV_ORIGIN).headers["access-control-allow-origin"]).toBeUndefined();
 	});
