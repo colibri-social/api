@@ -1,11 +1,11 @@
 services:
   bridge:
     build:
-      context: ../..
-      dockerfile: apps/bridge/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     restart: unless-stopped
     env_file:
-      - path: ../../.env.bridge
+      - path: .env
         required: false
     environment:
       BRIDGE_DATABASE_PATH: /data/bridge.sqlite
