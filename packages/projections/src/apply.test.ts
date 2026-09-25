@@ -215,6 +215,68 @@ describe("authority-written collections", () => {
 	});
 });
 
+describe("bridged attribution", () => {
+	const attribution = {
+		registration: "3lkbridgeaaaa",
+		platform: "chat",
+		remoteId: "alice-1",
+		name: "Alice",
+	};
+
+	it("keeps attribution on a message the community wrote", async () => {
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.message", "3lkmsg1", {
+				$type: "social.colibri.beta.message",
+				text: "relayed",
+				createdAt: NOW,
+				bridged: attribution,
+			}),
+		);
+
+		const [row] = await database.db.select().from(database.tables.messages);
+		expect(row?.bridged).toEqual(attribution);
+	});
+
+	it("drops attribution a member put on their own message", async () => {
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3lkmsg1", {
+				$type: "social.colibri.beta.message",
+				text: "pretending",
+				createdAt: NOW,
+				bridged: attribution,
+			}),
+		);
+
+		const [row] = await database.db.select().from(database.tables.messages);
+		expect(row?.bridged).toBeNull();
+	});
+
+	it("keys a community-written reaction by the remote person who reacted", async () => {
+		for (const [rkey, remoteId] of [
+			["3lkreact1", "alice-1"],
+			["3lkreact2", "bob-1"],
+		] as const) {
+			await applyChange(
+				deps,
+				put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.reaction", rkey, {
+					$type: "social.colibri.beta.reaction",
+					emoji: "👍",
+					target: { did: MEMBER, rkey: "3lkmsg1" },
+					bridged: { ...attribution, remoteId },
+				}),
+			);
+		}
+
+		const rows = await database.db.select().from(database.tables.reactions);
+		expect(rows.map((row) => row.bridgedFrom).sort()).toEqual([
+			"3lkbridgeaaaa alice-1",
+			"3lkbridgeaaaa bob-1",
+		]);
+	});
+});
+
 describe("member-written collections", () => {
 	it("accepts a message from any member of the channel space", async () => {
 		await applyChange(

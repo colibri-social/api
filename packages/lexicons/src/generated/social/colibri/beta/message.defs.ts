@@ -5,6 +5,7 @@
 import { l } from "@atproto/lex";
 import * as RichtextFacet from "./richtext/facet.defs.js";
 import * as BetaDefs from "./defs.defs.js";
+import * as BridgeDefs from "./bridge/defs.defs.js";
 
 const $nsid = "social.colibri.beta.message";
 
@@ -53,12 +54,17 @@ type Main = { $type: "social.colibri.beta.message";
   /**
    * URLs from this message's link facets whose preview the author chose not to show. Moderator suppression is a label instead.
    */
-  "suppressedEmbeds"?:(l.UriString)[] };
+  "suppressedEmbeds"?:(l.UriString)[];
+
+  /**
+   * Who sent this message on another service. Honoured only when the community itself wrote the record.
+   */
+  "bridged"?:BridgeDefs.Attribution };
 
 export type { Main };
 
 /** A message in a channel. Lives in the author's own permissioned repo for the channel's space. */
-const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"text":/*#__PURE__*/ l.string({"maxLength":2048}),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"updatedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"parent":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any)),"attachments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Attachment>((() => attachment) as any), )),"forward":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Forward>((() => forward) as any)),"suppressedEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"uri"}), ))}));
+const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"text":/*#__PURE__*/ l.string({"maxLength":2048}),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"updatedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"parent":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any)),"attachments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Attachment>((() => attachment) as any), )),"forward":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Forward>((() => forward) as any)),"suppressedEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"uri"}), )),"bridged":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BridgeDefs.Attribution>((() => BridgeDefs.attribution) as any))}));
 
 export { main };
 

@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { afterEach, describe, expect, it } from "vitest";
 import { type CachedIdentity, IdentityResolver, type IdentityStore } from "./resolver.js";
 
 const DID = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
@@ -94,5 +96,47 @@ describe("resolveVerifiedHandles", () => {
 
 		expect(await resolver(impl).resolveVerifiedHandle(DID)).toBe("alice.test");
 		expect(saved).toEqual([]);
+	});
+});
+
+describe("signingKeyFor", () => {
+	const KEY = "did:key:zQ3shWWLnM6rug8V4CbHxLbDN6gA14JCekjyKZQi2kmF7WAev";
+	let server: Server | null = null;
+
+	afterEach(async () => {
+		await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
+		server = null;
+	});
+
+	const serveDocument = async (document: (did: string) => unknown): Promise<string> => {
+		server = createServer((_, res) => {
+			res.writeHead(200, { "content-type": "application/json" });
+			res.end(JSON.stringify(document(did)));
+		});
+		await new Promise<void>((resolve) => server?.listen(0, "127.0.0.1", () => resolve()));
+		const did = `did:web:localhost%3A${(server.address() as AddressInfo).port}`;
+		return did;
+	};
+
+	it("accepts a DID document that carries only a signing key", async () => {
+		const did = await serveDocument((id) => ({
+			id,
+			verificationMethod: [
+				{
+					id: `${id}#atproto`,
+					type: "Multikey",
+					controller: id,
+					publicKeyMultibase: KEY.replace("did:key:", ""),
+				},
+			],
+		}));
+
+		await expect(resolver(store([]).store).signingKeyFor(did, false)).resolves.toBe(KEY);
+	});
+
+	it("refuses a did:key issuer", async () => {
+		await expect(resolver(store([]).store).signingKeyFor(KEY, false)).rejects.toThrow(
+			"not a did:plc or did:web identity",
+		);
 	});
 });

@@ -12,7 +12,10 @@
 		{ "path": "./packages/blobs" },
 		{ "path": "./packages/embeds" },
 		{ "path": "./packages/voice" },
+		{ "path": "./packages/bridge-core" },
+		{ "path": "./packages/bridge-discord" },
 		{ "path": "./apps/appview" },
-		{ "path": "./apps/migrate" }
+		{ "path": "./apps/migrate" },
+		{ "path": "./apps/bridge" }
 	]
 }

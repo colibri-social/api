@@ -140,7 +140,9 @@ export const mountBlobRoutes = (ctx: AppContext, app: Router): void => {
 			channel,
 			thread,
 		});
-		if (!decision.authorized) return forbid(decision.reason);
+		if (!decision.authorized && !(await ctx.bridges.mayRead(viewer, parsed.uri))) {
+			return forbid(decision.reason);
+		}
 		return { authorized: true };
 	};
 

@@ -24,6 +24,7 @@ import {
 	preferencesEvent,
 	roleEvent,
 	threadEvent,
+	threadFrameForBridges,
 } from "./announce.js";
 import type { AppContext } from "./context.js";
 import { notificationDeps as buildNotificationDeps } from "./notification-deps.js";
@@ -67,7 +68,21 @@ const reactionFrame = (
 	target: value.target ?? { did: change.author, rkey },
 	emoji: value.emoji ?? "",
 	actor: change.author,
+	...bridgedReactorOf(change, value),
 });
+
+const bridgedReactorOf = (change: RepoChange, value: Record<string, unknown>) => {
+	const bridged = value.bridged as Record<string, unknown> | undefined;
+	if (!bridged || spaceContextFor(change.space)?.authority !== change.author) return {};
+	return {
+		bridged: {
+			registration: bridged.registration,
+			platform: bridged.platform,
+			remoteId: bridged.remoteId,
+			name: bridged.name,
+		},
+	};
+};
 
 const labelFrame = (
 	event: "create" | "negate",
@@ -110,10 +125,9 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		}
 
 		if (isThreadSpace(space)) {
-			events.publishToCommunity(
-				space.community,
-				threadEvent("delete", space.community, { space: uri }),
-			);
+			const frame = threadEvent("delete", space.community, { space: uri });
+			events.publishToCommunity(space.community, frame);
+			void events.publishToBridges(space.community, async () => frame);
 			events.threadDeleted(uri);
 			return;
 		}
@@ -219,7 +233,12 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		ctx.log.debug(detail, "sync.delivered");
 	};
 
-	const publishMessage = async (space: string, author: string, rkey: string): Promise<void> => {
+	const publishMessage = async (
+		space: string,
+		author: string,
+		rkey: string,
+		imported = false,
+	): Promise<void> => {
 		const message = await channels.message(space, null, { author, rkey });
 		if (!message) return;
 		events.publishToChannel(space, (viewer) => ({
@@ -227,6 +246,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			event: message.updatedAt ? "update" : "create",
 			channel: space,
 			message: channels.forViewer(message, viewer),
+			...(imported ? { imported: true } : {}),
 		}));
 	};
 
@@ -242,6 +262,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			const view = await threads.view(row, authz, did);
 			return view ? threadEvent(event, community, { channel: row.channel, thread: view }) : null;
 		});
+		await events.publishToBridges(community, threadFrameForBridges(ctx, threads, row, event));
 	};
 
 	const publishThreadActivity = async (space: string, community: string): Promise<void> => {
@@ -277,8 +298,11 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 
 		for (const put of change.puts) {
 			if (put.collection === COLLECTIONS.message && space.community) {
-				await publishMessage(change.space, change.author, put.rkey);
+				const imported =
+					(put.value.bridged as { imported?: unknown } | undefined)?.imported === true;
+				await publishMessage(change.space, change.author, put.rkey, imported);
 				publishedMessages += 1;
+				if (imported) continue;
 				if (isThreadSpace(space)) await publishThreadActivity(change.space, space.community);
 
 				const parent = put.value.parent as { did?: string; rkey?: string } | undefined;
@@ -357,10 +381,9 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			}
 
 			if (space.community && entry.collection === COLLECTIONS.thread) {
-				events.publishToCommunity(
-					space.community,
-					threadEvent("delete", space.community, { space: change.space }),
-				);
+				const frame = threadEvent("delete", space.community, { space: change.space });
+				events.publishToCommunity(space.community, frame);
+				void events.publishToBridges(space.community, async () => frame);
 			}
 
 			if (space.community && entry.collection === COLLECTIONS.category) {

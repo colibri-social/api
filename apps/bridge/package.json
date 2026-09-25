@@ -1,0 +1,37 @@
+{
+	"name": "@colibri-social/bridge",
+	"version": "0.0.0",
+	"description": "Runs a Colibri bridge to Discord.",
+	"type": "module",
+	"private": true,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"bin": {
+		"colibri-bridge": "./dist/index.js"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc --build",
+		"clean": "tsc --build --clean",
+		"dev": "tsx watch --conditions=colibri-source --env-file-if-exists=../../.env.bridge src/index.ts",
+		"start": "node dist/index.js"
+	},
+	"dependencies": {
+		"@colibri-social/bridge-core": "workspace:*",
+		"@colibri-social/bridge-discord": "workspace:*",
+		"pino": "catalog:",
+		"zod": "catalog:"
+	},
+	"devDependencies": {
+		"pino-pretty": "catalog:"
+	}
+}

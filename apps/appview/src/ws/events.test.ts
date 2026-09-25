@@ -21,6 +21,7 @@ const EVENTS_PATH = "/xrpc/social.colibri.beta.sync.subscribeEvents";
 const COMMUNITY = "did:plc:2hnjxkqm6bpuvvpjbztkxxxx";
 const ALICE = "did:plc:alicealicealicealicealic";
 const BOB = "did:plc:bobbobbobbobbobbobbobbob";
+const BRIDGE = "did:plc:bridgebridgebridgebridge";
 
 const CHANNEL = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkgeneral");
 const OTHER = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkbackstage");
@@ -111,6 +112,7 @@ describe("EventServer", () => {
 	let channels: Map<string, ChannelState>;
 	let authz: Map<string, ActorAuthz>;
 	let authzChanges: ReturnType<typeof createAuthzChanges>;
+	let bridgeLinks: Set<string>;
 
 	const buildCtx = (): AppContext => {
 		channels = new Map<string, ChannelState>([
@@ -122,9 +124,11 @@ describe("EventServer", () => {
 			[BOB, memberAuthz(BOB)],
 		]);
 		authzChanges = createAuthzChanges();
+		bridgeLinks = new Set<string>();
 		const tokens = new Map<string, string>([
 			["alice-token", ALICE],
 			["bob-token", BOB],
+			["bridge-token", BRIDGE],
 		]);
 
 		return {
@@ -140,6 +144,9 @@ describe("EventServer", () => {
 				},
 			},
 			authzChanges,
+			bridges: {
+				mayRead: async (did: string, space: string) => did === BRIDGE && bridgeLinks.has(space),
+			},
 			loader: {
 				channel: async (space: string) => channels.get(space) ?? null,
 				spaceStates: async (space: string) => ({
@@ -242,6 +249,77 @@ describe("EventServer", () => {
 		});
 
 		ws.close();
+	});
+
+	it("lets a bridge subscribe to its linked channel and nothing else", async () => {
+		bridgeLinks.add(CHANNEL);
+		const ws = connect("bridge-token");
+		await waitForOpen(ws);
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#subscribe",
+			channels: [CHANNEL, OTHER],
+		});
+
+		expect(await nextFrameOfType(ws, "subscribed")).toMatchObject({ channels: [CHANNEL] });
+
+		ws.close();
+	});
+
+	it("takes a channel back from a bridge once it is unlinked", async () => {
+		bridgeLinks.add(CHANNEL);
+		const ws = connect("bridge-token");
+		await waitForOpen(ws);
+		await subscribed(ws, CHANNEL);
+
+		bridgeLinks.delete(CHANNEL);
+		authzChanges.publish({ community: COMMUNITY, collection: COLLECTIONS.bridgeRegistration });
+
+		expect(await nextFrameOfType(ws, "channelEvent")).toMatchObject({
+			event: "delete",
+			space: CHANNEL,
+		});
+		expect(await nextFrameOfType(ws, "subscribed")).toMatchObject({ channels: [] });
+
+		ws.close();
+	});
+
+	it("hands thread events to a bridge holding a linked channel, and to nobody else", async () => {
+		bridgeLinks.add(CHANNEL);
+		const bridge = connect("bridge-token");
+		const alice = connect("alice-token");
+		await Promise.all([waitForOpen(bridge), waitForOpen(alice)]);
+		await subscribed(bridge, CHANNEL);
+		await subscribed(alice, CHANNEL);
+
+		await events.publishToBridges(COMMUNITY, async (did) => ({
+			$type: "social.colibri.beta.sync.defs#threadEvent",
+			event: "delete",
+			community: COMMUNITY,
+			space: did,
+		}));
+
+		expect(await nextFrameOfType(bridge, "threadEvent")).toMatchObject({ space: BRIDGE });
+		expect(heldOfType(alice, "threadEvent")).toEqual([]);
+
+		bridge.close();
+		alice.close();
+	});
+
+	it("stops handing thread events to a bridge once its last channel is unlinked", async () => {
+		bridgeLinks.add(CHANNEL);
+		const bridge = connect("bridge-token");
+		await waitForOpen(bridge);
+		await subscribed(bridge, CHANNEL);
+
+		bridgeLinks.delete(CHANNEL);
+		authzChanges.publish({ community: COMMUNITY, collection: COLLECTIONS.bridgeRegistration });
+		await nextFrameOfType(bridge, "subscribed");
+
+		const build = vi.fn(async () => null);
+		await events.publishToBridges(COMMUNITY, build);
+		expect(build).not.toHaveBeenCalled();
+
+		bridge.close();
 	});
 
 	it("drops a community's channels when the community is unsubscribed", async () => {

@@ -21,12 +21,12 @@ type Main = { $type?: "social.colibri.beta.richtext.facet";
   /**
    * What the range means. A range may carry more than one feature.
    */
-  "features":(l.$Typed<Bold> | l.$Typed<Italic> | l.$Typed<Underline> | l.$Typed<Strikethrough> | l.$Typed<Code> | l.$Typed<Codeblock> | l.$Typed<Quote> | l.$Typed<Heading> | l.$Typed<List> | l.$Typed<Subtext> | l.$Typed<Spoiler> | l.$Typed<Mention> | l.$Typed<Role> | l.$Typed<Channel> | l.$Typed<Link> | l.$Typed<Time> | l.Unknown$TypedObject)[] };
+  "features":(l.$Typed<Bold> | l.$Typed<Italic> | l.$Typed<Underline> | l.$Typed<Strikethrough> | l.$Typed<Code> | l.$Typed<Codeblock> | l.$Typed<Quote> | l.$Typed<Heading> | l.$Typed<List> | l.$Typed<Subtext> | l.$Typed<Spoiler> | l.$Typed<Mention> | l.$Typed<BridgedMention> | l.$Typed<Role> | l.$Typed<Channel> | l.$Typed<Link> | l.$Typed<Time> | l.Unknown$TypedObject)[] };
 
 export type { Main };
 
 /** An annotation over a range of a message's text. */
-const main = /*#__PURE__*/ l.typedObject<Main>($nsid, "main", /*#__PURE__*/ l.object({"index":/*#__PURE__*/ l.ref<ByteSlice>((() => byteSlice) as any),"features":/*#__PURE__*/ l.array(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<Bold>((() => bold) as any),/*#__PURE__*/ l.typedRef<Italic>((() => italic) as any),/*#__PURE__*/ l.typedRef<Underline>((() => underline) as any),/*#__PURE__*/ l.typedRef<Strikethrough>((() => strikethrough) as any),/*#__PURE__*/ l.typedRef<Code>((() => code) as any),/*#__PURE__*/ l.typedRef<Codeblock>((() => codeblock) as any),/*#__PURE__*/ l.typedRef<Quote>((() => quote) as any),/*#__PURE__*/ l.typedRef<Heading>((() => heading) as any),/*#__PURE__*/ l.typedRef<List>((() => list) as any),/*#__PURE__*/ l.typedRef<Subtext>((() => subtext) as any),/*#__PURE__*/ l.typedRef<Spoiler>((() => spoiler) as any),/*#__PURE__*/ l.typedRef<Mention>((() => mention) as any),/*#__PURE__*/ l.typedRef<Role>((() => role) as any),/*#__PURE__*/ l.typedRef<Channel>((() => channel) as any),/*#__PURE__*/ l.typedRef<Link>((() => link) as any),/*#__PURE__*/ l.typedRef<Time>((() => time) as any)], false), )}));
+const main = /*#__PURE__*/ l.typedObject<Main>($nsid, "main", /*#__PURE__*/ l.object({"index":/*#__PURE__*/ l.ref<ByteSlice>((() => byteSlice) as any),"features":/*#__PURE__*/ l.array(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<Bold>((() => bold) as any),/*#__PURE__*/ l.typedRef<Italic>((() => italic) as any),/*#__PURE__*/ l.typedRef<Underline>((() => underline) as any),/*#__PURE__*/ l.typedRef<Strikethrough>((() => strikethrough) as any),/*#__PURE__*/ l.typedRef<Code>((() => code) as any),/*#__PURE__*/ l.typedRef<Codeblock>((() => codeblock) as any),/*#__PURE__*/ l.typedRef<Quote>((() => quote) as any),/*#__PURE__*/ l.typedRef<Heading>((() => heading) as any),/*#__PURE__*/ l.typedRef<List>((() => list) as any),/*#__PURE__*/ l.typedRef<Subtext>((() => subtext) as any),/*#__PURE__*/ l.typedRef<Spoiler>((() => spoiler) as any),/*#__PURE__*/ l.typedRef<Mention>((() => mention) as any),/*#__PURE__*/ l.typedRef<BridgedMention>((() => bridgedMention) as any),/*#__PURE__*/ l.typedRef<Role>((() => role) as any),/*#__PURE__*/ l.typedRef<Channel>((() => channel) as any),/*#__PURE__*/ l.typedRef<Link>((() => link) as any),/*#__PURE__*/ l.typedRef<Time>((() => time) as any)], false), )}));
 
 export { main };
 
@@ -212,6 +212,31 @@ export type { Mention };
 const mention = /*#__PURE__*/ l.typedObject<Mention>($nsid, "mention", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"})}));
 
 export { mention };
+
+/** A mention of someone on another service, whose messages a bridge relays. */
+type BridgedMention = { $type?: "social.colibri.beta.richtext.facet#bridgedMention";
+
+  /**
+   * Record key of the bridge registration the person is reached through.
+   */
+  "registration":l.TidString;
+
+  /**
+   * The service the person is on.
+   */
+  "platform":string;
+
+  /**
+   * Their id on that service.
+   */
+  "remoteId":string };
+
+export type { BridgedMention };
+
+/** A mention of someone on another service, whose messages a bridge relays. */
+const bridgedMention = /*#__PURE__*/ l.typedObject<BridgedMention>($nsid, "bridgedMention", /*#__PURE__*/ l.object({"registration":/*#__PURE__*/ l.string({"format":"tid"}),"platform":/*#__PURE__*/ l.string({"maxLength":64}),"remoteId":/*#__PURE__*/ l.string({"maxLength":256})}));
+
+export { bridgedMention };
 
 /** A role mention. Roles are only ever written by the community, and a channel space's authority is its community, so the role key alone is unambiguous. */
 type Role = { $type?: "social.colibri.beta.richtext.facet#role";

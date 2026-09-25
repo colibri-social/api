@@ -8,6 +8,7 @@ import * as RichtextFacet from "../richtext/facet.defs.js";
 import * as CommunityDefs from "../community/defs.defs.js";
 import * as EmbedDefs from "../embed/defs.defs.js";
 import * as BetaDefs from "../defs.defs.js";
+import * as BridgeDefs from "../bridge/defs.defs.js";
 
 const $nsid = "social.colibri.beta.channel.defs";
 
@@ -224,24 +225,29 @@ type ReactionView = { $type?: "social.colibri.beta.channel.defs#reactionView";
   "emoji":string;
 
   /**
-   * How many people reacted.
+   * How many people reacted, including people reacting through a bridge.
    */
   "count":number;
 
   /**
-   * Who reacted.
+   * Colibri users who reacted. People reacting through a bridge are listed in bridgedReactors instead.
    */
   "reactors":(l.DidString)[];
 
   /**
    * Whether the requesting user is among them.
    */
-  "viewerReacted"?:boolean };
+  "viewerReacted"?:boolean;
+
+  /**
+   * People on other services who reacted through a bridge.
+   */
+  "bridgedReactors"?:(BridgeDefs.BridgedReactor)[] };
 
 export type { ReactionView };
 
 /** Reactions to a message with one emoji. */
-const reactionView = /*#__PURE__*/ l.typedObject<ReactionView>($nsid, "reactionView", /*#__PURE__*/ l.object({"emoji":/*#__PURE__*/ l.string(),"count":/*#__PURE__*/ l.integer(),"reactors":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"viewerReacted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
+const reactionView = /*#__PURE__*/ l.typedObject<ReactionView>($nsid, "reactionView", /*#__PURE__*/ l.object({"emoji":/*#__PURE__*/ l.string(),"count":/*#__PURE__*/ l.integer(),"reactors":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"viewerReacted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"bridgedReactors":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<BridgeDefs.BridgedReactor>((() => BridgeDefs.bridgedReactor) as any), ))}));
 
 export { reactionView };
 

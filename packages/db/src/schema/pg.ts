@@ -27,6 +27,23 @@ export type ActivityKind = "listening" | "playing" | "streaming";
 export type PushProvider = "webpush" | "fcm";
 export type PushPlatform = "web" | "ios" | "android";
 export type CredentialSource = "provisioned" | "registered";
+export type BridgeBackfillRequest = { since?: string; requestedAt: string };
+export type BridgeLink = {
+	channel: string;
+	remoteRoom: string;
+	remoteName: string;
+	backfill?: BridgeBackfillRequest;
+};
+export type BridgeBackfillState = "running" | "done" | "failed";
+export type BridgedAttribution = {
+	registration: string;
+	platform: string;
+	remoteId: string;
+	name: string;
+	avatar?: unknown;
+	remoteMessage?: string;
+	imported?: boolean;
+};
 export type GifFavorite = {
 	id: string;
 	url: string;
@@ -224,6 +241,7 @@ export const messages = pgTable(
 		attachments: json<unknown[]>("attachments"),
 		forward: json<Record<string, unknown>>("forward"),
 		suppressedEmbeds: json<string[]>("suppressed_embeds"),
+		bridged: json<BridgedAttribution>("bridged"),
 		fromLegacyRepo: flag("from_legacy_repo").notNull().default(false),
 		indexedAt: timestamp("indexed_at").notNull(),
 	},
@@ -244,6 +262,8 @@ export const reactions = pgTable(
 		targetAuthor: text("target_author").notNull(),
 		targetRkey: text("target_rkey").notNull(),
 		emoji: text("emoji").notNull(),
+		bridgedFrom: text("bridged_from").notNull().default(""),
+		bridged: json<BridgedAttribution>("bridged"),
 	},
 	(t) => [
 		primaryKey({ columns: [t.space, t.author, t.rkey] }),
@@ -253,6 +273,7 @@ export const reactions = pgTable(
 			t.targetAuthor,
 			t.targetRkey,
 			t.author,
+			t.bridgedFrom,
 			t.emoji,
 		),
 	],
@@ -533,6 +554,76 @@ export const legacyRecords = pgTable(
 	],
 );
 
+export const bridgeRegistrations = pgTable(
+	"bridge_registrations",
+	{
+		community: text("community").notNull(),
+		id: text("id").notNull(),
+		bridge: text("bridge").notNull(),
+		platform: text("platform").notNull(),
+		remoteSpace: text("remote_space").notNull(),
+		remoteSpaceName: text("remote_space_name").notNull(),
+		links: json<BridgeLink[]>("links").notNull(),
+		enabled: flag("enabled").notNull().default(true),
+		mirrorModeration: flag("mirror_moderation").notNull().default(false),
+		createdBy: text("created_by").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+		updatedAt: timestamp("updated_at"),
+	},
+	(t) => [
+		primaryKey({ columns: [t.community, t.id] }),
+		uniqueIndex("bridge_registrations_remote_space_idx").on(t.community, t.bridge, t.remoteSpace),
+		index("bridge_registrations_bridge_idx").on(t.bridge),
+	],
+);
+
+export const bridgePairings = pgTable(
+	"bridge_pairings",
+	{
+		code: text("code").primaryKey(),
+		bridge: text("bridge").notNull(),
+		platform: text("platform").notNull(),
+		remoteSpace: text("remote_space").notNull(),
+		remoteSpaceName: text("remote_space_name").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+		expiresAt: timestamp("expires_at").notNull(),
+		redeemedAt: timestamp("redeemed_at"),
+	},
+	(t) => [index("bridge_pairings_bridge_idx").on(t.bridge)],
+);
+
+export const bridgeRemoteRooms = pgTable(
+	"bridge_remote_rooms",
+	{
+		community: text("community").notNull(),
+		registration: text("registration").notNull(),
+		remoteRoom: text("remote_room").notNull(),
+		name: text("name").notNull(),
+		kind: text("kind"),
+		parent: text("parent"),
+		position: integer("position").notNull(),
+		updatedAt: timestamp("updated_at").notNull(),
+	},
+	(t) => [primaryKey({ columns: [t.community, t.registration, t.remoteRoom] })],
+);
+
+export const bridgeBackfills = pgTable(
+	"bridge_backfills",
+	{
+		community: text("community").notNull(),
+		registration: text("registration").notNull(),
+		channel: text("channel").notNull(),
+		requestedAt: timestamp("requested_at").notNull(),
+		state: text("state").notNull().$type<BridgeBackfillState>(),
+		imported: integer("imported").notNull(),
+		from: timestamp("from").notNull(),
+		until: timestamp("until").notNull(),
+		reached: timestamp("reached"),
+		updatedAt: timestamp("updated_at").notNull(),
+	},
+	(t) => [primaryKey({ columns: [t.community, t.registration, t.channel] })],
+);
+
 export const schema = {
 	spaces,
 	spaceRepos,
@@ -564,6 +655,10 @@ export const schema = {
 	profileCache,
 	serviceState,
 	legacyRecords,
+	bridgeRegistrations,
+	bridgePairings,
+	bridgeRemoteRooms,
+	bridgeBackfills,
 };
 
 export type Schema = typeof schema;

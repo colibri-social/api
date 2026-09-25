@@ -227,6 +227,88 @@ describe("ChannelViews.messages", () => {
 		expect(tada).toMatchObject({ count: 1, viewerReacted: true, reactors: [AUTHOR_B] });
 	});
 
+	it("shows a bridged message's remote author in place of the community", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey, {
+			author: COMMUNITY,
+			bridged: {
+				registration: "3lkbridgeaaaa",
+				platform: "chat",
+				remoteId: "alice-1",
+				name: "Alice Elsewhere",
+				avatar: { $type: "blob", ref: { $link: ATTACHMENT_CID }, mimeType: "image/png", size: 1 },
+			},
+		});
+
+		const [message] = (await views.messages(SPACE, null, { limit: 10 })).messages;
+
+		expect(message?.author).toMatchObject({
+			did: COMMUNITY,
+			displayName: "Alice Elsewhere",
+			isBot: false,
+			bridge: { registration: "3lkbridgeaaaa", platform: "chat", remoteId: "alice-1" },
+		});
+		const avatar = new URL(message?.author.avatar ?? "");
+		expect(avatar.searchParams.get("did")).toBe(COMMUNITY);
+		expect(avatar.searchParams.get("cid")).toBe(ATTACHMENT_CID);
+		expect(avatar.searchParams.get("space")).toBe(SPACE);
+	});
+
+	it("ignores bridged attribution on a message the community did not write", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey, {
+			bridged: {
+				registration: "3lkbridgeaaaa",
+				platform: "chat",
+				remoteId: "mallory",
+				name: "Not Really",
+			},
+		});
+
+		const [message] = (await views.messages(SPACE, null, { limit: 10 })).messages;
+
+		expect(message?.author.did).toBe(AUTHOR_A);
+		expect(message?.author.displayName).not.toBe("Not Really");
+		expect(message?.author.bridge).toBeUndefined();
+	});
+
+	it("counts bridged reactors apart from Colibri reactors", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey);
+		const bridgedReaction = (remoteId: string) => ({
+			space: SPACE,
+			author: COMMUNITY,
+			rkey: nextTid(),
+			targetAuthor: AUTHOR_A,
+			targetRkey: rkey,
+			emoji: "thumbsup",
+			bridgedFrom: `3lkbridgeaaaa ${remoteId}`,
+			bridged: { registration: "3lkbridgeaaaa", platform: "chat", remoteId, name: remoteId },
+		});
+
+		await database.db.insert(database.tables.reactions).values([
+			bridgedReaction("alice-1"),
+			bridgedReaction("bob-1"),
+			{
+				space: SPACE,
+				author: AUTHOR_B,
+				rkey: nextTid(),
+				targetAuthor: AUTHOR_A,
+				targetRkey: rkey,
+				emoji: "thumbsup",
+			},
+		]);
+
+		const [message] = (await views.messages(SPACE, COMMUNITY, { limit: 10 })).messages;
+		const [thumbsup] = message?.reactions ?? [];
+
+		expect(thumbsup).toMatchObject({ count: 3, reactors: [AUTHOR_B], viewerReacted: false });
+		expect(thumbsup?.bridgedReactors?.map((reactor) => reactor.remoteId).sort()).toEqual([
+			"alice-1",
+			"bob-1",
+		]);
+	});
+
 	it("only surfaces labels from labelers the community names, and drops negated ones", async () => {
 		const rkey = nextTid();
 		await putMessage(rkey);

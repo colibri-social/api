@@ -1,7 +1,9 @@
+import type { BridgedAttribution } from "@colibri-social/appview-db";
 import { mapWithConcurrency } from "@colibri-social/identity";
 import {
 	asDid,
 	asHandle,
+	asTid,
 	asUriOrUndefined,
 	blobCid,
 	COLLECTIONS,
@@ -101,6 +103,26 @@ export class ActorViews {
 				},
 			});
 		return { colibri, bsky };
+	}
+
+	bridgedProfile(
+		community: ProfileView,
+		attribution: BridgedAttribution,
+		avatarUrl: string | undefined,
+	): ProfileView {
+		return {
+			did: community.did,
+			handle: community.handle,
+			displayName: attribution.name,
+			avatar: asUriOrUndefined(avatarUrl),
+			isBot: false,
+			syncBluesky: false,
+			bridge: {
+				registration: asTid(attribution.registration),
+				platform: attribution.platform,
+				remoteId: attribution.remoteId,
+			},
+		};
 	}
 
 	async hydrate(

@@ -56,6 +56,11 @@
 					"type": "ref",
 					"ref": "#presence",
 					"description": "Live presence, when the AppView is tracking any."
+				},
+				"bridge": {
+					"type": "ref",
+					"ref": "social.colibri.beta.bridge.defs#bridgedActor",
+					"description": "Present when this is someone on another service whose messages a bridge relays. They have no Colibri account of their own."
 				}
 			}
 		},

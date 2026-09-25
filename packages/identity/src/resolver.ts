@@ -130,8 +130,12 @@ export class IdentityResolver {
 
 	signingKeyFor = async (issuer: string, forceRefresh: boolean): Promise<string> => {
 		const did = issuer.split("#")[0] as string;
-		const { signingKey } = await this.resolveDid(did, forceRefresh);
-		return signingKey;
+		if (!did.startsWith("did:plc:") && !did.startsWith("did:web:")) {
+			throw new IdentityResolutionError(did, `${did} is not a did:plc or did:web identity`);
+		}
+		return this.resolver.did.resolveAtprotoKey(did, forceRefresh).catch((cause) => {
+			throw new IdentityResolutionError(did, `could not resolve ${did}`, { cause });
+		});
 	};
 
 	private async verifyHandle(did: string): Promise<ResolvedHandle> {

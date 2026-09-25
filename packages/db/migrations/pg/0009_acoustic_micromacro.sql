@@ -1,0 +1,1 @@
+ALTER TABLE "bridge_registrations" ADD COLUMN "mirror_moderation" boolean DEFAULT false NOT NULL;

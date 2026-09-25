@@ -4,5 +4,6 @@ dist/
 .env
 .env.local
 .env.production
+.env.bridge
 coverage/
 .DS_Store

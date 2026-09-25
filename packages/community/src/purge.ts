@@ -43,6 +43,8 @@ export const purgeCommunity = async (
 	await db.transaction(async (tx) => {
 		const byCommunity = [
 			{ table: tables.messages, column: tables.messages.community },
+			{ table: tables.bridgeRegistrations, column: tables.bridgeRegistrations.community },
+			{ table: tables.bridgeRemoteRooms, column: tables.bridgeRemoteRooms.community },
 			{ table: tables.moderationLog, column: tables.moderationLog.community },
 			{ table: tables.notifications, column: tables.notifications.community },
 			{ table: tables.readCursors, column: tables.readCursors.community },

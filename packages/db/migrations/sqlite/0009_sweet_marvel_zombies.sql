@@ -1,0 +1,1 @@
+ALTER TABLE `bridge_registrations` ADD `mirror_moderation` integer DEFAULT false NOT NULL;

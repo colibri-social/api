@@ -18,7 +18,9 @@
 			"@colibri-social/notifications": ["./packages/notifications/src/index.ts"],
 			"@colibri-social/blobs": ["./packages/blobs/src/index.ts"],
 			"@colibri-social/embeds": ["./packages/embeds/src/index.ts"],
-			"@colibri-social/voice": ["./packages/voice/src/index.ts"]
+			"@colibri-social/voice": ["./packages/voice/src/index.ts"],
+			"@colibri-social/bridge-core": ["./packages/bridge-core/src/index.ts"],
+			"@colibri-social/bridge-discord": ["./packages/bridge-discord/src/index.ts"]
 		}
 	},
 	"include": [

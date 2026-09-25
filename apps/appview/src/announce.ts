@@ -1,6 +1,7 @@
 import type { Permission, social } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import type { AppContext } from "./context.js";
+import type { ThreadRow, ThreadViews } from "./views/thread.js";
 import type { ChannelFrame, EventServer, ServerFrame } from "./ws/events.js";
 
 export type Announcer = {
@@ -15,6 +16,7 @@ export type Announcer = {
 		build: (did: string) => Promise<ServerFrame | null>,
 	): Promise<void>;
 	toChannel(space: string, frame: ChannelFrame): void;
+	toBridges(community: string, build: (did: string) => Promise<ServerFrame | null>): Promise<void>;
 	toUser(did: string, frame: ServerFrame): void;
 	channelChanged(community: string, space: string, event: "update" | "delete"): void;
 	threadDeleted(space: string): void;
@@ -26,6 +28,7 @@ export const silentAnnouncer: Announcer = {
 	toCommunityPermission: async () => {},
 	toCommunityViewers: async () => {},
 	toChannel: () => {},
+	toBridges: async () => {},
 	toUser: () => {},
 	channelChanged: () => {},
 	threadDeleted: () => {},
@@ -38,6 +41,7 @@ export const eventAnnouncer = (events: EventServer): Announcer => ({
 		events.publishToCommunityPermission(community, permission, frame),
 	toCommunityViewers: (community, build) => events.publishToCommunityViewers(community, build),
 	toChannel: (space, frame) => events.publishToChannel(space, frame),
+	toBridges: (community, build) => events.publishToBridges(community, build),
 	toUser: (did, frame) => events.publishToUser(did, frame),
 	channelChanged: (community, space, event) => events.channelChanged(community, space, event),
 	threadDeleted: (space) => events.threadDeleted(space),
@@ -45,6 +49,15 @@ export const eventAnnouncer = (events: EventServer): Announcer => ({
 });
 
 type Lifecycle = "create" | "update" | "delete";
+
+export const threadFrameForBridges =
+	(ctx: AppContext, threads: ThreadViews, row: ThreadRow, event: "create" | "update") =>
+	async (did: string): Promise<ServerFrame | null> => {
+		if (!(await ctx.bridges.mayRead(did, row.space))) return null;
+		const authz = await ctx.loader.authz(row.community, row.community);
+		const view = await threads.view(row, authz, row.community);
+		return view ? threadEvent(event, row.community, { channel: row.channel, thread: view }) : null;
+	};
 
 export const channelEvent = (event: Lifecycle, community: string, space: string): ServerFrame => ({
 	$type: "social.colibri.beta.sync.defs#channelEvent",

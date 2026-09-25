@@ -5,6 +5,7 @@
 import { l } from "@atproto/lex";
 import * as ChannelDefs from "../channel/defs.defs.js";
 import * as BetaDefs from "../defs.defs.js";
+import * as BridgeDefs from "../bridge/defs.defs.js";
 import * as CommunityDefs from "../community/defs.defs.js";
 import * as ThreadDefs from "../thread/defs.defs.js";
 import * as BetaLabel from "../label.defs.js";
@@ -233,12 +234,17 @@ type MessageEvent = { $type?: "social.colibri.beta.sync.defs#messageEvent";
   /**
    * Which message, for deletes.
    */
-  "subject"?:BetaDefs.RecordRef };
+  "subject"?:BetaDefs.RecordRef;
+
+  /**
+   * Set when a bridge imported the message from earlier history. Clients show it without marking the channel unread.
+   */
+  "imported"?:boolean };
 
 export type { MessageEvent };
 
 /** A message was written, edited, or deleted in a subscribed channel. */
-const messageEvent = /*#__PURE__*/ l.typedObject<MessageEvent>($nsid, "messageEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["create","update","delete"]}>(),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"message":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ChannelDefs.MessageView>((() => ChannelDefs.messageView) as any)),"subject":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any))}));
+const messageEvent = /*#__PURE__*/ l.typedObject<MessageEvent>($nsid, "messageEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["create","update","delete"]}>(),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"message":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ChannelDefs.MessageView>((() => ChannelDefs.messageView) as any)),"subject":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any)),"imported":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
 
 export { messageEvent };
 
@@ -268,12 +274,17 @@ type ReactionEvent = { $type?: "social.colibri.beta.sync.defs#reactionEvent";
   /**
    * Who reacted.
    */
-  "actor":l.DidString };
+  "actor":l.DidString;
+
+  /**
+   * Present when someone on another service reacted through a bridge. The actor is then the community that wrote the reaction.
+   */
+  "bridged"?:BridgeDefs.BridgedReactor };
 
 export type { ReactionEvent };
 
 /** A reaction was added or removed in a subscribed channel. */
-const reactionEvent = /*#__PURE__*/ l.typedObject<ReactionEvent>($nsid, "reactionEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["create","delete"]}>(),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"target":/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any),"emoji":/*#__PURE__*/ l.string(),"actor":/*#__PURE__*/ l.string({"format":"did"})}));
+const reactionEvent = /*#__PURE__*/ l.typedObject<ReactionEvent>($nsid, "reactionEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["create","delete"]}>(),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"target":/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any),"emoji":/*#__PURE__*/ l.string(),"actor":/*#__PURE__*/ l.string({"format":"did"}),"bridged":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BridgeDefs.BridgedReactor>((() => BridgeDefs.bridgedReactor) as any))}));
 
 export { reactionEvent };
 
@@ -711,3 +722,28 @@ export type { CommunityProgressEvent };
 const communityProgressEvent = /*#__PURE__*/ l.typedObject<CommunityProgressEvent>($nsid, "communityProgressEvent", /*#__PURE__*/ l.object({"step":/*#__PURE__*/ l.string<{"knownValues":["creatingAccount","creatingSpaces","writingProfile","creatingOwnerRole","creatingStarterChannels","done","failed"]}>(),"completed":/*#__PURE__*/ l.integer(),"total":/*#__PURE__*/ l.integer(),"community":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"did"})),"message":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())}));
 
 export { communityProgressEvent };
+
+/** A registration held by the connected bridge was changed or removed. Sent only to the bridge, which should fetch its configuration again. */
+type BridgeEvent = { $type?: "social.colibri.beta.sync.defs#bridgeEvent";
+
+  /**
+   * What happened.
+   */
+  "event":"update" | "delete" | l.UnknownString;
+
+  /**
+   * The community the registration belongs to.
+   */
+  "community":l.DidString;
+
+  /**
+   * Record key of the registration.
+   */
+  "registration":l.TidString };
+
+export type { BridgeEvent };
+
+/** A registration held by the connected bridge was changed or removed. Sent only to the bridge, which should fetch its configuration again. */
+const bridgeEvent = /*#__PURE__*/ l.typedObject<BridgeEvent>($nsid, "bridgeEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["update","delete"]}>(),"community":/*#__PURE__*/ l.string({"format":"did"}),"registration":/*#__PURE__*/ l.string({"format":"tid"})}));
+
+export { bridgeEvent };

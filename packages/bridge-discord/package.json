@@ -1,0 +1,35 @@
+{
+	"name": "@colibri-social/bridge-discord",
+	"version": "0.0.0",
+	"description": "A Colibri bridge connector for Discord servers",
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/colibri-social/api.git",
+		"directory": "packages/bridge-discord"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsc --build",
+		"clean": "tsc --build --clean"
+	},
+	"dependencies": {
+		"@colibri-social/bridge-core": "workspace:*",
+		"discord.js": "^14.27.0"
+	}
+}

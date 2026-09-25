@@ -23,10 +23,13 @@ export type AuthzChange = {
 	collection: string;
 };
 
+export type Admit = (db: Queryable, ref: RecordRef) => Promise<string | null>;
+
 export type ProjectionDeps = {
 	db: Queryable;
 	tables: Schema;
 	now: () => string;
+	admit?: Admit;
 	onSkipped?: (ref: RecordRef, reason: string) => void;
 	onAuthzChanged?: (change: AuthzChange) => void;
 };

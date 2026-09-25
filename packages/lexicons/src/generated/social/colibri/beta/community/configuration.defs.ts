@@ -11,6 +11,6 @@ type $nsid = typeof $nsid;
 export { $nsid };
 
 /** A community's operational settings and its category layout. */
-const main = /*#__PURE__*/ l.space($nsid, "literal:self", ["social.colibri.beta.category","social.colibri.beta.community.settings","social.colibri.beta.label"], {"name":"Colibri community settings"});
+const main = /*#__PURE__*/ l.space($nsid, "literal:self", ["social.colibri.beta.category","social.colibri.beta.community.settings","social.colibri.beta.label","social.colibri.beta.bridge.registration"], {"name":"Colibri community settings"});
 
 export { main };

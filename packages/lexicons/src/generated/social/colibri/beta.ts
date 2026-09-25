@@ -4,6 +4,7 @@
 
 export * as actor from "./beta/actor.js";
 export * as blob from "./beta/blob.js";
+export * as bridge from "./beta/bridge.js";
 export * as category from "./beta/category.js";
 export * as channel from "./beta/channel.js";
 export * as community from "./beta/community.js";
@@ -15,6 +16,7 @@ export * as message from "./beta/message.js";
 export * as moderation from "./beta/moderation.js";
 export * as notification from "./beta/notification.js";
 export * as permissionAccount from "./beta/permissionAccount.js";
+export * as permissionBridge from "./beta/permissionBridge.js";
 export * as permissionCommunity from "./beta/permissionCommunity.js";
 export * as permissionMessaging from "./beta/permissionMessaging.js";
 export * as permissionNotification from "./beta/permissionNotification.js";

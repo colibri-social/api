@@ -4,6 +4,7 @@
 
 import { l } from "@atproto/lex";
 import * as ActorProfile from "./profile.defs.js";
+import * as BridgeDefs from "../bridge/defs.defs.js";
 import * as EmbedDefs from "../embed/defs.defs.js";
 
 const $nsid = "social.colibri.beta.actor.defs";
@@ -68,12 +69,17 @@ type ProfileView = { $type?: "social.colibri.beta.actor.defs#profileView";
   /**
    * Live presence, when the AppView is tracking any.
    */
-  "presence"?:Presence };
+  "presence"?:Presence;
+
+  /**
+   * Present when this is someone on another service whose messages a bridge relays. They have no Colibri account of their own.
+   */
+  "bridge"?:BridgeDefs.BridgedActor };
 
 export type { ProfileView };
 
 /** A Colibri user as the AppView serves them: identity, resolved profile, and presence. */
-const profileView = /*#__PURE__*/ l.typedObject<ProfileView>($nsid, "profileView", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"handle":/*#__PURE__*/ l.string({"format":"handle"}),"displayName":/*#__PURE__*/ l.string(),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"avatar":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"banner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"isBot":/*#__PURE__*/ l.boolean(),"syncBluesky":/*#__PURE__*/ l.boolean(),"theme":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ActorProfile.Theme>((() => ActorProfile.theme) as any)),"preferredBadge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"presence":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Presence>((() => presence) as any))}));
+const profileView = /*#__PURE__*/ l.typedObject<ProfileView>($nsid, "profileView", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"handle":/*#__PURE__*/ l.string({"format":"handle"}),"displayName":/*#__PURE__*/ l.string(),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"avatar":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"banner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"isBot":/*#__PURE__*/ l.boolean(),"syncBluesky":/*#__PURE__*/ l.boolean(),"theme":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ActorProfile.Theme>((() => ActorProfile.theme) as any)),"preferredBadge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"presence":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Presence>((() => presence) as any)),"bridge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BridgeDefs.BridgedActor>((() => BridgeDefs.bridgedActor) as any))}));
 
 export { profileView };
 

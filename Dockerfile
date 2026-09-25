@@ -15,8 +15,11 @@ RUN apt-get update \
 	&& rm -rf /var/lib/apt/lists/*
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/appview/package.json apps/appview/
+COPY apps/bridge/package.json apps/bridge/
 COPY apps/migrate/package.json apps/migrate/
 COPY packages/blobs/package.json packages/blobs/
+COPY packages/bridge-core/package.json packages/bridge-core/
+COPY packages/bridge-discord/package.json packages/bridge-discord/
 COPY packages/community/package.json packages/community/
 COPY packages/db/package.json packages/db/
 COPY packages/embeds/package.json packages/embeds/

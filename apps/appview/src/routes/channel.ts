@@ -31,7 +31,7 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 			channel: states.channel,
 			thread: states.thread,
 		});
-		if (!decision.authorized) {
+		if (!decision.authorized && !(await ctx.bridges.mayRead(viewer, parsed.uri))) {
 			throw new InvalidRequestError(decision.reason, "Forbidden");
 		}
 		return { channel: states.channel, community, authz };
@@ -46,7 +46,10 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 			}
 			const community = parseSpaceRef(params.channel).authority;
 			const authz = await ctx.loader.authz(community, caller.credentials.did);
-			if (!canRead(authz, state.state)) {
+			if (
+				!canRead(authz, state.state) &&
+				!(await ctx.bridges.mayRead(caller.credentials.did, params.channel))
+			) {
 				throw new InvalidRequestError("the requester may not read this channel", "Forbidden");
 			}
 			return {

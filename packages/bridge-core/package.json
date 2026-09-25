@@ -1,0 +1,46 @@
+{
+	"name": "@colibri-social/bridge-core",
+	"version": "0.0.0",
+	"description": "Connect Colibri communities to other chat services: the connector interface, AppView client, message mapping, echo suppression and rich text conversion",
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/colibri-social/api.git",
+		"directory": "packages/bridge-core"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"engines": {
+		"node": ">=22.13.0"
+	},
+	"scripts": {
+		"build": "tsc --build",
+		"clean": "tsc --build --clean"
+	},
+	"dependencies": {
+		"@atproto/crypto": "catalog:",
+		"@colibri-social/lexicons": "workspace:*",
+		"mdast-util-from-markdown": "^2.0.2",
+		"mdast-util-gfm-strikethrough": "^2.0.0",
+		"micromark-extension-gfm-strikethrough": "^2.1.0",
+		"ws": "catalog:"
+	},
+	"devDependencies": {
+		"@types/mdast": "^4.0.4",
+		"@types/ws": "catalog:"
+	}
+}

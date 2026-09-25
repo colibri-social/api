@@ -9,9 +9,16 @@ export type RecordSchema<T> = {
 
 export type Writer = "authority" | "any";
 
+export type AdmittedRows = "messages" | "reactions";
+
+export type Admission = {
+	rows: AdmittedRows;
+};
+
 export type Projector<T> = {
 	collection: string;
 	writer: Writer;
+	admission?: Admission;
 	spaceTypes?: readonly string[];
 	schema: RecordSchema<T>;
 	rkey?: (ref: RecordRef) => boolean;
@@ -24,6 +31,7 @@ export type ApplyOutcome = { applied: true } | { applied: false; reason: string 
 export type ErasedProjector = {
 	collection: string;
 	writer: Writer;
+	admission?: Admission;
 	spaceTypes?: readonly string[];
 	rkey?: (ref: RecordRef) => boolean;
 	apply: (deps: ProjectionDeps, ref: RecordRef, value: unknown) => Promise<ApplyOutcome>;
@@ -33,6 +41,7 @@ export type ErasedProjector = {
 export const erase = <T>(projector: Projector<T>): ErasedProjector => ({
 	collection: projector.collection,
 	writer: projector.writer,
+	admission: projector.admission,
 	spaceTypes: projector.spaceTypes,
 	rkey: projector.rkey,
 	remove: projector.remove,

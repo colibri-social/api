@@ -1,5 +1,7 @@
 export * from "./access.js";
+export * from "./admission.js";
 export * from "./authz.js";
+export * from "./bridges.js";
 export * from "./credentials.js";
 export * from "./crypto.js";
 export * from "./heal.js";

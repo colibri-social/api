@@ -113,6 +113,7 @@ beforeEach(async () => {
 		toCommunityPermission: async () => {},
 		toCommunityViewers: async () => {},
 		toChannel: () => {},
+		toBridges: async () => {},
 		toUser: () => {},
 		channelChanged: () => {},
 		threadDeleted: () => {},

@@ -1,4 +1,4 @@
-import type { Schema } from "@colibri-social/appview-db";
+import type { BridgedAttribution, Schema } from "@colibri-social/appview-db";
 import { type ActorAuthz, type ChannelState, canRead, has } from "@colibri-social/community";
 import {
 	asAtUri,
@@ -25,7 +25,7 @@ import { parseSpaceRef, spaceRecordUri } from "@colibri-social/space";
 import { and, asc, desc, eq, gt, gte, inArray, lte, ne, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { signBlobUrl } from "../media-token.js";
-import type { ActorViews } from "./actor.js";
+import type { ActorViews, ProfileView } from "./actor.js";
 
 export type MessageView = social.colibri.beta.channel.defs.MessageView;
 export type AttachmentView = social.colibri.beta.channel.defs.AttachmentView;
@@ -96,6 +96,10 @@ export class ChannelViews {
 				(attachment) =>
 					({ ...attachment, url: asUri(this.signFor(attachment.url, viewer)) }) as AttachmentView,
 			);
+		const author =
+			message.author.bridge && message.author.avatar
+				? { ...message.author, avatar: asUri(this.signFor(message.author.avatar, viewer)) }
+				: message.author;
 		const forwardAttachments = message.forward?.attachments ?? [];
 		const forward = message.forward
 			? ({ ...message.forward, attachments: signAll(forwardAttachments) } as ForwardView)
@@ -103,13 +107,15 @@ export class ChannelViews {
 		if (
 			message.attachments.length === 0 &&
 			forwardAttachments.length === 0 &&
-			parent === message.parent
+			parent === message.parent &&
+			author === message.author
 		) {
 			return message;
 		}
 
 		return {
 			...message,
+			author,
 			parent,
 			forward: forward ?? message.forward,
 			attachments: signAll(message.attachments),
@@ -147,23 +153,51 @@ export class ChannelViews {
 	}
 
 	private aggregateReactions(rows: ReactionRow[], viewer: string | null): ReactionView[] {
-		const byEmoji = new Map<string, string[]>();
+		const byEmoji = new Map<string, { reactors: string[]; bridged: BridgedAttribution[] }>();
 		for (const row of rows) {
-			const reactors = byEmoji.get(row.emoji) ?? [];
-			reactors.push(row.author);
-			byEmoji.set(row.emoji, reactors);
+			const group = byEmoji.get(row.emoji) ?? { reactors: [], bridged: [] };
+			if (row.bridged) group.bridged.push(row.bridged);
+			else group.reactors.push(row.author);
+			byEmoji.set(row.emoji, group);
 		}
 		return [...byEmoji.entries()]
 			.sort(([a], [b]) => a.localeCompare(b))
 			.map(
-				([emoji, reactors]) =>
+				([emoji, { reactors, bridged }]) =>
 					({
 						emoji,
-						count: reactors.length,
+						count: reactors.length + bridged.length,
 						reactors: reactors.map(asDid),
+						bridgedReactors:
+							bridged.length > 0
+								? bridged.map((attribution) => ({
+										registration: asTid(attribution.registration),
+										platform: attribution.platform,
+										remoteId: attribution.remoteId,
+										name: attribution.name,
+									}))
+								: undefined,
 						viewerReacted: viewer ? reactors.includes(viewer) : undefined,
 					}) as ReactionView,
 			);
+	}
+
+	private authorOf(
+		row: MessageRow,
+		community: string,
+		profiles: Map<string, ProfileView>,
+		space: string,
+		viewer: string | null,
+	): ProfileView | undefined {
+		const profile = profiles.get(row.author);
+		if (!profile || !row.bridged || row.author !== community) return profile;
+		const avatar = row.bridged.avatar as { ref?: { $link?: string } } | undefined;
+		const cid = avatar?.ref?.$link;
+		return this.actors.bridgedProfile(
+			profile,
+			row.bridged,
+			cid ? this.blobUrl(community, cid, space, viewer) : undefined,
+		);
 	}
 
 	async labelSources(community: string): Promise<string[]> {
@@ -472,7 +506,7 @@ export class ChannelViews {
 				uri: asAtUri(spaceRecordUri(space, row.author, COLLECTIONS.message, row.rkey)),
 				rkey: asRecordKey(row.rkey),
 				channel: asSpaceRef(space),
-				author: profiles.get(row.author) as never,
+				author: this.authorOf(row, community, profiles, readingSpace, viewer) as never,
 				text: row.text,
 				facets: (row.facets as social.colibri.beta.richtext.facet.Main[] | null) ?? undefined,
 				createdAt: asDatetime(row.createdAt),

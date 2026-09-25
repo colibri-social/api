@@ -4,6 +4,7 @@
 
 import { l } from "@atproto/lex";
 import * as BetaDefs from "./defs.defs.js";
+import * as BridgeDefs from "./bridge/defs.defs.js";
 
 const $nsid = "social.colibri.beta.reaction";
 
@@ -22,12 +23,17 @@ type Main = { $type: "social.colibri.beta.reaction";
   /**
    * The message being reacted to.
    */
-  "target":BetaDefs.RecordRef };
+  "target":BetaDefs.RecordRef;
+
+  /**
+   * Who reacted on another service. Honoured only when the community itself wrote the record.
+   */
+  "bridged"?:BridgeDefs.Attribution };
 
 export type { Main };
 
 /** A reaction to a message in the same channel space. */
-const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"emoji":/*#__PURE__*/ l.string({"maxLength":64}),"target":/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any)}));
+const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"emoji":/*#__PURE__*/ l.string({"maxLength":64}),"target":/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any),"bridged":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BridgeDefs.Attribution>((() => BridgeDefs.attribution) as any))}));
 
 export { main };
 

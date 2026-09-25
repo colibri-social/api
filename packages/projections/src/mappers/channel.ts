@@ -1,10 +1,20 @@
 import { COLLECTIONS, SPACE_TYPES, social, toJsonForm } from "@colibri-social/lexicons";
 import { and, eq, lt } from "drizzle-orm";
+import type { RecordRef } from "../context.js";
 import { communityOf, type Projector } from "../projector.js";
+
+type Attribution = social.colibri.beta.bridge.defs.Attribution;
+
+const honouredAttribution = (ref: RecordRef, bridged: Attribution | undefined) =>
+	bridged && ref.author === ref.space.authority ? toJsonForm({ ...bridged }) : null;
+
+export const bridgedFromKey = (attribution: { registration: string; remoteId: string } | null) =>
+	attribution ? `${attribution.registration} ${attribution.remoteId}` : "";
 
 export const message: Projector<social.colibri.beta.message.Main> = {
 	collection: COLLECTIONS.message,
 	writer: "any",
+	admission: { rows: "messages" },
 	spaceTypes: [SPACE_TYPES.channelText, SPACE_TYPES.channelThread],
 	schema: social.colibri.beta.message,
 	put: async (deps, ref, value) => {
@@ -22,6 +32,7 @@ export const message: Projector<social.colibri.beta.message.Main> = {
 			attachments: value.attachments ? toJsonForm([...value.attachments]) : null,
 			forward: value.forward ? toJsonForm({ ...value.forward }) : null,
 			suppressedEmbeds: value.suppressedEmbeds ? [...value.suppressedEmbeds] : null,
+			bridged: honouredAttribution(ref, value.bridged),
 			fromLegacyRepo: false,
 			indexedAt: deps.now(),
 		};
@@ -64,9 +75,11 @@ export const message: Projector<social.colibri.beta.message.Main> = {
 export const reaction: Projector<social.colibri.beta.reaction.Main> = {
 	collection: COLLECTIONS.reaction,
 	writer: "any",
+	admission: { rows: "reactions" },
 	spaceTypes: [SPACE_TYPES.channelText, SPACE_TYPES.channelThread],
 	schema: social.colibri.beta.reaction,
 	put: async (deps, ref, value) => {
+		const bridged = honouredAttribution(ref, value.bridged);
 		const row = {
 			space: ref.space.uri,
 			author: ref.author,
@@ -74,6 +87,8 @@ export const reaction: Projector<social.colibri.beta.reaction.Main> = {
 			targetAuthor: value.target.did,
 			targetRkey: value.target.rkey,
 			emoji: value.emoji,
+			bridged,
+			bridgedFrom: bridgedFromKey(bridged),
 		};
 		await deps.db
 			.insert(deps.tables.reactions)

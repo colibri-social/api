@@ -108,6 +108,27 @@ const seed = async (community: string) => {
 		emoji: "👍",
 	});
 
+	await db.insert(tables.bridgeRegistrations).values({
+		community,
+		id: "3lkbridge001",
+		bridge: "did:plc:bridgexxxxxxxxxxxxxxxxxxxxx",
+		platform: "chat",
+		remoteSpace: "remote-1",
+		remoteSpaceName: "Remote",
+		links: [],
+		createdBy: MEMBER,
+		createdAt: NOW,
+	});
+
+	await db.insert(tables.bridgeRemoteRooms).values({
+		community,
+		registration: "3lkbridge001",
+		remoteRoom: "room-1",
+		name: "general",
+		position: 0,
+		updatedAt: NOW,
+	});
+
 	await db.insert(tables.labels).values({
 		space: channel,
 		src: MEMBER,
@@ -173,6 +194,8 @@ const countsFor = async (community: string) => {
 		messages: await db.select().from(tables.messages),
 		reactions: await db.select().from(tables.reactions),
 		labels: await db.select().from(tables.labels),
+		bridgeRegistrations: await db.select().from(tables.bridgeRegistrations),
+		bridgeRemoteRooms: await db.select().from(tables.bridgeRemoteRooms),
 		spaces: await db.select().from(tables.spaces),
 		records: await db.select().from(tables.records),
 		spaceRepos: await db.select().from(tables.spaceRepos),
@@ -194,6 +217,8 @@ const countsFor = async (community: string) => {
 		messages: all.messages.filter((r) => r.community === community).length,
 		reactions: all.reactions.filter((r) => spaces.includes(r.space)).length,
 		labels: all.labels.filter((r) => spaces.includes(r.space)).length,
+		bridgeRegistrations: all.bridgeRegistrations.filter((r) => r.community === community).length,
+		bridgeRemoteRooms: all.bridgeRemoteRooms.filter((r) => r.community === community).length,
 		spaces: all.spaces.filter((r) => spaces.includes(r.uri)).length,
 		records: all.records.filter((r) => spaces.includes(r.space)).length,
 		spaceRepos: all.spaceRepos.filter((r) => spaces.includes(r.space)).length,
@@ -216,6 +241,8 @@ const empty = {
 	messages: 0,
 	reactions: 0,
 	labels: 0,
+	bridgeRegistrations: 0,
+	bridgeRemoteRooms: 0,
 	spaces: 0,
 	records: 0,
 	spaceRepos: 0,
@@ -286,6 +313,8 @@ describe("purgeCommunity", () => {
 			channels: 1,
 			reactions: 1,
 			labels: 1,
+			bridgeRegistrations: 1,
+			bridgeRemoteRooms: 1,
 			spaces: 5,
 		});
 	});

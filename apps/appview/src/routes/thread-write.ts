@@ -22,7 +22,13 @@ import {
 } from "@colibri-social/lexicons";
 import { nextTid, parseSpaceRef } from "@colibri-social/space";
 import { and, asc, eq } from "drizzle-orm";
-import { labelEvent, messageEvent, messageGone, threadEvent } from "../announce.js";
+import {
+	labelEvent,
+	messageEvent,
+	messageGone,
+	threadEvent,
+	threadFrameForBridges,
+} from "../announce.js";
 import type { AppContext } from "../context.js";
 import { toXrpcError } from "../errors.js";
 import { route } from "../route.js";
@@ -65,11 +71,12 @@ const assertVisibilityHierarchy = async (
 	}
 };
 
-const threadRecord = (
+export const threadRecord = (
 	row: Pick<ThreadRow, "name" | "channel" | "createdBy" | "createdAt"> & {
 		anchor: ReturnType<typeof anchorOf>;
 		visibleToRoles: string[];
 		visibleToMembers: string[];
+		bridged?: Record<string, unknown>;
 	},
 ) => ({
 	$type: COLLECTIONS.thread,
@@ -89,6 +96,7 @@ const threadRecord = (
 		: {}),
 	...(row.visibleToRoles.length ? { visibleToRoles: row.visibleToRoles } : {}),
 	...(row.visibleToMembers.length ? { visibleToMembers: row.visibleToMembers } : {}),
+	...(row.bridged ? { bridged: row.bridged } : {}),
 });
 
 const messageExists = async (
@@ -352,14 +360,7 @@ export const registerThreadWriteRoutes = ({ server, ctx, auth }: RouteDeps): voi
 				const host = await ctx.credentials.connect(existing.community);
 				await ctx.provisioner.deleteThread(host, existing.space);
 
-				ctx.announce.toCommunity(
-					existing.community,
-					threadEvent("delete", existing.community, {
-						channel: existing.channel,
-						space: existing.space,
-					}),
-				);
-				ctx.announce.threadDeleted(existing.space);
+				announceThreadDeleted(ctx, existing);
 
 				return { encoding: "application/json" as const, body: {} };
 			} catch (error) {
@@ -520,7 +521,7 @@ const carryThread = async (
 	ctx.authzChanges.publish({ community: row.community, collection: COLLECTIONS.thread });
 };
 
-const announceThread = async (
+export const announceThread = async (
 	ctx: AppContext,
 	threads: ThreadViews,
 	row: ThreadRow,
@@ -531,6 +532,17 @@ const announceThread = async (
 		const view = await threads.view(row, authz, did);
 		return view ? threadEvent(event, row.community, { channel: row.channel, thread: view }) : null;
 	});
+	await ctx.announce.toBridges(row.community, threadFrameForBridges(ctx, threads, row, event));
+};
+
+export const announceThreadDeleted = (
+	ctx: AppContext,
+	row: Pick<ThreadRow, "community" | "channel" | "space">,
+): void => {
+	const frame = threadEvent("delete", row.community, { channel: row.channel, space: row.space });
+	ctx.announce.toCommunity(row.community, frame);
+	void ctx.announce.toBridges(row.community, async () => frame);
+	ctx.announce.threadDeleted(row.space);
 };
 
 const requireReadable = async (

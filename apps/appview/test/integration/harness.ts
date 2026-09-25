@@ -5,6 +5,7 @@ import { Secp256k1Keypair, sha256 } from "@atproto/crypto";
 import { createServer as createXrpcServer } from "@atproto/xrpc-server";
 import { type Database, openTestDatabase } from "@colibri-social/appview-db";
 import {
+	admitCommunityWrites,
 	CommunityCredentials,
 	CommunityLoader,
 	CommunityProvisioner,
@@ -276,6 +277,7 @@ export const createHarness = async () => {
 		db: database.db,
 		tables: database.tables,
 		now: () => new Date().toISOString(),
+		admit: admitCommunityWrites(database.tables),
 	};
 
 	const repoSync = new RepoSync({

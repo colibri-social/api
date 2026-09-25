@@ -3,6 +3,7 @@ export type Topic = string;
 export const communityTopic = (did: string): Topic => `community:${did}`;
 export const channelTopic = (space: string): Topic => `channel:${space}`;
 export const userTopic = (did: string): Topic => `user:${did}`;
+export const bridgeTopic = (community: string): Topic => `bridge:${community}`;
 
 export class TopicIndex<T> {
 	private readonly byTopic = new Map<Topic, Set<T>>();

@@ -2,6 +2,8 @@ import { Secp256k1Keypair } from "@atproto/crypto";
 import { type Database, openDatabase, runMigrations } from "@colibri-social/appview-db";
 import { BlobCache, BlobService } from "@colibri-social/blobs";
 import {
+	admitCommunityWrites,
+	Bridges,
 	CommunityCredentials,
 	CommunityLoader,
 	CommunityProvisioner,
@@ -128,6 +130,7 @@ export const createContext = async (config: Config) => {
 		db: database.db,
 		tables: database.tables,
 		now: () => new Date().toISOString(),
+		admit: admitCommunityWrites(database.tables),
 		onSkipped: (ref, reason) =>
 			log.warn({ space: ref.space.uri, collection: ref.collection, reason }, "record.skipped"),
 		onAuthzChanged: (change) => authzChanges.publish(change),
@@ -137,6 +140,8 @@ export const createContext = async (config: Config) => {
 		credentials,
 		mirror: { db: database.db, tables: database.tables, projections },
 	});
+
+	const bridges = new Bridges({ db: database.db, tables: database.tables, loader, writer });
 
 	const sync = new SpaceSyncEngine({
 		client: spaceClient,
@@ -241,6 +246,7 @@ export const createContext = async (config: Config) => {
 		spaceClient,
 		loader,
 		writer,
+		bridges,
 		spaces,
 		provisioner,
 		projections,

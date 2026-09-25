@@ -165,6 +165,7 @@ beforeEach(async () => {
 		database,
 		loader: new CommunityLoader({ db: database.db, tables: database.tables }),
 		log: { warn: () => {}, debug: () => {} },
+		bridges: { mayRead: async () => false },
 		serviceAuth: {
 			verify: async (token: string) => {
 				if (token === "member-token") return { did: MEMBER, lxm: null };

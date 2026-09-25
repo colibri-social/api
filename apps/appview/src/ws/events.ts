@@ -13,7 +13,14 @@ import { isOnlineState, PresenceTracker } from "../presence.js";
 import { ActorViews } from "../views/actor.js";
 import { CommunityViews } from "../views/community.js";
 import { bearerToken, selectSubprotocol } from "./auth.js";
-import { channelTopic, communityTopic, type Topic, TopicIndex, userTopic } from "./topics.js";
+import {
+	bridgeTopic,
+	channelTopic,
+	communityTopic,
+	type Topic,
+	TopicIndex,
+	userTopic,
+} from "./topics.js";
 
 export type ServerFrame = { $type: string } & Record<string, unknown>;
 
@@ -350,6 +357,7 @@ export class EventServer {
 				channels.push(channel);
 			}
 			this.topics.unsubscribe(connection, topics);
+			this.dropIdleBridgeTopics(connection);
 		} else {
 			for (const community of frame.communities ?? []) {
 				const authz = await this.ctx.loader.authz(community, connection.did);
@@ -362,9 +370,12 @@ export class EventServer {
 				}
 			}
 			for (const channel of frame.channels ?? []) {
-				if (!(await this.mayReadSpace(connection.did, channel))) continue;
+				const access = await this.spaceAccess(connection.did, channel);
+				if (!access) continue;
 				topics.push(channelTopic(channel));
 				channels.push(channel);
+				const community = this.authorityOf(channel);
+				if (access === "bridge" && community) topics.push(bridgeTopic(community));
 			}
 			this.topics.subscribe(connection, topics);
 		}
@@ -373,17 +384,33 @@ export class EventServer {
 	}
 
 	private async mayReadSpace(did: string, space: string): Promise<boolean> {
+		return (await this.spaceAccess(did, space)) !== null;
+	}
+
+	private async spaceAccess(did: string, space: string): Promise<"member" | "bridge" | null> {
 		const parsed = tryParseSpaceRef(space);
-		if (!parsed) return false;
+		if (!parsed) return null;
 		const authz = await this.ctx.loader.authz(parsed.authority, did);
 		const states = await this.ctx.loader.spaceStates(parsed.uri, parsed.spaceType);
-		return decideSpaceAccess({
+		const decision = decideSpaceAccess({
 			spaceType: parsed.spaceType,
 			authz,
 			visibility: { profileIsPublic: false },
 			channel: states.channel,
 			thread: states.thread,
-		}).authorized;
+		});
+		if (decision.authorized) return "member";
+		return (await this.ctx.bridges.mayRead(did, parsed.uri)) ? "bridge" : null;
+	}
+
+	private dropIdleBridgeTopics(connection: Connection): void {
+		const idle = this.topics
+			.topicsOf(connection)
+			.filter((topic) => topic.startsWith("bridge:"))
+			.filter(
+				(topic) => this.channelsHeldIn(connection, topic.slice("bridge:".length)).length === 0,
+			);
+		if (idle.length > 0) this.topics.unsubscribe(connection, idle);
 	}
 
 	private subscribedCommunities(connection: Connection): string[] {
@@ -420,7 +447,23 @@ export class EventServer {
 		});
 	}
 
+	private async revalidateChannelsOnly(community: string): Promise<void> {
+		for (const connection of [...this.connections]) {
+			if (this.topics.topicsOf(connection).includes(communityTopic(community))) continue;
+			const lost: string[] = [];
+			for (const space of this.channelsHeldIn(connection, community)) {
+				if (!(await this.mayReadSpace(connection.did, space))) lost.push(space);
+			}
+			if (lost.length === 0) continue;
+			for (const space of lost) this.send(connection, channelEvent("delete", community, space));
+			this.topics.unsubscribe(connection, lost.map(channelTopic));
+			this.dropIdleBridgeTopics(connection);
+			this.confirmSubscription(connection);
+		}
+	}
+
 	async revalidate(community: string): Promise<void> {
+		await this.revalidateChannelsOnly(community);
 		const affected = [...this.topics.subscribersOf(communityTopic(community))];
 		if (affected.length === 0) return;
 
@@ -550,6 +593,22 @@ export class EventServer {
 
 		const payloads = new Map<string, string | null>();
 		for (const connection of subscribers) {
+			if (connection.socket.readyState !== connection.socket.OPEN) continue;
+			if (!payloads.has(connection.did)) {
+				const frame = await build(connection.did);
+				payloads.set(connection.did, frame ? JSON.stringify(frame) : null);
+			}
+			const payload = payloads.get(connection.did);
+			if (payload) connection.socket.send(payload);
+		}
+	}
+
+	async publishToBridges(
+		community: string,
+		build: (did: string) => Promise<ServerFrame | null>,
+	): Promise<void> {
+		const payloads = new Map<string, string | null>();
+		for (const connection of [...this.topics.subscribersOf(bridgeTopic(community))]) {
 			if (connection.socket.readyState !== connection.socket.OPEN) continue;
 			if (!payloads.has(connection.did)) {
 				const frame = await build(connection.did);

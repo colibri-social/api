@@ -8,6 +8,7 @@ import { registerActorRoutes } from "./routes/actor.js";
 import { registerActorWriteRoutes } from "./routes/actor-write.js";
 import { asyncHandler } from "./routes/async-handler.js";
 import { mountBlobRoutes } from "./routes/blob.js";
+import { registerBridgeRoutes } from "./routes/bridge.js";
 import { registerCategoryRoutes } from "./routes/category.js";
 import { registerChannelRoutes } from "./routes/channel.js";
 import { registerChannelWriteRoutes } from "./routes/channel-write.js";
@@ -60,6 +61,7 @@ export const createAppServer = (ctx: AppContext): Server => {
 	registerActorWriteRoutes(deps);
 	registerCommunityRoutes(deps);
 	registerCommunityWriteRoutes(deps);
+	registerBridgeRoutes(deps);
 	registerModerationRoutes(deps);
 	registerCategoryRoutes(deps);
 	registerRoleRoutes(deps);

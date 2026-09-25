@@ -380,6 +380,56 @@ describe("connectPipeline", () => {
 		expect(kinds).not.toContain("mention");
 	});
 
+	it("streams a message a bridge imported from earlier history without notifying", async () => {
+		const mentioned = "did:plc:mentionedmentionedment";
+		await database.db.insert(database.tables.members).values([
+			{ community: COMMUNITY, did: AUTHOR, roles: [], joinedAt: NOW },
+			{ community: COMMUNITY, did: mentioned, roles: [], joinedAt: NOW },
+		]);
+		const imported = nextTid();
+		const live = nextTid();
+		await putMessageRow(imported);
+		await putMessageRow(live);
+
+		emit({
+			space: SPACE,
+			author: AUTHOR,
+			puts: [
+				{
+					collection: COLLECTIONS.message,
+					rkey: imported,
+					cid: "bafyreictestimported",
+					value: {
+						$type: COLLECTIONS.message,
+						text: "@",
+						facets: [mentionFacet(mentioned)],
+						createdAt: NOW,
+						bridged: {
+							registration: "3lkregistration",
+							platform: "test",
+							remoteId: "1",
+							name: "Nelly",
+							imported: true,
+						},
+					},
+				},
+			],
+			deletes: [],
+		});
+		emit(messageChange(live));
+		await vi.waitFor(() => expect(framesOfType("messageEvent")).toHaveLength(2));
+
+		const frames = framesOfType("messageEvent").map(
+			(entry) => entry.frame as unknown as { message: { rkey: string }; imported?: boolean },
+		);
+		expect(frames.map((frame) => [frame.message.rkey, frame.imported])).toEqual([
+			[imported, true],
+			[live, undefined],
+		]);
+		const kinds = (await notificationsFor(mentioned)).map((row) => row.kind);
+		expect(kinds).not.toContain("mention");
+	});
+
 	it("serves a forwarded snapshot with its source resolved", async () => {
 		await database.db.insert(database.tables.channels).values({
 			space: OTHER_SPACE,
