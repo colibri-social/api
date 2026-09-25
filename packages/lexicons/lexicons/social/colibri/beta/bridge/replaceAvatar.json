@@ -9,11 +9,7 @@
 				"encoding": "application/json",
 				"schema": {
 					"type": "object",
-					"required": [
-						"community",
-						"registration",
-						"remoteId"
-					],
+					"required": ["community", "registration", "remoteId"],
 					"properties": {
 						"community": {
 							"type": "string",
@@ -32,12 +28,7 @@
 						},
 						"avatar": {
 							"type": "blob",
-							"accept": [
-								"image/png",
-								"image/jpeg",
-								"image/gif",
-								"image/webp"
-							],
+							"accept": ["image/png", "image/jpeg", "image/gif", "image/webp"],
 							"maxSize": 1000000,
 							"description": "The new avatar, uploaded with uploadBlob. Leave it out to remove the avatar."
 						}
@@ -48,9 +39,7 @@
 				"encoding": "application/json",
 				"schema": {
 					"type": "object",
-					"required": [
-						"updated"
-					],
+					"required": ["updated"],
 					"properties": {
 						"updated": {
 							"type": "integer",

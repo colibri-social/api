@@ -9,10 +9,7 @@
 				"encoding": "application/json",
 				"schema": {
 					"type": "object",
-					"required": [
-						"community",
-						"registration"
-					],
+					"required": ["community", "registration"],
 					"properties": {
 						"community": {
 							"type": "string",
