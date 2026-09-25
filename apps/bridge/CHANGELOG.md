@@ -1,5 +1,13 @@
 # @colibri-social/bridge
 
+## 0.1.1
+
+### Patch Changes
+
+- Updated dependencies [326c689]
+  - @colibri-social/bridge-core@0.1.1
+  - @colibri-social/bridge-discord@0.1.1
+
 ## 0.1.0
 
 ### Minor Changes
