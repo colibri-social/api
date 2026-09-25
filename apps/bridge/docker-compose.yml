@@ -1,8 +1,8 @@
 services:
   bridge:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: apps/bridge/Dockerfile
     restart: unless-stopped
     env_file:
       - path: .env
