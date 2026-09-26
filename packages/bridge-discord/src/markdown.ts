@@ -39,10 +39,13 @@ export const mentionedUsers = (markdown: string): string[] => [
 	...new Set([...markdown.matchAll(USER_REFERENCE)].flatMap((match) => match[1] ?? [])),
 ];
 
+const URL_LABELLED_LINK = /\[([^\]\s]+)\]\(([^)\s]+)\)/g;
+
 export const colibriToDiscordMarkdown = (markdown: string): string => {
 	const native = markdown
 		.replace(USER_REFERENCE, (_, id: string) => `<@${id}>`)
-		.replace(ROOM_REFERENCE, (_, id: string) => `<#${id}>`);
+		.replace(ROOM_REFERENCE, (_, id: string) => `<#${id}>`)
+		.replace(URL_LABELLED_LINK, (link, label: string, url: string) => (label === url ? url : link));
 	return native.length <= MAX_DISCORD_CONTENT
 		? native
 		: `${native.slice(0, MAX_DISCORD_CONTENT - 3)}...`;
@@ -78,4 +81,57 @@ export const forwardBlock = (markdown: string, jumpUrl?: string): string => {
 				.join("\n")
 		: "";
 	return body ? `${heading}\n${body}` : heading;
+};
+
+const INLINE_GIF_PATH = /\.(gif|webp)$/i;
+
+export const isInlineGifUrl = (value: string): boolean => {
+	try {
+		const url = new URL(value);
+		return (
+			(url.protocol === "https:" || url.protocol === "http:") && INLINE_GIF_PATH.test(url.pathname)
+		);
+	} catch {
+		return false;
+	}
+};
+
+const LONE_URL = /^(?:\[(\S+)\]\((\S+)\)|(\S+))$/;
+
+export const loneGifUrl = (markdown: string): string | undefined => {
+	const match = LONE_URL.exec(markdown.trim());
+	if (!match) return undefined;
+	const [, label, target, bare] = match;
+	const url = bare ?? (label === target ? target : undefined);
+	return url && isInlineGifUrl(url) ? url : undefined;
+};
+
+type EmbedMedia = { url?: string | null } | null | undefined;
+
+export type GifvEmbed = {
+	data?: { type?: string };
+	url?: string | null;
+	thumbnail?: EmbedMedia;
+	image?: EmbedMedia;
+	video?: EmbedMedia;
+};
+
+export const inlineGifs = (
+	content: string,
+	embeds: readonly GifvEmbed[],
+	onUnresolved: (embed: GifvEmbed) => void = () => undefined,
+): string => {
+	let out = content;
+	for (const embed of embeds) {
+		if (embed.data?.type !== "gifv" || !embed.url || !out.includes(embed.url)) continue;
+		const media = [embed.thumbnail, embed.image, embed.video]
+			.map((candidate) => candidate?.url)
+			.find((url): url is string => Boolean(url) && isInlineGifUrl(url as string));
+		if (!media) {
+			onUnresolved(embed);
+			continue;
+		}
+		out = out.replaceAll(embed.url, `[${media}](${media})`);
+	}
+	return out;
 };

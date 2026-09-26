@@ -4,6 +4,8 @@ import {
 	colibriToDiscordMarkdown,
 	discordToColibriMarkdown,
 	forwardBlock,
+	inlineGifs,
+	loneGifUrl,
 	MAX_DISCORD_CONTENT,
 	mentionedUsers,
 	webhookUsername,
@@ -54,6 +56,61 @@ describe("colibriToDiscordMarkdown", () => {
 
 		expect(colibriToDiscordMarkdown(long)).toHaveLength(MAX_DISCORD_CONTENT);
 		expect(colibriToDiscordMarkdown(long).endsWith("...")).toBe(true);
+	});
+
+	it("sends links labelled with their own URL as bare URLs", () => {
+		expect(colibriToDiscordMarkdown("see [https://a.test/x](https://a.test/x)")).toBe(
+			"see https://a.test/x",
+		);
+		expect(colibriToDiscordMarkdown("[docs](https://a.test/x)")).toBe("[docs](https://a.test/x)");
+	});
+});
+
+const GIF = "https://static.klipy.com/ii/abc/9f/39/X.gif";
+const PAGE = "https://klipy.com/gifs/anime-maid-7";
+
+describe("loneGifUrl", () => {
+	it("finds a message that is only a GIF link", () => {
+		expect(loneGifUrl(GIF)).toBe(GIF);
+		expect(loneGifUrl(` [${GIF}](${GIF}) `)).toBe(GIF);
+		expect(loneGifUrl("https://a.test/x.webp?size=2")).toBe("https://a.test/x.webp?size=2");
+	});
+
+	it("ignores other images and GIFs with surrounding text", () => {
+		expect(loneGifUrl("https://a.test/x.png")).toBeUndefined();
+		expect(loneGifUrl(`look ${GIF}`)).toBeUndefined();
+		expect(loneGifUrl(`[cat](${GIF})`)).toBeUndefined();
+	});
+});
+
+describe("inlineGifs", () => {
+	const gifv = (media: { thumbnail?: string; image?: string; video?: string }) => ({
+		data: { type: "gifv" },
+		url: PAGE,
+		thumbnail: media.thumbnail ? { url: media.thumbnail } : null,
+		image: media.image ? { url: media.image } : null,
+		video: media.video ? { url: media.video } : null,
+	});
+
+	it("swaps a GIF page link for its media as a lone link", () => {
+		const content = inlineGifs(PAGE, [gifv({ thumbnail: GIF, video: "https://a.test/x.mp4" })]);
+		const { text, facets } = markdownToColibri(discordToColibriMarkdown(content, lookups));
+
+		expect(text).toBe(GIF);
+		expect(facets).toHaveLength(1);
+		expect(facets[0]?.features[0]).toMatchObject({ uri: GIF });
+	});
+
+	it("leaves the page link when no media can be shown inline", () => {
+		const unresolved: unknown[] = [];
+		const embed = gifv({ thumbnail: "https://a.test/x.png", video: "https://a.test/x.mp4" });
+
+		expect(inlineGifs(PAGE, [embed], (e) => unresolved.push(e))).toBe(PAGE);
+		expect(unresolved).toEqual([embed]);
+	});
+
+	it("ignores embeds that are not GIFs", () => {
+		expect(inlineGifs(PAGE, [{ ...gifv({ thumbnail: GIF }), data: { type: "link" } }])).toBe(PAGE);
 	});
 });
 

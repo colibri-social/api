@@ -47,6 +47,9 @@ import {
 	colibriToDiscordMarkdown,
 	discordToColibriMarkdown,
 	forwardBlock,
+	type GifvEmbed,
+	inlineGifs,
+	loneGifUrl,
 	mentionedUsers,
 	replyPrefix,
 	webhookUsername,
@@ -339,6 +342,21 @@ export class DiscordConnector
 		};
 	}
 
+	private contentOf(message: Message): string {
+		return inlineGifs(message.content, message.embeds, (embed: GifvEmbed) =>
+			this.context?.log.debug(
+				{
+					message: message.id,
+					url: embed.url,
+					thumbnail: embed.thumbnail?.url,
+					image: embed.image?.url,
+					video: embed.video?.url,
+				},
+				"discord.gifv.unresolved",
+			),
+		);
+	}
+
 	private relayable(message: Message): boolean {
 		return Boolean(message.guildId) && !message.system && !this.isOwnMessage(message);
 	}
@@ -357,7 +375,7 @@ export class DiscordConnector
 					size: 128,
 				}),
 			},
-			markdown: discordToColibriMarkdown(message.content, this.lookups(message)),
+			markdown: discordToColibriMarkdown(this.contentOf(message), this.lookups(message)),
 			...(replyTo ? { replyTo } : {}),
 			attachments: [...message.attachments.values()].map((attachment) => ({
 				url: attachment.url,
@@ -456,7 +474,9 @@ export class DiscordConnector
 
 	private async onMessageUpdate(message: Message | PartialMessage): Promise<void> {
 		const full = message.partial ? await message.fetch().catch(() => null) : message;
-		if (!full?.guildId || this.isOwnMessage(full) || full.editedTimestamp === null) return;
+		if (!full?.guildId || this.isOwnMessage(full)) return;
+		const content = this.contentOf(full);
+		if (full.editedTimestamp === null && content === full.content) return;
 		const location = this.locate(full);
 		if (!location) return;
 		this.context?.emit({
@@ -464,7 +484,7 @@ export class DiscordConnector
 			remoteSpace: full.guildId,
 			...location,
 			id: full.id,
-			markdown: discordToColibriMarkdown(full.content, this.lookups(full)),
+			markdown: discordToColibriMarkdown(content, this.lookups(full)),
 		});
 	}
 
@@ -585,10 +605,14 @@ export class DiscordConnector
 					message.forward.source ? jumpUrl(message.forward.source) : undefined,
 				)
 			: "";
-		const markdown = [`${prefix}${message.markdown}`, forward].filter(Boolean).join("\n");
+		const gif = forward ? undefined : loneGifUrl(message.markdown);
+		const markdown = gif
+			? prefix.trimEnd()
+			: [`${prefix}${message.markdown}`, forward].filter(Boolean).join("\n");
 		const sent = await this.withWebhook(channel, (webhook) =>
 			webhook.send({
 				content: colibriToDiscordMarkdown(markdown) || undefined,
+				...(gif ? { embeds: [{ image: { url: gif } }] } : {}),
 				username: webhookUsername(message.author.name, message.author.handle),
 				...(message.author.avatarUrl ? { avatarURL: message.author.avatarUrl } : {}),
 				...(message.remoteThread ? { threadId: message.remoteThread } : {}),
@@ -607,11 +631,18 @@ export class DiscordConnector
 	async editMessage(edit: OutboundEdit): Promise<void> {
 		await this.withWebhook(await this.relayChannel(edit.remoteRoom), (webhook) =>
 			webhook.editMessage(edit.id, {
-				content: colibriToDiscordMarkdown(edit.markdown),
+				...this.editedContent(edit.markdown),
 				allowedMentions: { parse: [], users: mentionedUsers(edit.markdown) },
 				...(edit.remoteThread ? { threadId: edit.remoteThread } : {}),
 			}),
 		);
+	}
+
+	private editedContent(markdown: string) {
+		const gif = loneGifUrl(markdown);
+		return gif
+			? { content: "", embeds: [{ image: { url: gif } }] }
+			: { content: colibriToDiscordMarkdown(markdown), embeds: [] };
 	}
 
 	async deleteMessage(target: OutboundDelete): Promise<void> {
