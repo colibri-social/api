@@ -1,5 +1,11 @@
 # @colibri-social/bridge-discord
 
+## 0.2.0
+
+### Minor Changes
+
+- 3ab9187: Relays GIFs between Discord and Colibri as inline images.
+
 ## 0.1.1
 
 ### Patch Changes
