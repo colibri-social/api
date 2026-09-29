@@ -20,6 +20,7 @@ export type PushPayload = {
 		messageAuthor: string;
 		messageRkey: string;
 		channelUri?: string;
+		threadUri?: string;
 		messageUri?: string;
 		deepLink?: string;
 	};
@@ -78,14 +79,16 @@ export const fcmSender = (credentials: FcmConfig): PushSender => {
 			try {
 				await messaging.send({
 					token: subscription.token,
-					notification: { title: payload.title, body: payload.body },
+					android: { priority: "high" },
 					data: {
+						title: payload.title,
 						channel: payload.data.channel,
 						messageAuthor: payload.data.messageAuthor,
 						messageRkey: payload.data.messageRkey,
 						tag: payload.tag,
 						body: payload.body,
 						...(payload.data.channelUri ? { channelUri: payload.data.channelUri } : {}),
+						...(payload.data.threadUri ? { threadUri: payload.data.threadUri } : {}),
 						...(payload.data.messageUri ? { messageUri: payload.data.messageUri } : {}),
 						...(payload.data.deepLink ? { deepLink: payload.data.deepLink } : {}),
 					},
@@ -126,15 +129,20 @@ const messageRecordUri = (space: string, author: string, rkey: string): string |
 	return spaceRecordUri(space, author, COLLECTIONS.message, rkey);
 };
 
+export type PushRouting = { channel: string; thread?: string };
+
+export type PushNotification = {
+	kind: string;
+	mentionRole: string | null;
+	space: string;
+	author: string;
+	messageRkey: string;
+};
+
 export const buildPayload = (
-	notification: {
-		kind: string;
-		mentionRole: string | null;
-		space: string;
-		author: string;
-		messageRkey: string;
-	},
+	notification: PushNotification,
 	message: NotifiedMessage,
+	routing: PushRouting = { channel: notification.space },
 ): PushPayload => ({
 	title: notificationTitle(notification.kind, notification.mentionRole),
 	body: message.text,
@@ -143,29 +151,24 @@ export const buildPayload = (
 		channel: notification.space,
 		messageAuthor: notification.author,
 		messageRkey: notification.messageRkey,
-		channelUri: notification.space,
+		channelUri: routing.channel,
+		...(routing.thread ? { threadUri: routing.thread } : {}),
 		messageUri: messageRecordUri(notification.space, notification.author, notification.messageRkey),
-		deepLink: channelDeepLink(notification.space),
+		deepLink: channelDeepLink(routing.channel),
 	},
 });
 
 export const deliverNotification = async (
 	deps: NotificationDeps,
 	senders: Senders,
-	notification: {
-		recipient: string;
-		kind: string;
-		mentionRole: string | null;
-		space: string;
-		author: string;
-		messageRkey: string;
-	},
+	notification: PushNotification & { recipient: string },
 	message: NotifiedMessage,
+	routing?: PushRouting,
 ): Promise<void> => {
 	const subscriptions = await listSubscriptionsForActor(deps, notification.recipient);
 	if (subscriptions.length === 0) return;
 
-	const payload = buildPayload(notification, message);
+	const payload = buildPayload(notification, message, routing);
 
 	await Promise.all(
 		subscriptions.map(async (subscription) => {

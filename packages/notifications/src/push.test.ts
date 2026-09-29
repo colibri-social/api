@@ -126,6 +126,30 @@ describe("buildPayload", () => {
 		});
 	});
 
+	it("routes a thread message to its parent channel and names the thread", () => {
+		const channel = "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchannel1";
+		const thread = "at://did:plc:community/space/social.colibri.beta.channel.thread/3lkthread1";
+		const payload = buildPayload(
+			{ ...notification, space: thread },
+			{ text: "hi" },
+			{
+				channel,
+				thread,
+			},
+		);
+
+		expect(payload.data).toEqual({
+			channel: thread,
+			channelUri: channel,
+			threadUri: thread,
+			messageAuthor: notification.author,
+			messageRkey: notification.messageRkey,
+			messageUri: `${thread}/${notification.author}/social.colibri.beta.message/${notification.messageRkey}`,
+			deepLink:
+				"social.colibri:/channel/did:plc:community/social.colibri.beta.channel.text/3lkchannel1",
+		});
+	});
+
 	it("leaves the routing hints off when the space ref is malformed", () => {
 		const payload = buildPayload({ ...notification, space: "not-a-space-ref" }, { text: "hi" });
 

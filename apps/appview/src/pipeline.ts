@@ -6,6 +6,7 @@ import {
 	hydrateNotifications,
 	type IndexedNotificationRow,
 	indexMessage,
+	type PushRouting,
 } from "@colibri-social/notifications";
 import {
 	isChannelSpace,
@@ -35,6 +36,8 @@ import { ChannelViews } from "./views/channel.js";
 import { CommunityViews } from "./views/community.js";
 import { ThreadViews } from "./views/thread.js";
 import type { EventServer, ServerFrame } from "./ws/events.js";
+
+type ServableNotification = { row: IndexedNotificationRow; routing: PushRouting };
 
 const SLOW_DELIVERY_MS = 2_000;
 
@@ -166,25 +169,31 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		if (rows.length === 0) return;
 		const views = await hydrateNotifications(notifications, rows, (dids) => actors.hydrate(dids));
 		const byId = new Map(rows.map((row) => [row.id, row]));
-		const servable: IndexedNotificationRow[] = [];
+		const servable: ServableNotification[] = [];
 		for (const view of views) {
 			const row = byId.get(view.id);
 			if (!row) continue;
 			events.publishToUser(row.recipient, notificationEvent(view));
-			servable.push(row);
+			servable.push({
+				row,
+				routing: { channel: view.channel, ...(view.thread ? { thread: view.thread } : {}) },
+			});
 		}
 		await pushNotifications(servable, text);
 	};
 
-	const pushNotifications = async (rows: IndexedNotificationRow[], text: string): Promise<void> => {
-		if (rows.length === 0 || ctx.config.pushProviders.length === 0) return;
+	const pushNotifications = async (
+		servable: ServableNotification[],
+		text: string,
+	): Promise<void> => {
+		if (servable.length === 0 || ctx.config.pushProviders.length === 0) return;
 
-		const quiet = await doNotDisturb(rows.map((row) => row.recipient));
+		const quiet = await doNotDisturb(servable.map(({ row }) => row.recipient));
 		await Promise.all(
-			rows
-				.filter((row) => !quiet.has(row.recipient))
-				.map((row) =>
-					deliverNotification(notifications, senders, row, { text }).catch((error) =>
+			servable
+				.filter(({ row }) => !quiet.has(row.recipient))
+				.map(({ row, routing }) =>
+					deliverNotification(notifications, senders, row, { text }, routing).catch((error) =>
 						ctx.log.warn({ error }, "push.deliveryFailed"),
 					),
 				),
