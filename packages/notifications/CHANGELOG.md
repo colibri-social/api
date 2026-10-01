@@ -1,5 +1,16 @@
 # @colibri-social/notifications
 
+## 1.3.4
+
+### Patch Changes
+
+- 08eebc0: Routes pushes for thread messages to the parent channel and thread, and sends Android pushes as data-only messages so tapping one opens the right message.
+- Updated dependencies [ef70f83]
+  - @colibri-social/lexicons@2.13.0
+  - @colibri-social/space@0.5.0
+  - @colibri-social/appview-db@0.7.1
+  - @colibri-social/projections@1.6.2
+
 ## 1.3.3
 
 ### Patch Changes
