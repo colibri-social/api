@@ -10,7 +10,7 @@ const AUTHORITY = "did:plc:community";
 const ALICE = "did:plc:alice";
 const BOB = "did:plc:bob";
 
-type Remote = { did: string; rev: string };
+type Remote = { did: string; rev: string; spaceRev?: string };
 
 const cursor = (
 	author: string,
@@ -53,11 +53,14 @@ const store = (expected?: string[]): SyncStore => ({
 });
 
 const client = (remotes: Remote[], options: { listThrows?: unknown } = {}) => ({
-	allRepos: async function* () {
+	allRepos: vi.fn(async function* (_space: string, since?: string) {
 		if (options.listThrows) throw options.listThrows;
-		for (const remote of remotes)
-			yield { did: remote.did, rev: remote.rev, hash: new Uint8Array() };
-	},
+		for (const [index, remote] of remotes.entries()) {
+			const spaceRev = remote.spaceRev ?? `3s${index}`;
+			if (since !== undefined && spaceRev <= since) continue;
+			yield { did: remote.did, repoRev: remote.rev, hash: new Uint8Array(), spaceRev };
+		}
+	}),
 	registerNotify: vi.fn(async () => ({ expiresAt: new Date(Date.now() + 3_600_000) })),
 });
 
@@ -585,11 +588,11 @@ describe("sweeping", () => {
 		const { engine, spaceClient } = engineFor([], async () => undefined);
 		let listings = 0;
 		const original = spaceClient.allRepos;
-		spaceClient.allRepos = async function* () {
+		spaceClient.allRepos = vi.fn(async function* (space: string, since?: string) {
 			listings += 1;
 			await new Promise((resolve) => setTimeout(resolve, 10));
-			yield* original();
-		};
+			yield* original(space, since);
+		});
 
 		await Promise.all([engine.sweep(), engine.sweep()]);
 
@@ -629,10 +632,10 @@ describe("spaces the appview cannot mint a credential for", () => {
 		spaceClient.registerNotify.mockRejectedValue(noToken());
 		let listings = 0;
 		const original = spaceClient.allRepos;
-		spaceClient.allRepos = async function* () {
+		spaceClient.allRepos = vi.fn(async function* (space: string, since?: string) {
 			listings += 1;
-			yield* original();
-		};
+			yield* original(space, since);
+		});
 
 		await engine.sweep();
 		await engine.sweep();
@@ -715,5 +718,50 @@ describe("spaces the appview cannot mint a credential for", () => {
 
 		expect(events).toContain("space.orphaned");
 		expect(droppedSpaces).toEqual([SPACE]);
+	});
+});
+
+describe("space revisions", () => {
+	it("follows contiguous notifications without listing the space again", async () => {
+		const { engine, spaceClient } = engineFor(
+			[{ did: ALICE, rev: "3b", spaceRev: "3s1" }],
+			async () => advanced("3b"),
+		);
+		await engine.sweepSpace(SPACE);
+		await engine.drain();
+
+		engine.notifyWrite(SPACE, ALICE, { rev: "3c", spaceRev: "3s2", prevSpaceRev: "3s1" });
+		await engine.drain();
+
+		expect(spaceClient.allRepos).toHaveBeenCalledTimes(1);
+	});
+
+	it("catches up from the last space revision after a gap", async () => {
+		const pulled: string[] = [];
+		const heads = new Map([
+			[ALICE, "3b"],
+			[BOB, "3b"],
+		]);
+		const { engine, spaceClient } = engineFor(
+			[
+				{ did: ALICE, rev: "3b", spaceRev: "3s1" },
+				{ did: BOB, rev: "3b", spaceRev: "3s2" },
+			],
+			async (_space, author) => {
+				pulled.push(author);
+				return advanced(heads.get(author) ?? null);
+			},
+		);
+		await engine.sweepSpace(SPACE);
+		await engine.drain();
+		pulled.length = 0;
+		heads.set(ALICE, "3c");
+
+		engine.notifyWrite(SPACE, ALICE, { rev: "3c", spaceRev: "3s4", prevSpaceRev: "3s3" });
+		await settle();
+		await engine.drain();
+
+		expect(spaceClient.allRepos).toHaveBeenLastCalledWith(SPACE, "3s2");
+		expect(pulled).toEqual([ALICE]);
 	});
 });

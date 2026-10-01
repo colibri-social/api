@@ -198,8 +198,8 @@ describe("dropSpace", () => {
 		await database.db.insert(database.tables.spaceCredentials).values({
 			space: SPACE,
 			credential: "credential",
-			boundKeyThumbprint: "thumb",
-			boundPrivateJwk: JSON.stringify({ kty: "EC" }),
+			keyDid: "did:key:zDnaeTest",
+			privateKey: "AAAA",
 			expiresAt: NOW,
 		});
 		await database.db.insert(database.tables.notifyRegistrations).values({

@@ -22,7 +22,7 @@ type Write = {
 let writes: Write[];
 let createdSpaces: Array<{
 	service: string;
-	type: string;
+	spaceType: string;
 	skey: string;
 	readPolicy: unknown;
 	writePolicy: unknown;
@@ -42,10 +42,10 @@ const fakeClient = (service: string): PdsClient =>
 		listSpaces: async () => ({ spaces: existingSpaces.map((uri) => ({ uri })) }),
 		createSpace: async (
 			_session: PdsSession,
-			params: { type: string; skey: string; readPolicy: unknown; writePolicy: unknown },
+			params: { spaceType: string; skey: string; readPolicy: unknown; writePolicy: unknown },
 		) => {
 			createdSpaces.push({ service, ...params });
-			return { uri: `at://${COMMUNITY}/${params.type}/${params.skey}` };
+			return { uri: `at://${COMMUNITY}/${params.spaceType}/${params.skey}` };
 		},
 		deleteSpace: async (_session: PdsSession, space: string) => {
 			deletedSpaces.push(space);
@@ -319,7 +319,7 @@ describe("adopting an existing account", () => {
 describe("space policies", () => {
 	it("makes the profile readable by anyone but writable only through this AppView", async () => {
 		await adopt();
-		const profile = createdSpaces.find((space) => space.type === SPACE_TYPES.communityProfile);
+		const profile = createdSpaces.find((space) => space.spaceType === SPACE_TYPES.communityProfile);
 
 		expect(profile?.readPolicy).toEqual({
 			$type: "com.atproto.simplespace.defs#publicPolicy",
@@ -338,7 +338,7 @@ describe("space policies", () => {
 		};
 
 		for (const space of createdSpaces) {
-			if (space.type === SPACE_TYPES.communityProfile) continue;
+			if (space.spaceType === SPACE_TYPES.communityProfile) continue;
 			expect(space.readPolicy).toEqual(managed);
 			expect(space.writePolicy).toEqual(managed);
 		}

@@ -1,5 +1,5 @@
 import { Secp256k1Keypair } from "@atproto/crypto";
-import { createSpaceToken, parseSpaceToken, verifyDpopProof } from "@atproto/space";
+import { createSpaceToken, parseSpaceToken, verifySpaceSignature } from "@atproto/space";
 import { beforeEach, describe, expect, it } from "vitest";
 import { inMemoryCredentialStorage, SpaceCredentials } from "./credentials.js";
 import { SpaceCredentialError } from "./errors.js";
@@ -18,16 +18,15 @@ type HostBehaviour = {
 
 type Recorded = {
 	authorization: string | null;
-	dpop: string | null;
-	jkt: string;
+	signatureInput: string | null;
+	keyId: string;
 	body: { space: string; clientAttestation?: string };
 };
 
 const fakeSpaceHost = (authorityKey: Secp256k1Keypair, behaviour: HostBehaviour = {}) => {
 	const calls: Recorded[] = [];
 
-	const fetchImpl: typeof globalThis.fetch = async (input, init) => {
-		const url = String(input);
+	const fetchImpl: typeof globalThis.fetch = async (_input, init) => {
 		const headers = new Headers(init?.headers);
 		const body = JSON.parse(String(init?.body ?? "{}"));
 
@@ -45,18 +44,17 @@ const fakeSpaceHost = (authorityKey: Secp256k1Keypair, behaviour: HostBehaviour 
 			});
 		}
 
-		const proof = headers.get("dpop");
-		if (!proof) return new Response(JSON.stringify({ error: "BadDpopProof" }), { status: 401 });
-
-		const verified = await verifyDpopProof(proof, {
-			htm: "POST",
-			htu: url.split("?")[0] as string,
-		});
+		const keyId = await verifySpaceSignature(Object.fromEntries(headers.entries())).catch(
+			() => null,
+		);
+		if (!keyId) {
+			return new Response(JSON.stringify({ error: "BadSpaceSignature" }), { status: 401 });
+		}
 
 		calls.push({
 			authorization: headers.get("authorization"),
-			dpop: proof,
-			jkt: verified.jkt,
+			signatureInput: headers.get("signature-input"),
+			keyId,
 			body,
 		});
 
@@ -65,8 +63,8 @@ const fakeSpaceHost = (authorityKey: Secp256k1Keypair, behaviour: HostBehaviour 
 			{
 				iss: AUTHORITY,
 				sub: body.space,
-				dpopJkt: verified.jkt,
-				expiresInSec: behaviour.lifetimeSeconds ?? 7200,
+				keyId,
+				expiresInSec: behaviour.lifetimeSeconds ?? 600,
 			},
 			authorityKey,
 		);
@@ -98,7 +96,7 @@ const credentialsFor = (
 		delegation: overrides.delegation ?? (async () => "delegation-token"),
 		storage: inMemoryCredentialStorage(),
 		fetch: fetchImpl,
-		renewBeforeSeconds: overrides.renewBeforeSeconds ?? 300,
+		renewBeforeSeconds: overrides.renewBeforeSeconds ?? 120,
 		...(overrides.clientAttestation ? { clientAttestation: overrides.clientAttestation } : {}),
 	});
 
@@ -109,17 +107,19 @@ describe("space credentials", () => {
 
 		expect(host.calls).toHaveLength(1);
 		expect(host.calls[0]?.authorization).toBe("Bearer delegation-token");
-		expect(host.calls[0]?.jkt).toBe(credential.key.thumbprint);
+		expect(host.calls[0]?.keyId).toBe(credential.key.did);
 
 		const parsed = parseSpaceToken("credential", credential.credential);
 		expect(parsed.payload.sub).toBe(SPACE);
-		expect(parsed.payload.cnf?.jkt).toBe(credential.key.thumbprint);
+		expect(parsed.payload.cnf?.kid).toBe(credential.key.did);
 	});
 
-	it("presents the delegation token as a bearer grant, not as DPoP", async () => {
+	it("signs only the authorization header of the delegation exchange", async () => {
 		const host = fakeSpaceHost(authorityKey);
-		await credentialsFor(host.fetchImpl).acquire(SPACE);
-		expect(host.calls[0]?.authorization?.startsWith("DPoP ")).toBe(false);
+		const credential = await credentialsFor(host.fetchImpl).acquire(SPACE);
+		expect(host.calls[0]?.signatureInput).toBe(
+			`atproto-space=("authorization");keyid="${credential.key.did}"`,
+		);
 	});
 
 	it("reuses a cached credential rather than minting a second one", async () => {
@@ -130,7 +130,7 @@ describe("space credentials", () => {
 
 		expect(host.calls).toHaveLength(1);
 		expect(second.credential).toBe(first.credential);
-		expect(second.key.thumbprint).toBe(first.key.thumbprint);
+		expect(second.key.did).toBe(first.key.did);
 	});
 
 	it("mints again once the cached credential is inside the renewal window", async () => {
@@ -153,7 +153,7 @@ describe("space credentials", () => {
 
 		expect(host.calls).toHaveLength(1);
 		expect(second.credential).toBe(first.credential);
-		expect(second.key.thumbprint).toBe(first.key.thumbprint);
+		expect(second.key.did).toBe(first.key.did);
 	});
 
 	it("collapses concurrent requests for the same space into one exchange", async () => {

@@ -156,7 +156,7 @@ export const migrateCommunity = async (
 		if (deps.dryRun) return;
 		await host.pds
 			.createSpace(session, {
-				type,
+				spaceType: type,
 				skey,
 				readPolicy:
 					type === SPACE_TYPES.communityProfile && !isPrivate

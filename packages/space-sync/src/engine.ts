@@ -17,6 +17,8 @@ import { inlineVerifier, type Verifier, VerifierPool } from "./verify-pool.js";
 
 export type NotifyWriteHint = {
 	rev?: string;
+	spaceRev?: string;
+	prevSpaceRev?: string;
 	setHashBase64?: string;
 	trigger?: SyncTrigger;
 	notifiedAt?: number;
@@ -93,6 +95,8 @@ export class SpaceSyncEngine {
 	private readonly events = new Emitter<SyncEvents>();
 	private readonly targets = new Map<string, PendingTarget>();
 	private readonly appliedRevs = new Map<string, string>();
+	private readonly spaceRevs = new Map<string, string>();
+	private readonly catchingUp = new Set<string>();
 	private readonly registrations = new Map<string, RegistrationState>();
 	private readonly now: () => Date;
 	private sweepTimer: NodeJS.Timeout | null = null;
@@ -173,6 +177,7 @@ export class SpaceSyncEngine {
 	}
 
 	notifyWrite(space: string, author: string, hint: NotifyWriteHint = {}): void {
+		if (hint.spaceRev) this.trackSpaceRev(space, hint.spaceRev, hint.prevSpaceRev);
 		const key = encodeKey(space, author);
 		const rev = hint.rev ?? null;
 
@@ -191,6 +196,43 @@ export class SpaceSyncEngine {
 		});
 
 		this.queue.push(key);
+	}
+
+	private trackSpaceRev(space: string, spaceRev: string, prevSpaceRev?: string): void {
+		const checkpoint = this.spaceRevs.get(space);
+		if (checkpoint === undefined) {
+			if (!prevSpaceRev) this.spaceRevs.set(space, spaceRev);
+			return;
+		}
+		if (spaceRev <= checkpoint) return;
+		if (prevSpaceRev && prevSpaceRev <= checkpoint) {
+			this.spaceRevs.set(space, spaceRev);
+			return;
+		}
+		this.log("space.revGap", { space, checkpoint, prevSpaceRev, spaceRev }, "debug");
+		void this.catchUp(space);
+	}
+
+	async catchUp(space: string): Promise<void> {
+		if (this.catchingUp.has(space)) return;
+		this.catchingUp.add(space);
+		try {
+			let latest = this.spaceRevs.get(space) ?? null;
+			for await (const repo of this.options.client.allRepos(space, latest ?? undefined)) {
+				latest = laterRev(latest, repo.spaceRev);
+				this.notifyWrite(space, repo.did, { rev: repo.repoRev, trigger: "sweep" });
+			}
+			if (latest) this.spaceRevs.set(space, latest);
+		} catch (error) {
+			if (error instanceof SpaceCredentialError && error.reason === "spaceDeleted") {
+				await this.dropSpace(space);
+				return;
+			}
+			if (await this.park(space, error)) return;
+			this.log("catchUp.failed", { space, error });
+		} finally {
+			this.catchingUp.delete(space);
+		}
 	}
 
 	wake(space: string): void {
@@ -251,12 +293,14 @@ export class SpaceSyncEngine {
 
 		const seen = new Set<string>();
 		const stale: string[] = [];
+		let latest = this.spaceRevs.get(space) ?? null;
 
 		try {
 			for await (const repo of this.options.client.allRepos(space)) {
 				seen.add(repo.did);
+				latest = laterRev(latest, repo.spaceRev);
 				const cursor = cursors.get(repo.did);
-				if (this.shouldSync(cursor, repo.rev)) stale.push(encodeKey(space, repo.did));
+				if (this.shouldSync(cursor, repo.repoRev)) stale.push(encodeKey(space, repo.did));
 			}
 		} catch (error) {
 			if (error instanceof SpaceCredentialError && error.reason === "spaceDeleted") {
@@ -281,6 +325,7 @@ export class SpaceSyncEngine {
 			this.emit("repoGone", space, author);
 		}
 
+		if (latest) this.spaceRevs.set(space, latest);
 		this.queue.pushAll(stale);
 	}
 
@@ -459,6 +504,7 @@ export class SpaceSyncEngine {
 
 	private async dropSpace(space: string): Promise<void> {
 		this.registrations.delete(space);
+		this.spaceRevs.delete(space);
 		for (const key of [...this.targets.keys()]) {
 			if (decodeKey(key).space === space) this.targets.delete(key);
 		}

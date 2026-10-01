@@ -1,6 +1,8 @@
 import { fromBase64 } from "@atproto/lex-data";
 import type { SignedCommit } from "@atproto/space";
-import type { SpaceCredential, SpaceCredentials } from "./credentials.js";
+import type { DidString } from "@atproto/syntax";
+import type { SpaceCredentials } from "./credentials.js";
+import { XrpcError } from "./errors.js";
 import type { SpaceHostResolver } from "./host.js";
 import { type Auth, XrpcClient } from "./http.js";
 import { parseSpaceRef, type SpaceRefString } from "./space-ref.js";
@@ -27,8 +29,9 @@ export const decodeSignedCommit = (wire: WireSignedCommit): SignedCommit => ({
 
 export type RepoListing = {
 	did: string;
-	rev: string;
+	repoRev: string;
 	hash: Uint8Array;
+	spaceRev: string;
 };
 
 export type RepoOp = {
@@ -76,14 +79,34 @@ export class SpaceClient {
 		return client;
 	}
 
-	private async authFor(
+	private async withCredential<T>(
 		space: SpaceRefString,
-	): Promise<{ auth: Auth; credential: SpaceCredential }> {
-		const credential = await this.options.credentials.acquire(space);
-		return {
-			auth: { kind: "dpopCredential", credential: credential.credential, key: credential.key },
-			credential,
+		audience: string,
+		send: (auth: Auth) => Promise<T>,
+	): Promise<T> {
+		const attempt = async (): Promise<T> => {
+			const credential = await this.options.credentials.acquire(space);
+			return send({
+				kind: "spaceCredential",
+				credential: credential.credential,
+				key: credential.key,
+				audience: audience as DidString,
+			});
 		};
+		try {
+			return await attempt();
+		} catch (error) {
+			if (!(error instanceof XrpcError) || !error.isCredentialRejected) throw error;
+			await this.options.credentials.invalidate(space);
+			return attempt();
+		}
+	}
+
+	private withAuthorityCredential<T>(
+		space: SpaceRefString,
+		send: (auth: Auth) => Promise<T>,
+	): Promise<T> {
+		return this.withCredential(space, parseSpaceRef(space).authority, send);
 	}
 
 	private hostForAuthority(space: SpaceRefString): Promise<string> {
@@ -95,28 +118,31 @@ export class SpaceClient {
 		options: { limit?: number; cursor?: string } = {},
 	): Promise<{ repos: RepoListing[]; cursor: string | null }> {
 		const client = this.clientFor(await this.hostForAuthority(space));
-		const { auth } = await this.authFor(space);
-		const response = await client.query<{
-			repos: Array<{ did: string; rev: string; hash: WireBytes }>;
-			cursor?: string;
-		}>("com.atproto.space.listRepos", { space, ...options }, auth);
+		const response = await this.withAuthorityCredential(space, (auth) =>
+			client.query<{
+				repos: Array<{ did: string; repoRev: string; hash: WireBytes; spaceRev: string }>;
+				cursor?: string;
+			}>("com.atproto.space.listRepos", { space, ...options }, auth),
+		);
 		return {
 			repos: response.repos.map((repo) => ({
 				did: repo.did,
-				rev: repo.rev,
+				repoRev: repo.repoRev,
 				hash: fromBase64(repo.hash.$bytes),
+				spaceRev: repo.spaceRev,
 			})),
 			cursor: response.cursor ?? null,
 		};
 	}
 
-	async *allRepos(space: SpaceRefString): AsyncGenerator<RepoListing> {
-		let cursor: string | undefined;
-		do {
+	async *allRepos(space: SpaceRefString, since?: string): AsyncGenerator<RepoListing> {
+		let cursor = since;
+		while (true) {
 			const page = await this.listRepos(space, { limit: 1000, cursor });
 			yield* page.repos;
-			cursor = page.cursor ?? undefined;
-		} while (cursor);
+			if (page.repos.length === 0 || !page.cursor) return;
+			cursor = page.cursor;
+		}
 	}
 
 	async listRepoOps(
@@ -126,12 +152,13 @@ export class SpaceClient {
 		options: { since?: string; cursor?: string; limit?: number; excludeValues?: boolean } = {},
 	): Promise<RepoOpsPage> {
 		const client = this.clientFor(repoHost);
-		const { auth } = await this.authFor(space);
-		const response = await client.query<{
-			ops: RepoOp[];
-			commit?: WireSignedCommit;
-			cursor?: string;
-		}>("com.atproto.space.listRepoOps", { space, repo, ...options }, auth);
+		const response = await this.withCredential(space, repo, (auth) =>
+			client.query<{
+				ops: RepoOp[];
+				commit?: WireSignedCommit;
+				cursor?: string;
+			}>("com.atproto.space.listRepoOps", { space, repo, ...options }, auth),
+		);
 		return {
 			ops: response.ops,
 			commit: response.commit ? decodeSignedCommit(response.commit) : null,
@@ -145,11 +172,12 @@ export class SpaceClient {
 		repo: string,
 	): Promise<SignedCommit | null> {
 		const client = this.clientFor(repoHost);
-		const { auth } = await this.authFor(space);
-		const response = await client.query<{ commit?: WireSignedCommit }>(
-			"com.atproto.space.getLatestCommit",
-			{ space, repo },
-			auth,
+		const response = await this.withCredential(space, repo, (auth) =>
+			client.query<{ commit?: WireSignedCommit }>(
+				"com.atproto.space.getLatestCommit",
+				{ space, repo },
+				auth,
+			),
 		);
 		return response.commit ? decodeSignedCommit(response.commit) : null;
 	}
@@ -160,8 +188,9 @@ export class SpaceClient {
 		repo: string,
 	): Promise<AsyncIterable<Uint8Array>> {
 		const client = this.clientFor(repoHost);
-		const { auth } = await this.authFor(space);
-		const response = await client.stream("com.atproto.space.getRepo", { space, repo }, auth);
+		const response = await this.withCredential(space, repo, (auth) =>
+			client.stream("com.atproto.space.getRepo", { space, repo }, auth),
+		);
 		return streamBytes(response);
 	}
 
@@ -173,11 +202,12 @@ export class SpaceClient {
 		rkey: string,
 	): Promise<SpaceRecord> {
 		const client = this.clientFor(repoHost);
-		const { auth } = await this.authFor(space);
-		return client.query<SpaceRecord>(
-			"com.atproto.space.getRecord",
-			{ space, repo, collection, rkey },
-			auth,
+		return this.withCredential(space, repo, (auth) =>
+			client.query<SpaceRecord>(
+				"com.atproto.space.getRecord",
+				{ space, repo, collection, rkey },
+				auth,
+			),
 		);
 	}
 
@@ -188,11 +218,12 @@ export class SpaceClient {
 		options: { collection?: string; cursor?: string; limit?: number; excludeValues?: boolean } = {},
 	): Promise<{ records: SpaceRecord[]; cursor: string | null }> {
 		const client = this.clientFor(repoHost);
-		const { auth } = await this.authFor(space);
-		const response = await client.query<{ records: SpaceRecord[]; cursor?: string }>(
-			"com.atproto.space.listRecords",
-			{ space, repo, ...options },
-			auth,
+		const response = await this.withCredential(space, repo, (auth) =>
+			client.query<{ records: SpaceRecord[]; cursor?: string }>(
+				"com.atproto.space.listRecords",
+				{ space, repo, ...options },
+				auth,
+			),
 		);
 		return { records: response.records, cursor: response.cursor ?? null };
 	}
@@ -204,8 +235,9 @@ export class SpaceClient {
 		cid: string,
 	): Promise<Response> {
 		const client = this.clientFor(repoHost);
-		const { auth } = await this.authFor(space);
-		return client.stream("com.atproto.space.getBlob", { space, repo, cid }, auth);
+		return this.withCredential(space, repo, (auth) =>
+			client.stream("com.atproto.space.getBlob", { space, repo, cid }, auth),
+		);
 	}
 
 	async listBlobs(
@@ -215,30 +247,33 @@ export class SpaceClient {
 		options: { cursor?: string; limit?: number } = {},
 	): Promise<{ cids: string[]; cursor: string | null }> {
 		const client = this.clientFor(repoHost);
-		const { auth } = await this.authFor(space);
-		const response = await client.query<{ cids: string[]; cursor?: string }>(
-			"com.atproto.space.listBlobs",
-			{ space, repo, ...options },
-			auth,
+		const response = await this.withCredential(space, repo, (auth) =>
+			client.query<{ cids: string[]; cursor?: string }>(
+				"com.atproto.space.listBlobs",
+				{ space, repo, ...options },
+				auth,
+			),
 		);
 		return { cids: response.cids, cursor: response.cursor ?? null };
 	}
 
 	async registerNotify(space: SpaceRefString, service: string): Promise<{ expiresAt: Date }> {
 		const client = this.clientFor(await this.hostForAuthority(space));
-		const { auth } = await this.authFor(space);
-		const response = await client.procedure<{ expiresAt: string }>(
-			"com.atproto.space.registerNotify",
-			{ space, service },
-			auth,
+		const response = await this.withAuthorityCredential(space, (auth) =>
+			client.procedure<{ expiresAt: string }>(
+				"com.atproto.space.registerNotify",
+				{ space, service },
+				auth,
+			),
 		);
 		return { expiresAt: new Date(response.expiresAt) };
 	}
 
 	async unregisterNotify(space: SpaceRefString, service: string): Promise<void> {
 		const client = this.clientFor(await this.hostForAuthority(space));
-		const { auth } = await this.authFor(space);
-		await client.procedure("com.atproto.space.unregisterNotify", { space, service }, auth);
+		await this.withAuthorityCredential(space, (auth) =>
+			client.procedure("com.atproto.space.unregisterNotify", { space, service }, auth),
+		);
 	}
 }
 

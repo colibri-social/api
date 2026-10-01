@@ -48,9 +48,13 @@ export const registerProtocolRoutes = ({ server, ctx, auth }: RouteDeps): void =
 
 	route(server, com.atproto.space.notifyWrite, {
 		auth: auth.service,
-		handler: async ({ input }) => {
-			ctx.sync.notifyWrite(input.body.space, input.body.repo, {
-				rev: input.body.rev,
+		handler: async ({ input, auth: caller }) => {
+			const space = parseSpaceRef(input.body.space);
+			if (caller.credentials.did !== space.authority) return;
+			ctx.sync.notifyWrite(space.uri, input.body.repo, {
+				rev: input.body.repoRev,
+				spaceRev: input.body.spaceRev,
+				prevSpaceRev: input.body.prevSpaceRev,
 				setHashBase64: Buffer.from(input.body.hash).toString("base64"),
 				trigger: "notify",
 				notifiedAt: Date.now(),

@@ -61,8 +61,8 @@ export const drizzleCredentialStorage = ({ db, tables }: Database): CredentialSt
 		if (!row) return null;
 		return {
 			credential: row.credential,
-			privateJwk: row.boundPrivateJwk,
-			thumbprint: row.boundKeyThumbprint,
+			privateKey: row.privateKey,
+			keyDid: row.keyDid,
 			expiresAt: new Date(row.expiresAt),
 		};
 	},
@@ -70,8 +70,8 @@ export const drizzleCredentialStorage = ({ db, tables }: Database): CredentialSt
 		const row = {
 			space,
 			credential: credential.credential,
-			boundKeyThumbprint: credential.thumbprint,
-			boundPrivateJwk: credential.privateJwk,
+			keyDid: credential.keyDid,
+			privateKey: credential.privateKey,
 			expiresAt: credential.expiresAt.toISOString(),
 		};
 		await db

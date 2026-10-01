@@ -234,7 +234,7 @@ export class CommunityProvisioner {
 		report("creatingSpaces", completed, community);
 		for (const spaceType of COMMUNITY_SPACE_TYPES) {
 			await host.pds.createSpace(host.session, {
-				type: spaceType,
+				spaceType,
 				skey: SELF,
 				...this.policiesFor(spaceType, isPrivate),
 				appAccess: openAppAccess(),
@@ -396,7 +396,7 @@ export class CommunityProvisioner {
 		const space = channelSpace(community, channel.type as never, skey);
 
 		await host.pds.createSpace(host.session, {
-			type: channel.type,
+			spaceType: channel.type,
 			skey,
 			readPolicy: managingAppPolicy(this.deps.appviewService),
 			writePolicy: managingAppPolicy(this.deps.appviewService),
@@ -431,7 +431,7 @@ export class CommunityProvisioner {
 		const space = threadSpace(community, skey);
 
 		await host.pds.createSpace(host.session, {
-			type: SPACE_TYPES.channelThread,
+			spaceType: SPACE_TYPES.channelThread,
 			skey,
 			readPolicy: managingAppPolicy(this.deps.appviewService),
 			writePolicy: managingAppPolicy(this.deps.appviewService),

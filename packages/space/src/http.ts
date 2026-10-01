@@ -1,12 +1,13 @@
-import type { DpopKey } from "./dpop.js";
+import type { DidString } from "@atproto/syntax";
 import { XrpcError } from "./errors.js";
+import type { SpaceKey } from "./space-key.js";
 
 export type Auth =
 	| { kind: "none" }
 	| { kind: "bearer"; token: string }
 	| { kind: "basic"; user: string; password: string }
-	| { kind: "dpopGrant"; token: string; key: DpopKey }
-	| { kind: "dpopCredential"; credential: string; key: DpopKey };
+	| { kind: "spaceGrant"; token: string; key: SpaceKey }
+	| { kind: "spaceCredential"; credential: string; key: SpaceKey; audience: DidString };
 
 export type QueryParams = Record<
 	string,
@@ -43,6 +44,10 @@ const parseFailure = async (response: Response, method: string): Promise<XrpcErr
 		if (parsed.message) message = parsed.message;
 	} catch {}
 	return new XrpcError(response.status, code, message, method);
+};
+
+const setAll = (headers: Headers, values: Record<string, string>): void => {
+	for (const [name, value] of Object.entries(values)) headers.set(name, value);
 };
 
 export class XrpcClient {
@@ -91,7 +96,7 @@ export class XrpcClient {
 		return `${this.options.service.replace(/\/$/, "")}/xrpc/${nsid}${query ? `?${query}` : ""}`;
 	}
 
-	private async headersFor(auth: Auth, method: string, url: string): Promise<Headers> {
+	private async headersFor(auth: Auth): Promise<Headers> {
 		const headers = new Headers({ accept: "application/json" });
 		if (this.options.userAgent) headers.set("user-agent", this.options.userAgent);
 
@@ -107,13 +112,17 @@ export class XrpcClient {
 					`Basic ${Buffer.from(`${auth.user}:${auth.password}`).toString("base64")}`,
 				);
 				break;
-			case "dpopGrant":
-				headers.set("authorization", `Bearer ${auth.token}`);
-				headers.set("dpop", await auth.key.proof({ method, url }));
+			case "spaceGrant":
+				setAll(headers, await auth.key.headers({ authorization: `Bearer ${auth.token}` }));
 				break;
-			case "dpopCredential":
-				headers.set("authorization", `DPoP ${auth.credential}`);
-				headers.set("dpop", await auth.key.proof({ method, url, credential: auth.credential }));
+			case "spaceCredential":
+				setAll(
+					headers,
+					await auth.key.headers({
+						authorization: `Atproto-Space ${auth.credential}`,
+						audience: auth.audience,
+					}),
+				);
 				break;
 		}
 		return headers;
@@ -128,7 +137,7 @@ export class XrpcClient {
 	): Promise<Response> {
 		const url = this.urlFor(nsid, params);
 		const attempt = async (): Promise<Response> => {
-			const headers = await this.headersFor(auth, method, url);
+			const headers = await this.headersFor(auth);
 			if (body !== undefined) headers.set("content-type", "application/json");
 			return this.fetchImpl(url, {
 				method,

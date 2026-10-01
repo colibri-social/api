@@ -114,7 +114,7 @@ export const createContext = async (config: Config) => {
 		hosts,
 		storage: drizzleCredentialStorage(database),
 		delegation: async (space) => delegationFor(space),
-		renewBeforeSeconds: 300,
+		renewBeforeSeconds: 120,
 	});
 
 	const spaceClient = new SpaceClient({ hosts, credentials: spaceCredentials });

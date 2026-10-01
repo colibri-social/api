@@ -227,7 +227,7 @@ describe("a personal space", () => {
 		const space = `at://${user.did}/space/${SPACE_TYPES.actorPreferences}/${SELF}`;
 
 		await harness.pds.createSpace(user.session, {
-			type: SPACE_TYPES.actorPreferences,
+			spaceType: SPACE_TYPES.actorPreferences,
 			skey: SELF,
 			readPolicy: { $type: "com.atproto.simplespace.defs#memberListPolicy" },
 			writePolicy: { $type: "com.atproto.simplespace.defs#memberListPolicy" },

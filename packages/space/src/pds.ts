@@ -154,7 +154,7 @@ export class PdsClient {
 	createSpace(
 		session: PdsSession,
 		params: {
-			type: string;
+			spaceType: string;
 			skey?: string;
 			readPolicy: SpacePolicy;
 			writePolicy: SpacePolicy;

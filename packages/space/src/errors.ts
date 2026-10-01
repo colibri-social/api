@@ -17,6 +17,16 @@ export class XrpcError extends Error {
 		return this.code === "ExpiredToken";
 	}
 
+	get isCredentialRejected(): boolean {
+		return (
+			this.status === 401 &&
+			(this.code === "JwtExpired" ||
+				this.code === "CredentialRevoked" ||
+				this.code === "BadSpaceSignature" ||
+				this.code.startsWith("BadJwt"))
+		);
+	}
+
 	get isSpaceDeleted(): boolean {
 		return this.code === "SpaceDeleted";
 	}
@@ -32,6 +42,8 @@ export class SpaceCredentialError extends Error {
 		readonly reason:
 			| "noDelegationToken"
 			| "invalidDelegationToken"
+			| "credentialRevoked"
+			| "badSignature"
 			| "hostUnresolvable"
 			| "refused"
 			| "spaceDeleted"

@@ -101,8 +101,8 @@ export const records = sqliteTable(
 export const spaceCredentials = sqliteTable("space_credentials", {
 	space: text("space").primaryKey(),
 	credential: text("credential").notNull(),
-	boundKeyThumbprint: text("bound_key_thumbprint").notNull(),
-	boundPrivateJwk: text("bound_private_jwk").notNull(),
+	keyDid: text("key_did").notNull(),
+	privateKey: text("private_key").notNull(),
 	expiresAt: timestamp("expires_at").notNull(),
 });
 

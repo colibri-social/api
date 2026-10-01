@@ -1,20 +1,20 @@
 import { parseSpaceToken } from "@atproto/space";
-import { DpopKey } from "./dpop.js";
 import { SpaceCredentialError, XrpcError } from "./errors.js";
 import type { SpaceHostResolver } from "./host.js";
 import { XrpcClient } from "./http.js";
+import { SpaceKey } from "./space-key.js";
 import { parseSpaceRef, type SpaceRefString } from "./space-ref.js";
 
 export type SpaceCredential = {
 	credential: string;
-	key: DpopKey;
+	key: SpaceKey;
 	expiresAt: Date;
 };
 
 export type StoredCredential = {
 	credential: string;
-	privateJwk: string;
-	thumbprint: string;
+	privateKey: string;
+	keyDid: string;
 	expiresAt: Date;
 };
 
@@ -90,7 +90,7 @@ export class SpaceCredentials {
 	private async held(stored: StoredCredential): Promise<SpaceCredential> {
 		return {
 			credential: stored.credential,
-			key: await DpopKey.fromJwk(stored.privateJwk),
+			key: await SpaceKey.fromExported(stored.privateKey),
 			expiresAt: stored.expiresAt,
 		};
 	}
@@ -129,7 +129,7 @@ export class SpaceCredentials {
 
 		const { authority } = parseSpaceRef(space);
 		const host = await this.options.hosts.hostFor(authority);
-		const key = await DpopKey.generate();
+		const key = await SpaceKey.generate();
 		const client = new XrpcClient({ service: host, fetch: this.options.fetch });
 		const clientAttestation = await this.options.clientAttestation?.(space);
 
@@ -137,7 +137,7 @@ export class SpaceCredentials {
 			.procedure<{ credential: string }>(
 				GET_SPACE_CREDENTIAL,
 				clientAttestation ? { space, clientAttestation } : { space },
-				{ kind: "dpopGrant", token, key },
+				{ kind: "spaceGrant", token, key },
 			)
 			.catch((cause: unknown) => {
 				throw toCredentialError(space, cause);
@@ -146,8 +146,8 @@ export class SpaceCredentials {
 		const expiresAt = expiryOf(space, response.credential);
 		await this.storage.save(space, {
 			credential: response.credential,
-			privateJwk: key.exportJwk(),
-			thumbprint: key.thumbprint,
+			privateKey: await key.export(),
+			keyDid: key.did,
 			expiresAt,
 		});
 
@@ -176,6 +176,22 @@ const toCredentialError = (space: SpaceRefString, cause: unknown): SpaceCredenti
 			return new SpaceCredentialError(space, "spaceDeleted", `${space} has been deleted`, {
 				cause,
 			});
+		}
+		if (cause.code === "CredentialRevoked") {
+			return new SpaceCredentialError(
+				space,
+				"credentialRevoked",
+				`the space credential for ${space} was revoked`,
+				{ cause },
+			);
+		}
+		if (cause.code === "BadSpaceSignature" || cause.code === "BadSpaceAudience") {
+			return new SpaceCredentialError(
+				space,
+				"badSignature",
+				`the space host rejected the request signature for ${space}`,
+				{ cause },
+			);
 		}
 		if (cause.code === "InvalidDelegationToken") {
 			return new SpaceCredentialError(

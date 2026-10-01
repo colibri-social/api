@@ -166,8 +166,8 @@ const seed = async (community: string) => {
 		await db.insert(tables.spaceCredentials).values({
 			space: uri,
 			credential: "token",
-			boundKeyThumbprint: "thumb",
-			boundPrivateJwk: "{}",
+			keyDid: "did:key:zDnaeTest",
+			privateKey: "AAAA",
 			expiresAt: NOW,
 		});
 
