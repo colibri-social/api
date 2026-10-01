@@ -1,5 +1,23 @@
 # @colibri-social/appview
 
+## 2.11.2
+
+### Patch Changes
+
+- f7b360b: Allows the `sentry-trace` and `baggage` request headers in CORS preflights, so browsers can call `com.atproto.identity.resolveHandle` directly and users with DNS-only handles can sign in
+- 08eebc0: Routes pushes for thread messages to the parent channel and thread, and sends Android pushes as data-only messages so tapping one opens the right message.
+- ef70f83: Targets the 2026-10-01 atproto Spaces alpha. Space credentials are bound with HTTP Message Signatures and carry the audience of each request, a revoked or rejected credential is replaced once through a fresh delegation, sync follows `spaceRev` and catches up from `listRepos` after a gap, and `createSpace` sends `spaceType`. The vendored space lexicons move to atproto `679724ad`.
+- Updated dependencies [08eebc0]
+- Updated dependencies [ef70f83]
+  - @colibri-social/notifications@1.3.4
+  - @colibri-social/lexicons@2.13.0
+  - @colibri-social/space@0.5.0
+  - @colibri-social/space-sync@0.5.1
+  - @colibri-social/appview-db@0.7.1
+  - @colibri-social/community@2.6.2
+  - @colibri-social/projections@1.6.2
+  - @colibri-social/blobs@0.0.7
+
 ## 2.11.1
 
 ### Patch Changes
