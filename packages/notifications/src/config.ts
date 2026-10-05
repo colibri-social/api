@@ -16,19 +16,30 @@ export const fcmConfigSchema = z.object({
 
 export type FcmConfig = z.infer<typeof fcmConfigSchema>;
 
+export const apnsConfigSchema = z.object({
+	key: z.string().min(1),
+	keyId: z.string().min(1),
+	teamId: z.string().min(1),
+	topic: z.string().min(1).default("social.colibri.app"),
+});
+
+export type ApnsConfig = z.infer<typeof apnsConfigSchema>;
+
 export const notificationsConfigSchema = z.object({
 	vapid: vapidConfigSchema.optional(),
 	fcm: fcmConfigSchema.optional(),
+	apns: apnsConfigSchema.optional(),
 });
 
 export type NotificationsConfig = z.infer<typeof notificationsConfigSchema>;
 
-export type PushProviderName = "webpush" | "fcm";
+export type PushProviderName = "webpush" | "fcm" | "apns";
 
 export const configuredProviders = (config: NotificationsConfig): PushProviderName[] => {
 	const providers: PushProviderName[] = [];
 	if (config.vapid) providers.push("webpush");
 	if (config.fcm) providers.push("fcm");
+	if (config.apns) providers.push("apns");
 	return providers;
 };
 
@@ -45,4 +56,12 @@ export const parseFcmServiceAccountJson = (raw: string): FcmConfig => {
 		clientEmail: parsed.client_email,
 		privateKey: parsed.private_key,
 	});
+};
+
+export const parseApnsKey = (raw: string): string => {
+	const value = raw.trim();
+	const pem = value.includes("-----BEGIN")
+		? value
+		: Buffer.from(value, "base64").toString("utf8").trim();
+	return pem.replace(/\\n/g, "\n");
 };

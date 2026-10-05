@@ -176,7 +176,14 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			events.publishToUser(row.recipient, notificationEvent(view));
 			servable.push({
 				row,
-				routing: { channel: view.channel, ...(view.thread ? { thread: view.thread } : {}) },
+				routing: {
+					channel: view.channel,
+					...(view.thread ? { thread: view.thread } : {}),
+					sender: {
+						name: view.author.displayName || view.author.handle,
+						...(view.author.avatar ? { avatar: view.author.avatar } : {}),
+					},
+				},
 			});
 		}
 		await pushNotifications(servable, text);

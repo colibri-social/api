@@ -8,7 +8,12 @@ import {
 	nullPushSender,
 	type PushSender,
 } from "./push.js";
-import { listSubscriptionsForActor, registerFcm, registerWebPush } from "./subscriptions.js";
+import {
+	listSubscriptionsForActor,
+	registerApns,
+	registerFcm,
+	registerWebPush,
+} from "./subscriptions.js";
 
 const ACTOR = "did:plc:actor000000000000000000000";
 const NOW = "2026-08-23T00:00:00.000Z";
@@ -94,6 +99,27 @@ describe("deliverNotification", () => {
 		const rows = await listSubscriptionsForActor(deps, ACTOR);
 		expect(rows).toHaveLength(1);
 		expect(rows[0]?.provider).toBe("webpush");
+	});
+
+	it("dispatches apns subscriptions to the apns sender", async () => {
+		await registerFcm(deps, { actor: ACTOR, platform: "android", token: "token-1" });
+		await registerApns(deps, {
+			actor: ACTOR,
+			platform: "ios",
+			token: "a".repeat(64),
+			environment: "production",
+		});
+
+		await deliverNotification(
+			deps,
+			{ fcm: fakeSender("delivered"), apns: fakeSender("gone") },
+			notification,
+			{ text: "hi" },
+		);
+
+		const rows = await listSubscriptionsForActor(deps, ACTOR);
+		expect(rows).toHaveLength(1);
+		expect(rows[0]?.provider).toBe("fcm");
 	});
 
 	it("never throws when no sender is configured for a subscription's provider", async () => {

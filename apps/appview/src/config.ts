@@ -1,6 +1,9 @@
 import {
+	apnsConfigSchema,
 	configuredProviders,
 	type NotificationsConfig,
+	type PushProviderName,
+	parseApnsKey,
 	parseFcmServiceAccountJson,
 } from "@colibri-social/notifications";
 import { z } from "zod";
@@ -92,6 +95,10 @@ export const configSchema = z.object({
 	VAPID_PRIVATE_KEY: optionalString,
 	VAPID_SUBJECT: optionalString,
 	FCM_SERVICE_ACCOUNT_JSON: optionalString,
+	APNS_KEY: optionalString,
+	APNS_KEY_ID: optionalString,
+	APNS_TEAM_ID: optionalString,
+	APNS_TOPIC: optionalString,
 	KLIPY_API_KEY: optionalString,
 	VIDEO_ARTWORK_ENABLED: boolish(false),
 
@@ -119,7 +126,7 @@ export type RawConfig = z.infer<typeof configSchema>;
 
 export type Config = RawConfig & {
 	canProvisionCommunities: boolean;
-	pushProviders: Array<"webpush" | "fcm">;
+	pushProviders: PushProviderName[];
 	notifications: NotificationsConfig;
 	gifsEnabled: boolean;
 	corsOrigins: string[];
@@ -153,6 +160,16 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): Config => {
 			: {}),
 		...(raw.FCM_SERVICE_ACCOUNT_JSON
 			? { fcm: parseFcmServiceAccountJson(raw.FCM_SERVICE_ACCOUNT_JSON) }
+			: {}),
+		...(raw.APNS_KEY && raw.APNS_KEY_ID && raw.APNS_TEAM_ID
+			? {
+					apns: apnsConfigSchema.parse({
+						key: parseApnsKey(raw.APNS_KEY),
+						keyId: raw.APNS_KEY_ID,
+						teamId: raw.APNS_TEAM_ID,
+						topic: raw.APNS_TOPIC,
+					}),
+				}
 			: {}),
 	};
 	const pushProviders = configuredProviders(notifications);

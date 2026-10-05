@@ -1,4 +1,4 @@
-import type { PushPlatform, Schema } from "@colibri-social/appview-db";
+import type { PushEnvironment, PushPlatform, Schema } from "@colibri-social/appview-db";
 import { and, eq } from "drizzle-orm";
 import type { NotificationDeps } from "./deps.js";
 import { nextId } from "./id.js";
@@ -17,6 +17,13 @@ export type RegisterFcmInput = {
 	actor: string;
 	platform: PushPlatform;
 	token: string;
+};
+
+export type RegisterApnsInput = {
+	actor: string;
+	platform: PushPlatform;
+	token: string;
+	environment: PushEnvironment;
 };
 
 export const registerWebPush = async (
@@ -96,6 +103,44 @@ export const registerFcm = async (
 	});
 };
 
+export const registerApns = async (
+	deps: NotificationDeps,
+	input: RegisterApnsInput,
+): Promise<void> => {
+	const token = input.token.toLowerCase();
+	const [existing] = await deps.db
+		.select({ id: deps.tables.pushSubscriptions.id })
+		.from(deps.tables.pushSubscriptions)
+		.where(
+			and(
+				eq(deps.tables.pushSubscriptions.provider, "apns"),
+				eq(deps.tables.pushSubscriptions.token, token),
+			),
+		)
+		.limit(1);
+
+	if (existing) {
+		await deps.db
+			.update(deps.tables.pushSubscriptions)
+			.set({ actor: input.actor, platform: input.platform, environment: input.environment })
+			.where(eq(deps.tables.pushSubscriptions.id, existing.id));
+		return;
+	}
+
+	await deps.db.insert(deps.tables.pushSubscriptions).values({
+		id: nextId(),
+		actor: input.actor,
+		provider: "apns",
+		platform: input.platform,
+		endpoint: null,
+		p256dh: null,
+		auth: null,
+		token,
+		environment: input.environment,
+		createdAt: deps.now(),
+	});
+};
+
 export const unregisterWebPush = async (
 	deps: NotificationDeps,
 	actor: string,
@@ -124,6 +169,22 @@ export const unregisterFcm = async (
 				eq(deps.tables.pushSubscriptions.actor, actor),
 				eq(deps.tables.pushSubscriptions.provider, "fcm"),
 				eq(deps.tables.pushSubscriptions.token, token),
+			),
+		);
+};
+
+export const unregisterApns = async (
+	deps: NotificationDeps,
+	actor: string,
+	token: string,
+): Promise<void> => {
+	await deps.db
+		.delete(deps.tables.pushSubscriptions)
+		.where(
+			and(
+				eq(deps.tables.pushSubscriptions.actor, actor),
+				eq(deps.tables.pushSubscriptions.provider, "apns"),
+				eq(deps.tables.pushSubscriptions.token, token.toLowerCase()),
 			),
 		);
 };

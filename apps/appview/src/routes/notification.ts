@@ -4,12 +4,15 @@ import { social } from "@colibri-social/lexicons";
 import type { ActorHydrator } from "@colibri-social/notifications";
 import {
 	hydrateNotifications,
+	isApnsDeviceToken,
 	listNotifications,
 	markSeen,
 	markSeenForMessage,
+	registerApns,
 	registerFcm,
 	registerWebPush,
 	unreadCount,
+	unregisterApns,
 	unregisterFcm,
 	unregisterWebPush,
 	unseenForChannelPage,
@@ -134,6 +137,7 @@ export const handleRegisterPush = async (
 		p256dh?: string;
 		auth?: string;
 		token?: string;
+		environment?: string;
 	},
 ): Promise<void> => {
 	const deps = notificationDeps(ctx);
@@ -176,6 +180,31 @@ export const handleRegisterPush = async (
 		return;
 	}
 
+	if (input.provider === "apns") {
+		if (!ctx.config.pushProviders.includes("apns")) {
+			throw new InvalidRequestError(
+				"this AppView has no apns credentials configured",
+				"PushNotConfigured",
+			);
+		}
+		if (!input.token || !isApnsDeviceToken(input.token)) {
+			throw new InvalidRequestError("apns requires a hex device token", "InvalidRequest");
+		}
+		if (input.environment !== "sandbox" && input.environment !== "production") {
+			throw new InvalidRequestError(
+				"apns requires environment to be sandbox or production",
+				"InvalidRequest",
+			);
+		}
+		await registerApns(deps, {
+			actor: callerDid,
+			platform,
+			token: input.token,
+			environment: input.environment,
+		});
+		return;
+	}
+
 	throw new InvalidRequestError(`unknown push provider '${input.provider}'`, "InvalidRequest");
 };
 
@@ -199,6 +228,14 @@ export const handleUnregisterPush = async (
 			throw new InvalidRequestError("token is required to unregister fcm", "InvalidRequest");
 		}
 		await unregisterFcm(deps, callerDid, input.token);
+		return;
+	}
+
+	if (input.provider === "apns") {
+		if (!input.token) {
+			throw new InvalidRequestError("token is required to unregister apns", "InvalidRequest");
+		}
+		await unregisterApns(deps, callerDid, input.token);
 		return;
 	}
 

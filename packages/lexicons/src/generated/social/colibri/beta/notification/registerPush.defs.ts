@@ -14,7 +14,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"provider":/*#__PURE__*/ l.string<{"knownValues":["webpush","fcm"]}>(),"platform":/*#__PURE__*/ l.string<{"knownValues":["web","ios","android"]}>(),"endpoint":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"p256dh":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"auth":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"token":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())});
+export const $input = /*#__PURE__*/ l.jsonPayload({"provider":/*#__PURE__*/ l.string<{"knownValues":["webpush","fcm","apns"]}>(),"platform":/*#__PURE__*/ l.string<{"knownValues":["web","ios","android","macos"]}>(),"endpoint":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"p256dh":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"auth":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"token":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"environment":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["sandbox","production"]}>())});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;
@@ -24,7 +24,7 @@ export const $output = /*#__PURE__*/ l.jsonPayload({});
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Registers a push endpoint for the requesting user's device. Web Push requires endpoint, p256dh, and auth. FCM requires token. */
+/** Registers a push endpoint for the requesting user's device. Web Push requires endpoint, p256dh, and auth. FCM requires token. APNs requires token and environment. */
 const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","InvalidRequest","PushNotConfigured"]);
 
 export { main };

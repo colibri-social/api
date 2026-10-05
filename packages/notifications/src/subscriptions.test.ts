@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { NotificationDeps } from "./deps.js";
 import {
 	listSubscriptionsForActor,
+	registerApns,
 	registerFcm,
 	registerWebPush,
+	unregisterApns,
 	unregisterFcm,
 	unregisterWebPush,
 } from "./subscriptions.js";
@@ -103,5 +105,29 @@ describe("unregistering", () => {
 		await expect(
 			unregisterWebPush(deps, ACTOR, "https://push.example/missing"),
 		).resolves.toBeUndefined();
+	});
+});
+
+describe("registerApns", () => {
+	const token = "AB".repeat(32);
+
+	it("stores the token lowercased with its environment and upserts on re-register", async () => {
+		await registerApns(deps, { actor: ACTOR, platform: "ios", token, environment: "sandbox" });
+		await registerApns(deps, { actor: ACTOR, platform: "ios", token, environment: "production" });
+
+		const rows = await listSubscriptionsForActor(deps, ACTOR);
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({
+			provider: "apns",
+			token: token.toLowerCase(),
+			environment: "production",
+		});
+	});
+
+	it("unregisters regardless of token case", async () => {
+		await registerApns(deps, { actor: ACTOR, platform: "macos", token, environment: "production" });
+		await unregisterApns(deps, ACTOR, token);
+
+		expect(await listSubscriptionsForActor(deps, ACTOR)).toHaveLength(0);
 	});
 });

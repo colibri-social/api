@@ -14,7 +14,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"provider":/*#__PURE__*/ l.string<{"knownValues":["webpush","fcm"]}>(),"endpoint":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"token":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())});
+export const $input = /*#__PURE__*/ l.jsonPayload({"provider":/*#__PURE__*/ l.string<{"knownValues":["webpush","fcm","apns"]}>(),"endpoint":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"token":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;

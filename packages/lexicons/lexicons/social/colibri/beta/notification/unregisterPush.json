@@ -14,7 +14,7 @@
 						"provider": {
 							"type": "string",
 							"description": "The push provider to unregister from.",
-							"knownValues": ["webpush", "fcm"]
+							"knownValues": ["webpush", "fcm", "apns"]
 						},
 						"endpoint": {
 							"type": "string",
@@ -23,7 +23,7 @@
 						},
 						"token": {
 							"type": "string",
-							"description": "The FCM registration token to remove."
+							"description": "The FCM registration token or APNs device token to remove."
 						}
 					}
 				}

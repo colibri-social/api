@@ -55,3 +55,39 @@ describe("DEFAULT_COMMUNITY_DID", () => {
 		expect(() => withDefault("colibri.social")).toThrow(ConfigError);
 	});
 });
+
+describe("APNs", () => {
+	const withApns = (env: Record<string, string>) =>
+		loadConfig({ ...REQUIRED, APPVIEW_DID: "did:web:appview.example.com", ...env });
+
+	it("enables apns when key, key ID and team ID are all set", () => {
+		const config = withApns({
+			APNS_KEY: "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----",
+			APNS_KEY_ID: "KEY1234567",
+			APNS_TEAM_ID: "TEAM123456",
+		});
+		expect(config.pushProviders).toContain("apns");
+		expect(config.notifications.apns).toEqual({
+			key: "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
+			keyId: "KEY1234567",
+			teamId: "TEAM123456",
+			topic: "social.colibri.app",
+		});
+	});
+
+	it("accepts a base64-encoded key", () => {
+		const pem = "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----";
+		const config = withApns({
+			APNS_KEY: Buffer.from(pem).toString("base64"),
+			APNS_KEY_ID: "KEY1234567",
+			APNS_TEAM_ID: "TEAM123456",
+		});
+		expect(config.notifications.apns?.key).toBe(pem);
+	});
+
+	it("stays off while any part of the key is missing", () => {
+		const config = withApns({ APNS_KEY: "key", APNS_KEY_ID: "KEY1234567" });
+		expect(config.pushProviders).not.toContain("apns");
+		expect(config.notifications.apns).toBeUndefined();
+	});
+});

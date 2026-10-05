@@ -18,8 +18,9 @@ export type NotificationKind = "mention" | "reply" | "message";
 export type NotificationLevel = "all" | "mentionsAndReplies";
 export type OnlineState = "online" | "away" | "dnd" | "offline";
 export type ActivityKind = "listening" | "playing" | "streaming";
-export type PushProvider = "webpush" | "fcm";
-export type PushPlatform = "web" | "ios" | "android";
+export type PushProvider = "webpush" | "fcm" | "apns";
+export type PushPlatform = "web" | "ios" | "android" | "macos";
+export type PushEnvironment = "sandbox" | "production";
 export type CredentialSource = "provisioned" | "registered";
 export type BridgeBackfillRequest = { since?: string; requestedAt: string };
 export type BridgeLink = {
@@ -434,6 +435,7 @@ export const pushSubscriptions = sqliteTable(
 		p256dh: text("p256dh"),
 		auth: text("auth"),
 		token: text("token"),
+		environment: text("environment").$type<PushEnvironment>(),
 		createdAt: timestamp("created_at").notNull(),
 	},
 	(t) => [

@@ -3,6 +3,7 @@ import { spaceRecordUri, tryParseSpaceRef } from "@colibri-social/space";
 import { cert, initializeApp } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
 import webpush from "web-push";
+import { apnsSender } from "./apns.js";
 import type { FcmConfig, NotificationsConfig, VapidConfig } from "./config.js";
 import type { NotificationDeps } from "./deps.js";
 import {
@@ -12,6 +13,7 @@ import {
 } from "./subscriptions.js";
 
 export type PushPayload = {
+	kind: string;
 	title: string;
 	body: string;
 	tag: string;
@@ -23,6 +25,8 @@ export type PushPayload = {
 		threadUri?: string;
 		messageUri?: string;
 		deepLink?: string;
+		authorName?: string;
+		authorAvatarUrl?: string;
 	};
 };
 
@@ -91,6 +95,10 @@ export const fcmSender = (credentials: FcmConfig): PushSender => {
 						...(payload.data.threadUri ? { threadUri: payload.data.threadUri } : {}),
 						...(payload.data.messageUri ? { messageUri: payload.data.messageUri } : {}),
 						...(payload.data.deepLink ? { deepLink: payload.data.deepLink } : {}),
+						...(payload.data.authorName ? { authorName: payload.data.authorName } : {}),
+						...(payload.data.authorAvatarUrl
+							? { authorAvatarUrl: payload.data.authorAvatarUrl }
+							: {}),
 					},
 				});
 				return "delivered";
@@ -103,12 +111,20 @@ export const fcmSender = (credentials: FcmConfig): PushSender => {
 	};
 };
 
-export type Senders = { webpush?: PushSender; fcm?: PushSender };
+export type Senders = { webpush?: PushSender; fcm?: PushSender; apns?: PushSender };
 
 export const createSenders = (config: NotificationsConfig): Senders => ({
 	webpush: config.vapid ? webPushSender(config.vapid) : undefined,
 	fcm: config.fcm ? fcmSender(config.fcm) : undefined,
+	apns: config.apns ? apnsSender(config.apns) : undefined,
 });
+
+const senderFor = (senders: Senders, provider: string): PushSender | undefined => {
+	if (provider === "webpush") return senders.webpush;
+	if (provider === "fcm") return senders.fcm;
+	if (provider === "apns") return senders.apns;
+	return undefined;
+};
 
 const notificationTitle = (kind: string, mentionRole: string | null): string => {
 	if (kind === "reply") return "New reply";
@@ -129,7 +145,9 @@ const messageRecordUri = (space: string, author: string, rkey: string): string |
 	return spaceRecordUri(space, author, COLLECTIONS.message, rkey);
 };
 
-export type PushRouting = { channel: string; thread?: string };
+export type PushSenderProfile = { name: string; avatar?: string };
+
+export type PushRouting = { channel: string; thread?: string; sender?: PushSenderProfile };
 
 export type PushNotification = {
 	kind: string;
@@ -144,6 +162,7 @@ export const buildPayload = (
 	message: NotifiedMessage,
 	routing: PushRouting = { channel: notification.space },
 ): PushPayload => ({
+	kind: notification.kind,
 	title: notificationTitle(notification.kind, notification.mentionRole),
 	body: message.text,
 	tag: `${notification.author}/${notification.messageRkey}`,
@@ -155,6 +174,8 @@ export const buildPayload = (
 		...(routing.thread ? { threadUri: routing.thread } : {}),
 		messageUri: messageRecordUri(notification.space, notification.author, notification.messageRkey),
 		deepLink: channelDeepLink(routing.channel),
+		...(routing.sender ? { authorName: routing.sender.name } : {}),
+		...(routing.sender?.avatar ? { authorAvatarUrl: routing.sender.avatar } : {}),
 	},
 });
 
@@ -172,7 +193,7 @@ export const deliverNotification = async (
 
 	await Promise.all(
 		subscriptions.map(async (subscription) => {
-			const sender = subscription.provider === "webpush" ? senders.webpush : senders.fcm;
+			const sender = senderFor(senders, subscription.provider);
 			if (!sender) return;
 			try {
 				const outcome = await sender.send(subscription, payload);
