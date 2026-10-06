@@ -15,6 +15,7 @@ import { createGifsClient, createPreviewCache, createTtlCache } from "@colibri-s
 import {
 	buildDidDocument,
 	IdentityResolver,
+	MissingPdsError,
 	SERVICE_FRAGMENTS,
 	ServiceAuth,
 	serviceId,
@@ -28,7 +29,7 @@ import {
 	SpaceClient,
 	SpaceCredentials,
 } from "@colibri-social/space";
-import { SpaceSyncEngine } from "@colibri-social/space-sync";
+import { RepoHostMissingError, SpaceSyncEngine } from "@colibri-social/space-sync";
 import { createVoiceSfu, voiceSfuConfigFromEnv } from "@colibri-social/voice";
 import {
 	ARTWORK_CACHE_MAX_ENTRIES,
@@ -150,7 +151,14 @@ export const createContext = async (config: Config) => {
 			threadIdleSeconds: config.THREAD_IDLE_SECONDS,
 		}),
 		hosts: {
-			hostFor: async (did) => (await identity.resolveDid(did)).pds ?? config.PDS_URL,
+			hostFor: async (did) => {
+				const resolved = await identity.resolveDid(did).catch((error: unknown) => {
+					if (error instanceof MissingPdsError)
+						throw new RepoHostMissingError(did, { cause: error });
+					throw error;
+				});
+				return resolved.pds ?? config.PDS_URL;
+			},
 		},
 		keys: {
 			signingKeyFor: async (did) => (await identity.resolveDid(did)).signingKey,

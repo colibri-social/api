@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
+import { IdentityResolutionError, MissingPdsError } from "./errors.js";
 import { type CachedIdentity, IdentityResolver, type IdentityStore } from "./resolver.js";
 
 const DID = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
@@ -132,6 +133,43 @@ describe("signingKeyFor", () => {
 		}));
 
 		await expect(resolver(store([]).store).signingKeyFor(did, false)).resolves.toBe(KEY);
+	});
+
+	it("reports a document without a PDS as MissingPdsError", async () => {
+		const did = await serveDocument((id) => ({
+			id,
+			verificationMethod: [
+				{
+					id: `${id}#atproto`,
+					type: "Multikey",
+					controller: id,
+					publicKeyMultibase: KEY.replace("did:key:", ""),
+				},
+			],
+		}));
+
+		await expect(resolver(store([]).store).resolveDid(did)).rejects.toBeInstanceOf(MissingPdsError);
+	});
+
+	it("keeps a document that fails for other reasons a plain resolution error", async () => {
+		const did = await serveDocument((id) => ({
+			id,
+			alsoKnownAs: ["at://alice.test"],
+			verificationMethod: [],
+			service: [
+				{
+					id: "#atproto_pds",
+					type: "AtprotoPersonalDataServer",
+					serviceEndpoint: "https://pds.test",
+				},
+			],
+		}));
+
+		const failure = await resolver(store([]).store)
+			.resolveDid(did)
+			.catch((error: unknown) => error);
+		expect(failure).toBeInstanceOf(IdentityResolutionError);
+		expect(failure).not.toBeInstanceOf(MissingPdsError);
 	});
 
 	it("refuses a did:key issuer", async () => {

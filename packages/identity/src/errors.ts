@@ -28,3 +28,10 @@ export class IdentityResolutionError extends Error {
 		this.name = "IdentityResolutionError";
 	}
 }
+
+export class MissingPdsError extends IdentityResolutionError {
+	constructor(subject: string, options?: { cause?: unknown }) {
+		super(subject, `${subject} publishes no #atproto_pds service`, options);
+		this.name = "MissingPdsError";
+	}
+}

@@ -51,6 +51,16 @@ export class CarTooLargeError extends Error {
 	}
 }
 
+export class RepoHostMissingError extends Error {
+	constructor(
+		readonly author: string,
+		options?: { cause?: unknown },
+	) {
+		super(`${author} publishes no repo host`, options);
+		this.name = "RepoHostMissingError";
+	}
+}
+
 const collectCar = async (
 	car: AsyncIterable<Uint8Array>,
 	limitBytes: number,
@@ -83,7 +93,13 @@ export class RepoSync {
 
 	async sync(space: string, author: string): Promise<RepoSyncOutcome> {
 		const cursor = (await this.deps.store.loadCursor(space, author)) ?? blankCursor(space, author);
-		const host = await this.deps.hosts.hostFor(author);
+		let host: string;
+		try {
+			host = await this.deps.hosts.hostFor(author);
+		} catch (error) {
+			if (error instanceof RepoHostMissingError) return this.park(space, author);
+			throw error;
+		}
 
 		if (cursor.appliedRev === null) return this.recover(space, author, host);
 
@@ -97,6 +113,12 @@ export class RepoSync {
 			if (needsRecovery(error)) return this.recover(space, author, host);
 			throw error;
 		}
+	}
+
+	private async park(space: string, author: string): Promise<RepoSyncOutcome> {
+		await this.deps.store.dropRepo(space, author);
+		await this.deps.store.saveCursor({ ...blankCursor(space, author), state: "gone" });
+		return { kind: "gone" };
 	}
 
 	private async advance(

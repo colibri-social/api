@@ -1,6 +1,6 @@
-import { IdResolver, MemoryCache } from "@atproto/identity";
+import { getPds, IdResolver, MemoryCache } from "@atproto/identity";
 import { mapWithConcurrency } from "./concurrency.js";
-import { IdentityResolutionError } from "./errors.js";
+import { IdentityResolutionError, MissingPdsError } from "./errors.js";
 
 export type AtprotoIdentity = {
 	did: string;
@@ -68,9 +68,11 @@ export class IdentityResolver {
 	}
 
 	async resolveDid(did: string, forceRefresh = false): Promise<AtprotoIdentity> {
-		const data = await this.resolver.did.resolveAtprotoData(did, forceRefresh).catch((cause) => {
-			throw new IdentityResolutionError(did, `could not resolve ${did}`, { cause });
-		});
+		const data = await this.resolver.did
+			.resolveAtprotoData(did, forceRefresh)
+			.catch(async (cause) => {
+				throw await this.resolutionFailure(did, cause);
+			});
 		const identity: AtprotoIdentity = {
 			did: data.did,
 			handle: data.handle ?? null,
@@ -137,6 +139,12 @@ export class IdentityResolver {
 			throw new IdentityResolutionError(did, `could not resolve ${did}`, { cause });
 		});
 	};
+
+	private async resolutionFailure(did: string, cause: unknown): Promise<IdentityResolutionError> {
+		const document = await this.resolver.did.resolve(did).catch(() => null);
+		if (document && !getPds(document)) return new MissingPdsError(did, { cause });
+		return new IdentityResolutionError(did, `could not resolve ${did}`, { cause });
+	}
 
 	private async verifyHandle(did: string): Promise<ResolvedHandle> {
 		const identity = await this.resolveDid(did).catch(() => null);

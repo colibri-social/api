@@ -4,7 +4,7 @@ import { RepoCommit, type SignedCommit, serializeRecord, serializeRepo } from "@
 import type { NsidString, RecordKeyString } from "@atproto/syntax";
 import { XrpcError } from "@colibri-social/space";
 import { beforeEach, describe, expect, it } from "vitest";
-import { CarTooLargeError, RepoSync } from "./repo-sync.js";
+import { CarTooLargeError, RepoHostMissingError, RepoSync } from "./repo-sync.js";
 import type { RepoChange, RepoCursor, SyncStore } from "./types.js";
 
 const SPACE = "at://did:plc:2hnjxkqm6bpuvvpjbztkxxxx/space/social.colibri.beta.channel.text/3lkabc";
@@ -367,6 +367,26 @@ describe("failures", () => {
 		);
 		expect((await sync.sync(SPACE, AUTHOR)).kind).toBe("gone");
 		expect(cursors.has(AUTHOR)).toBe(false);
+	});
+
+	it("parks a repo whose author publishes no host", async () => {
+		const { store, cursors } = await seeded();
+		const { client, calls } = fakeClient({});
+		const sync = new RepoSync({
+			client: client as never,
+			store,
+			hosts: {
+				hostFor: async (did) => {
+					throw new RepoHostMissingError(did);
+				},
+			},
+			keys: { signingKeyFor: async () => keypair.did() },
+		});
+
+		expect((await sync.sync(SPACE, AUTHOR)).kind).toBe("gone");
+		expect(cursors.get(AUTHOR)?.state).toBe("gone");
+		expect(cursors.get(AUTHOR)?.appliedRev).toBeNull();
+		expect(calls.listRepoOps + calls.getRepoCar).toBe(0);
 	});
 
 	it("propagates an outage rather than treating it as divergence", async () => {
