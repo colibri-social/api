@@ -16,10 +16,12 @@ import {
 	asRecordKey,
 	asSpaceRef,
 	asUriOrUndefined,
+	communitySpaces,
 	type social,
 } from "@colibri-social/lexicons";
 import { and, asc, eq, gt } from "drizzle-orm";
 import type { AppContext } from "../context.js";
+import { signBlobUrl } from "../media-token.js";
 import type { ActorViews } from "./actor.js";
 
 export type CommunityView = social.colibri.beta.community.defs.CommunityView;
@@ -58,13 +60,20 @@ export class CommunityViews {
 		did: string,
 		cid: string | null,
 		variant: "avatar" | "banner",
+		viewer: string,
 	): string | undefined {
 		if (!cid) return undefined;
 		const url = new URL("/xrpc/social.colibri.beta.blob.get", this.ctx.config.PUBLIC_URL);
 		url.searchParams.set("did", did);
 		url.searchParams.set("cid", cid);
+		url.searchParams.set("space", communitySpaces(did).profile);
 		url.searchParams.set("variant", variant);
-		return url.toString();
+		return signBlobUrl(
+			this.ctx.config.SIGNING_KEY,
+			url.toString(),
+			viewer,
+			Math.floor(Date.now() / 1000),
+		);
 	}
 
 	private async handleFor(row: CommunityRow): Promise<string> {
@@ -84,8 +93,8 @@ export class CommunityViews {
 			managingApp: asDid(row.managingApp ?? this.ctx.config.APPVIEW_DID),
 			name: row.name,
 			description: row.description ?? undefined,
-			picture: asUriOrUndefined(this.blobUrl(row.did, row.pictureCid, "avatar")),
-			banner: asUriOrUndefined(this.blobUrl(row.did, row.bannerCid, "banner")),
+			picture: asUriOrUndefined(this.blobUrl(row.did, row.pictureCid, "avatar", authz.actor)),
+			banner: asUriOrUndefined(this.blobUrl(row.did, row.bannerCid, "banner", authz.actor)),
 			requiresApprovalToJoin: row.requiresApproval,
 			linkEmbeds: row.linkEmbeds,
 			labelers: row.labelers.map(asDid),

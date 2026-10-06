@@ -98,7 +98,11 @@ beforeEach(async () => {
 	const loader = new CommunityLoader({ db: database.db, tables: database.tables });
 	ctx = {
 		announce: silentAnnouncer,
-		config: { PUBLIC_URL: "https://appview.test", APPVIEW_DID: "did:web:appview.test" },
+		config: {
+			PUBLIC_URL: "https://appview.test",
+			APPVIEW_DID: "did:web:appview.test",
+			SIGNING_KEY: "abcdef0123456789",
+		},
 		database,
 		loader,
 		identity: {
@@ -206,8 +210,12 @@ describe("community images", () => {
 			ref: { $link: "bafkreiuploadedblob" },
 			mimeType: "image/png",
 		});
-		expect(result.community.picture).toContain("cid=bafkreiuploadedblob");
-		expect(result.community.picture).toContain("variant=avatar");
+		const picture = new URL(result.community.picture ?? "");
+		expect(picture.searchParams.get("cid")).toBe("bafkreiuploadedblob");
+		expect(picture.searchParams.get("variant")).toBe("avatar");
+		expect(picture.searchParams.get("space")).toBe(communitySpaces(COMMUNITY).profile);
+		expect(picture.searchParams.get("viewer")).toBe(OWNER);
+		expect(picture.searchParams.get("sig")).toBeTruthy();
 	});
 
 	it("refuses a member without community.manage", async () => {

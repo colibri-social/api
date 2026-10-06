@@ -174,11 +174,19 @@ export class BlobService {
 		} catch (cause) {
 			throw new BlobUpstreamError(`failed to reach ${host}`, { cause });
 		}
-		if (response.status === 404) throw new BlobNotFoundError();
+		if (response.status === 404 || (await reportsBlobNotFound(response))) {
+			throw new BlobNotFoundError();
+		}
 		if (!response.ok) throw new BlobUpstreamError(`${host} responded ${response.status}`);
 		return response;
 	}
 }
+
+const reportsBlobNotFound = async (response: Response): Promise<boolean> => {
+	if (response.status !== 400) return false;
+	const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
+	return body?.error === "BlobNotFound";
+};
 
 const toBlobResult = (
 	entry: BlobCacheEntry,

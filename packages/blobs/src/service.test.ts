@@ -113,6 +113,32 @@ describe("BlobService", () => {
 		await expect(service.fetch({ did: DID, cid })).rejects.toBeInstanceOf(BlobNotFoundError);
 	});
 
+	it("surfaces an XRPC 400 BlobNotFound upstream as BlobNotFoundError", async () => {
+		const { fetch } = fakeFetch(() =>
+			Response.json({ error: "BlobNotFound", message: "Blob not found" }, { status: 400 }),
+		);
+		const service = new BlobService({
+			spaceClient: {} as unknown as SpaceClient,
+			hosts: staticHosts(),
+			fetch,
+		});
+
+		await expect(service.fetch({ did: DID, cid })).rejects.toBeInstanceOf(BlobNotFoundError);
+	});
+
+	it("keeps any other upstream 400 a BlobUpstreamError", async () => {
+		const { fetch } = fakeFetch(() =>
+			Response.json({ error: "InvalidRequest", message: "bad cid" }, { status: 400 }),
+		);
+		const service = new BlobService({
+			spaceClient: {} as unknown as SpaceClient,
+			hosts: staticHosts(),
+			fetch,
+		});
+
+		await expect(service.fetch({ did: DID, cid })).rejects.toBeInstanceOf(BlobUpstreamError);
+	});
+
 	it("surfaces an upstream 500 as BlobUpstreamError", async () => {
 		const { fetch } = fakeFetch(() => new Response(null, { status: 500 }));
 		const service = new BlobService({
