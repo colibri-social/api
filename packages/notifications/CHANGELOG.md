@@ -1,5 +1,23 @@
 # @colibri-social/notifications
 
+## 1.4.0
+
+### Minor Changes
+
+- 8e3c854: Adds direct APNs push for iOS and macOS, configured with `APNS_KEY`, `APNS_KEY_ID` and `APNS_TEAM_ID`, and includes the sender's name and avatar in every push.
+
+### Patch Changes
+
+- 08eebc0: Routes pushes for thread messages to the parent channel and thread, and sends Android pushes as data-only messages so tapping one opens the right message.
+- Updated dependencies [8e3c854]
+- Updated dependencies [6b3d5ef]
+- Updated dependencies [ef70f83]
+- Updated dependencies [6b3d5ef]
+  - @colibri-social/appview-db@0.8.0
+  - @colibri-social/lexicons@2.13.0
+  - @colibri-social/projections@1.7.0
+  - @colibri-social/space@0.5.0
+
 ## 1.3.3
 
 ### Patch Changes

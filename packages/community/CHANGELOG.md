@@ -1,5 +1,25 @@
 # @colibri-social/community
 
+## 2.7.0
+
+### Minor Changes
+
+- 6b3d5ef: Adds role badges and a Space-wide name colour override. A role carries an optional `badge`, either an icon from the client's curated set with an optional colour or an uploaded image of up to 256 KB. `role.create` and `role.update` take an icon badge, `role.update` clears one with `removeBadge`, and the new `role.putBadgeImage` uploads an image badge as the community. Role views return the badge with image badges served through a signed members-space link. The community settings record, `community.create`, `community.update` and the community view gain `overrideUserNameColors`, which hides members' own name colours in chat so only role colours show, and a member without a coloured role gets the default name colour.
+
+### Patch Changes
+
+- ef70f83: Targets the 2026-10-01 atproto Spaces alpha. Space credentials are bound with HTTP Message Signatures and carry the audience of each request, a revoked or rejected credential is replaced once through a fresh delegation, sync follows `spaceRev` and catches up from `listRepos` after a gap, and `createSpace` sends `spaceType`. The vendored space lexicons move to atproto `679724ad`.
+- Updated dependencies [8e3c854]
+- Updated dependencies [5640cde]
+- Updated dependencies [6b3d5ef]
+- Updated dependencies [ef70f83]
+- Updated dependencies [6b3d5ef]
+  - @colibri-social/appview-db@0.8.0
+  - @colibri-social/lexicons@2.13.0
+  - @colibri-social/identity@0.2.1
+  - @colibri-social/projections@1.7.0
+  - @colibri-social/space@0.5.0
+
 ## 2.6.1
 
 ### Patch Changes
