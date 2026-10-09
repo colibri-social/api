@@ -130,7 +130,14 @@ export const handlePutMutes = async (
 export const handleSetStatus = async (
 	ctx: AppContext,
 	callerDid: string,
-	input: { text?: string; emoji?: string; onlineState?: string },
+	input: {
+		text?: string;
+		emoji?: string;
+		expiresAt?: string;
+		removeExpiresAt?: boolean;
+		showWhileOffline?: boolean;
+		onlineState?: string;
+	},
 ): Promise<{ presence: Presence }> => {
 	const onlineState =
 		input.onlineState === undefined ? undefined : assertOnlineState(input.onlineState);
@@ -147,6 +154,9 @@ export const handleSetStatus = async (
 		requestedState: onlineState ?? existing?.requestedState ?? null,
 		statusText: input.text ?? existing?.statusText ?? null,
 		statusEmoji: input.emoji ?? existing?.statusEmoji ?? null,
+		statusExpiresAt:
+			input.expiresAt ?? (input.removeExpiresAt ? null : (existing?.statusExpiresAt ?? null)),
+		statusShowWhileOffline: input.showWhileOffline ?? existing?.statusShowWhileOffline ?? false,
 		viewingChannel: existing?.viewingChannel ?? null,
 		updatedAt: new Date().toISOString(),
 	};

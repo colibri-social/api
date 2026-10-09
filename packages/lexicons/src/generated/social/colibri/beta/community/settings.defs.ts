@@ -29,6 +29,11 @@ type Main = { $type: "social.colibri.beta.community.settings";
   "linkEmbeds"?:boolean;
 
   /**
+   * Whether only role colours are shown in chat. Members' own name colours are hidden, and a member without a coloured role shows the default name colour. Defaults to false.
+   */
+  "overrideUserNameColors"?:boolean;
+
+  /**
    * DIDs whose labels this community honours, in addition to the community's own. Empty means the community labels its content itself.
    */
   "labelers"?:(l.DidString)[] };
@@ -36,7 +41,7 @@ type Main = { $type: "social.colibri.beta.community.settings";
 export type { Main };
 
 /** A community's operational settings. Separate from the profile record so the two have different read audiences. */
-const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"categoryOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), ),"requiresApprovalToJoin":/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false),"linkEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), true)),"labelers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ))}));
+const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"categoryOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), ),"requiresApprovalToJoin":/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false),"linkEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), true)),"overrideUserNameColors":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"labelers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ))}));
 
 export { main };
 

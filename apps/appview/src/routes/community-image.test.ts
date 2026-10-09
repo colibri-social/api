@@ -348,3 +348,43 @@ describe("community images, projected through the real writer", () => {
 		expect((await communityRow())?.bannerCid).toBeNull();
 	});
 });
+
+describe("the name colour override, projected through the real writer", () => {
+	beforeEach(() => {
+		useRealWriter();
+	});
+
+	it("writes the override to the settings record, the row and the view, and clears it again", async () => {
+		await setRecord({ $type: COLLECTIONS.community, name: "Test Community" });
+		const communities = new CommunityViews(ctx, new ActorViews(ctx));
+
+		const on = await handleUpdateCommunity(ctx, communities, OWNER, {
+			community: COMMUNITY,
+			overrideUserNameColors: true,
+		});
+		const settingsOn = writes
+			.filter((w) => w.record.$type === COLLECTIONS.communitySettings)
+			.at(-1)?.record;
+		expect(settingsOn?.overrideUserNameColors).toBe(true);
+		expect((await communityRow())?.overrideUserNameColors).toBe(true);
+		expect(on.community.overrideUserNameColors).toBe(true);
+
+		const renamed = await handleUpdateCommunity(ctx, communities, OWNER, {
+			community: COMMUNITY,
+			name: "Renamed",
+		});
+		expect(renamed.community.overrideUserNameColors).toBe(true);
+		expect((await communityRow())?.overrideUserNameColors).toBe(true);
+
+		const off = await handleUpdateCommunity(ctx, communities, OWNER, {
+			community: COMMUNITY,
+			overrideUserNameColors: false,
+		});
+		const settingsOff = writes
+			.filter((w) => w.record.$type === COLLECTIONS.communitySettings)
+			.at(-1)?.record;
+		expect(settingsOff).not.toHaveProperty("overrideUserNameColors");
+		expect((await communityRow())?.overrideUserNameColors).toBe(false);
+		expect(off.community.overrideUserNameColors).toBe(false);
+	});
+});

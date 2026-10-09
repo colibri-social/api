@@ -1,4 +1,6 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
+import type { RoleBadge } from "@colibri-social/appview-db";
+import { sniffMimeType } from "@colibri-social/blobs";
 import {
 	type ActorAuthz,
 	type CommunityWriter,
@@ -18,6 +20,13 @@ import { CommunityViews, type RoleView } from "../views/community.js";
 import type { RouteDeps } from "./types.js";
 
 type RoleChannelOverrideInput = { channel: string; allow?: string[]; deny?: string[] };
+type IconBadgeInput = { icon: string; color?: string };
+
+const ICON_BADGE = "social.colibri.beta.role#iconBadge";
+const IMAGE_BADGE = "social.colibri.beta.role#imageBadge";
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+const BADGE_IMAGE_MAX_BYTES = 256 * 1024;
+const BADGE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
 const communityNotFound = () =>
 	new InvalidRequestError("no community exists at that identifier", "CommunityNotFound");
@@ -29,6 +38,47 @@ const roleProtected = (action: "modified" | "deleted") =>
 	new InvalidRequestError(`this role is protected and cannot be ${action}`, "RoleProtected");
 
 const roleHierarchy = (message: string) => new InvalidRequestError(message, "RoleHierarchy");
+
+const invalidBadge = (message: string) => new InvalidRequestError(message, "InvalidRequest");
+
+const unsupportedImage = (what: string) =>
+	new InvalidRequestError(`${what} is not an accepted badge image type`, "UnsupportedImage");
+
+const imageTooLarge = () =>
+	new InvalidRequestError("a role badge image may not exceed 256 KB", "ImageTooLarge");
+
+const iconBadge = (input: IconBadgeInput): RoleBadge => {
+	const icon = input.icon.trim();
+	if (!icon) throw invalidBadge("a badge icon needs an identifier");
+	if (input.color !== undefined && !HEX_COLOR.test(input.color)) {
+		throw invalidBadge("a badge colour must be a hex colour as #rrggbb");
+	}
+	return { kind: "icon", icon, ...(input.color ? { color: input.color.toLowerCase() } : {}) };
+};
+
+export const badgeRecord = (badge: RoleBadge | null): Record<string, unknown> => {
+	if (!badge) return {};
+	if (badge.kind === "icon") {
+		return {
+			badge: {
+				$type: ICON_BADGE,
+				icon: badge.icon,
+				...(badge.color ? { color: badge.color } : {}),
+			},
+		};
+	}
+	return {
+		badge: {
+			$type: IMAGE_BADGE,
+			image: {
+				$type: "blob",
+				ref: { $link: badge.cid },
+				mimeType: badge.mimeType,
+				size: badge.size,
+			},
+		},
+	};
+};
 
 const forbidden = (permission: string) =>
 	new InvalidRequestError(`you lack the ${permission} permission`, "Forbidden");
@@ -91,12 +141,14 @@ export const handleCreateRole = async (
 		position?: number;
 		hoisted?: boolean;
 		mentionable?: boolean;
+		badge?: IconBadgeInput;
 	},
 ): Promise<{ role: RoleView }> => {
 	try {
 		await requireCommunity(ctx, community);
 		const authz = await requirePermission(ctx, community, actor);
 
+		const badge = input.badge ? iconBadge(input.badge) : null;
 		const position = input.position ?? 0;
 		if (!outranksPosition(authz, position)) {
 			throw roleHierarchy("you cannot create a role at or above your own highest role's position");
@@ -117,24 +169,29 @@ export const handleCreateRole = async (
 				mentionable: input.mentionable ?? false,
 				protected: false,
 				...(input.color ? { color: input.color } : {}),
+				...badgeRecord(badge),
 			},
 		});
 
 		ctx.announce.toCommunity(community, roleEvent("create", community, rkey));
 
 		return {
-			role: communities.role({
-				community,
-				rkey,
-				name: input.name,
-				color: input.color ?? null,
-				permissions: input.permissions,
-				position,
-				hoisted: input.hoisted ?? false,
-				mentionable: input.mentionable ?? false,
-				protected: false,
-				channelOverrides: [],
-			}),
+			role: communities.role(
+				{
+					community,
+					rkey,
+					name: input.name,
+					color: input.color ?? null,
+					badge,
+					permissions: input.permissions,
+					position,
+					hoisted: input.hoisted ?? false,
+					mentionable: input.mentionable ?? false,
+					protected: false,
+					channelOverrides: [],
+				},
+				actor,
+			),
 		};
 	} catch (error) {
 		throw toXrpcError(error);
@@ -156,6 +213,8 @@ export const handleUpdateRole = async (
 		hoisted?: boolean;
 		mentionable?: boolean;
 		channelOverrides?: RoleChannelOverrideInput[];
+		badge?: IconBadgeInput;
+		removeBadge?: boolean;
 	},
 ): Promise<{ role: RoleView }> => {
 	try {
@@ -176,6 +235,11 @@ export const handleUpdateRole = async (
 		if (input.permissions) assertHoldsPermissions(authz, input.permissions);
 		if (input.channelOverrides) assertHoldsOverridePermissions(authz, input.channelOverrides);
 
+		const badge = input.badge
+			? iconBadge(input.badge)
+			: input.removeBadge
+				? null
+				: (existing.badge ?? null);
 		const name = input.name ?? existing.name;
 		const color = input.color ?? existing.color ?? undefined;
 		const permissions = input.permissions ?? existing.permissions;
@@ -203,23 +267,28 @@ export const handleUpdateRole = async (
 				protected: false,
 				channelOverrides,
 				...(color ? { color } : {}),
+				...badgeRecord(badge),
 			},
 		});
 
 		ctx.announce.toCommunity(community, roleEvent("update", community, rkey));
 		return {
-			role: communities.role({
-				community,
-				rkey,
-				name,
-				color: color ?? null,
-				permissions,
-				position,
-				hoisted,
-				mentionable,
-				protected: false,
-				channelOverrides,
-			}),
+			role: communities.role(
+				{
+					community,
+					rkey,
+					name,
+					color: color ?? null,
+					badge,
+					permissions,
+					position,
+					hoisted,
+					mentionable,
+					protected: false,
+					channelOverrides,
+				},
+				actor,
+			),
 		};
 	} catch (error) {
 		throw toXrpcError(error);
@@ -278,6 +347,101 @@ export const handleDeleteRole = async (
 	}
 };
 
+const readBadgeBytes = async (
+	source: AsyncIterable<Uint8Array> | Uint8Array,
+): Promise<Uint8Array> => {
+	if (source instanceof Uint8Array) {
+		if (source.byteLength > BADGE_IMAGE_MAX_BYTES) throw imageTooLarge();
+		return source;
+	}
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	for await (const chunk of source) {
+		total += chunk.byteLength;
+		if (total > BADGE_IMAGE_MAX_BYTES) throw imageTooLarge();
+		chunks.push(chunk);
+	}
+	const out = new Uint8Array(total);
+	let offset = 0;
+	for (const chunk of chunks) {
+		out.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return out;
+};
+
+export const handlePutRoleBadgeImage = async (
+	ctx: AppContext,
+	writer: CommunityWriter,
+	communities: CommunityViews,
+	community: string,
+	actor: string,
+	rkey: string,
+	body: AsyncIterable<Uint8Array> | Uint8Array,
+): Promise<{ role: RoleView }> => {
+	try {
+		await requireCommunity(ctx, community);
+		const authz = await requirePermission(ctx, community, actor);
+
+		const existing = await loadRoleRow(ctx, community, rkey);
+		if (!existing) throw roleNotFound();
+		if (existing.protected) throw roleProtected("modified");
+		if (!outranksPosition(authz, existing.position)) {
+			throw roleHierarchy("this role is at or above your own highest role's position");
+		}
+
+		const bytes = await readBadgeBytes(body);
+		if (bytes.byteLength === 0) throw unsupportedImage("an empty body");
+
+		let mimeType: string;
+		try {
+			mimeType = await sniffMimeType(bytes);
+		} catch {
+			throw unsupportedImage("the supplied bytes");
+		}
+		if (!BADGE_IMAGE_TYPES.has(mimeType)) throw unsupportedImage(mimeType);
+
+		const blob = await writer.uploadBlob(community, bytes, mimeType);
+		const badge: RoleBadge = {
+			kind: "image",
+			cid: blob.ref.$link,
+			mimeType: blob.mimeType,
+			size: blob.size,
+		};
+
+		const channelOverrides = existing.channelOverrides.map((override) => ({
+			channel: override.channel,
+			allow: override.allow ?? [],
+			deny: override.deny ?? [],
+		}));
+
+		await writer.put(community, {
+			space: writer.spaces(community).members,
+			collection: COLLECTIONS.role,
+			rkey,
+			record: {
+				$type: COLLECTIONS.role,
+				name: existing.name,
+				permissions: existing.permissions,
+				position: existing.position,
+				hoisted: existing.hoisted,
+				mentionable: existing.mentionable,
+				protected: false,
+				channelOverrides,
+				...(existing.color ? { color: existing.color } : {}),
+				...badgeRecord(badge),
+			},
+		});
+
+		ctx.announce.toCommunity(community, roleEvent("update", community, rkey));
+		return {
+			role: communities.role({ ...existing, badge, channelOverrides }, actor),
+		};
+	} catch (error) {
+		throw toXrpcError(error);
+	}
+};
+
 export const registerRoleRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 	const actors = new ActorViews(ctx);
 	const communities = new CommunityViews(ctx, actors);
@@ -299,6 +463,7 @@ export const registerRoleRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 					position: input.body.position,
 					hoisted: input.body.hoisted,
 					mentionable: input.body.mentionable,
+					badge: input.body.badge,
 				},
 			),
 		}),
@@ -323,7 +488,25 @@ export const registerRoleRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 					hoisted: input.body.hoisted,
 					mentionable: input.body.mentionable,
 					channelOverrides: input.body.channelOverrides,
+					badge: input.body.badge,
+					removeBadge: input.body.removeBadge,
 				},
+			),
+		}),
+	});
+
+	route(server, social.colibri.beta.role.putBadgeImage, {
+		auth: auth.required,
+		handler: async ({ params, input, auth: caller }) => ({
+			encoding: "application/json" as const,
+			body: await handlePutRoleBadgeImage(
+				ctx,
+				ctx.writer,
+				communities,
+				params.community,
+				caller.credentials.did,
+				params.role,
+				input.body as AsyncIterable<Uint8Array> | Uint8Array,
 			),
 		}),
 	});

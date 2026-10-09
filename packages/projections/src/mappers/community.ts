@@ -1,3 +1,4 @@
+import type { RoleBadge } from "@colibri-social/appview-db";
 import {
 	blobCid,
 	COLLECTIONS,
@@ -11,6 +12,33 @@ import type { ProjectionDeps, RecordRef } from "../context.js";
 import { communityOf, type Projector } from "../projector.js";
 
 const isSelf = (ref: RecordRef) => ref.rkey === SELF;
+
+const ICON_BADGE = "social.colibri.beta.role#iconBadge";
+const IMAGE_BADGE = "social.colibri.beta.role#imageBadge";
+
+export const roleBadgeFromRecord = (badge: unknown): RoleBadge | null => {
+	if (!badge || typeof badge !== "object") return null;
+	const value = badge as { $type?: unknown; icon?: unknown; color?: unknown; image?: unknown };
+	if (value.$type === ICON_BADGE && typeof value.icon === "string") {
+		return {
+			kind: "icon",
+			icon: value.icon,
+			...(typeof value.color === "string" ? { color: value.color } : {}),
+		};
+	}
+	if (value.$type === IMAGE_BADGE) {
+		const cid = blobCid(value.image);
+		if (!cid) return null;
+		const image = value.image as { mimeType?: unknown; size?: unknown };
+		return {
+			kind: "image",
+			cid,
+			mimeType: typeof image.mimeType === "string" ? image.mimeType : "application/octet-stream",
+			size: typeof image.size === "number" ? image.size : 0,
+		};
+	}
+	return null;
+};
 
 const ensureCommunityRow = async (deps: ProjectionDeps, community: string) => {
 	const spaces = communitySpaces(community);
@@ -70,6 +98,7 @@ export const communitySettings: Projector<social.colibri.beta.community.settings
 			.set({
 				requiresApproval: value.requiresApprovalToJoin,
 				linkEmbeds: value.linkEmbeds ?? true,
+				overrideUserNameColors: value.overrideUserNameColors ?? false,
 				labelers: value.labelers ?? [],
 				indexedAt: deps.now(),
 			})
@@ -93,7 +122,12 @@ export const communitySettings: Projector<social.colibri.beta.community.settings
 		const community = communityOf(ref.space);
 		await deps.db
 			.update(deps.tables.communities)
-			.set({ requiresApproval: false, linkEmbeds: true, labelers: [] })
+			.set({
+				requiresApproval: false,
+				linkEmbeds: true,
+				overrideUserNameColors: false,
+				labelers: [],
+			})
 			.where(eq(deps.tables.communities.did, community));
 	},
 };
@@ -163,6 +197,7 @@ export const role: Projector<social.colibri.beta.role.Main> = {
 			rkey: ref.rkey,
 			name: value.name,
 			color: value.color ?? null,
+			badge: roleBadgeFromRecord(value.badge),
 			permissions: [...value.permissions],
 			position: value.position,
 			hoisted: value.hoisted ?? false,

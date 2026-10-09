@@ -124,12 +124,22 @@ type Status = { $type?: "social.colibri.beta.actor.defs#status";
   /**
    * An emoji shown beside the status.
    */
-  "emoji"?:string };
+  "emoji"?:string;
+
+  /**
+   * When the status clears. The AppView stops returning the status once this time passes. Absent means it never expires.
+   */
+  "expiresAt"?:l.DatetimeString;
+
+  /**
+   * Whether a client shows the status while the user is offline.
+   */
+  "showWhileOffline"?:boolean };
 
 export type { Status };
 
 /** A user's status line. */
-const status = /*#__PURE__*/ l.typedObject<Status>($nsid, "status", /*#__PURE__*/ l.object({"text":/*#__PURE__*/ l.string({"maxLength":32}),"emoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())}));
+const status = /*#__PURE__*/ l.typedObject<Status>($nsid, "status", /*#__PURE__*/ l.object({"text":/*#__PURE__*/ l.string({"maxLength":64}),"emoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"expiresAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"showWhileOffline":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false))}));
 
 export { status };
 

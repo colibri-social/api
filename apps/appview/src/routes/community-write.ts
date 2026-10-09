@@ -84,7 +84,12 @@ const provisionedView = async (
 	communities: CommunityViews,
 	callerDid: string,
 	provisioned: ProvisionedCommunity,
-	input: { name: string; description?: string; requiresApprovalToJoin?: boolean },
+	input: {
+		name: string;
+		description?: string;
+		requiresApprovalToJoin?: boolean;
+		overrideUserNameColors?: boolean;
+	},
 	managingApp: string,
 ): Promise<{ community: CommunityView }> => {
 	const now = new Date().toISOString();
@@ -98,6 +103,7 @@ const provisionedView = async (
 		bannerCid: null,
 		requiresApproval: input.requiresApprovalToJoin ?? false,
 		linkEmbeds: true,
+		overrideUserNameColors: input.overrideUserNameColors ?? false,
 		labelers: [] as string[],
 		migratedFrom: null,
 		profileSpace: provisioned.spaces.profile,
@@ -169,7 +175,12 @@ export const handleCreateCommunity = async (
 	ctx: AppContext,
 	communities: CommunityViews,
 	callerDid: string,
-	input: { name: string; description?: string; requiresApprovalToJoin?: boolean },
+	input: {
+		name: string;
+		description?: string;
+		requiresApprovalToJoin?: boolean;
+		overrideUserNameColors?: boolean;
+	},
 ): Promise<{ community: CommunityView }> => {
 	let provisioned: ProvisionedCommunity;
 	try {
@@ -179,6 +190,7 @@ export const handleCreateCommunity = async (
 				description: input.description,
 				creator: callerDid,
 				requiresApprovalToJoin: input.requiresApprovalToJoin,
+				overrideUserNameColors: input.overrideUserNameColors,
 			},
 			(progress) => ctx.announce.toUser(callerDid, communityProgressEvent(progress)),
 		);
@@ -261,6 +273,7 @@ export const handleUpdateCommunity = async (
 		description?: string;
 		requiresApprovalToJoin?: boolean;
 		linkEmbeds?: boolean;
+		overrideUserNameColors?: boolean;
 		labelers?: string[];
 	},
 ): Promise<{ community: CommunityView }> => {
@@ -272,6 +285,7 @@ export const handleUpdateCommunity = async (
 	const nextDescription = input.description ?? row.description ?? undefined;
 	const nextRequiresApproval = input.requiresApprovalToJoin ?? row.requiresApproval;
 	const nextLinkEmbeds = input.linkEmbeds ?? row.linkEmbeds;
+	const nextOverrideUserNameColors = input.overrideUserNameColors ?? row.overrideUserNameColors;
 	const nextLabelers = input.labelers ?? row.labelers;
 
 	const spaces = communitySpaces(input.community);
@@ -306,6 +320,7 @@ export const handleUpdateCommunity = async (
 			categoryOrder: categories.map((category) => category.rkey),
 			requiresApprovalToJoin: nextRequiresApproval,
 			linkEmbeds: nextLinkEmbeds,
+			overrideUserNameColors: nextOverrideUserNameColors,
 			labelers: nextLabelers,
 		});
 	} catch (error) {
@@ -321,6 +336,7 @@ export const handleUpdateCommunity = async (
 		description: nextDescription ?? null,
 		requiresApproval: nextRequiresApproval,
 		linkEmbeds: nextLinkEmbeds,
+		overrideUserNameColors: nextOverrideUserNameColors,
 		labelers: nextLabelers,
 	};
 	const total = await countMembers(ctx, input.community);
@@ -789,6 +805,7 @@ export const handleMigrateCommunity = async (
 		bannerCid: null,
 		requiresApproval: false,
 		linkEmbeds: true,
+		overrideUserNameColors: false,
 		labelers: [] as string[],
 		migratedFrom: legacyUri(legacyDid),
 		profileSpace: spaces.profile,

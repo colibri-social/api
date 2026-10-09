@@ -15,7 +15,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"text":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":32})),"emoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"onlineState":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["online","away","dnd","offline"]}>())});
+export const $input = /*#__PURE__*/ l.jsonPayload({"text":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":64})),"emoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"expiresAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"removeExpiresAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"showWhileOffline":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"onlineState":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["online","away","dnd","offline"]}>())});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;

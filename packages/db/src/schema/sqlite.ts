@@ -13,6 +13,9 @@ const flag = (name: string) => integer(name, { mode: "boolean" });
 
 export type SpaceRepoState = "pending" | "active" | "diverged" | "error" | "gone";
 export type RoleChannelOverride = { channel: string; allow: string[]; deny: string[] };
+export type RoleBadge =
+	| { kind: "icon"; icon: string; color?: string }
+	| { kind: "image"; cid: string; mimeType: string; size: number };
 export type ModerationAction = "ban" | "unban" | "kick";
 export type NotificationKind = "mention" | "reply" | "message";
 export type NotificationLevel = "all" | "mentionsAndReplies";
@@ -125,6 +128,7 @@ export const communities = sqliteTable(
 		bannerCid: text("banner_cid"),
 		requiresApproval: flag("requires_approval").notNull().default(false),
 		linkEmbeds: flag("link_embeds").notNull().default(true),
+		overrideUserNameColors: flag("override_user_name_colors").notNull().default(false),
 		labelers: json<string[]>("labelers")
 			.notNull()
 			.$defaultFn(() => []),
@@ -189,6 +193,7 @@ export const roles = sqliteTable(
 		rkey: text("rkey").notNull(),
 		name: text("name").notNull(),
 		color: text("color"),
+		badge: json<RoleBadge>("badge"),
 		permissions: json<string[]>("permissions")
 			.notNull()
 			.$defaultFn(() => []),
@@ -481,6 +486,8 @@ export const userPresence = sqliteTable("user_presence", {
 	requestedState: text("requested_state").$type<OnlineState>(),
 	statusText: text("status_text"),
 	statusEmoji: text("status_emoji"),
+	statusExpiresAt: timestamp("status_expires_at"),
+	statusShowWhileOffline: flag("status_show_while_offline").notNull().default(false),
 	voiceChannel: text("voice_channel"),
 	voiceMuted: flag("voice_muted"),
 	voiceDeafened: flag("voice_deafened"),

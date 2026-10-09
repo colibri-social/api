@@ -327,4 +327,60 @@ describe("setStatus", () => {
 			"teal.fm",
 		]);
 	});
+
+	it("accepts a 64 byte status text", async () => {
+		const text = "a".repeat(64);
+		const body = await handleSetStatus(ctx, CALLER, { text });
+
+		asSetStatusOutput(body);
+		expect(body.presence.status?.text).toBe(text);
+	});
+
+	it("stores an expiry and keeps it across partial updates", async () => {
+		const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
+		await handleSetStatus(ctx, CALLER, { text: "in a meeting", expiresAt });
+		const body = await handleSetStatus(ctx, CALLER, { emoji: "📅" });
+
+		asSetStatusOutput(body);
+		expect(body.presence.status).toMatchObject({ text: "in a meeting", emoji: "📅", expiresAt });
+	});
+
+	it("removes the expiry with removeExpiresAt", async () => {
+		const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
+		await handleSetStatus(ctx, CALLER, { text: "in a meeting", expiresAt });
+		const body = await handleSetStatus(ctx, CALLER, { removeExpiresAt: true });
+
+		expect(body.presence.status?.text).toBe("in a meeting");
+		expect(body.presence.status?.expiresAt).toBeUndefined();
+	});
+
+	it("prefers expiresAt over removeExpiresAt", async () => {
+		const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
+		const body = await handleSetStatus(ctx, CALLER, {
+			text: "in a meeting",
+			expiresAt,
+			removeExpiresAt: true,
+		});
+
+		expect(body.presence.status?.expiresAt).toBe(expiresAt);
+	});
+
+	it("omits a status whose expiry has passed", async () => {
+		const body = await handleSetStatus(ctx, CALLER, {
+			text: "gone",
+			expiresAt: new Date(Date.now() - 1000).toISOString(),
+		});
+
+		asSetStatusOutput(body);
+		expect(body.presence.status).toBeUndefined();
+	});
+
+	it("stores showWhileOffline and keeps it across partial updates", async () => {
+		await handleSetStatus(ctx, CALLER, { text: "travelling", showWhileOffline: true });
+		const kept = await handleSetStatus(ctx, CALLER, { emoji: "✈️" });
+		expect(kept.presence.status?.showWhileOffline).toBe(true);
+
+		const cleared = await handleSetStatus(ctx, CALLER, { showWhileOffline: false });
+		expect(cleared.presence.status?.showWhileOffline).toBe(false);
+	});
 });

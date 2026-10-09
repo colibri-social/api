@@ -24,6 +24,11 @@ type Main = { $type: "social.colibri.beta.role";
   "color"?:string;
 
   /**
+   * A small badge shown next to the names of members holding this role.
+   */
+  "badge"?:l.$Typed<IconBadge> | l.$Typed<ImageBadge> | l.Unknown$TypedObject;
+
+  /**
    * Permissions granted by this role.
    */
   "permissions":(string)[];
@@ -56,7 +61,7 @@ type Main = { $type: "social.colibri.beta.role";
 export type { Main };
 
 /** A named bundle of permissions assignable to community members. */
-const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"color":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":7})),"permissions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ),"position":/*#__PURE__*/ l.integer(),"hoisted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"mentionable":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"protected":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"channelOverrides":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ChannelOverride>((() => channelOverride) as any), ))}));
+const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"color":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":7})),"badge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<IconBadge>((() => iconBadge) as any),/*#__PURE__*/ l.typedRef<ImageBadge>((() => imageBadge) as any)], false)),"permissions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ),"position":/*#__PURE__*/ l.integer(),"hoisted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"mentionable":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"protected":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"channelOverrides":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ChannelOverride>((() => channelOverride) as any), ))}));
 
 export { main };
 
@@ -102,3 +107,38 @@ export type { ChannelOverride };
 const channelOverride = /*#__PURE__*/ l.typedObject<ChannelOverride>($nsid, "channelOverride", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"record-key"}),"allow":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), )),"deny":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ))}));
 
 export { channelOverride };
+
+/** A badge drawn from the client's curated icon set. */
+type IconBadge = { $type?: "social.colibri.beta.role#iconBadge";
+
+  /**
+   * The icon's identifier in the curated set, for example shield-check.
+   */
+  "icon":string;
+
+  /**
+   * Hex colour as #rrggbb. Absent means the role colour, or the client's default badge colour when the role has none.
+   */
+  "color"?:string };
+
+export type { IconBadge };
+
+/** A badge drawn from the client's curated icon set. */
+const iconBadge = /*#__PURE__*/ l.typedObject<IconBadge>($nsid, "iconBadge", /*#__PURE__*/ l.object({"icon":/*#__PURE__*/ l.string({"minLength":1,"maxLength":64}),"color":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":7}))}));
+
+export { iconBadge };
+
+/** A badge drawn from an uploaded image. */
+type ImageBadge = { $type?: "social.colibri.beta.role#imageBadge";
+
+  /**
+   * A square image, shown at about 16 pixels.
+   */
+  "image":l.BlobRef };
+
+export type { ImageBadge };
+
+/** A badge drawn from an uploaded image. */
+const imageBadge = /*#__PURE__*/ l.typedObject<ImageBadge>($nsid, "imageBadge", /*#__PURE__*/ l.object({"image":/*#__PURE__*/ l.blob({"accept":["image/jpeg","image/png","image/gif","image/webp"],"maxSize":262144})}));
+
+export { imageBadge };

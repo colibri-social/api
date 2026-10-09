@@ -24,6 +24,21 @@ export const effectiveOnlineState = (row: PresenceRow): OnlineState =>
 export type PresenceParts = PresenceRow & {
 	statusText: string | null;
 	statusEmoji: string | null;
+	statusExpiresAt: string | null;
+	statusShowWhileOffline: boolean;
+};
+
+export const isStatusExpired = (row: PresenceParts, now: number = Date.now()): boolean =>
+	row.statusExpiresAt !== null && new Date(row.statusExpiresAt).getTime() <= now;
+
+const statusOf = (row: PresenceParts): social.colibri.beta.actor.defs.Status | undefined => {
+	if (!row.statusText || isStatusExpired(row)) return undefined;
+	return {
+		text: row.statusText,
+		emoji: row.statusEmoji ?? undefined,
+		expiresAt: row.statusExpiresAt ?? undefined,
+		showWhileOffline: row.statusShowWhileOffline,
+	} as social.colibri.beta.actor.defs.Status;
 };
 
 export const presenceOf = (
@@ -34,9 +49,7 @@ export const presenceOf = (
 ): social.colibri.beta.actor.defs.Presence =>
 	({
 		onlineState: effectiveOnlineState(row),
-		status: row.statusText
-			? { text: row.statusText, emoji: row.statusEmoji ?? undefined }
-			: undefined,
+		status: statusOf(row),
 		voice: liveVoiceState(ctx.voice, did),
 		activities,
 	}) as social.colibri.beta.actor.defs.Presence;
@@ -131,6 +144,8 @@ export class PresenceTracker {
 			requestedState: requestedState ?? existing?.requestedState ?? null,
 			statusText: existing?.statusText ?? null,
 			statusEmoji: existing?.statusEmoji ?? null,
+			statusExpiresAt: existing?.statusExpiresAt ?? null,
+			statusShowWhileOffline: existing?.statusShowWhileOffline ?? false,
 			viewingChannel: derivedState === OFFLINE ? null : (existing?.viewingChannel ?? null),
 			updatedAt: new Date().toISOString(),
 		};

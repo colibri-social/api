@@ -108,7 +108,7 @@ const fakeAdmin = (): PdsAdmin =>
 		},
 	}) as unknown as PdsAdmin;
 
-const create = (name: string) =>
+const create = (name: string, settings: { overrideUserNameColors?: boolean } = {}) =>
 	new CommunityProvisioner({
 		pds: clientFor(OURS),
 		admin: fakeAdmin(),
@@ -117,7 +117,7 @@ const create = (name: string) =>
 		handleDomain: "colibri.test",
 		appviewService: APPVIEW_SERVICE,
 		now: () => new Date("2026-08-23T00:00:00.000Z"),
-	}).create({ name, creator: CREATOR });
+	}).create({ name, creator: CREATOR, ...settings });
 
 const provisioner = () =>
 	new CommunityProvisioner({
@@ -381,5 +381,20 @@ describe("channel spaces", () => {
 		expect(forgottenSpaces).toContain(provisioned.channels.text);
 		expect(forgottenSpaces).toContain(provisioned.channels.voice);
 		expect(forgotten).toEqual([COMMUNITY]);
+	});
+});
+
+describe("seeding settings", () => {
+	const settingsRecord = () =>
+		writes.find((write) => write.collection === "social.colibri.beta.community.settings")?.record;
+
+	it("leaves the name colour override off unless asked", async () => {
+		await create("Plain");
+		expect(settingsRecord()).not.toHaveProperty("overrideUserNameColors");
+	});
+
+	it("turns the name colour override on when the creator asks for it", async () => {
+		await create("Coloured", { overrideUserNameColors: true });
+		expect(settingsRecord()?.overrideUserNameColors).toBe(true);
 	});
 });

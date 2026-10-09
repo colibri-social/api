@@ -4,6 +4,7 @@
 
 export * as create from "./role/create.js";
 export * as "delete" from "./role/delete.js";
+export * as putBadgeImage from "./role/putBadgeImage.js";
 export * as update from "./role/update.js";
 export * from "./role.defs.js";
 export * as $defs from "./role.defs.js";

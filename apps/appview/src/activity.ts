@@ -108,6 +108,8 @@ export const announceActivity = async (ctx: AppContext, did: string): Promise<vo
 			requestedState: null,
 			statusText: null,
 			statusEmoji: null,
+			statusExpiresAt: null,
+			statusShowWhileOffline: false,
 		},
 		activities,
 	);

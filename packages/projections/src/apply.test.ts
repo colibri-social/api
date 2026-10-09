@@ -158,6 +158,151 @@ describe("community projections", () => {
 	});
 });
 
+describe("role badges", () => {
+	const roleWithBadge = (badge: Record<string, unknown>) => ({
+		$type: "social.colibri.beta.role",
+		name: "Moderator",
+		permissions: [],
+		position: 10,
+		badge,
+	});
+
+	it("projects an icon badge", async () => {
+		await applyChange(
+			deps,
+			put(
+				SPACES.members,
+				COMMUNITY,
+				"social.colibri.beta.role",
+				"3lkrole1",
+				roleWithBadge({
+					$type: "social.colibri.beta.role#iconBadge",
+					icon: "shield-check",
+					color: "#76c4e5",
+				}),
+			),
+		);
+
+		expect(skipped).toEqual([]);
+		const [row] = await database.db.select().from(database.tables.roles);
+		expect(row?.badge).toEqual({ kind: "icon", icon: "shield-check", color: "#76c4e5" });
+	});
+
+	it("projects an image badge whether the record arrives as json or as lex", async () => {
+		const record = roleWithBadge({
+			$type: "social.colibri.beta.role#imageBadge",
+			image: jsonBlob(PICTURE_CID, "image/webp"),
+		});
+
+		await applyChange(
+			deps,
+			put(SPACES.members, COMMUNITY, "social.colibri.beta.role", "3lkrole1", record),
+		);
+		expect(skipped).toEqual([]);
+		const [fromJson] = await database.db.select().from(database.tables.roles);
+		expect(fromJson?.badge).toEqual({
+			kind: "image",
+			cid: PICTURE_CID,
+			mimeType: "image/webp",
+			size: 1234,
+		});
+
+		await database.db.delete(database.tables.roles);
+		await applyChange(
+			deps,
+			put(SPACES.members, COMMUNITY, "social.colibri.beta.role", "3lkrole1", toLexForm(record)),
+		);
+		expect(skipped).toEqual([]);
+		const [fromLex] = await database.db.select().from(database.tables.roles);
+		expect(fromLex?.badge).toEqual({
+			kind: "image",
+			cid: PICTURE_CID,
+			mimeType: "image/webp",
+			size: 1234,
+		});
+	});
+
+	it("clears the badge when the record drops it", async () => {
+		await applyChange(
+			deps,
+			put(
+				SPACES.members,
+				COMMUNITY,
+				"social.colibri.beta.role",
+				"3lkrole1",
+				roleWithBadge({ $type: "social.colibri.beta.role#iconBadge", icon: "star" }),
+			),
+		);
+		await applyChange(
+			deps,
+			put(SPACES.members, COMMUNITY, "social.colibri.beta.role", "3lkrole1", {
+				$type: "social.colibri.beta.role",
+				name: "Moderator",
+				permissions: [],
+				position: 10,
+			}),
+		);
+
+		const [row] = await database.db.select().from(database.tables.roles);
+		expect(row?.badge).toBeNull();
+	});
+
+	it("ignores a badge kind it does not know", async () => {
+		await applyChange(
+			deps,
+			put(
+				SPACES.members,
+				COMMUNITY,
+				"social.colibri.beta.role",
+				"3lkrole1",
+				roleWithBadge({ $type: "social.colibri.beta.role#emojiBadge", emoji: "x" }),
+			),
+		);
+
+		const [row] = await database.db.select().from(database.tables.roles);
+		expect(row?.name).toBe("Moderator");
+		expect(row?.badge).toBeNull();
+	});
+});
+
+describe("name colour override", () => {
+	it("projects the override from the settings record and resets it when the record goes", async () => {
+		await applyChange(
+			deps,
+			put(SPACES.configuration, COMMUNITY, "social.colibri.beta.community.settings", SELF, {
+				$type: "social.colibri.beta.community.settings",
+				categoryOrder: [],
+				requiresApprovalToJoin: false,
+				overrideUserNameColors: true,
+			}),
+		);
+		const [on] = await database.db.select().from(database.tables.communities);
+		expect(on?.overrideUserNameColors).toBe(true);
+
+		await applyChange(deps, {
+			space: SPACES.configuration,
+			author: COMMUNITY,
+			puts: [],
+			deletes: [{ collection: "social.colibri.beta.community.settings", rkey: SELF }],
+		});
+		const [off] = await database.db.select().from(database.tables.communities);
+		expect(off?.overrideUserNameColors).toBe(false);
+	});
+
+	it("defaults the override to false", async () => {
+		await applyChange(
+			deps,
+			put(SPACES.configuration, COMMUNITY, "social.colibri.beta.community.settings", SELF, {
+				$type: "social.colibri.beta.community.settings",
+				categoryOrder: [],
+				requiresApprovalToJoin: false,
+			}),
+		);
+		const [row] = await database.db.select().from(database.tables.communities);
+		expect(row?.overrideUserNameColors).toBe(false);
+	});
+});
+
 describe("authority-written collections", () => {
 	it("refuses a role written by a member rather than by the community", async () => {
 		await applyChange(

@@ -120,7 +120,7 @@ export const handleListRoles = async (
 ) => {
 	await requireCommunity(ctx, community);
 	await requireMembership(ctx, community, callerDid);
-	return { roles: await communities.roles(community) };
+	return { roles: await communities.roles(community, callerDid) };
 };
 
 export const handleListMembers = async (

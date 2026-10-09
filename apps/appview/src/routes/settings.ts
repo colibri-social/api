@@ -7,6 +7,7 @@ export type SettingsPatch = {
 	categoryOrder?: readonly string[];
 	requiresApprovalToJoin?: boolean;
 	linkEmbeds?: boolean;
+	overrideUserNameColors?: boolean;
 	labelers?: readonly string[];
 };
 
@@ -33,6 +34,7 @@ export const writeCommunitySettings = async (
 
 	const categoryOrder = patch.categoryOrder ?? (await currentCategoryOrder(ctx, community));
 	const labelers = patch.labelers ?? row.labelers;
+	const overrideUserNameColors = patch.overrideUserNameColors ?? row.overrideUserNameColors;
 
 	await writer.put(community, {
 		space: communitySpaces(community).configuration,
@@ -43,6 +45,7 @@ export const writeCommunitySettings = async (
 			categoryOrder: [...categoryOrder],
 			requiresApprovalToJoin: patch.requiresApprovalToJoin ?? row.requiresApproval,
 			linkEmbeds: patch.linkEmbeds ?? row.linkEmbeds,
+			...(overrideUserNameColors ? { overrideUserNameColors: true } : {}),
 			...(labelers.length ? { labelers: [...labelers] } : {}),
 		},
 	});

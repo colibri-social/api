@@ -47,6 +47,7 @@ export type ProvisionRequest = {
 	creator: string;
 	isPrivate?: boolean;
 	requiresApprovalToJoin?: boolean;
+	overrideUserNameColors?: boolean;
 };
 
 export type AdoptRequest = {
@@ -224,6 +225,7 @@ export class CommunityProvisioner {
 			creator: string;
 			isPrivate?: boolean;
 			requiresApprovalToJoin?: boolean;
+			overrideUserNameColors?: boolean;
 		},
 		report: (step: ProvisionStep, completed: number, community?: string) => void,
 		completed: number,
@@ -287,12 +289,10 @@ export class CommunityProvisioner {
 		});
 
 		report("creatingStarterChannels", completed + 3, community);
-		const channels = await this.seedLayout(
-			host,
-			community,
-			spaces,
-			request.requiresApprovalToJoin ?? false,
-		);
+		const channels = await this.seedLayout(host, community, spaces, {
+			requiresApprovalToJoin: request.requiresApprovalToJoin ?? false,
+			overrideUserNameColors: request.overrideUserNameColors ?? false,
+		});
 
 		report("done", TOTAL_STEPS, community);
 		return { spaces, ownerRole, channels };
@@ -330,7 +330,7 @@ export class CommunityProvisioner {
 		host: CommunityHost,
 		community: string,
 		spaces: CommunitySpaces,
-		requiresApprovalToJoin: boolean,
+		settings: { requiresApprovalToJoin: boolean; overrideUserNameColors: boolean },
 	): Promise<{ text: string; voice: string }> {
 		const text = await this.createChannel(host, community, {
 			type: SPACE_TYPES.channelText,
@@ -370,8 +370,9 @@ export class CommunityProvisioner {
 			record: {
 				$type: COLLECTIONS.communitySettings,
 				categoryOrder: [textCategory, voiceCategory],
-				requiresApprovalToJoin,
+				requiresApprovalToJoin: settings.requiresApprovalToJoin,
 				linkEmbeds: true,
+				...(settings.overrideUserNameColors ? { overrideUserNameColors: true } : {}),
 			},
 		});
 

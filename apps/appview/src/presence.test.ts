@@ -2,7 +2,7 @@ import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db"
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AppContext } from "./context.js";
-import { effectiveOnlineState, PresenceTracker } from "./presence.js";
+import { effectiveOnlineState, PresenceTracker, presenceOf } from "./presence.js";
 import type { ServerFrame } from "./ws/events.js";
 
 const ACTOR = "did:plc:presenceaaaaaaaaaaaaaaaaaa";
@@ -127,5 +127,79 @@ describe("presence tracking", () => {
 		await tracker.closed(ACTOR);
 
 		expect((await stored())?.viewingChannel).toBeNull();
+	});
+});
+
+describe("presenceOf", () => {
+	const ctx = { voice: null } as unknown as AppContext;
+	const row = {
+		derivedState: "online" as const,
+		requestedState: null,
+		statusText: "lunch",
+		statusEmoji: null,
+		statusExpiresAt: null,
+		statusShowWhileOffline: false,
+	};
+
+	it("returns a status without an expiry", () => {
+		expect(presenceOf(ctx, ACTOR, row, []).status).toEqual({
+			text: "lunch",
+			emoji: undefined,
+			expiresAt: undefined,
+			showWhileOffline: false,
+		});
+	});
+
+	it("returns a status until it expires", () => {
+		const expiresAt = new Date(Date.now() + 60_000).toISOString();
+		expect(presenceOf(ctx, ACTOR, { ...row, statusExpiresAt: expiresAt }, []).status).toEqual({
+			text: "lunch",
+			emoji: undefined,
+			expiresAt,
+			showWhileOffline: false,
+		});
+	});
+
+	it("hides a status once it has expired", () => {
+		const expiresAt = new Date(Date.now() - 1).toISOString();
+		expect(
+			presenceOf(ctx, ACTOR, { ...row, statusExpiresAt: expiresAt }, []).status,
+		).toBeUndefined();
+	});
+
+	it("passes showWhileOffline through for an offline actor", () => {
+		const presence = presenceOf(
+			ctx,
+			ACTOR,
+			{ ...row, derivedState: "offline", statusShowWhileOffline: true },
+			[],
+		);
+		expect(presence.onlineState).toBe("offline");
+		expect(presence.status?.showWhileOffline).toBe(true);
+	});
+});
+
+describe("presence tracking keeps the status", () => {
+	it("carries the expiry and offline flag through a reconnect", async () => {
+		const expiresAt = new Date(Date.now() + 60_000).toISOString();
+		await database.db.insert(database.tables.userPresence).values({
+			did: ACTOR,
+			derivedState: "offline",
+			statusText: "lunch",
+			statusExpiresAt: expiresAt,
+			statusShowWhileOffline: true,
+			updatedAt: new Date().toISOString(),
+		});
+
+		await tracker.opened(ACTOR);
+
+		const status = (published.at(-1)?.frame.presence as { status?: unknown } | undefined)?.status;
+		expect(status).toEqual({
+			text: "lunch",
+			emoji: undefined,
+			expiresAt,
+			showWhileOffline: true,
+		});
+		expect((await stored())?.statusExpiresAt).toBe(expiresAt);
 	});
 });

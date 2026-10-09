@@ -61,12 +61,13 @@ export class CommunityViews {
 		cid: string | null,
 		variant: "avatar" | "banner",
 		viewer: string,
+		space: string = communitySpaces(did).profile,
 	): string | undefined {
 		if (!cid) return undefined;
 		const url = new URL("/xrpc/social.colibri.beta.blob.get", this.ctx.config.PUBLIC_URL);
 		url.searchParams.set("did", did);
 		url.searchParams.set("cid", cid);
-		url.searchParams.set("space", communitySpaces(did).profile);
+		url.searchParams.set("space", space);
 		url.searchParams.set("variant", variant);
 		return signBlobUrl(
 			this.ctx.config.SIGNING_KEY,
@@ -97,6 +98,7 @@ export class CommunityViews {
 			banner: asUriOrUndefined(this.blobUrl(row.did, row.bannerCid, "banner", authz.actor)),
 			requiresApprovalToJoin: row.requiresApproval,
 			linkEmbeds: row.linkEmbeds,
+			overrideUserNameColors: row.overrideUserNameColors,
 			labelers: row.labelers.map(asDid),
 			memberCount,
 			viewer: {
@@ -132,11 +134,35 @@ export class CommunityViews {
 		} as ChannelView;
 	}
 
-	role(row: RoleRow, memberCount?: number): RoleView {
+	private roleBadge(row: RoleRow, viewer: string): RoleView["badge"] {
+		const badge = row.badge;
+		if (!badge) return undefined;
+		if (badge.kind === "icon") {
+			return {
+				$type: "social.colibri.beta.community.defs#roleIconBadge",
+				icon: badge.icon,
+				...(badge.color ? { color: badge.color } : {}),
+			};
+		}
+		const image = asUriOrUndefined(
+			this.blobUrl(
+				row.community,
+				badge.cid,
+				"avatar",
+				viewer,
+				communitySpaces(row.community).members,
+			),
+		);
+		if (!image) return undefined;
+		return { $type: "social.colibri.beta.community.defs#roleImageBadgeView", image };
+	}
+
+	role(row: RoleRow, viewer: string, memberCount?: number): RoleView {
 		return {
 			rkey: asRecordKey(row.rkey),
 			name: row.name,
 			color: row.color ?? undefined,
+			badge: this.roleBadge(row, viewer),
 			permissions: row.permissions,
 			position: row.position,
 			hoisted: row.hoisted,
@@ -269,13 +295,13 @@ export class CommunityViews {
 		};
 	}
 
-	async roles(community: string): Promise<RoleView[]> {
+	async roles(community: string, viewer: string): Promise<RoleView[]> {
 		const rows = await this.ctx.database.db
 			.select()
 			.from(this.ctx.database.tables.roles)
 			.where(eq(this.ctx.database.tables.roles.community, community))
 			.orderBy(asc(this.ctx.database.tables.roles.position));
-		return rows.map((row) => this.role(row));
+		return rows.map((row) => this.role(row, viewer));
 	}
 
 	async channelState(space: string): Promise<{ row: ChannelRow; state: ChannelState } | null> {

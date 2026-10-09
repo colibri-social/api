@@ -15,7 +15,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"community":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"permissions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ),"color":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":7})),"position":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"hoisted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"mentionable":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())});
+export const $input = /*#__PURE__*/ l.jsonPayload({"community":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"permissions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ),"color":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":7})),"badge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<CommunityDefs.RoleIconBadge>((() => CommunityDefs.roleIconBadge) as any)),"position":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"hoisted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"mentionable":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;
