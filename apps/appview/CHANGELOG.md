@@ -1,5 +1,37 @@
 # @colibri-social/appview
 
+## 2.12.0
+
+### Minor Changes
+
+- 8e3c854: Adds direct APNs push for iOS and macOS, configured with `APNS_KEY`, `APNS_KEY_ID` and `APNS_TEAM_ID`, and includes the sender's name and avatar in every push.
+- 6b3d5ef: Adds role badges and a Space-wide name colour override. A role carries an optional `badge`, either an icon from the client's curated set with an optional colour or an uploaded image of up to 256 KB. `role.create` and `role.update` take an icon badge, `role.update` clears one with `removeBadge`, and the new `role.putBadgeImage` uploads an image badge as the community. Role views return the badge with image badges served through a signed members-space link. The community settings record, `community.create`, `community.update` and the community view gain `overrideUserNameColors`, which hides members' own name colours in chat so only role colours show, and a member without a coloured role gets the default name colour.
+- 6b3d5ef: Raises the status text limit from 32 to 64 bytes and adds `expiresAt` and `showWhileOffline` to the status. `actor.setStatus` takes both fields and clears an expiry with `removeExpiresAt`. Presence views and events leave out a status once its expiry has passed. `showWhileOffline` defaults to false and is passed through for clients to apply.
+
+### Patch Changes
+
+- bb5a859: Serves community pictures and banners from the profile space through per-viewer signed links, and answers a missing public blob with 404.
+- f7b360b: Allows the `sentry-trace` and `baggage` request headers in CORS preflights, so browsers can call `com.atproto.identity.resolveHandle` directly and users with DNS-only handles can sign in
+- 5640cde: Stops retrying sync for authors whose DID document has no `#atproto_pds` service, and logs the message and cause of every `error` field.
+- 08eebc0: Routes pushes for thread messages to the parent channel and thread, and sends Android pushes as data-only messages so tapping one opens the right message.
+- ef70f83: Targets the 2026-10-01 atproto Spaces alpha. Space credentials are bound with HTTP Message Signatures and carry the audience of each request, a revoked or rejected credential is replaced once through a fresh delegation, sync follows `spaceRev` and catches up from `listRepos` after a gap, and `createSpace` sends `spaceType`. The vendored space lexicons move to atproto `679724ad`.
+- Updated dependencies [8e3c854]
+- Updated dependencies [bb5a859]
+- Updated dependencies [5640cde]
+- Updated dependencies [08eebc0]
+- Updated dependencies [6b3d5ef]
+- Updated dependencies [ef70f83]
+- Updated dependencies [6b3d5ef]
+  - @colibri-social/appview-db@0.8.0
+  - @colibri-social/lexicons@2.13.0
+  - @colibri-social/notifications@1.4.0
+  - @colibri-social/blobs@0.0.7
+  - @colibri-social/identity@0.2.1
+  - @colibri-social/space-sync@0.5.1
+  - @colibri-social/projections@1.7.0
+  - @colibri-social/community@2.7.0
+  - @colibri-social/space@0.5.0
+
 ## 2.11.1
 
 ### Patch Changes

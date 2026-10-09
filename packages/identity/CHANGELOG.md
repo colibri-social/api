@@ -1,5 +1,11 @@
 # @colibri-social/identity
 
+## 0.2.1
+
+### Patch Changes
+
+- 5640cde: Stops retrying sync for authors whose DID document has no `#atproto_pds` service, and logs the message and cause of every `error` field.
+
 ## 0.2.0
 
 ### Minor Changes

@@ -1,5 +1,13 @@
 # @colibri-social/blobs
 
+## 0.0.7
+
+### Patch Changes
+
+- bb5a859: Serves community pictures and banners from the profile space through per-viewer signed links, and answers a missing public blob with 404.
+- Updated dependencies [ef70f83]
+  - @colibri-social/space@0.5.0
+
 ## 0.0.6
 
 ### Patch Changes
