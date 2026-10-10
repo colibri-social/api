@@ -9,7 +9,7 @@ import {
 	COLLECTIONS,
 	type social,
 } from "@colibri-social/lexicons";
-import { PdsClient } from "@colibri-social/space";
+import { PdsClient, XrpcError } from "@colibri-social/space";
 import { inArray } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { presenceOf } from "../presence.js";
@@ -72,20 +72,27 @@ export class ActorViews {
 		return new Map(rows.map((row) => [row.did, row]));
 	}
 
-	private async fetchProfile(did: string): Promise<{ colibri: unknown; bsky: unknown }> {
+	private async fetchProfile(
+		did: string,
+	): Promise<{ colibri: unknown; bsky: unknown } | undefined> {
 		const pds = (await this.ctx.identity.resolveDid(did).catch(() => null))?.pds;
-		if (!pds) return { colibri: null, bsky: null };
+		if (!pds) return undefined;
 		const client = new PdsClient({ service: pds });
-		const [colibri, bsky] = await Promise.all([
+		const record = (collection: string) =>
 			client
-				.getPublicRecord<{ value: unknown }>(did, COLLECTIONS.profile, "self")
-				.then((record) => record.value)
-				.catch(() => null),
-			client
-				.getPublicRecord<{ value: unknown }>(did, BSKY_PROFILE, "self")
-				.then((record) => record.value)
-				.catch(() => null),
-		]);
+				.getPublicRecord<{ value: unknown }>(did, collection, "self")
+				.then((found) => found.value)
+				.catch((err) => {
+					if (err instanceof XrpcError && err.isNotFound) return null;
+					throw err;
+				});
+		let colibri: unknown;
+		let bsky: unknown;
+		try {
+			[colibri, bsky] = await Promise.all([record(COLLECTIONS.profile), record(BSKY_PROFILE)]);
+		} catch {
+			return undefined;
+		}
 		await this.ctx.database.db
 			.insert(this.ctx.database.tables.profileCache)
 			.values({
@@ -150,7 +157,9 @@ export class ActorViews {
 			this.presenceRows(unique),
 		]);
 
-		const fetched = new Map(fetchedEntries);
+		const fetched = new Map(
+			fetchedEntries.flatMap(([did, profile]) => (profile ? [[did, profile] as const] : [])),
+		);
 
 		const out = new Map<string, ProfileView>();
 		for (const did of unique) {
