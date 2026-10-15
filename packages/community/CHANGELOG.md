@@ -1,5 +1,15 @@
 # @colibri-social/community
 
+## 2.8.1
+
+### Patch Changes
+
+- Updated dependencies [ac08881]
+- Updated dependencies [ac08881]
+  - @colibri-social/lexicons@2.15.0
+  - @colibri-social/appview-db@0.10.0
+  - @colibri-social/projections@1.9.0
+
 ## 2.8.0
 
 ### Minor Changes
