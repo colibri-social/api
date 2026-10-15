@@ -1,5 +1,33 @@
 # @colibri-social/appview
 
+## 2.14.0
+
+### Minor Changes
+
+- ac08881: Adds an optional `spoiler` flag to `social.colibri.beta.message#attachment` and `social.colibri.beta.channel.defs#attachmentView`. The AppView copies the flag from each stored attachment into the message and forward views it serves.
+- ac08881: Adds per-user state that follows a user across devices:
+  
+  - `social.colibri.beta.actor.clientPreferences` holds client settings such as gesture controls, theme, link options, the Bluesky client, developer mode, voice view options and experiments.
+  - `social.colibri.beta.actor.composerState` holds emoji usage, skin tone and recent GIFs.
+  - `social.colibri.beta.actor.spaceNotification` sets a notification level for one community, keyed by its DID. `social.colibri.beta.actor.putSpaceNotification` pushes it to the AppView.
+  - `notificationLevel` accepts `nothing`, which drops every notification, mentions included.
+  - `social.colibri.beta.actor.mute` accepts `#mutedThread` subjects.
+  
+  `putSettings` takes `clientPreferences` and `composerState`, and `getPreferences`, `putSettings` and `preferencesEvent` return them together with `spaceNotifications`. Notification fan-out uses a community's level over the global one. The account permission set covers the new collections and procedure.
+
+### Patch Changes
+
+- 4eac24a: Fixes message paging past the second page. `channel.listMessages` and thread message lists now return a cursor on every page that has more messages after it, in both directions, so clients can load a channel's full history.
+- Updated dependencies [ac08881]
+- Updated dependencies [ac08881]
+- Updated dependencies [ac08881]
+  - @colibri-social/lexicons@2.15.0
+  - @colibri-social/space-sync@0.5.2
+  - @colibri-social/appview-db@0.10.0
+  - @colibri-social/projections@1.9.0
+  - @colibri-social/notifications@1.5.0
+  - @colibri-social/community@2.8.1
+
 ## 2.13.0
 
 ### Minor Changes

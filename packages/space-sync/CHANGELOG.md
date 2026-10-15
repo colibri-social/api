@@ -1,5 +1,11 @@
 # @colibri-social/space-sync
 
+## 0.5.2
+
+### Patch Changes
+
+- ac08881: Logs sync failures against a PDS without spaces support at debug level. Those repos still retry on the usual backoff.
+
 ## 0.5.1
 
 ### Patch Changes
