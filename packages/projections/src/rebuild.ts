@@ -16,6 +16,7 @@ const PROJECTION_TABLES = [
 	"moderationLog",
 	"mutes",
 	"actorSettings",
+	"spaceNotifications",
 	"readCursors",
 ] as const;
 

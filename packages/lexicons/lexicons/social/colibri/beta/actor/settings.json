@@ -12,7 +12,7 @@
 				"properties": {
 					"notificationLevel": {
 						"type": "string",
-						"knownValues": ["all", "mentionsAndReplies"],
+						"knownValues": ["all", "mentionsAndReplies", "nothing"],
 						"default": "all",
 						"description": "Which messages produce a notification."
 					},

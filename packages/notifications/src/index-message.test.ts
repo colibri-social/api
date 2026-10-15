@@ -1,5 +1,9 @@
-import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
-import { channelSpace } from "@colibri-social/lexicons";
+import {
+	type NotificationLevel,
+	openTestDatabase,
+	type TestDatabase,
+} from "@colibri-social/appview-db";
+import { channelSpace, threadSpace } from "@colibri-social/lexicons";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { NotificationDeps } from "./deps.js";
@@ -45,8 +49,12 @@ const mute = async (did: string, subject: string) => {
 	});
 };
 
-const notificationLevel = async (did: string, level: "all" | "mentionsAndReplies") => {
+const notificationLevel = async (did: string, level: NotificationLevel) => {
 	await database.db.insert(database.tables.actorSettings).values({ did, notificationLevel: level });
+};
+
+const spaceLevel = async (did: string, community: string, level: NotificationLevel) => {
+	await database.db.insert(database.tables.spaceNotifications).values({ did, community, level });
 };
 
 const viewing = async (did: string, channel: string) => {
@@ -457,6 +465,81 @@ describe("muted channels", () => {
 			parentAuthor: null,
 			parentRkey: null,
 		});
+
+		expect(await rowsFor(reader)).toHaveLength(0);
+	});
+});
+
+describe("notification levels", () => {
+	const reader = "did:plc:levels000000000000000000000";
+
+	const send = (rkey: string, facets: unknown[] = [], space = CHANNEL) =>
+		indexMessage(deps, {
+			space,
+			community: COMMUNITY,
+			author: AUTHOR,
+			rkey,
+			facets,
+			parentAuthor: null,
+			parentRkey: null,
+		});
+
+	it("drops every notification on the nothing level, mentions included", async () => {
+		await member(reader);
+		await notificationLevel(reader, "nothing");
+
+		await send("3lklevel1", [mentionFacet(reader)]);
+
+		expect(await rowsFor(reader)).toHaveLength(0);
+	});
+
+	it("lets a Space level override the global one", async () => {
+		await member(reader);
+		await notificationLevel(reader, "mentionsAndReplies");
+		await spaceLevel(reader, COMMUNITY, "all");
+
+		await send("3lklevel2");
+
+		expect((await rowsFor(reader))[0]?.kind).toBe("message");
+	});
+
+	it("silences a Space set to nothing while the global level is all", async () => {
+		await member(reader);
+		await spaceLevel(reader, COMMUNITY, "nothing");
+
+		await send("3lklevel3", [mentionFacet(reader)]);
+
+		expect(await rowsFor(reader)).toHaveLength(0);
+	});
+
+	it("keeps mentions but drops plain messages in a Space on mentionsAndReplies", async () => {
+		const plain = "did:plc:plainlevel00000000000000000";
+		await member(reader);
+		await member(plain);
+		await spaceLevel(reader, COMMUNITY, "mentionsAndReplies");
+		await spaceLevel(plain, COMMUNITY, "mentionsAndReplies");
+
+		await send("3lklevel4", [mentionFacet(reader)]);
+
+		expect((await rowsFor(reader))[0]?.kind).toBe("mention");
+		expect(await rowsFor(plain)).toHaveLength(0);
+	});
+
+	it("ignores a level set for a different Space", async () => {
+		await member(reader);
+		await spaceLevel(reader, "did:plc:othercommunity000000000000", "nothing");
+
+		await send("3lklevel5");
+
+		expect(await rowsFor(reader)).toHaveLength(1);
+	});
+
+	it("skips a mention in a thread the recipient muted", async () => {
+		const thread = threadSpace(COMMUNITY, "3lkthread1");
+		await member(reader);
+		await mute(reader, thread);
+
+		await send("3lklevel6", [mentionFacet(reader)], thread);
 
 		expect(await rowsFor(reader)).toHaveLength(0);
 	});

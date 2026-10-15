@@ -25,6 +25,9 @@ const ALL: ErasedProjector[] = [
 	erase(thread.threadFollow),
 	erase(personal.mute),
 	erase(personal.settings),
+	erase(personal.clientPreferences),
+	erase(personal.composerState),
+	erase(personal.spaceNotification),
 	erase(personal.readCursors),
 ];
 

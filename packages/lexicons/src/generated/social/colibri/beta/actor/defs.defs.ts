@@ -239,7 +239,7 @@ type Preferences = { $type?: "social.colibri.beta.actor.defs#preferences";
   /**
    * Which messages produce a notification.
    */
-  "notificationLevel":"all" | "mentionsAndReplies" | l.UnknownString;
+  "notificationLevel":"all" | "mentionsAndReplies" | "nothing" | l.UnknownString;
 
   /**
    * Communities in preferred sidebar order.
@@ -259,12 +259,27 @@ type Preferences = { $type?: "social.colibri.beta.actor.defs#preferences";
   /**
    * Whether the AppView may read what the user is listening to and show it to others.
    */
-  "shareActivity"?:boolean };
+  "shareActivity"?:boolean;
+
+  /**
+   * Notification levels the user set for single communities. A community without an entry follows notificationLevel.
+   */
+  "spaceNotifications"?:(SpaceNotification)[];
+
+  /**
+   * Client settings that follow the user across devices.
+   */
+  "clientPreferences"?:ClientPreferences;
+
+  /**
+   * Emoji usage, skin tone and recent GIFs.
+   */
+  "composerState"?:ComposerState };
 
 export type { Preferences };
 
 /** The authenticated user's own settings, as the AppView currently holds them. */
-const preferences = /*#__PURE__*/ l.typedObject<Preferences>($nsid, "preferences", /*#__PURE__*/ l.object({"notificationLevel":/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies"]}>(),"communityOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"mutes":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Mute>((() => mute) as any), ),"gifFavorites":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), ),"shareActivity":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
+const preferences = /*#__PURE__*/ l.typedObject<Preferences>($nsid, "preferences", /*#__PURE__*/ l.object({"notificationLevel":/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies","nothing"]}>(),"communityOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"mutes":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Mute>((() => mute) as any), ),"gifFavorites":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), ),"shareActivity":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"spaceNotifications":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<SpaceNotification>((() => spaceNotification) as any), )),"clientPreferences":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ClientPreferences>((() => clientPreferences) as any)),"composerState":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ComposerState>((() => composerState) as any))}));
 
 export { preferences };
 
@@ -332,3 +347,188 @@ export type { MutedThread };
 const mutedThread = /*#__PURE__*/ l.typedObject<MutedThread>($nsid, "mutedThread", /*#__PURE__*/ l.object({"thread":/*#__PURE__*/ l.string({"format":"space-ref"})}));
 
 export { mutedThread };
+
+/** A notification level for one community. */
+type SpaceNotification = { $type?: "social.colibri.beta.actor.defs#spaceNotification";
+
+  /**
+   * The community.
+   */
+  "community":l.DidString;
+
+  /**
+   * Which messages in this community produce a notification.
+   */
+  "level":"all" | "mentionsAndReplies" | "nothing" | l.UnknownString };
+
+export type { SpaceNotification };
+
+/** A notification level for one community. */
+const spaceNotification = /*#__PURE__*/ l.typedObject<SpaceNotification>($nsid, "spaceNotification", /*#__PURE__*/ l.object({"community":/*#__PURE__*/ l.string({"format":"did"}),"level":/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies","nothing"]}>()}));
+
+export { spaceNotification };
+
+/** Client settings that follow the user across devices. Every field is optional and a client applies its own default for an absent one. */
+type ClientPreferences = { $type?: "social.colibri.beta.actor.defs#clientPreferences";
+
+  /**
+   * Touch gestures in a channel.
+   */
+  "controls"?:Controls;
+
+  /**
+   * The color theme. system follows the operating system.
+   */
+  "theme"?:"system" | "dark" | "light" | l.UnknownString;
+
+  /**
+   * Whether the channel list shows the latest message under each channel name.
+   */
+  "messagePreviews"?:boolean;
+
+  /**
+   * Whether a link in a new message gets a preview by default.
+   */
+  "linkEmbedsByDefault"?:boolean;
+
+  /**
+   * Whether opening a link to another site asks for confirmation first.
+   */
+  "warnOnExternalLinks"?:boolean;
+
+  /**
+   * The client that Bluesky posts and profiles open in.
+   */
+  "blueskyClient"?:"anisota" | "blacksky" | "bluesky" | "deer" | "mu" | "northsky" | "witchsky" | "custom" | l.UnknownString;
+
+  /**
+   * The domain of the client used when blueskyClient is custom.
+   */
+  "customBlueskyClientBase"?:string;
+
+  /**
+   * Whether the client shows identifiers and links to inspect records.
+   */
+  "developerMode"?:boolean;
+
+  /**
+   * Options for voice channels.
+   */
+  "voiceView"?:VoiceView;
+
+  /**
+   * The experiments the user turned on.
+   */
+  "experiments"?:(string)[] };
+
+export type { ClientPreferences };
+
+/** Client settings that follow the user across devices. Every field is optional and a client applies its own default for an absent one. */
+const clientPreferences = /*#__PURE__*/ l.typedObject<ClientPreferences>($nsid, "clientPreferences", /*#__PURE__*/ l.object({"controls":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Controls>((() => controls) as any)),"theme":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["system","dark","light"]}>()),"messagePreviews":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"linkEmbedsByDefault":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"warnOnExternalLinks":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"blueskyClient":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":64,"knownValues":["anisota","blacksky","bluesky","deer","mu","northsky","witchsky","custom"]}>({"maxLength":64})),"customBlueskyClientBase":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":253})),"developerMode":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"voiceView":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<VoiceView>((() => voiceView) as any)),"experiments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"maxLength":64}), {"maxLength":64}))}));
+
+export { clientPreferences };
+
+/** Touch gestures in a channel. */
+type Controls = { $type?: "social.colibri.beta.actor.defs#controls";
+
+  /**
+   * What swiping left on a message does.
+   */
+  "swipeLeftAction"?:"members" | "reply" | l.UnknownString;
+
+  /**
+   * Whether double tapping a message does anything.
+   */
+  "doubleTapEnabled"?:boolean;
+
+  /**
+   * What double tapping a message does.
+   */
+  "doubleTapAction"?:"react" | "editOrReply" | l.UnknownString;
+
+  /**
+   * The emoji a double tap reacts with.
+   */
+  "doubleTapReactionEmoji"?:string };
+
+export type { Controls };
+
+/** Touch gestures in a channel. */
+const controls = /*#__PURE__*/ l.typedObject<Controls>($nsid, "controls", /*#__PURE__*/ l.object({"swipeLeftAction":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["members","reply"]}>()),"doubleTapEnabled":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"doubleTapAction":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["react","editOrReply"]}>()),"doubleTapReactionEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":64,"maxGraphemes":1}))}));
+
+export { controls };
+
+/** Options for voice channels. */
+type VoiceView = { $type?: "social.colibri.beta.actor.defs#voiceView";
+
+  /**
+   * Whether opening a voice channel waits for the user to press join.
+   */
+  "confirmJoin"?:boolean;
+
+  /**
+   * Whether the call grid shows participants without video.
+   */
+  "showNonVideoParticipants"?:boolean;
+
+  /**
+   * Whether the call grid shows the user's own camera.
+   */
+  "showOwnCamera"?:boolean };
+
+export type { VoiceView };
+
+/** Options for voice channels. */
+const voiceView = /*#__PURE__*/ l.typedObject<VoiceView>($nsid, "voiceView", /*#__PURE__*/ l.object({"confirmJoin":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"showNonVideoParticipants":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"showOwnCamera":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
+
+export { voiceView };
+
+/** Emoji usage, skin tone and recent GIFs. */
+type ComposerState = { $type?: "social.colibri.beta.actor.defs#composerState";
+
+  /**
+   * The emoji the user picks most, with counts.
+   */
+  "emojiUsage"?:(EmojiUse)[];
+
+  /**
+   * The skin tone for emoji that support one. 0 is the default yellow.
+   */
+  "skinTone"?:number;
+
+  /**
+   * The GIFs the user sent last, newest first, stored whole.
+   */
+  "recentGifs"?:(EmbedDefs.GifView)[] };
+
+export type { ComposerState };
+
+/** Emoji usage, skin tone and recent GIFs. */
+const composerState = /*#__PURE__*/ l.typedObject<ComposerState>($nsid, "composerState", /*#__PURE__*/ l.object({"emojiUsage":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmojiUse>((() => emojiUse) as any), {"maxLength":50})),"skinTone":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":0,"maximum":5})),"recentGifs":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), {"maxLength":24}))}));
+
+export { composerState };
+
+/** How often and how recently the user picked one emoji. */
+type EmojiUse = { $type?: "social.colibri.beta.actor.defs#emojiUse";
+
+  /**
+   * A Unicode emoji, or a custom emoji's AT URI.
+   */
+  "emoji":string;
+
+  /**
+   * How many times the user picked it.
+   */
+  "count":number;
+
+  /**
+   * When the user last picked it.
+   */
+  "lastUsed":l.DatetimeString };
+
+export type { EmojiUse };
+
+/** How often and how recently the user picked one emoji. */
+const emojiUse = /*#__PURE__*/ l.typedObject<EmojiUse>($nsid, "emojiUse", /*#__PURE__*/ l.object({"emoji":/*#__PURE__*/ l.string({"maxLength":512}),"count":/*#__PURE__*/ l.integer({"minimum":1}),"lastUsed":/*#__PURE__*/ l.string({"format":"datetime"})}));
+
+export { emojiUse };

@@ -1,4 +1,4 @@
-import type { NotificationKind, Schema } from "@colibri-social/appview-db";
+import type { NotificationKind, NotificationLevel, Schema } from "@colibri-social/appview-db";
 import { and, eq, inArray } from "drizzle-orm";
 import type { NotificationDeps } from "./deps.js";
 import { nextId } from "./id.js";
@@ -173,15 +173,28 @@ const filterRecipients = async (
 	const mutedDids = new Set(muteRows.map((row) => row.did));
 
 	const settingsRows = await deps.db
-		.select({ did: deps.tables.actorSettings.did })
+		.select({
+			did: deps.tables.actorSettings.did,
+			level: deps.tables.actorSettings.notificationLevel,
+		})
 		.from(deps.tables.actorSettings)
+		.where(inArray(deps.tables.actorSettings.did, dids));
+	const spaceLevelRows = await deps.db
+		.select({
+			did: deps.tables.spaceNotifications.did,
+			level: deps.tables.spaceNotifications.level,
+		})
+		.from(deps.tables.spaceNotifications)
 		.where(
 			and(
-				inArray(deps.tables.actorSettings.did, dids),
-				eq(deps.tables.actorSettings.notificationLevel, "mentionsAndReplies"),
+				inArray(deps.tables.spaceNotifications.did, dids),
+				eq(deps.tables.spaceNotifications.community, message.community),
 			),
 		);
-	const mentionsAndRepliesOnly = new Set(settingsRows.map((row) => row.did));
+	const levels = new Map<string, NotificationLevel>(
+		settingsRows.map((row) => [row.did, row.level]),
+	);
+	for (const row of spaceLevelRows) levels.set(row.did, row.level);
 
 	const viewingRows = await deps.db
 		.select({ did: deps.tables.userPresence.did })
@@ -209,7 +222,9 @@ const filterRecipients = async (
 	const eligible = recipients.filter((recipient) => {
 		if (!memberDids.has(recipient.did)) return false;
 		if (mutedDids.has(recipient.did)) return false;
-		if (recipient.kind === "message" && mentionsAndRepliesOnly.has(recipient.did)) return false;
+		const level = levels.get(recipient.did) ?? "all";
+		if (level === "nothing") return false;
+		if (recipient.kind === "message" && level === "mentionsAndReplies") return false;
 		if (watching.has(recipient.did)) return false;
 		if (alreadyNotified.has(recipient.did)) return false;
 		return true;

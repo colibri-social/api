@@ -634,6 +634,29 @@ describe("ChannelViews attachments", () => {
 		expect(attachment?.url).toContain(`space=${encodeURIComponent(SPACE)}`);
 	});
 
+	it("passes the spoiler flag through and omits it when unset", async () => {
+		const rkey = nextTid();
+		const blob = {
+			$type: "blob",
+			ref: { $link: ATTACHMENT_CID },
+			mimeType: "image/png",
+			size: 1234,
+		};
+		await putMessage(rkey, {
+			attachments: [
+				{ name: "hidden.png", blob, spoiler: true },
+				{ name: "plain.png", blob },
+				{ name: "off.png", blob, spoiler: false },
+			],
+		});
+
+		const { messages } = await views.messages(SPACE, null, { limit: 1 });
+		const [hidden, plain, off] = messages[0]?.attachments ?? [];
+		expect(hidden?.spoiler).toBe(true);
+		expect(plain).not.toHaveProperty("spoiler");
+		expect(off).not.toHaveProperty("spoiler");
+	});
+
 	it("points a moved message's attachment at the space it is being read in", async () => {
 		const rkey = nextTid();
 		await putMessage(rkey, {

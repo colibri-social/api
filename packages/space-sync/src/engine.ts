@@ -1,5 +1,5 @@
 import type { SpaceClient, SpaceCredentials } from "@colibri-social/space";
-import { SpaceCredentialError } from "@colibri-social/space";
+import { SpaceCredentialError, XrpcError } from "@colibri-social/space";
 import { Emitter } from "./emitter.js";
 import { KeyedWorkQueue } from "./queue.js";
 import { RepoSync } from "./repo-sync.js";
@@ -14,6 +14,11 @@ import type {
 	SyncTrigger,
 } from "./types.js";
 import { inlineVerifier, type Verifier, VerifierPool } from "./verify-pool.js";
+
+const hostLacksSpaces = (error: unknown): boolean =>
+	error instanceof XrpcError &&
+	error.code === "InvalidToken" &&
+	error.message.includes("Atproto-Space");
 
 export type NotifyWriteHint = {
 	rev?: string;
@@ -620,6 +625,10 @@ export class SpaceSyncEngine {
 				this.now().getTime() + backoffFor(failures, this.options.maxBackoffMs ?? 3_600_000),
 			),
 		});
-		this.log("repo.syncFailed", { space, author, failures, error });
+		this.log(
+			"repo.syncFailed",
+			{ space, author, failures, error },
+			hostLacksSpaces(error) ? "debug" : "warn",
+		);
 	}
 }

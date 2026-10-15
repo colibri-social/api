@@ -132,11 +132,16 @@ type Attachment = { $type?: "social.colibri.beta.message#attachment";
   /**
    * The original filename.
    */
-  "name"?:string };
+  "name"?:string;
+
+  /**
+   * Whether clients hide the file behind a reveal step until the reader chooses to see it.
+   */
+  "spoiler"?:boolean };
 
 export type { Attachment };
 
 /** A file attached to a message. */
-const attachment = /*#__PURE__*/ l.typedObject<Attachment>($nsid, "attachment", /*#__PURE__*/ l.object({"blob":/*#__PURE__*/ l.blob(),"name":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256}))}));
+const attachment = /*#__PURE__*/ l.typedObject<Attachment>($nsid, "attachment", /*#__PURE__*/ l.object({"blob":/*#__PURE__*/ l.blob(),"name":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256})),"spoiler":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
 
 export { attachment };

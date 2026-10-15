@@ -1,4 +1,4 @@
-import { SpaceCredentialError } from "@colibri-social/space";
+import { SpaceCredentialError, XrpcError } from "@colibri-social/space";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SpaceSyncEngine, type SyncEngineOptions } from "./engine.js";
 import type { RepoSyncOutcome } from "./repo-sync.js";
@@ -376,6 +376,50 @@ describe("write notifications", () => {
 
 		expect(cursors.get(ALICE)?.consecutiveFailures).toBe(2);
 		expect(second).toBeGreaterThan(first);
+	});
+
+	it("logs quietly when the member's host has no spaces support", async () => {
+		const logged: Array<{ event: string; level: string }> = [];
+		const { engine } = engineFor(
+			[],
+			async () => {
+				throw new XrpcError(
+					400,
+					"InvalidToken",
+					"Unsupported authorization type: Atproto-Space",
+					"com.atproto.space.getRepo",
+				);
+			},
+			{
+				engine: { log: (event, _detail, level = "warn") => void logged.push({ event, level }) },
+			},
+		);
+		engine.on("failed", () => undefined);
+
+		engine.notifyWrite(SPACE, ALICE);
+		await engine.drain();
+
+		expect(logged).toContainEqual({ event: "repo.syncFailed", level: "debug" });
+		expect(cursors.get(ALICE)?.consecutiveFailures).toBe(1);
+	});
+
+	it("still warns about other sync failures", async () => {
+		const logged: Array<{ event: string; level: string }> = [];
+		const { engine } = engineFor(
+			[],
+			async () => {
+				throw new XrpcError(502, "UpstreamFailure", "bad gateway", "com.atproto.space.getRepo");
+			},
+			{
+				engine: { log: (event, _detail, level = "warn") => void logged.push({ event, level }) },
+			},
+		);
+		engine.on("failed", () => undefined);
+
+		engine.notifyWrite(SPACE, ALICE);
+		await engine.drain();
+
+		expect(logged).toContainEqual({ event: "repo.syncFailed", level: "warn" });
 	});
 });
 

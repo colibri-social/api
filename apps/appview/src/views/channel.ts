@@ -56,6 +56,7 @@ const placementRefKey = (row: MessageRow): string => `${row.space} ${row.author}
 type RawAttachment = {
 	blob?: { ref?: { $link?: string }; mimeType?: string; size?: number };
 	name?: string;
+	spoiler?: boolean;
 };
 
 type RawForward = {
@@ -136,6 +137,7 @@ export class ChannelViews {
 				name: item.name,
 				mimeType,
 				size: item.blob?.size,
+				...(item.spoiler === true ? { spoiler: true } : {}),
 			} as AttachmentView);
 		}
 		return out;

@@ -806,6 +806,159 @@ describe("personal spaces", () => {
 				.where(eq(database.tables.readCursors.did, MEMBER)),
 		).toEqual([]);
 	});
+
+	const remove = (collection: string, rkey: string): SpaceChange => ({
+		space: personal,
+		author: MEMBER,
+		puts: [],
+		deletes: [{ collection, rkey }],
+	});
+
+	const settingsRow = async () => {
+		const [row] = await database.db
+			.select()
+			.from(database.tables.actorSettings)
+			.where(eq(database.tables.actorSettings.did, MEMBER));
+		return row;
+	};
+
+	it("projects a thread mute as the thread's space reference", async () => {
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.actor.mute", "3lkmute3", {
+				$type: "social.colibri.beta.actor.mute",
+				subject: { $type: "social.colibri.beta.actor.defs#mutedThread", thread: THREAD },
+				createdAt: NOW,
+			}),
+		);
+
+		const [row] = await database.db.select().from(database.tables.mutes);
+		expect(row?.subject).toBe(THREAD);
+	});
+
+	it("projects client preferences next to the settings without touching them", async () => {
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.actor.settings", SELF, {
+				$type: "social.colibri.beta.actor.settings",
+				notificationLevel: "nothing",
+			}),
+		);
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.actor.clientPreferences", SELF, {
+				$type: "social.colibri.beta.actor.clientPreferences",
+				controls: {
+					$type: "social.colibri.beta.actor.defs#controls",
+					swipeLeftAction: "reply",
+					doubleTapEnabled: true,
+				},
+				theme: "light",
+				developerMode: true,
+				experiments: ["light-mode-v1"],
+			}),
+		);
+
+		const row = await settingsRow();
+		expect(row?.notificationLevel).toBe("nothing");
+		expect(row?.clientPreferences).toEqual({
+			controls: { swipeLeftAction: "reply", doubleTapEnabled: true },
+			theme: "light",
+			developerMode: true,
+			experiments: ["light-mode-v1"],
+		});
+	});
+
+	it("keeps client preferences when the settings record is deleted", async () => {
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.actor.clientPreferences", SELF, {
+				$type: "social.colibri.beta.actor.clientPreferences",
+				messagePreviews: false,
+			}),
+		);
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.actor.settings", SELF, {
+				$type: "social.colibri.beta.actor.settings",
+				shareActivity: true,
+			}),
+		);
+		await applyChange(deps, remove("social.colibri.beta.actor.settings", SELF));
+
+		const row = await settingsRow();
+		expect(row?.shareActivity).toBe(false);
+		expect(row?.clientPreferences).toEqual({ messagePreviews: false });
+	});
+
+	it("projects composer state and clears it on delete", async () => {
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.actor.composerState", SELF, {
+				$type: "social.colibri.beta.actor.composerState",
+				emojiUsage: [{ emoji: "🐦", count: 3, lastUsed: NOW }],
+				skinTone: 2,
+				recentGifs: [
+					{
+						$type: "social.colibri.beta.embed.defs#gifView",
+						id: "https://cdn.test/bird.gif",
+						url: "https://cdn.test/bird.gif",
+						previewUrl: "https://cdn.test/bird-small.gif",
+						width: 200,
+						height: 100,
+					},
+				],
+			}),
+		);
+
+		expect((await settingsRow())?.composerState).toEqual({
+			emojiUsage: [{ emoji: "🐦", count: 3, lastUsed: NOW }],
+			skinTone: 2,
+			recentGifs: [
+				{
+					id: "https://cdn.test/bird.gif",
+					url: "https://cdn.test/bird.gif",
+					previewUrl: "https://cdn.test/bird-small.gif",
+					width: 200,
+					height: 100,
+				},
+			],
+		});
+
+		await applyChange(deps, remove("social.colibri.beta.actor.composerState", SELF));
+		expect((await settingsRow())?.composerState).toEqual({});
+	});
+
+	it("projects a Space notification level keyed by the community and removes it on delete", async () => {
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.actor.spaceNotification", COMMUNITY, {
+				$type: "social.colibri.beta.actor.spaceNotification",
+				level: "mentionsAndReplies",
+				createdAt: NOW,
+			}),
+		);
+
+		expect(await database.db.select().from(database.tables.spaceNotifications)).toEqual([
+			{ did: MEMBER, community: COMMUNITY, level: "mentionsAndReplies" },
+		]);
+
+		await applyChange(deps, remove("social.colibri.beta.actor.spaceNotification", COMMUNITY));
+		expect(await database.db.select().from(database.tables.spaceNotifications)).toEqual([]);
+	});
+
+	it("refuses a Space notification level whose key is not a DID", async () => {
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.actor.spaceNotification", "3lknotadid", {
+				$type: "social.colibri.beta.actor.spaceNotification",
+				level: "nothing",
+				createdAt: NOW,
+			}),
+		);
+
+		expect(await database.db.select().from(database.tables.spaceNotifications)).toEqual([]);
+	});
 });
 
 describe("channel projections", () => {

@@ -11,6 +11,7 @@ import {
 	handleGrantSpaceAccess,
 	handlePutMutes,
 	handlePutSettings,
+	handlePutSpaceNotification,
 	handleSetStatus,
 } from "./actor-write.js";
 
@@ -155,6 +156,132 @@ describe("putSettings", () => {
 	});
 });
 
+const asPreferencesOutput = (body: unknown): void => {
+	const { output } = l.getMain(social.colibri.beta.actor.putSettings);
+	const result = output.schema.safeValidate(body);
+	if (!result.success) throw new Error(result.reason.message);
+};
+
+describe("putSettings client state", () => {
+	it("accepts the nothing level", async () => {
+		const result = await handlePutSettings(ctx, CALLER, { notificationLevel: "nothing" });
+		expect(result.preferences.notificationLevel).toBe("nothing");
+	});
+
+	it("rejects an unknown level", async () => {
+		await expect(
+			handlePutSettings(ctx, CALLER, { notificationLevel: "loud" }),
+		).rejects.toMatchObject({ customErrorName: "InvalidRequest" });
+	});
+
+	it("replaces client preferences whole and keeps them across other updates", async () => {
+		await handlePutSettings(ctx, CALLER, {
+			clientPreferences: { theme: "dark", messagePreviews: false },
+		});
+		await handlePutSettings(ctx, CALLER, { clientPreferences: { theme: "light" } });
+		const result = await handlePutSettings(ctx, CALLER, { shareActivity: true });
+
+		expect(result.preferences.clientPreferences).toEqual({ theme: "light" });
+		asPreferencesOutput(result);
+	});
+
+	it("keeps nested $type values out of stored client preferences", async () => {
+		await handlePutSettings(ctx, CALLER, {
+			clientPreferences: {
+				controls: {
+					$type: "social.colibri.beta.actor.defs#controls",
+					doubleTapEnabled: true,
+				},
+			},
+		});
+
+		const [row] = await database.db
+			.select()
+			.from(database.tables.actorSettings)
+			.where(eq(database.tables.actorSettings.did, CALLER));
+		expect(row?.clientPreferences).toEqual({ controls: { doubleTapEnabled: true } });
+	});
+
+	it("stores composer state and answers with a view the lexicon accepts", async () => {
+		const result = await handlePutSettings(ctx, CALLER, {
+			composerState: {
+				emojiUsage: [{ emoji: "🐦", count: 2, lastUsed: NOW }],
+				skinTone: 3,
+				recentGifs: [{ ...GIF }],
+			},
+		});
+
+		expect(result.preferences.composerState).toEqual({
+			emojiUsage: [{ emoji: "🐦", count: 2, lastUsed: NOW }],
+			skinTone: 3,
+			recentGifs: [GIF],
+		});
+		asPreferencesOutput(result);
+	});
+
+	it("answers with empty client state for a caller who never wrote any", async () => {
+		const result = await handlePutSettings(ctx, CALLER, {});
+
+		expect(result.preferences.clientPreferences).toEqual({});
+		expect(result.preferences.composerState).toEqual({});
+		expect(result.preferences.spaceNotifications).toEqual([]);
+		asPreferencesOutput(result);
+	});
+});
+
+describe("putSpaceNotification", () => {
+	it("sets, changes and removes a Space level", async () => {
+		await handlePutSpaceNotification(ctx, CALLER, { community: COMMUNITY, level: "nothing" });
+		const changed = await handlePutSpaceNotification(ctx, CALLER, {
+			community: COMMUNITY,
+			level: "mentionsAndReplies",
+		});
+		expect(changed.preferences.spaceNotifications).toEqual([
+			{ community: COMMUNITY, level: "mentionsAndReplies" },
+		]);
+		asPreferencesOutput(changed);
+
+		const removed = await handlePutSpaceNotification(ctx, CALLER, {
+			community: COMMUNITY,
+			removeLevel: true,
+		});
+		expect(removed.preferences.spaceNotifications).toEqual([]);
+	});
+
+	it("prefers level over removeLevel", async () => {
+		const result = await handlePutSpaceNotification(ctx, CALLER, {
+			community: COMMUNITY,
+			level: "all",
+			removeLevel: true,
+		});
+		expect(result.preferences.spaceNotifications).toEqual([{ community: COMMUNITY, level: "all" }]);
+	});
+
+	it("rejects a call with neither level nor removeLevel", async () => {
+		await expect(
+			handlePutSpaceNotification(ctx, CALLER, { community: COMMUNITY }),
+		).rejects.toMatchObject({ customErrorName: "InvalidRequest" });
+	});
+
+	it("rejects an unknown level", async () => {
+		await expect(
+			handlePutSpaceNotification(ctx, CALLER, { community: COMMUNITY, level: "loud" }),
+		).rejects.toMatchObject({ customErrorName: "InvalidRequest" });
+	});
+
+	it("touches only the caller's levels", async () => {
+		await database.db
+			.insert(database.tables.spaceNotifications)
+			.values({ did: OTHER, community: COMMUNITY, level: "nothing" });
+
+		await handlePutSpaceNotification(ctx, CALLER, { community: COMMUNITY, removeLevel: true });
+
+		expect(await database.db.select().from(database.tables.spaceNotifications)).toEqual([
+			{ did: OTHER, community: COMMUNITY, level: "nothing" },
+		]);
+	});
+});
+
 describe("putMutes", () => {
 	it("writes only the caller's rows", async () => {
 		await database.db.insert(database.tables.mutes).values({
@@ -285,6 +412,16 @@ describe("deleteAccount", () => {
 			.from(database.tables.mutes)
 			.where(eq(database.tables.mutes.did, CALLER));
 		expect(remainingMutes).toHaveLength(0);
+	});
+
+	it("removes the caller's Space notification levels", async () => {
+		await database.db
+			.insert(database.tables.spaceNotifications)
+			.values({ did: CALLER, community: COMMUNITY, level: "nothing" });
+
+		await handleDeleteAccount(ctx, CALLER);
+
+		expect(await database.db.select().from(database.tables.spaceNotifications)).toEqual([]);
 	});
 });
 

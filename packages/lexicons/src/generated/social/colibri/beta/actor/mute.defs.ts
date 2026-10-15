@@ -15,9 +15,9 @@ export { $nsid };
 type Main = { $type: "social.colibri.beta.actor.mute";
 
   /**
-   * What is muted. A user or a community is named by DID, a channel by its space.
+   * What is muted. A user or a community is named by DID, a channel or a thread by its space.
    */
-  "subject":l.$Typed<ActorDefs.MutedActor> | l.$Typed<ActorDefs.MutedChannel>;
+  "subject":l.$Typed<ActorDefs.MutedActor> | l.$Typed<ActorDefs.MutedChannel> | l.$Typed<ActorDefs.MutedThread>;
 
   /**
    * When the mute was created.
@@ -27,7 +27,7 @@ type Main = { $type: "social.colibri.beta.actor.mute";
 export type { Main };
 
 /** A muted subject. One record per mute, so unmuting is a delete rather than a rewrite of a list. */
-const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"subject":/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<ActorDefs.MutedActor>((() => ActorDefs.mutedActor) as any),/*#__PURE__*/ l.typedRef<ActorDefs.MutedChannel>((() => ActorDefs.mutedChannel) as any)], true),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
+const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"subject":/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<ActorDefs.MutedActor>((() => ActorDefs.mutedActor) as any),/*#__PURE__*/ l.typedRef<ActorDefs.MutedChannel>((() => ActorDefs.mutedChannel) as any),/*#__PURE__*/ l.typedRef<ActorDefs.MutedThread>((() => ActorDefs.mutedThread) as any)], true),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
 
 export { main };
 

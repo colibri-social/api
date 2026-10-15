@@ -18,7 +18,7 @@ export type RoleBadge =
 	| { kind: "image"; cid: string; mimeType: string; size: number };
 export type ModerationAction = "ban" | "unban" | "kick";
 export type NotificationKind = "mention" | "reply" | "message";
-export type NotificationLevel = "all" | "mentionsAndReplies";
+export type NotificationLevel = "all" | "mentionsAndReplies" | "nothing";
 export type OnlineState = "online" | "away" | "dnd" | "offline";
 export type ActivityKind = "listening" | "playing" | "streaming";
 export type PushProvider = "webpush" | "fcm" | "apns";
@@ -49,6 +49,35 @@ export type GifFavorite = {
 	width: number;
 	height: number;
 	title?: string;
+};
+export type StoredControls = {
+	swipeLeftAction?: string;
+	doubleTapEnabled?: boolean;
+	doubleTapAction?: string;
+	doubleTapReactionEmoji?: string;
+};
+export type StoredVoiceView = {
+	confirmJoin?: boolean;
+	showNonVideoParticipants?: boolean;
+	showOwnCamera?: boolean;
+};
+export type ClientPreferences = {
+	controls?: StoredControls;
+	theme?: string;
+	messagePreviews?: boolean;
+	linkEmbedsByDefault?: boolean;
+	warnOnExternalLinks?: boolean;
+	blueskyClient?: string;
+	customBlueskyClientBase?: string;
+	developerMode?: boolean;
+	voiceView?: StoredVoiceView;
+	experiments?: string[];
+};
+export type EmojiUse = { emoji: string; count: number; lastUsed: string };
+export type ComposerState = {
+	emojiUsage?: EmojiUse[];
+	skinTone?: number;
+	recentGifs?: GifFavorite[];
 };
 
 export const spaces = sqliteTable(
@@ -390,7 +419,22 @@ export const actorSettings = sqliteTable("actor_settings", {
 		.notNull()
 		.$defaultFn(() => []),
 	shareActivity: flag("share_activity").notNull().default(false),
+	clientPreferences: json<ClientPreferences>("client_preferences").notNull().default({}),
+	composerState: json<ComposerState>("composer_state").notNull().default({}),
 });
+
+export const spaceNotifications = sqliteTable(
+	"space_notifications",
+	{
+		did: text("did").notNull(),
+		community: text("community").notNull(),
+		level: text("level").notNull().$type<NotificationLevel>(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.did, t.community] }),
+		index("space_notifications_community_idx").on(t.community),
+	],
+);
 
 export const readCursors = sqliteTable(
 	"read_cursors",
@@ -652,6 +696,7 @@ export const schema = {
 	moderationLog,
 	mutes,
 	actorSettings,
+	spaceNotifications,
 	readCursors,
 	communityCredentials,
 	notifications,

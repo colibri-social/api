@@ -17,7 +17,7 @@ type Main = { $type: "social.colibri.beta.actor.settings";
   /**
    * Which messages produce a notification.
    */
-  "notificationLevel"?:"all" | "mentionsAndReplies" | l.UnknownString;
+  "notificationLevel"?:"all" | "mentionsAndReplies" | "nothing" | l.UnknownString;
 
   /**
    * The user's communities in their preferred sidebar order.
@@ -37,7 +37,7 @@ type Main = { $type: "social.colibri.beta.actor.settings";
 export type { Main };
 
 /** A user's Colibri settings. */
-const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"notificationLevel":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies"]}>(), "all")),"communityOrder":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"gifFavorites":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), )),"shareActivity":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false))}));
+const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"notificationLevel":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies","nothing"]}>(), "all")),"communityOrder":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"gifFavorites":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), )),"shareActivity":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false))}));
 
 export { main };
 

@@ -1,6 +1,11 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
 import type { NotificationLevel, OnlineState } from "@colibri-social/appview-db";
 import { asDatetime, encodeMuteSubject, social } from "@colibri-social/lexicons";
+import {
+	isNotificationLevel,
+	toStoredClientPreferences,
+	toStoredComposerState,
+} from "@colibri-social/projections";
 import { nextTid, parseSpaceRef, SpaceCredentialError } from "@colibri-social/space";
 import { and, eq, notInArray } from "drizzle-orm";
 import { setActivitySharing } from "../activity.js";
@@ -22,9 +27,6 @@ const soleOwnerOfCommunity = () =>
 		"you solely own at least one community and must transfer or delete it before deleting your account",
 		"SoleOwnerOfCommunity",
 	);
-
-const isNotificationLevel = (value: string): value is NotificationLevel =>
-	value === "all" || value === "mentionsAndReplies";
 
 const assertNotificationLevel = (value: string): NotificationLevel => {
 	if (!isNotificationLevel(value)) {
@@ -54,6 +56,8 @@ export const handlePutSettings = async (
 		communityOrder?: string[];
 		gifFavorites?: social.colibri.beta.embed.defs.GifView[];
 		shareActivity?: boolean;
+		clientPreferences?: social.colibri.beta.actor.defs.ClientPreferences;
+		composerState?: social.colibri.beta.actor.defs.ComposerState;
 	},
 ): Promise<{ preferences: Preferences }> => {
 	const notificationLevel =
@@ -73,6 +77,14 @@ export const handlePutSettings = async (
 		communityOrder: input.communityOrder ?? existing?.communityOrder ?? [],
 		gifFavorites: input.gifFavorites?.map(toGifFavorite) ?? existing?.gifFavorites ?? [],
 		shareActivity: input.shareActivity ?? existing?.shareActivity ?? false,
+		clientPreferences:
+			input.clientPreferences === undefined
+				? (existing?.clientPreferences ?? {})
+				: toStoredClientPreferences(input.clientPreferences),
+		composerState:
+			input.composerState === undefined
+				? (existing?.composerState ?? {})
+				: toStoredComposerState(input.composerState),
 	};
 
 	await ctx.database.db
@@ -85,6 +97,29 @@ export const handlePutSettings = async (
 			ctx.log.warn({ err: error }, "activity.sharingChangeFailed"),
 		);
 		if (!row.shareActivity) await changed;
+	}
+
+	return { preferences: await announcePreferences(ctx, callerDid) };
+};
+
+export const handlePutSpaceNotification = async (
+	ctx: AppContext,
+	callerDid: string,
+	input: { community: string; level?: string; removeLevel?: boolean },
+): Promise<{ preferences: Preferences }> => {
+	const table = ctx.database.tables.spaceNotifications;
+	if (input.level !== undefined) {
+		const level = assertNotificationLevel(input.level);
+		await ctx.database.db
+			.insert(table)
+			.values({ did: callerDid, community: input.community, level })
+			.onConflictDoUpdate({ target: [table.did, table.community], set: { level } });
+	} else if (input.removeLevel === true) {
+		await ctx.database.db
+			.delete(table)
+			.where(and(eq(table.did, callerDid), eq(table.community, input.community)));
+	} else {
+		throw new InvalidRequestError("give either a level or removeLevel", "InvalidRequest");
 	}
 
 	return { preferences: await announcePreferences(ctx, callerDid) };
@@ -248,6 +283,7 @@ export const handleDeleteAccount = async (
 		{ table: tables.pushSubscriptions, column: tables.pushSubscriptions.actor },
 		{ table: tables.mutes, column: tables.mutes.did },
 		{ table: tables.actorSettings, column: tables.actorSettings.did },
+		{ table: tables.spaceNotifications, column: tables.spaceNotifications.did },
 		{ table: tables.readCursors, column: tables.readCursors.did },
 		{ table: tables.userPresence, column: tables.userPresence.did },
 		{ table: tables.actorActivity, column: tables.actorActivity.did },
@@ -280,6 +316,14 @@ export const registerActorWriteRoutes = ({ server, ctx, auth }: RouteDeps): void
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
 			body: await handlePutMutes(ctx, caller.credentials.did, input.body.mutes),
+		}),
+	});
+
+	route(server, social.colibri.beta.actor.putSpaceNotification, {
+		auth: auth.required,
+		handler: async ({ input, auth: caller }) => ({
+			encoding: "application/json" as const,
+			body: await handlePutSpaceNotification(ctx, caller.credentials.did, input.body),
 		}),
 	});
 

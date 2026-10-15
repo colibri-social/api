@@ -127,6 +127,13 @@
 			"when": 1791792461258,
 			"tag": "0017_abandoned_makkari",
 			"breakpoints": true
+		},
+		{
+			"idx": 18,
+			"version": "7",
+			"when": 1792077141636,
+			"tag": "0018_curved_paibok",
+			"breakpoints": true
 		}
 	]
 }

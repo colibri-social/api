@@ -46,6 +46,14 @@ export const loadPreferences = async (ctx: AppContext, callerDid: string): Promi
 		.where(eq(ctx.database.tables.mutes.did, callerDid))
 		.orderBy(asc(ctx.database.tables.mutes.createdAt));
 
+	const spaceNotificationRows = await ctx.database.db
+		.select()
+		.from(ctx.database.tables.spaceNotifications)
+		.where(eq(ctx.database.tables.spaceNotifications.did, callerDid))
+		.orderBy(asc(ctx.database.tables.spaceNotifications.community));
+
+	const composerState = settings?.composerState ?? {};
+
 	return {
 		notificationLevel: settings?.notificationLevel ?? "all",
 		communityOrder: (settings?.communityOrder ?? []).map(asDid),
@@ -55,6 +63,26 @@ export const loadPreferences = async (ctx: AppContext, callerDid: string): Promi
 		})),
 		gifFavorites: (settings?.gifFavorites ?? []).map(toGifView),
 		shareActivity: settings?.shareActivity ?? false,
+		spaceNotifications: spaceNotificationRows.map((row) => ({
+			community: asDid(row.community),
+			level: row.level,
+		})),
+		clientPreferences: settings?.clientPreferences ?? {},
+		composerState: {
+			...(composerState.emojiUsage === undefined
+				? {}
+				: {
+						emojiUsage: composerState.emojiUsage.map((use) => ({
+							emoji: use.emoji,
+							count: use.count,
+							lastUsed: asDatetime(use.lastUsed),
+						})),
+					}),
+			...(composerState.skinTone === undefined ? {} : { skinTone: composerState.skinTone }),
+			...(composerState.recentGifs === undefined
+				? {}
+				: { recentGifs: composerState.recentGifs.map(toGifView) }),
+		},
 	};
 };
 
