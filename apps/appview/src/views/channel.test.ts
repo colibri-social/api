@@ -185,6 +185,33 @@ describe("ChannelViews.messages", () => {
 		expect(reversed.messages.map((message) => message.rkey)).toEqual(rkeys);
 	});
 
+	it("keeps returning a cursor until every page is read, in both directions", async () => {
+		const rkeys = [nextTid(), nextTid(), nextTid(), nextTid(), nextTid()];
+		for (const rkey of rkeys) await putMessage(rkey);
+
+		const pageAll = async (reverse: boolean) => {
+			const pages: string[][] = [];
+			let cursor: string | undefined;
+			do {
+				const page = await views.messages(SPACE, null, { limit: 2, cursor, reverse });
+				pages.push(page.messages.map((message) => message.rkey));
+				cursor = page.cursor;
+			} while (cursor && pages.length < 10);
+			return pages;
+		};
+
+		expect(await pageAll(false)).toEqual([[rkeys[4], rkeys[3]], [rkeys[2], rkeys[1]], [rkeys[0]]]);
+		expect(await pageAll(true)).toEqual([[rkeys[0], rkeys[1]], [rkeys[2], rkeys[3]], [rkeys[4]]]);
+
+		const forward = await views.messages(SPACE, null, {
+			limit: 2,
+			cursor: rkeys[0],
+			reverse: true,
+		});
+		expect(forward.messages.map((message) => message.rkey)).toEqual([rkeys[1], rkeys[2]]);
+		expect(forward.cursor).toBe(rkeys[2]);
+	});
+
 	it("aggregates reactions by emoji and flags whether the viewer reacted", async () => {
 		const rkey = nextTid();
 		await putMessage(rkey);

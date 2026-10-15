@@ -30,7 +30,7 @@ import {
 	movedOutOf,
 } from "@colibri-social/projections";
 import { parseSpaceRef, spaceRecordUri } from "@colibri-social/space";
-import { and, asc, desc, eq, gt, gte, inArray, lte, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, lt, ne, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { signBlobUrl } from "../media-token.js";
 import type { ActorViews, ProfileView } from "./actor.js";
@@ -293,7 +293,7 @@ export class ChannelViews {
 		const table = this.ctx.database.tables.messages;
 		const order = reverse ? asc(table.rkey) : desc(table.rkey);
 		const from = options.cursor;
-		const boundary = from ? (reverse ? gte(table.rkey, from) : lte(table.rkey, from)) : undefined;
+		const boundary = from ? (reverse ? gt(table.rkey, from) : lt(table.rkey, from)) : undefined;
 
 		const native = await this.ctx.database.db
 			.select()
@@ -318,7 +318,8 @@ export class ChannelViews {
 			.sort((a, b) => (reverse ? a.key.localeCompare(b.key) : b.key.localeCompare(a.key)));
 
 		const page = ordered.slice(0, limit);
-		const cursor = ordered.length > limit ? page.at(-1)?.key : undefined;
+		const more = ordered.length > limit || native.length > limit;
+		const cursor = more ? (page.at(-1)?.key ?? native.at(-1)?.rkey) : undefined;
 
 		const views = await this.hydrateAcrossSpaces(
 			viewer,
