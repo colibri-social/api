@@ -191,6 +191,7 @@ export const handleUpdateChannel = async (
 		allowedRoles?: string[];
 		allowedMembers?: string[];
 		linkEmbeds?: boolean;
+		removeLinkEmbeds?: boolean;
 		visibleToRoles?: string[];
 		visibleToMembers?: string[];
 	},
@@ -233,7 +234,8 @@ export const handleUpdateChannel = async (
 		const ownerOnly = input.ownerOnly ?? existing.ownerOnly;
 		const allowedRoles = input.allowedRoles ?? existing.allowedRoles;
 		const allowedMembers = input.allowedMembers ?? existing.allowedMembers;
-		const linkEmbeds = input.linkEmbeds ?? existing.linkEmbeds ?? undefined;
+		const linkEmbeds =
+			input.linkEmbeds ?? (input.removeLinkEmbeds ? undefined : (existing.linkEmbeds ?? undefined));
 		const visibleToRoles = input.visibleToRoles ?? existing.visibleToRoles;
 		const visibleToMembers = input.visibleToMembers ?? existing.visibleToMembers;
 
@@ -386,6 +388,7 @@ export const registerChannelWriteRoutes = ({ server, ctx, auth }: RouteDeps): vo
 					allowedRoles: input.body.allowedRoles,
 					allowedMembers: input.body.allowedMembers,
 					linkEmbeds: input.body.linkEmbeds,
+					removeLinkEmbeds: input.body.removeLinkEmbeds,
 					visibleToRoles: input.body.visibleToRoles,
 					visibleToMembers: input.body.visibleToMembers,
 				},
