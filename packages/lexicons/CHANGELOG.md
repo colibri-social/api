@@ -1,5 +1,11 @@
 # @colibri-social/lexicons
 
+## 2.16.0
+
+### Minor Changes
+
+- 3f9768e: `social.colibri.beta.channel.update` takes `removeLinkEmbeds`, which clears a channel's link preview setting so the community default applies again. A `linkEmbeds` value in the same call takes precedence.
+
 ## 2.15.0
 
 ### Minor Changes

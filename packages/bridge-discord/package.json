@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/bridge-discord",
-	"version": "0.3.1",
+	"version": "0.3.2",
 	"description": "A Colibri bridge connector for Discord servers",
 	"type": "module",
 	"exports": {
