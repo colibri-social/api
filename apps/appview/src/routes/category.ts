@@ -10,6 +10,8 @@ import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
 import type { CategoryView } from "../views/community.js";
 import { CommunityViews } from "../views/community.js";
+import { type CategoryFields, categoryFields, categoryRecord } from "./category-record.js";
+import { assertVisibilityHierarchy } from "./channel-write.js";
 import { currentCategoryOrder, writeCommunitySettings } from "./settings.js";
 import type { RouteDeps } from "./types.js";
 
@@ -39,6 +41,26 @@ const requirePermission = async (
 	return authz;
 };
 
+export type CategoryPermissionInput = {
+	ownerOnly?: boolean;
+	allowedRoles?: readonly string[];
+	allowedMembers?: readonly string[];
+	visibleToRoles?: readonly string[];
+	visibleToMembers?: readonly string[];
+};
+
+const applyPermissions = (
+	fields: CategoryFields,
+	input: CategoryPermissionInput,
+): CategoryFields => ({
+	...fields,
+	ownerOnly: input.ownerOnly ?? fields.ownerOnly,
+	allowedRoles: input.allowedRoles ? [...input.allowedRoles] : fields.allowedRoles,
+	allowedMembers: input.allowedMembers ? [...input.allowedMembers] : fields.allowedMembers,
+	visibleToRoles: input.visibleToRoles ? [...input.visibleToRoles] : fields.visibleToRoles,
+	visibleToMembers: input.visibleToMembers ? [...input.visibleToMembers] : fields.visibleToMembers,
+});
+
 const loadCategoryRow = async (ctx: AppContext, community: string, rkey: string) => {
 	const [row] = await ctx.database.db
 		.select()
@@ -56,32 +78,48 @@ const loadCategoryRow = async (ctx: AppContext, community: string, rkey: string)
 export const handleCreateCategory = async (
 	ctx: AppContext,
 	writer: CommunityWriter,
+	communities: CommunityViews,
 	community: string,
 	actor: string,
-	input: { name: string },
+	input: { name: string } & CategoryPermissionInput,
 ): Promise<{ category: CategoryView }> => {
 	try {
 		await requireCommunity(ctx, community);
-		await requirePermission(ctx, community, actor, "category.create");
+		const authz = await requirePermission(ctx, community, actor, "category.create");
+		await assertVisibilityHierarchy(
+			ctx,
+			community,
+			authz,
+			input.visibleToRoles && [...input.visibleToRoles],
+		);
 
 		const rkey = nextTid();
 		const order = await currentCategoryOrder(ctx, community);
+		const fields = applyPermissions(
+			{
+				name: input.name,
+				channelOrder: [],
+				ownerOnly: false,
+				allowedRoles: [],
+				allowedMembers: [],
+				visibleToRoles: [],
+				visibleToMembers: [],
+			},
+			input,
+		);
 
 		await writer.put(community, {
 			space: writer.spaces(community).configuration,
 			collection: COLLECTIONS.category,
 			rkey,
-			record: {
-				$type: COLLECTIONS.category,
-				name: input.name,
-				channelOrder: [],
-			},
+			record: categoryRecord(fields),
 		});
 		await writeCommunitySettings(ctx, writer, community, { categoryOrder: [...order, rkey] });
 		ctx.announce.toCommunity(community, categoryEvent("create", community, rkey));
 
 		return {
 			category: {
+				...communities.categoryAudienceView(fields),
 				rkey: asRecordKey(rkey),
 				name: input.name,
 				channels: [],
@@ -99,26 +137,31 @@ export const handleUpdateCategory = async (
 	community: string,
 	actor: string,
 	rkey: string,
-	input: { name?: string },
+	input: { name?: string } & CategoryPermissionInput,
 ): Promise<{ category: CategoryView }> => {
 	try {
 		await requireCommunity(ctx, community);
 		const authz = await requirePermission(ctx, community, actor, "category.update");
+		await assertVisibilityHierarchy(
+			ctx,
+			community,
+			authz,
+			input.visibleToRoles && [...input.visibleToRoles],
+		);
 
 		const existing = await loadCategoryRow(ctx, community, rkey);
 		if (!existing) throw categoryNotFound();
 
-		const name = input.name ?? existing.name;
+		const fields = applyPermissions(
+			{ ...categoryFields(existing), name: input.name ?? existing.name },
+			input,
+		);
 
 		await writer.put(community, {
 			space: writer.spaces(community).configuration,
 			collection: COLLECTIONS.category,
 			rkey,
-			record: {
-				$type: COLLECTIONS.category,
-				name,
-				channelOrder: existing.channelOrder,
-			},
+			record: categoryRecord(fields),
 		});
 
 		ctx.announce.toCommunity(community, categoryEvent("update", community, rkey));
@@ -128,8 +171,9 @@ export const handleUpdateCategory = async (
 
 		return {
 			category: {
+				...communities.categoryAudienceView(fields),
 				rkey: asRecordKey(rkey),
-				name,
+				name: fields.name,
 				channels: view?.channels ?? [],
 			},
 		};
@@ -170,6 +214,17 @@ export const handleDeleteCategory = async (
 	}
 };
 
+const permissionInput = <T extends { name?: string } & CategoryPermissionInput>(
+	body: T,
+): Pick<T, "name"> & CategoryPermissionInput => ({
+	name: body.name,
+	ownerOnly: body.ownerOnly,
+	allowedRoles: body.allowedRoles,
+	allowedMembers: body.allowedMembers,
+	visibleToRoles: body.visibleToRoles,
+	visibleToMembers: body.visibleToMembers,
+});
+
 export const registerCategoryRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 	const actors = new ActorViews(ctx);
 	const communities = new CommunityViews(ctx, actors);
@@ -181,11 +236,10 @@ export const registerCategoryRoutes = ({ server, ctx, auth }: RouteDeps): void =
 			body: await handleCreateCategory(
 				ctx,
 				ctx.writer,
+				communities,
 				input.body.community,
 				caller.credentials.did,
-				{
-					name: input.body.name,
-				},
+				permissionInput(input.body),
 			),
 		}),
 	});
@@ -201,7 +255,7 @@ export const registerCategoryRoutes = ({ server, ctx, auth }: RouteDeps): void =
 				input.body.community,
 				caller.credentials.did,
 				input.body.category,
-				{ name: input.body.name },
+				permissionInput(input.body),
 			),
 		}),
 	});

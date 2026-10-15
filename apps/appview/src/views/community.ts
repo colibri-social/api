@@ -1,13 +1,17 @@
 import type { Schema } from "@colibri-social/appview-db";
 import {
 	type ActorAuthz,
+	type CategoryAudience,
 	type ChannelState,
 	canPost,
 	canRead,
 	effectivePermissions,
 	isAdmin,
 	isMember,
+	isPrivateCategory,
 	isPrivateChannel,
+	toCategoryAudience,
+	toChannelState,
 } from "@colibri-social/community";
 import {
 	asDatetime,
@@ -39,16 +43,6 @@ const INVALID_HANDLE = "handle.invalid";
 
 const ROLE_SCAN_BATCH = 500;
 const MAX_MEMBER_SCAN_ROUNDS = 20;
-
-const toChannelState = (row: ChannelRow): ChannelState => ({
-	space: row.space,
-	skey: row.skey,
-	ownerOnly: row.ownerOnly,
-	allowedRoles: row.allowedRoles,
-	allowedMembers: row.allowedMembers,
-	visibleToRoles: row.visibleToRoles,
-	visibleToMembers: row.visibleToMembers,
-});
 
 export class CommunityViews {
 	constructor(
@@ -99,6 +93,7 @@ export class CommunityViews {
 			requiresApprovalToJoin: row.requiresApproval,
 			linkEmbeds: row.linkEmbeds,
 			overrideUserNameColors: row.overrideUserNameColors,
+			...(row.customEmoji && row.customEmoji !== "all" ? { customEmoji: row.customEmoji } : {}),
 			labelers: row.labelers.map(asDid),
 			memberCount,
 			viewer: {
@@ -111,8 +106,8 @@ export class CommunityViews {
 		} as CommunityView;
 	}
 
-	channel(row: ChannelRow, authz: ActorAuthz): ChannelView {
-		const state = toChannelState(row);
+	channel(row: ChannelRow, authz: ActorAuthz, category?: CategoryAudience | null): ChannelView {
+		const state = toChannelState(row, category);
 		return {
 			space: asSpaceRef(row.space),
 			type: row.spaceType,
@@ -183,7 +178,10 @@ export class CommunityViews {
 			.from(this.ctx.database.tables.channels)
 			.where(eq(this.ctx.database.tables.channels.community, community))
 			.orderBy(asc(this.ctx.database.tables.channels.position));
-		return rows.map((row) => this.channel(row, authz)).filter((view) => view.viewer.canRead);
+		const audiences = await this.ctx.loader.categoryAudiences(community);
+		return rows
+			.map((row) => this.channel(row, authz, row.category ? audiences.get(row.category) : null))
+			.filter((view) => view.viewer.canRead);
 	}
 
 	async readableChannels(community: string, authz: ActorAuthz): Promise<string[]> {
@@ -205,6 +203,7 @@ export class CommunityViews {
 			channels.map((channel) => [channel.space.split("/").pop() as string, channel]),
 		);
 		return categories.map((category) => ({
+			...this.categoryAudienceView(toCategoryAudience(category)),
 			rkey: asRecordKey(category.rkey),
 			name: category.name,
 			channels: category.channelOrder
@@ -304,12 +303,31 @@ export class CommunityViews {
 		return rows.map((row) => this.role(row, viewer));
 	}
 
-	async channelState(space: string): Promise<{ row: ChannelRow; state: ChannelState } | null> {
+	categoryAudienceView(
+		audience: CategoryAudience,
+	): Omit<CategoryView, "rkey" | "name" | "channels"> {
+		return {
+			ownerOnly: audience.ownerOnly,
+			allowedRoles: audience.allowedRoles.map(asRecordKey),
+			allowedMembers: audience.allowedMembers.map(asDid),
+			visibleToRoles: audience.visibleToRoles.map(asRecordKey),
+			visibleToMembers: audience.visibleToMembers.map(asDid),
+			private: isPrivateCategory(audience),
+		};
+	}
+
+	async channelState(space: string): Promise<{
+		row: ChannelRow;
+		state: ChannelState;
+		category: CategoryAudience | null;
+	} | null> {
 		const [row] = await this.ctx.database.db
 			.select()
 			.from(this.ctx.database.tables.channels)
 			.where(and(eq(this.ctx.database.tables.channels.space, space)))
 			.limit(1);
-		return row ? { row, state: toChannelState(row) } : null;
+		if (!row) return null;
+		const category = await this.ctx.loader.categoryAudience(row.community, row.category);
+		return { row, state: toChannelState(row, category), category };
 	}
 }

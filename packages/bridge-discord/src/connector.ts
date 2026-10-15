@@ -22,6 +22,7 @@ import type {
 import {
 	type AnyThreadChannel,
 	ApplicationCommandOptionType,
+	type AutocompleteInteraction,
 	ChannelType,
 	type ChatInputCommandInteraction,
 	Client,
@@ -90,6 +91,17 @@ const jumpUrl = (location: RemoteLocation & { id: string }): string =>
 	`https://discord.com/channels/${location.remoteSpace}/${location.remoteThread ?? location.remoteRoom}/${location.id}`;
 
 type MessageLocation = { remoteRoom: string; remoteThread?: string };
+
+const disconnectReply = (left: number, picked: boolean): string => {
+	if (left === 0) {
+		return picked
+			? "This server isn't connected to that community."
+			: "This server isn't connected to any Colibri community.";
+	}
+	return left === 1
+		? "Disconnected this server from Colibri. Messages already relayed stay."
+		: `Disconnected this server from ${left} Colibri communities. Messages already relayed stay.`;
+};
 
 export class DiscordConnector
 	implements
@@ -173,6 +185,11 @@ export class DiscordConnector
 					context.log.warn({ error: String(error) }, "discord.command.failed"),
 				);
 			}
+			if (interaction.isAutocomplete() && interaction.commandName === this.commandName) {
+				void this.onAutocomplete(interaction).catch((error) =>
+					context.log.warn({ error: String(error) }, "discord.autocomplete.failed"),
+				);
+			}
 		});
 		await this.client.login(this.options.token);
 	}
@@ -189,7 +206,7 @@ export class DiscordConnector
 		await this.client.application?.commands.set([
 			{
 				name: this.commandName,
-				description: "Connect this server to a Colibri community",
+				description: "Connect this server to Colibri communities",
 				defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
 				dmPermission: false,
 				options: [
@@ -202,6 +219,20 @@ export class DiscordConnector
 						type: ApplicationCommandOptionType.Subcommand,
 						name: "status",
 						description: "List the channels relayed to Colibri",
+					},
+					{
+						type: ApplicationCommandOptionType.Subcommand,
+						name: "disconnect",
+						description: "Disconnect this server from Colibri",
+						options: [
+							{
+								type: ApplicationCommandOptionType.String,
+								name: "community",
+								description: "The community to disconnect. Leave empty to disconnect all of them.",
+								required: false,
+								autocomplete: true,
+							},
+						],
 					},
 				],
 			},
@@ -217,6 +248,14 @@ export class DiscordConnector
 				content: "You need the Manage Server permission to do that.",
 				flags: MessageFlags.Ephemeral,
 			});
+			return;
+		}
+
+		if (interaction.options.getSubcommand() === "disconnect") {
+			await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+			const community = interaction.options.getString("community") ?? undefined;
+			const left = await context.disconnect(guild.id, community);
+			await interaction.editReply(disconnectReply(left, community !== undefined));
 			return;
 		}
 
@@ -242,6 +281,33 @@ export class DiscordConnector
 			].join("\n"),
 			flags: MessageFlags.Ephemeral,
 		});
+	}
+
+	private async onAutocomplete(interaction: AutocompleteInteraction): Promise<void> {
+		const context = this.context;
+		const guild = interaction.guild;
+		if (
+			!context ||
+			!guild ||
+			!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)
+		) {
+			await interaction.respond([]);
+			return;
+		}
+		const query = interaction.options.getFocused().toLowerCase();
+		await interaction.respond(
+			context
+				.connections(guild.id)
+				.map((connection) => ({
+					name: (connection.communityName ?? connection.community).slice(0, 100),
+					value: connection.community,
+				}))
+				.filter(
+					(choice) =>
+						choice.name.toLowerCase().includes(query) || choice.value.toLowerCase().includes(query),
+				)
+				.slice(0, 25),
+		);
 	}
 
 	private isOwnMessage(message: Message | PartialMessage): boolean {

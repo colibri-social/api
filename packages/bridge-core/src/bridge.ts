@@ -10,6 +10,7 @@ import {
 	type ThreadView,
 } from "./client.js";
 import {
+	type BridgeConnection,
 	type BridgeContext,
 	type BridgeLogger,
 	canDelete,
@@ -190,6 +191,8 @@ export class Bridge {
 						remoteRoom,
 						remoteName,
 					})),
+			connections: (remoteSpace) => this.connections(remoteSpace),
+			disconnect: (remoteSpace, community) => this.leave(remoteSpace, community),
 		};
 	}
 
@@ -334,19 +337,40 @@ export class Bridge {
 		}
 	}
 
-	private async leave(remoteSpace: string): Promise<void> {
-		for (const registration of this.registrations) {
-			if (registration.remoteSpace !== remoteSpace) continue;
-			await this.options.client.leave({
+	private connections(remoteSpace: string): BridgeConnection[] {
+		return this.registrations
+			.filter((registration) => registration.remoteSpace === remoteSpace)
+			.map((registration) => ({
 				community: registration.community,
+				...(registration.communityName ? { communityName: registration.communityName } : {}),
 				registration: registration.id,
-			});
+			}));
+	}
+
+	private async leave(remoteSpace: string, community?: string): Promise<number> {
+		const leaving = this.registrations.filter(
+			(registration) =>
+				registration.remoteSpace === remoteSpace &&
+				(community === undefined || registration.community === community),
+		);
+		for (const registration of leaving) {
+			try {
+				await this.options.client.leave({
+					community: registration.community,
+					registration: registration.id,
+				});
+			} catch (error) {
+				if (!(error instanceof ColibriRequestError && error.error === "RegistrationNotFound")) {
+					throw error;
+				}
+			}
 			this.log.info(
 				{ community: registration.community, registration: registration.id },
 				"bridge.registration.left",
 			);
 		}
-		await this.refresh();
+		if (leaving.length > 0) await this.refresh();
+		return leaving.length;
 	}
 
 	private async pushRooms(registration: RegistrationView): Promise<void> {

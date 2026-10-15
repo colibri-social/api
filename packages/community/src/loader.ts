@@ -1,7 +1,14 @@
 import type { Queryable, Schema } from "@colibri-social/appview-db";
 import { SPACE_TYPES } from "@colibri-social/lexicons";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import type { ActorAuthz, ChannelState, RoleState, ThreadState } from "./authz.js";
+import {
+	type ActorAuthz,
+	type CategoryAudience,
+	type ChannelState,
+	inheritCategory,
+	type RoleState,
+	type ThreadState,
+} from "./authz.js";
 
 export type CommunityRow = Awaited<ReturnType<CommunityLoader["community"]>>;
 
@@ -31,6 +38,24 @@ const toChannel = (row: Schema["channels"]["$inferSelect"]): ChannelState => ({
 	visibleToMembers: row.visibleToMembers,
 });
 
+export const toCategoryAudience = (
+	row: Pick<
+		Schema["categories"]["$inferSelect"],
+		"ownerOnly" | "allowedRoles" | "allowedMembers" | "visibleToRoles" | "visibleToMembers"
+	>,
+): CategoryAudience => ({
+	ownerOnly: row.ownerOnly,
+	allowedRoles: row.allowedRoles ?? [],
+	allowedMembers: row.allowedMembers ?? [],
+	visibleToRoles: row.visibleToRoles ?? [],
+	visibleToMembers: row.visibleToMembers ?? [],
+});
+
+export const toChannelState = (
+	row: Schema["channels"]["$inferSelect"],
+	category?: CategoryAudience | null,
+): ChannelState => inheritCategory(toChannel(row), category);
+
 const toThread = (row: Schema["threads"]["$inferSelect"]): ThreadState => ({
 	space: row.space,
 	skey: row.skey,
@@ -58,7 +83,34 @@ export class CommunityLoader {
 			.from(this.deps.tables.channels)
 			.where(eq(this.deps.tables.channels.space, space))
 			.limit(1);
-		return row ? toChannel(row) : null;
+		if (!row) return null;
+		return toChannelState(row, await this.categoryAudience(row.community, row.category));
+	}
+
+	async categoryAudience(
+		community: string,
+		category: string | null,
+	): Promise<CategoryAudience | null> {
+		if (!category) return null;
+		const [row] = await this.deps.db
+			.select()
+			.from(this.deps.tables.categories)
+			.where(
+				and(
+					eq(this.deps.tables.categories.community, community),
+					eq(this.deps.tables.categories.rkey, category),
+				),
+			)
+			.limit(1);
+		return row ? toCategoryAudience(row) : null;
+	}
+
+	async categoryAudiences(community: string): Promise<Map<string, CategoryAudience>> {
+		const rows = await this.deps.db
+			.select()
+			.from(this.deps.tables.categories)
+			.where(eq(this.deps.tables.categories.community, community));
+		return new Map(rows.map((row) => [row.rkey, toCategoryAudience(row)]));
 	}
 
 	async threadRow(space: string) {

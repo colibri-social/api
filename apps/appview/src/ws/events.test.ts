@@ -12,6 +12,7 @@ import { nextTid } from "@colibri-social/space";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
+import { readCursorEvent } from "../announce.js";
 import { createAuthzChanges } from "../authz-changes.js";
 import type { AppContext } from "../context.js";
 import { EventServer } from "./events.js";
@@ -149,6 +150,7 @@ describe("EventServer", () => {
 			},
 			loader: {
 				channel: async (space: string) => channels.get(space) ?? null,
+				categoryAudiences: async () => new Map(),
 				spaceStates: async (space: string) => ({
 					channel: channels.get(space) ?? null,
 					thread: null,
@@ -743,5 +745,40 @@ describe("EventServer", () => {
 		await vi.waitFor(async () => expect(await viewingChannelOf(ALICE)).toBeNull());
 
 		ws.close();
+	});
+
+	it("hands a user's read cursors to every one of their sessions and nobody else", async () => {
+		const phone = connect("alice-token");
+		const desktop = connect("alice-token");
+		const bob = connect("bob-token");
+		await Promise.all([waitForOpen(phone), waitForOpen(desktop), waitForOpen(bob)]);
+
+		events.publishToUser(
+			ALICE,
+			readCursorEvent(COMMUNITY, [{ channel: "3lkgeneral", cursor: "3lkaaaaaaaaa7" }]),
+		);
+
+		const expected = {
+			$type: "social.colibri.beta.sync.defs#readCursorEvent",
+			community: COMMUNITY,
+			cursors: [{ channel: "3lkgeneral", cursor: "3lkaaaaaaaaa7" }],
+		};
+		expect(await nextFrameOfType(phone, "readCursorEvent")).toEqual(expected);
+		expect(await nextFrameOfType(desktop, "readCursorEvent")).toEqual(expected);
+
+		send(bob, { $type: "social.colibri.beta.sync.defs#heartbeat" });
+		const seenByBob: Frame[] = [];
+		for (;;) {
+			const frame = await nextFrame(bob);
+			if (frame.$type === "social.colibri.beta.sync.defs#ack") break;
+			seenByBob.push(frame);
+		}
+		expect(seenByBob.map((frame) => frame.$type)).not.toContain(
+			"social.colibri.beta.sync.defs#readCursorEvent",
+		);
+
+		phone.close();
+		desktop.close();
+		bob.close();
 	});
 });

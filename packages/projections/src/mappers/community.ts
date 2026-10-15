@@ -99,6 +99,8 @@ export const communitySettings: Projector<social.colibri.beta.community.settings
 				requiresApproval: value.requiresApprovalToJoin,
 				linkEmbeds: value.linkEmbeds ?? true,
 				overrideUserNameColors: value.overrideUserNameColors ?? false,
+				customEmoji:
+					value.customEmoji === "local" || value.customEmoji === "none" ? value.customEmoji : "all",
 				labelers: value.labelers ?? [],
 				indexedAt: deps.now(),
 			})
@@ -126,6 +128,7 @@ export const communitySettings: Projector<social.colibri.beta.community.settings
 				requiresApproval: false,
 				linkEmbeds: true,
 				overrideUserNameColors: false,
+				customEmoji: "all",
 				labelers: [],
 			})
 			.where(eq(deps.tables.communities.did, community));
@@ -139,17 +142,21 @@ export const category: Projector<social.colibri.beta.category.Main> = {
 	schema: social.colibri.beta.category,
 	put: async (deps, ref, value) => {
 		const community = communityOf(ref.space);
+		const fields = {
+			name: value.name,
+			channelOrder: [...value.channelOrder],
+			ownerOnly: value.ownerOnly ?? false,
+			allowedRoles: [...(value.allowedRoles ?? [])],
+			allowedMembers: [...(value.allowedMembers ?? [])],
+			visibleToRoles: [...(value.visibleToRoles ?? [])],
+			visibleToMembers: [...(value.visibleToMembers ?? [])],
+		};
 		await deps.db
 			.insert(deps.tables.categories)
-			.values({
-				community,
-				rkey: ref.rkey,
-				name: value.name,
-				channelOrder: [...value.channelOrder],
-			})
+			.values({ community, rkey: ref.rkey, ...fields })
 			.onConflictDoUpdate({
 				target: [deps.tables.categories.community, deps.tables.categories.rkey],
-				set: { name: value.name, channelOrder: [...value.channelOrder] },
+				set: fields,
 			});
 
 		await Promise.all(

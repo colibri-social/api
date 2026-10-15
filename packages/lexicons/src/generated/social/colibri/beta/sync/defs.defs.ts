@@ -10,6 +10,7 @@ import * as CommunityDefs from "../community/defs.defs.js";
 import * as ThreadDefs from "../thread/defs.defs.js";
 import * as BetaLabel from "../label.defs.js";
 import * as NotificationDefs from "../notification/defs.defs.js";
+import * as ChannelRead from "../channel/read.defs.js";
 import * as ActorDefs from "../actor/defs.defs.js";
 
 const $nsid = "social.colibri.beta.sync.defs";
@@ -587,6 +588,11 @@ type SeenEvent = { $type?: "social.colibri.beta.sync.defs#seenEvent";
   "channel"?:l.SpaceRefString;
 
   /**
+   * The message whose notifications were marked seen, when it was a single message.
+   */
+  "message"?:BetaDefs.RecordRef;
+
+  /**
    * The point everything was marked seen up to.
    */
   "seenAt"?:l.DatetimeString };
@@ -594,9 +600,29 @@ type SeenEvent = { $type?: "social.colibri.beta.sync.defs#seenEvent";
 export type { SeenEvent };
 
 /** The connected user marked notifications seen somewhere else, so this client should clear the same badges. */
-const seenEvent = /*#__PURE__*/ l.typedObject<SeenEvent>($nsid, "seenEvent", /*#__PURE__*/ l.object({"unread":/*#__PURE__*/ l.integer(),"channel":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"})),"seenAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"}))}));
+const seenEvent = /*#__PURE__*/ l.typedObject<SeenEvent>($nsid, "seenEvent", /*#__PURE__*/ l.object({"unread":/*#__PURE__*/ l.integer(),"channel":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"})),"message":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any)),"seenAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"}))}));
 
 export { seenEvent };
+
+/** The connected user's read cursors for one community moved, possibly from another of their sessions. Each cursor is the newest the AppView holds for that channel or thread, so applying the event never moves a cursor backwards. */
+type ReadCursorEvent = { $type?: "social.colibri.beta.sync.defs#readCursorEvent";
+
+  /**
+   * The community the cursors belong to.
+   */
+  "community":l.DidString;
+
+  /**
+   * The cursors that changed.
+   */
+  "cursors":(ChannelRead.Cursor)[] };
+
+export type { ReadCursorEvent };
+
+/** The connected user's read cursors for one community moved, possibly from another of their sessions. Each cursor is the newest the AppView holds for that channel or thread, so applying the event never moves a cursor backwards. */
+const readCursorEvent = /*#__PURE__*/ l.typedObject<ReadCursorEvent>($nsid, "readCursorEvent", /*#__PURE__*/ l.object({"community":/*#__PURE__*/ l.string({"format":"did"}),"cursors":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ChannelRead.Cursor>((() => ChannelRead.cursor) as any), )}));
+
+export { readCursorEvent };
 
 /** Someone's presence changed. */
 type PresenceEvent = { $type?: "social.colibri.beta.sync.defs#presenceEvent";

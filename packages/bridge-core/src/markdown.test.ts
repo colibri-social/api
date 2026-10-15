@@ -208,6 +208,26 @@ describe("facetsToSource", () => {
 	});
 });
 
+describe("custom emoji", () => {
+	const emoji = {
+		$type: "social.colibri.beta.richtext.facet#customEmoji",
+		uri: "at://did:plc:community/blue.moji.collection.item/blobcat",
+	} as Feature;
+
+	it("keeps the fallback text and reports the emoji as an atom", () => {
+		const text = "hi :blob_cat: there";
+		const result = facetsToSource(text, [buildFacet(3, 13, emoji)]);
+		expect(result.source).toBe(text);
+		expect(result.atoms).toEqual([{ start: 3, end: 13, feature: emoji }]);
+	});
+
+	it("keeps a Unicode fallback whole", () => {
+		const text = "go 🐈 go";
+		const end = new TextEncoder().encode("go 🐈").length;
+		expect(facetsToSource(text, [buildFacet(3, end, emoji)]).source).toBe(text);
+	});
+});
+
 describe("block prefixes", () => {
 	it("puts a heading marker outside an inline mark starting at the same offset", () => {
 		expect(facetsToSource("x", [buildFacet(0, 1, BOLD), buildFacet(0, 1, heading(1))]).source).toBe(

@@ -1,5 +1,13 @@
 import type { BridgedAttribution, Schema } from "@colibri-social/appview-db";
-import { type ActorAuthz, type ChannelState, canRead, has } from "@colibri-social/community";
+import {
+	type ActorAuthz,
+	type CategoryAudience,
+	canRead,
+	customEmojiPolicy,
+	filterCustomEmojiFacets,
+	has,
+	toChannelState,
+} from "@colibri-social/community";
 import {
 	asAtUri,
 	asDatetime,
@@ -57,16 +65,6 @@ type RawForward = {
 	facets?: unknown[];
 	attachments?: RawAttachment[];
 };
-
-const toChannelState = (row: ChannelRow): ChannelState => ({
-	space: row.space,
-	skey: row.skey,
-	ownerOnly: row.ownerOnly,
-	allowedRoles: row.allowedRoles,
-	allowedMembers: row.allowedMembers,
-	visibleToRoles: row.visibleToRoles,
-	visibleToMembers: row.visibleToMembers,
-});
 
 export class ChannelViews {
 	constructor(
@@ -438,13 +436,21 @@ export class ChannelViews {
 					.filter((ref): ref is string => typeof ref === "string"),
 			),
 		];
-		const [profiles, labels, reactionRows, sourceNames] = await Promise.all([
+		const [profiles, labels, reactionRows, sourceNames, communityRow] = await Promise.all([
 			this.actors.hydrate(authors),
 			messageLabels(this.ctx.database, space, sources, subjects),
 			this.fetchReactionsByTargets(space, subjects),
 			this.spaceNames(forwardSpaces),
+			this.ctx.loader.community(community),
 		]);
 		const hidden = hiddenFrom(labels);
+		const emojiPolicy = customEmojiPolicy(communityRow?.customEmoji);
+		const facetsFor = (facets: unknown) =>
+			filterCustomEmojiFacets(
+				(facets as social.colibri.beta.richtext.facet.Main[] | null) ?? undefined,
+				emojiPolicy,
+				community,
+			);
 
 		const withheld = (row: MessageRow): boolean => {
 			if (!hidden.has(messageRefKey(row.author, row.rkey))) return false;
@@ -475,7 +481,7 @@ export class ChannelViews {
 				sourceCommunity: sourceCommunity ? asDid(sourceCommunity) : undefined,
 				createdAt: asDatetime(raw.createdAt ?? row.createdAt),
 				text: raw.text ?? "",
-				facets: (raw.facets as social.colibri.beta.richtext.facet.Main[] | undefined) ?? undefined,
+				facets: facetsFor(raw.facets),
 				attachments: this.attachmentViews(
 					readingSpace,
 					row.author,
@@ -508,7 +514,7 @@ export class ChannelViews {
 				channel: asSpaceRef(space),
 				author: this.authorOf(row, community, profiles, readingSpace, viewer) as never,
 				text: row.text,
-				facets: (row.facets as social.colibri.beta.richtext.facet.Main[] | null) ?? undefined,
+				facets: facetsFor(row.facets),
 				createdAt: asDatetime(row.createdAt),
 				updatedAt: asDatetimeOrUndefined(row.updatedAt ?? undefined),
 				parent,
@@ -669,6 +675,7 @@ export class ChannelViews {
 		if (channelRows.length === 0) return [];
 
 		const authzByCommunity = new Map<string, ActorAuthz>();
+		const audiencesByCommunity = new Map<string, Map<string, CategoryAudience>>();
 		const readable: ChannelRow[] = [];
 		for (const row of channelRows) {
 			let authz = authzByCommunity.get(row.community);
@@ -676,7 +683,13 @@ export class ChannelViews {
 				authz = await this.ctx.loader.authz(row.community, did);
 				authzByCommunity.set(row.community, authz);
 			}
-			if (canRead(authz, toChannelState(row))) readable.push(row);
+			let audiences = audiencesByCommunity.get(row.community);
+			if (!audiences) {
+				audiences = await this.ctx.loader.categoryAudiences(row.community);
+				audiencesByCommunity.set(row.community, audiences);
+			}
+			const category = row.category ? audiences.get(row.category) : null;
+			if (canRead(authz, toChannelState(row, category))) readable.push(row);
 		}
 		if (readable.length === 0) return [];
 

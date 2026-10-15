@@ -23,6 +23,7 @@ import {
 	memberGoneEvent,
 	notificationEvent,
 	preferencesEvent,
+	readCursorEvent,
 	roleEvent,
 	threadEvent,
 	threadFrameForBridges,
@@ -298,6 +299,28 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		});
 	};
 
+	const publishReadCursors = async (did: string, community: string): Promise<void> => {
+		const table = ctx.database.tables.readCursors;
+		const rows = await ctx.database.db
+			.select({ channel: table.channel, cursor: table.cursor })
+			.from(table)
+			.where(and(eq(table.did, did), eq(table.community, community)));
+		if (rows.length > 0) events.publishToUser(did, readCursorEvent(community, rows));
+	};
+
+	const publishFollow = async (space: string, community: string, did: string): Promise<void> => {
+		const row = await threads.row(space);
+		if (!row) return;
+		const authz = await ctx.loader.authz(community, did);
+		const view = await threads.view(row, authz, did);
+		if (view) {
+			events.publishToUser(
+				did,
+				threadEvent("update", community, { channel: row.channel, thread: view }),
+			);
+		}
+	};
+
 	const handle = async (change: RepoChange): Promise<void> => {
 		const space = spaceContextFor(change.space);
 		if (!space) return;
@@ -307,7 +330,22 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 				space.authority,
 				preferencesEvent(await loadPreferences(ctx, space.authority)),
 			);
+			for (const put of change.puts) {
+				if (put.collection === COLLECTIONS.channelRead) {
+					await publishReadCursors(space.authority, put.rkey);
+				}
+			}
 			return;
+		}
+
+		if (
+			space.community &&
+			isThreadSpace(space) &&
+			[...change.puts, ...change.deletes].some(
+				(entry) => entry.collection === COLLECTIONS.threadFollow,
+			)
+		) {
+			await publishFollow(change.space, space.community, change.author);
 		}
 
 		let publishedMessages = 0;

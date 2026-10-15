@@ -162,12 +162,22 @@ export const preferencesEvent = (
 
 export const seenEvent = (
 	unread: number,
-	where: { seenAt: string; channel?: string },
+	where: { seenAt: string; channel?: string; message?: { did: string; rkey: string } },
 ): ServerFrame => ({
 	$type: "social.colibri.beta.sync.defs#seenEvent",
 	unread,
 	seenAt: where.seenAt,
 	...(where.channel ? { channel: where.channel } : {}),
+	...(where.message ? { message: { did: where.message.did, rkey: where.message.rkey } } : {}),
+});
+
+export const readCursorEvent = (
+	community: string,
+	cursors: readonly { channel: string; cursor: string }[],
+): ServerFrame => ({
+	$type: "social.colibri.beta.sync.defs#readCursorEvent",
+	community,
+	cursors: cursors.map(({ channel, cursor }) => ({ channel, cursor })),
 });
 
 export const notificationEvent = (

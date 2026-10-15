@@ -224,6 +224,11 @@ type RegistrationView = { $type?: "social.colibri.beta.bridge.defs#registrationV
   "community":l.DidString;
 
   /**
+   * The community's name, when the AppView knows it.
+   */
+  "communityName"?:string;
+
+  /**
    * The bridge's DID.
    */
   "bridge":l.DidString;
@@ -286,7 +291,7 @@ type RegistrationView = { $type?: "social.colibri.beta.bridge.defs#registrationV
 export type { RegistrationView };
 
 /** A bridge registered with a community. */
-const registrationView = /*#__PURE__*/ l.typedObject<RegistrationView>($nsid, "registrationView", /*#__PURE__*/ l.object({"id":/*#__PURE__*/ l.string({"format":"tid"}),"community":/*#__PURE__*/ l.string({"format":"did"}),"bridge":/*#__PURE__*/ l.string({"format":"did"}),"bridgeHandle":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"handle"})),"platform":/*#__PURE__*/ l.string({"maxLength":64}),"remoteSpace":/*#__PURE__*/ l.string({"maxLength":256}),"remoteSpaceName":/*#__PURE__*/ l.string({"maxLength":128}),"links":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Link>((() => link) as any), ),"backfills":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<BackfillStatus>((() => backfillStatus) as any), )),"enabled":/*#__PURE__*/ l.boolean(),"mirrorModeration":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"createdBy":/*#__PURE__*/ l.string({"format":"did"}),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"updatedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"}))}));
+const registrationView = /*#__PURE__*/ l.typedObject<RegistrationView>($nsid, "registrationView", /*#__PURE__*/ l.object({"id":/*#__PURE__*/ l.string({"format":"tid"}),"community":/*#__PURE__*/ l.string({"format":"did"}),"communityName":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":32})),"bridge":/*#__PURE__*/ l.string({"format":"did"}),"bridgeHandle":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"handle"})),"platform":/*#__PURE__*/ l.string({"maxLength":64}),"remoteSpace":/*#__PURE__*/ l.string({"maxLength":256}),"remoteSpaceName":/*#__PURE__*/ l.string({"maxLength":128}),"links":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Link>((() => link) as any), ),"backfills":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<BackfillStatus>((() => backfillStatus) as any), )),"enabled":/*#__PURE__*/ l.boolean(),"mirrorModeration":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"createdBy":/*#__PURE__*/ l.string({"format":"did"}),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"updatedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"}))}));
 
 export { registrationView };
 

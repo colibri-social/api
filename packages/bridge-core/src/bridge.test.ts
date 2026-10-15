@@ -259,6 +259,56 @@ describe("configuration", () => {
 		});
 	});
 
+	it("lists the communities a remote space is connected to", async () => {
+		const other = "did:plc:otherxxxxxxxxxxxxxxxxxxxxxxx";
+		current = [
+			registration({ communityName: "Birds" }),
+			registration({ community: other, id: "3lkbridgebbbb", links: [] }),
+		];
+		await bridge.refresh();
+
+		expect(connector.context?.connections(GUILD)).toEqual([
+			{ community: COMMUNITY, communityName: "Birds", registration: REGISTRATION },
+			{ community: other, registration: "3lkbridgebbbb" },
+		]);
+	});
+
+	it("disconnects only the picked community when the remote side asks", async () => {
+		const other = "did:plc:otherxxxxxxxxxxxxxxxxxxxxxxx";
+		current = [registration(), registration({ community: other, id: "3lkbridgebbbb" })];
+		await bridge.refresh();
+
+		const left = await connector.context?.disconnect(GUILD, other);
+
+		expect(left).toBe(1);
+		expect(client.leave).toHaveBeenCalledTimes(1);
+		expect(client.leave).toHaveBeenCalledWith({ community: other, registration: "3lkbridgebbbb" });
+	});
+
+	it("disconnects every community of the remote space without a pick", async () => {
+		const other = "did:plc:otherxxxxxxxxxxxxxxxxxxxxxxx";
+		current = [registration(), registration({ community: other, id: "3lkbridgebbbb" })];
+		await bridge.refresh();
+
+		expect(await connector.context?.disconnect(GUILD)).toBe(2);
+		expect(client.leave).toHaveBeenCalledTimes(2);
+	});
+
+	it("reports nothing to disconnect for an unknown community", async () => {
+		expect(await connector.context?.disconnect(GUILD, "did:plc:nobodyxxxxxxxxxxxxxxxxxxxxx")).toBe(
+			0,
+		);
+		expect(client.leave).not.toHaveBeenCalled();
+	});
+
+	it("treats a registration revoked in the meantime as disconnected", async () => {
+		client.leave.mockRejectedValueOnce(
+			new ColibriRequestError(400, "RegistrationNotFound", "gone", null),
+		);
+
+		await expect(connector.context?.disconnect(GUILD)).resolves.toBe(1);
+	});
+
 	it("ignores registrations for other platforms", async () => {
 		current = [registration({ platform: "elsewhere" })];
 		await bridge.refresh();

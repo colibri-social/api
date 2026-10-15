@@ -21,12 +21,12 @@ type Main = { $type?: "social.colibri.beta.richtext.facet";
   /**
    * What the range means. A range may carry more than one feature.
    */
-  "features":(l.$Typed<Bold> | l.$Typed<Italic> | l.$Typed<Underline> | l.$Typed<Strikethrough> | l.$Typed<Code> | l.$Typed<Codeblock> | l.$Typed<Quote> | l.$Typed<Heading> | l.$Typed<List> | l.$Typed<Subtext> | l.$Typed<Spoiler> | l.$Typed<Mention> | l.$Typed<BridgedMention> | l.$Typed<Role> | l.$Typed<Channel> | l.$Typed<Link> | l.$Typed<Time> | l.Unknown$TypedObject)[] };
+  "features":(l.$Typed<Bold> | l.$Typed<Italic> | l.$Typed<Underline> | l.$Typed<Strikethrough> | l.$Typed<Code> | l.$Typed<Codeblock> | l.$Typed<Quote> | l.$Typed<Heading> | l.$Typed<List> | l.$Typed<Subtext> | l.$Typed<Spoiler> | l.$Typed<Mention> | l.$Typed<BridgedMention> | l.$Typed<Role> | l.$Typed<Channel> | l.$Typed<Link> | l.$Typed<Time> | l.$Typed<CustomEmoji> | l.Unknown$TypedObject)[] };
 
 export type { Main };
 
 /** An annotation over a range of a message's text. */
-const main = /*#__PURE__*/ l.typedObject<Main>($nsid, "main", /*#__PURE__*/ l.object({"index":/*#__PURE__*/ l.ref<ByteSlice>((() => byteSlice) as any),"features":/*#__PURE__*/ l.array(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<Bold>((() => bold) as any),/*#__PURE__*/ l.typedRef<Italic>((() => italic) as any),/*#__PURE__*/ l.typedRef<Underline>((() => underline) as any),/*#__PURE__*/ l.typedRef<Strikethrough>((() => strikethrough) as any),/*#__PURE__*/ l.typedRef<Code>((() => code) as any),/*#__PURE__*/ l.typedRef<Codeblock>((() => codeblock) as any),/*#__PURE__*/ l.typedRef<Quote>((() => quote) as any),/*#__PURE__*/ l.typedRef<Heading>((() => heading) as any),/*#__PURE__*/ l.typedRef<List>((() => list) as any),/*#__PURE__*/ l.typedRef<Subtext>((() => subtext) as any),/*#__PURE__*/ l.typedRef<Spoiler>((() => spoiler) as any),/*#__PURE__*/ l.typedRef<Mention>((() => mention) as any),/*#__PURE__*/ l.typedRef<BridgedMention>((() => bridgedMention) as any),/*#__PURE__*/ l.typedRef<Role>((() => role) as any),/*#__PURE__*/ l.typedRef<Channel>((() => channel) as any),/*#__PURE__*/ l.typedRef<Link>((() => link) as any),/*#__PURE__*/ l.typedRef<Time>((() => time) as any)], false), )}));
+const main = /*#__PURE__*/ l.typedObject<Main>($nsid, "main", /*#__PURE__*/ l.object({"index":/*#__PURE__*/ l.ref<ByteSlice>((() => byteSlice) as any),"features":/*#__PURE__*/ l.array(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<Bold>((() => bold) as any),/*#__PURE__*/ l.typedRef<Italic>((() => italic) as any),/*#__PURE__*/ l.typedRef<Underline>((() => underline) as any),/*#__PURE__*/ l.typedRef<Strikethrough>((() => strikethrough) as any),/*#__PURE__*/ l.typedRef<Code>((() => code) as any),/*#__PURE__*/ l.typedRef<Codeblock>((() => codeblock) as any),/*#__PURE__*/ l.typedRef<Quote>((() => quote) as any),/*#__PURE__*/ l.typedRef<Heading>((() => heading) as any),/*#__PURE__*/ l.typedRef<List>((() => list) as any),/*#__PURE__*/ l.typedRef<Subtext>((() => subtext) as any),/*#__PURE__*/ l.typedRef<Spoiler>((() => spoiler) as any),/*#__PURE__*/ l.typedRef<Mention>((() => mention) as any),/*#__PURE__*/ l.typedRef<BridgedMention>((() => bridgedMention) as any),/*#__PURE__*/ l.typedRef<Role>((() => role) as any),/*#__PURE__*/ l.typedRef<Channel>((() => channel) as any),/*#__PURE__*/ l.typedRef<Link>((() => link) as any),/*#__PURE__*/ l.typedRef<Time>((() => time) as any),/*#__PURE__*/ l.typedRef<CustomEmoji>((() => customEmoji) as any)], false), )}));
 
 export { main };
 
@@ -302,3 +302,23 @@ export type { Time };
 const time = /*#__PURE__*/ l.typedObject<Time>($nsid, "time", /*#__PURE__*/ l.object({"datetime":/*#__PURE__*/ l.string({"format":"datetime"}),"style":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["time-short","time-long","date-short","date-long","datetime-short","datetime-long","relative"]}>())}));
 
 export { time };
+
+/** A custom emoji. The text under the facet is the emoji's fallback: a Unicode alternative when the emoji has one, otherwise its :name: shortcode. */
+type CustomEmoji = { $type?: "social.colibri.beta.richtext.facet#customEmoji";
+
+  /**
+   * The emoji record. Its collection identifies the emoji lexicon, for example blue.moji.collection.item.
+   */
+  "uri":l.AtUriString;
+
+  /**
+   * The version of the emoji record the message was written against.
+   */
+  "cid"?:l.CidString };
+
+export type { CustomEmoji };
+
+/** A custom emoji. The text under the facet is the emoji's fallback: a Unicode alternative when the emoji has one, otherwise its :name: shortcode. */
+const customEmoji = /*#__PURE__*/ l.typedObject<CustomEmoji>($nsid, "customEmoji", /*#__PURE__*/ l.object({"uri":/*#__PURE__*/ l.string({"format":"at-uri"}),"cid":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"cid"}))}));
+
+export { customEmoji };

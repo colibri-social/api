@@ -38,6 +38,7 @@ export * as registerCredentials from "./community/registerCredentials.js";
 export * as reorderCategories from "./community/reorderCategories.js";
 export * as setMemberRoles from "./community/setMemberRoles.js";
 export * as settings from "./community/settings.js";
+export * as transferOwnership from "./community/transferOwnership.js";
 export * as unban from "./community/unban.js";
 export * as undismissApplication from "./community/undismissApplication.js";
 export * as update from "./community/update.js";

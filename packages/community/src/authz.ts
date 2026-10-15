@@ -35,6 +35,14 @@ export type ChannelState = {
 	visibleToMembers: string[];
 };
 
+export type CategoryAudience = {
+	ownerOnly: boolean;
+	allowedRoles: string[];
+	allowedMembers: string[];
+	visibleToRoles: string[];
+	visibleToMembers: string[];
+};
+
 export type ThreadState = {
 	space: string;
 	skey: string;
@@ -116,6 +124,29 @@ const holdsAny = (authz: ActorAuthz, roles: string[]): boolean =>
 
 export const isPrivateChannel = (channel: ChannelState): boolean =>
 	channel.visibleToRoles.length > 0 || channel.visibleToMembers.length > 0;
+
+const restrictsPosting = (audience: CategoryAudience): boolean =>
+	audience.ownerOnly || audience.allowedRoles.length > 0 || audience.allowedMembers.length > 0;
+
+export const isPrivateCategory = (category: CategoryAudience): boolean =>
+	category.visibleToRoles.length > 0 || category.visibleToMembers.length > 0;
+
+export const inheritCategory = (
+	channel: ChannelState,
+	category: CategoryAudience | null | undefined,
+): ChannelState => {
+	if (!category) return channel;
+	const reading = isPrivateChannel(channel) ? channel : category;
+	const posting = restrictsPosting(channel) ? channel : category;
+	return {
+		...channel,
+		visibleToRoles: reading.visibleToRoles,
+		visibleToMembers: reading.visibleToMembers,
+		ownerOnly: posting.ownerOnly,
+		allowedRoles: posting.allowedRoles,
+		allowedMembers: posting.allowedMembers,
+	};
+};
 
 export const canRead = (authz: ActorAuthz, channel: ChannelState): boolean => {
 	if (authz.isBanned) return false;

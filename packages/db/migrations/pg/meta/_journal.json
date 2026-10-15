@@ -113,6 +113,20 @@
 			"when": 1791538410370,
 			"tag": "0015_uneven_iceman",
 			"breakpoints": true
+		},
+		{
+			"idx": 16,
+			"version": "7",
+			"when": 1791790353510,
+			"tag": "0016_aromatic_namor",
+			"breakpoints": true
+		},
+		{
+			"idx": 17,
+			"version": "7",
+			"when": 1791792461258,
+			"tag": "0017_abandoned_makkari",
+			"breakpoints": true
 		}
 	]
 }

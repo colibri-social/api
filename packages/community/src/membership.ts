@@ -1,7 +1,7 @@
 import type { Queryable, Schema } from "@colibri-social/appview-db";
 import { COLLECTIONS } from "@colibri-social/lexicons";
 import { and, eq, sql } from "drizzle-orm";
-import { isAdmin, outranks } from "./authz.js";
+import { holdsOwnerRole, isAdmin, outranks } from "./authz.js";
 import type { CommunityLoader } from "./loader.js";
 import type { CommunityWriter } from "./writes.js";
 
@@ -14,7 +14,9 @@ export type MembershipFailure =
 	| "soleOwner"
 	| "applicationNotFound"
 	| "roleNotFound"
-	| "hierarchy";
+	| "hierarchy"
+	| "notOwner"
+	| "alreadyOwner";
 
 export class MembershipError extends Error {
 	constructor(
@@ -32,6 +34,11 @@ export type MembershipDeps = {
 	loader: CommunityLoader;
 	writer: CommunityWriter;
 	now?: () => Date;
+};
+
+export type OwnershipTransfer = {
+	owner: string[];
+	previousOwner: string[];
 };
 
 export type JoinOutcome = { status: "joined" } | { status: "pending" };
@@ -206,6 +213,62 @@ export class Membership {
 			collection: COLLECTIONS.member,
 			rkey: subject,
 		});
+	}
+
+	private async writeRoles(
+		community: string,
+		member: { did: string; joinedAt: string; nickname: string | null },
+		roles: string[],
+	): Promise<void> {
+		await this.deps.writer.put(community, {
+			space: this.deps.writer.spaces(community).members,
+			collection: COLLECTIONS.member,
+			rkey: member.did,
+			record: {
+				$type: COLLECTIONS.member,
+				subject: member.did,
+				roles,
+				joinedAt: member.joinedAt,
+				...(member.nickname ? { nickname: member.nickname } : {}),
+			},
+		});
+	}
+
+	async transferOwnership(
+		community: string,
+		actor: string,
+		subject: string,
+	): Promise<OwnershipTransfer> {
+		const [acting, target] = await Promise.all([
+			this.deps.loader.authz(community, actor),
+			this.deps.loader.authz(community, subject),
+		]);
+		if (!acting.isOwner && (acting.isBanned || !holdsOwnerRole(acting))) {
+			throw new MembershipError("notOwner", "only an owner can transfer ownership");
+		}
+		if (target.isBanned) throw new MembershipError("banned", `${subject} is banned`);
+		if (!target.member) throw new MembershipError("notMember", `${subject} is not a member`);
+		if (holdsOwnerRole(target)) {
+			throw new MembershipError("alreadyOwner", `${subject} already owns this community`);
+		}
+
+		const ownerRoles = acting.isOwner
+			? (await this.deps.loader.roles(community))
+					.filter((role) => role.protected)
+					.slice(0, 1)
+					.map((role) => role.rkey)
+			: acting.roles.filter((role) => role.protected).map((role) => role.rkey);
+		if (ownerRoles.length === 0) {
+			throw new MembershipError("roleNotFound", "this community has no owner role");
+		}
+
+		const owner = [...new Set([...target.member.roles, ...ownerRoles])];
+		await this.writeRoles(community, target.member, owner);
+
+		if (!acting.member) return { owner, previousOwner: [] };
+		const previousOwner = acting.member.roles.filter((rkey) => !ownerRoles.includes(rkey));
+		await this.writeRoles(community, acting.member, previousOwner);
+		return { owner, previousOwner };
 	}
 
 	async setRoles(

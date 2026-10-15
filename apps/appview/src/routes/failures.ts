@@ -28,6 +28,10 @@ export const membershipErrorToXrpc = (error: MembershipError): InvalidRequestErr
 			return new InvalidRequestError(error.message, "RoleNotFound");
 		case "hierarchy":
 			return new InvalidRequestError(error.message, "RoleHierarchy");
+		case "notOwner":
+			return new InvalidRequestError(error.message, "Forbidden");
+		case "alreadyOwner":
+			return new InvalidRequestError(error.message, "AlreadyOwner");
 	}
 };
 

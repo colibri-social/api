@@ -27,6 +27,7 @@ import {
 	toJsonForm,
 	toLexForm,
 } from "@colibri-social/lexicons";
+import { eq } from "drizzle-orm";
 import { labelEvent, messageEvent, messageGone } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
@@ -94,6 +95,15 @@ const handleOf = async (ctx: AppContext, did: string): Promise<string | undefine
 	}
 };
 
+const communityNameOf = async (ctx: AppContext, did: string): Promise<string | undefined> => {
+	const [row] = await ctx.database.db
+		.select({ name: ctx.database.tables.communities.name })
+		.from(ctx.database.tables.communities)
+		.where(eq(ctx.database.tables.communities.did, did))
+		.limit(1);
+	return row?.name || undefined;
+};
+
 const backfillView = (row: BridgeBackfill) => ({
 	channel: asSpaceRef(row.channel),
 	requestedAt: asDatetime(row.requestedAt),
@@ -128,9 +138,11 @@ export const registrationView = (
 	row: BridgeRegistration,
 	bridgeHandle?: string,
 	backfills: BridgeBackfill[] = [],
+	communityName?: string,
 ): RegistrationView => ({
 	id: asTid(row.id),
 	community: asDid(row.community),
+	...(communityName ? { communityName } : {}),
 	bridge: asDid(row.bridge),
 	bridgeHandle: asHandleOrUndefined(bridgeHandle),
 	platform: row.platform,
@@ -178,9 +190,20 @@ const views = async (ctx: AppContext, rows: BridgeRegistration[]): Promise<Regis
 	for (const bridge of new Set(rows.map((row) => row.bridge))) {
 		handles.set(bridge, await handleOf(ctx, bridge));
 	}
+	const names = new Map<string, string | undefined>();
+	for (const community of new Set(rows.map((row) => row.community))) {
+		names.set(community, await communityNameOf(ctx, community));
+	}
 	const views: RegistrationView[] = [];
 	for (const row of rows) {
-		views.push(registrationView(row, handles.get(row.bridge), await ctx.bridges.backfills(row)));
+		views.push(
+			registrationView(
+				row,
+				handles.get(row.bridge),
+				await ctx.bridges.backfills(row),
+				names.get(row.community),
+			),
+		);
 	}
 	return views;
 };
@@ -336,6 +359,7 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 						registration,
 						await handleOf(ctx, registration.bridge),
 						await ctx.bridges.backfills(registration),
+						await communityNameOf(ctx, registration.community),
 					),
 				},
 			};
@@ -379,6 +403,7 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 						registration,
 						await handleOf(ctx, registration.bridge),
 						await ctx.bridges.backfills(registration),
+						await communityNameOf(ctx, registration.community),
 					),
 				},
 			};

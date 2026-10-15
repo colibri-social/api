@@ -1,4 +1,8 @@
-import type { CommunityWriter } from "@colibri-social/community";
+import {
+	type CommunityWriter,
+	type CustomEmojiPolicy,
+	customEmojiPolicy,
+} from "@colibri-social/community";
 import { COLLECTIONS, communitySpaces, SELF } from "@colibri-social/lexicons";
 import { asc, eq } from "drizzle-orm";
 import type { AppContext } from "../context.js";
@@ -8,6 +12,7 @@ export type SettingsPatch = {
 	requiresApprovalToJoin?: boolean;
 	linkEmbeds?: boolean;
 	overrideUserNameColors?: boolean;
+	customEmoji?: CustomEmojiPolicy;
 	labelers?: readonly string[];
 };
 
@@ -35,6 +40,7 @@ export const writeCommunitySettings = async (
 	const categoryOrder = patch.categoryOrder ?? (await currentCategoryOrder(ctx, community));
 	const labelers = patch.labelers ?? row.labelers;
 	const overrideUserNameColors = patch.overrideUserNameColors ?? row.overrideUserNameColors;
+	const customEmoji = patch.customEmoji ?? customEmojiPolicy(row.customEmoji);
 
 	await writer.put(community, {
 		space: communitySpaces(community).configuration,
@@ -46,6 +52,7 @@ export const writeCommunitySettings = async (
 			requiresApprovalToJoin: patch.requiresApprovalToJoin ?? row.requiresApproval,
 			linkEmbeds: patch.linkEmbeds ?? row.linkEmbeds,
 			...(overrideUserNameColors ? { overrideUserNameColors: true } : {}),
+			...(customEmoji !== "all" ? { customEmoji } : {}),
 			...(labelers.length ? { labelers: [...labelers] } : {}),
 		},
 	});

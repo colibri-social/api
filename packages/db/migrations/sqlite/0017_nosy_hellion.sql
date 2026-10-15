@@ -1,0 +1,1 @@
+ALTER TABLE `communities` ADD `custom_emoji` text DEFAULT 'all' NOT NULL;

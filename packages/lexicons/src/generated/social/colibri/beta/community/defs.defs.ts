@@ -65,6 +65,11 @@ type CommunityView = { $type?: "social.colibri.beta.community.defs#communityView
   "overrideUserNameColors"?:boolean;
 
   /**
+   * Which custom emoji render in this community. all allows custom emoji from any source, local only the community's own emoji, none disables custom emoji. Disallowed emoji show their fallback text. Absent means all.
+   */
+  "customEmoji"?:"all" | "local" | "none" | l.UnknownString;
+
+  /**
    * DIDs whose labels this community honours.
    */
   "labelers"?:(l.DidString)[];
@@ -87,7 +92,7 @@ type CommunityView = { $type?: "social.colibri.beta.community.defs#communityView
 export type { CommunityView };
 
 /** A community as the AppView serves it. */
-const communityView = /*#__PURE__*/ l.typedObject<CommunityView>($nsid, "communityView", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"handle":/*#__PURE__*/ l.string({"format":"handle"}),"managingApp":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string(),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"picture":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"banner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"requiresApprovalToJoin":/*#__PURE__*/ l.boolean(),"linkEmbeds":/*#__PURE__*/ l.boolean(),"overrideUserNameColors":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"labelers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"migratedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"viewer":/*#__PURE__*/ l.ref<ViewerState>((() => viewerState) as any)}));
+const communityView = /*#__PURE__*/ l.typedObject<CommunityView>($nsid, "communityView", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"handle":/*#__PURE__*/ l.string({"format":"handle"}),"managingApp":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string(),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"picture":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"banner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"requiresApprovalToJoin":/*#__PURE__*/ l.boolean(),"linkEmbeds":/*#__PURE__*/ l.boolean(),"overrideUserNameColors":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["all","local","none"]}>()),"labelers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"migratedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"viewer":/*#__PURE__*/ l.ref<ViewerState>((() => viewerState) as any)}));
 
 export { communityView };
 
@@ -147,12 +152,42 @@ type CategoryView = { $type?: "social.colibri.beta.community.defs#categoryView";
   /**
    * Channels in display order.
    */
-  "channels":(ChannelView)[] };
+  "channels":(ChannelView)[];
+
+  /**
+   * Whether only community admins may post in the category's channels. A channel that sets its own posting restriction overrides this.
+   */
+  "ownerOnly"?:boolean;
+
+  /**
+   * Roles allowed to post in the category's channels. Empty means no role restriction. A channel that sets its own posting restriction overrides this.
+   */
+  "allowedRoles"?:(l.RecordKeyString)[];
+
+  /**
+   * Members allowed to post in the category's channels in addition to allowedRoles.
+   */
+  "allowedMembers"?:(l.DidString)[];
+
+  /**
+   * Roles that may read the category's channels. Empty or absent means every member may read them. A channel with its own non-empty visibleToRoles or visibleToMembers overrides this. A non-empty list makes the category's other channels private, enforced the same way as a private channel.
+   */
+  "visibleToRoles"?:(l.RecordKeyString)[];
+
+  /**
+   * Members that may read the category's channels in addition to visibleToRoles.
+   */
+  "visibleToMembers"?:(l.DidString)[];
+
+  /**
+   * Whether the category restricts who may read its channels.
+   */
+  "private"?:boolean };
 
 export type { CategoryView };
 
 /** A category and the channels in it. */
-const categoryView = /*#__PURE__*/ l.typedObject<CategoryView>($nsid, "categoryView", /*#__PURE__*/ l.object({"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"name":/*#__PURE__*/ l.string(),"channels":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ChannelView>((() => channelView) as any), )}));
+const categoryView = /*#__PURE__*/ l.typedObject<CategoryView>($nsid, "categoryView", /*#__PURE__*/ l.object({"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"name":/*#__PURE__*/ l.string(),"channels":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ChannelView>((() => channelView) as any), ),"ownerOnly":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"allowedRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"allowedMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"private":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
 
 export { categoryView };
 

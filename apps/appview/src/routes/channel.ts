@@ -2,12 +2,12 @@ import { InvalidRequestError } from "@atproto/xrpc-server";
 import { canRead, decideSpaceAccess } from "@colibri-social/community";
 import { social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
-import { and, eq } from "drizzle-orm";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
 import { ChannelViews } from "../views/channel.js";
 import { CommunityViews } from "../views/community.js";
 import { ThreadViews } from "../views/thread.js";
+import { handlePutReadCursors } from "./read-cursors.js";
 import type { RouteDeps } from "./types.js";
 
 export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void => {
@@ -54,7 +54,7 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 			}
 			return {
 				encoding: "application/json" as const,
-				body: { channel: communities.channel(state.row, authz) },
+				body: { channel: communities.channel(state.row, authz, state.category) },
 			};
 		},
 	});
@@ -115,34 +115,9 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 
 	route(server, social.colibri.beta.channel.putReadCursors, {
 		auth: auth.required,
-		handler: async ({ input, auth: caller }) => {
-			const community = await ctx.loader.community(input.body.community);
-			if (!community) {
-				throw new InvalidRequestError(
-					`no community matches ${input.body.community}`,
-					"CommunityNotFound",
-				);
-			}
-
-			const did = caller.credentials.did;
-			const table = ctx.database.tables.readCursors;
-			await ctx.database.db
-				.delete(table)
-				.where(and(eq(table.did, did), eq(table.community, input.body.community)));
-
-			if (input.body.cursors.length > 0) {
-				await ctx.database.db.insert(table).values(
-					input.body.cursors.map((cursor) => ({
-						did,
-						community: input.body.community,
-						channel: cursor.channel,
-						cursor: cursor.cursor,
-					})),
-				);
-			}
-
-			const statuses = await channels.unreadStatus(did, { community: input.body.community });
-			return { encoding: "application/json" as const, body: { statuses } };
-		},
+		handler: async ({ input, auth: caller }) => ({
+			encoding: "application/json" as const,
+			body: await handlePutReadCursors(ctx, channels, caller.credentials.did, input.body),
+		}),
 	});
 };

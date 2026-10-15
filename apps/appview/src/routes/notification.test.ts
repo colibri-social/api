@@ -211,4 +211,31 @@ describe("updateSeenForMessage", () => {
 		expect(result.unread).toBe(0);
 		expect(await seenAtFor("n1")).not.toBeNull();
 	});
+
+	it("tells the caller's other sessions which message was seen", async () => {
+		const announced: { did: string; frame: Record<string, unknown> }[] = [];
+		ctx = {
+			...ctx,
+			announce: {
+				...silentAnnouncer,
+				toUser: (did: string, frame: Record<string, unknown>) => announced.push({ did, frame }),
+			},
+		} as AppContext;
+		await insertMessage(CHANNEL, "3lkmessagex1");
+		await insertNotification("n1", CHANNEL, "3lkmessagex1");
+
+		await handleUpdateSeenForMessage(ctx, MEMBER, CHANNEL, AUTHOR, "3lkmessagex1");
+
+		expect(announced).toEqual([
+			{
+				did: MEMBER,
+				frame: expect.objectContaining({
+					$type: "social.colibri.beta.sync.defs#seenEvent",
+					unread: 0,
+					channel: CHANNEL,
+					message: { did: AUTHOR, rkey: "3lkmessagex1" },
+				}),
+			},
+		]);
+	});
 });

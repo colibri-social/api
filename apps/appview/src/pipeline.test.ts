@@ -1,6 +1,6 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { CommunityLoader } from "@colibri-social/community";
-import { COLLECTIONS, channelSpace, SPACE_TYPES } from "@colibri-social/lexicons";
+import { COLLECTIONS, channelSpace, SPACE_TYPES, threadSpace } from "@colibri-social/lexicons";
 import { nextTid } from "@colibri-social/space";
 import type { RepoChange } from "@colibri-social/space-sync";
 import { eq } from "drizzle-orm";
@@ -609,5 +609,113 @@ describe("personal space events", () => {
 		await vi.waitFor(() => expect(framesOfType("preferencesEvent")).toHaveLength(1));
 
 		expect(framesOfType("preferencesEvent")[0]?.space).toBe(AUTHOR);
+	});
+
+	it("tells the actor's own devices about read cursors that arrive through sync", async () => {
+		await database.db.insert(database.tables.readCursors).values({
+			did: AUTHOR,
+			community: COMMUNITY,
+			channel: CHANNEL_SKEY,
+			cursor: "3lkaaaaaaaaa7",
+		});
+
+		emit({
+			space: PREFERENCES,
+			author: AUTHOR,
+			puts: [
+				{
+					collection: COLLECTIONS.channelRead,
+					rkey: COMMUNITY,
+					cid: "bafyreictestread",
+					value: {
+						$type: COLLECTIONS.channelRead,
+						community: COMMUNITY,
+						cursors: [{ channel: CHANNEL_SKEY, cursor: "3lkaaaaaaaaa2" }],
+					},
+				},
+			],
+			deletes: [],
+		});
+		await vi.waitFor(() => expect(framesOfType("readCursorEvent")).toHaveLength(1));
+
+		expect(framesOfType("readCursorEvent")[0]).toEqual({
+			space: AUTHOR,
+			frame: {
+				$type: "social.colibri.beta.sync.defs#readCursorEvent",
+				community: COMMUNITY,
+				cursors: [{ channel: CHANNEL_SKEY, cursor: "3lkaaaaaaaaa7" }],
+			},
+		});
+	});
+});
+
+describe("thread follow events", () => {
+	const THREAD_SKEY = "3lkthreadfollow";
+	const THREAD = threadSpace(COMMUNITY, THREAD_SKEY);
+
+	beforeEach(async () => {
+		await database.db.insert(database.tables.members).values({
+			community: COMMUNITY,
+			did: AUTHOR,
+			roles: [],
+			joinedAt: NOW,
+			nickname: null,
+		});
+		await database.db.insert(database.tables.threads).values({
+			space: THREAD,
+			community: COMMUNITY,
+			channel: SPACE,
+			skey: THREAD_SKEY,
+			name: "release planning",
+			createdBy: AUTHOR,
+			createdAt: NOW,
+			visibleToRoles: [],
+			visibleToMembers: [],
+			lastActivityAt: NOW,
+			indexedAt: NOW,
+		});
+	});
+
+	const followChange = (following: boolean): RepoChange => ({
+		space: THREAD,
+		author: AUTHOR,
+		puts: following
+			? [
+					{
+						collection: COLLECTIONS.threadFollow,
+						rkey: "self",
+						cid: "bafyreictestfollow",
+						value: { $type: COLLECTIONS.threadFollow, createdAt: NOW },
+					},
+				]
+			: [],
+		deletes: following ? [] : [{ collection: COLLECTIONS.threadFollow, rkey: "self" }],
+	});
+
+	it("tells only the follower's own devices that they follow a thread", async () => {
+		await database.db
+			.insert(database.tables.threadFollows)
+			.values({ space: THREAD, did: AUTHOR, createdAt: NOW });
+
+		emit(followChange(true));
+		await vi.waitFor(() => expect(framesOfType("threadEvent")).toHaveLength(1));
+
+		const [entry] = framesOfType("threadEvent");
+		expect(entry?.space).toBe(AUTHOR);
+		expect(entry?.frame).toMatchObject({
+			event: "update",
+			community: COMMUNITY,
+			channel: SPACE,
+			thread: { space: THREAD, viewer: { following: true } },
+		});
+	});
+
+	it("tells the follower's devices when they stop following", async () => {
+		emit(followChange(false));
+		await vi.waitFor(() => expect(framesOfType("threadEvent")).toHaveLength(1));
+
+		expect(framesOfType("threadEvent")[0]?.frame).toMatchObject({
+			thread: { space: THREAD, viewer: { following: false } },
+		});
 	});
 });

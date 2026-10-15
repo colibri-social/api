@@ -156,6 +156,34 @@ describe("community projections", () => {
 		expect(row?.category).toBe("3lkcat1");
 		expect(row?.position).toBe(0);
 	});
+
+	it("projects a category's permissions and announces them as an authz change", async () => {
+		await applyChange(
+			deps,
+			put(SPACES.configuration, COMMUNITY, "social.colibri.beta.category", "3lkcat1", {
+				$type: "social.colibri.beta.category",
+				name: "Staff",
+				channelOrder: [],
+				allowedRoles: ["3lkrole1"],
+				visibleToRoles: ["3lkrole2"],
+				visibleToMembers: ["did:plc:guest"],
+			}),
+		);
+
+		expect(skipped).toEqual([]);
+		const [row] = await database.db.select().from(database.tables.categories);
+		expect(row).toMatchObject({
+			ownerOnly: false,
+			allowedRoles: ["3lkrole1"],
+			allowedMembers: [],
+			visibleToRoles: ["3lkrole2"],
+			visibleToMembers: ["did:plc:guest"],
+		});
+		expect(authzChanges).toContainEqual({
+			community: COMMUNITY,
+			collection: "social.colibri.beta.category",
+		});
+	});
 });
 
 describe("role badges", () => {
@@ -262,6 +290,45 @@ describe("role badges", () => {
 		const [row] = await database.db.select().from(database.tables.roles);
 		expect(row?.name).toBe("Moderator");
 		expect(row?.badge).toBeNull();
+	});
+});
+
+describe("custom emoji policy", () => {
+	it("projects the policy from the settings record and resets it when the record goes", async () => {
+		await applyChange(
+			deps,
+			put(SPACES.configuration, COMMUNITY, "social.colibri.beta.community.settings", SELF, {
+				$type: "social.colibri.beta.community.settings",
+				categoryOrder: [],
+				requiresApprovalToJoin: false,
+				customEmoji: "local",
+			}),
+		);
+		const [local] = await database.db.select().from(database.tables.communities);
+		expect(local?.customEmoji).toBe("local");
+
+		await applyChange(deps, {
+			space: SPACES.configuration,
+			author: COMMUNITY,
+			puts: [],
+			deletes: [{ collection: "social.colibri.beta.community.settings", rkey: SELF }],
+		});
+		const [reset] = await database.db.select().from(database.tables.communities);
+		expect(reset?.customEmoji).toBe("all");
+	});
+
+	it("reads an unknown policy as all", async () => {
+		await applyChange(
+			deps,
+			put(SPACES.configuration, COMMUNITY, "social.colibri.beta.community.settings", SELF, {
+				$type: "social.colibri.beta.community.settings",
+				categoryOrder: [],
+				requiresApprovalToJoin: false,
+				customEmoji: "sparkly",
+			}),
+		);
+		const [row] = await database.db.select().from(database.tables.communities);
+		expect(row?.customEmoji).toBe("all");
 	});
 });
 
@@ -682,7 +749,7 @@ describe("personal spaces", () => {
 		expect(await database.db.select().from(database.tables.mutes)).toEqual([]);
 	});
 
-	it("replaces a community's read cursors wholesale", async () => {
+	it("keeps the newest read cursor per channel across record writes", async () => {
 		const write = (cursors: Array<{ channel: string; cursor: string }>) =>
 			applyChange(
 				deps,
@@ -698,13 +765,46 @@ describe("personal spaces", () => {
 			{ channel: "3lkchannel2", cursor: "3lkaaaaaaaaa3" },
 		]);
 		await write([{ channel: "3lkchannel1", cursor: "3lkaaaaaaaaa7" }]);
+		await write([
+			{ channel: "3lkchannel1", cursor: "3lkaaaaaaaaa4" },
+			{ channel: "3lkchannel2", cursor: "3lkaaaaaaaaa1" },
+		]);
 
 		const rows = await database.db
-			.select()
+			.select({
+				channel: database.tables.readCursors.channel,
+				cursor: database.tables.readCursors.cursor,
+			})
 			.from(database.tables.readCursors)
 			.where(eq(database.tables.readCursors.did, MEMBER));
-		expect(rows).toHaveLength(1);
-		expect(rows[0]?.cursor).toBe("3lkaaaaaaaaa7");
+		expect(rows.sort((a, b) => a.channel.localeCompare(b.channel))).toEqual([
+			{ channel: "3lkchannel1", cursor: "3lkaaaaaaaaa7" },
+			{ channel: "3lkchannel2", cursor: "3lkaaaaaaaaa3" },
+		]);
+	});
+
+	it("drops a community's read cursors when its record is deleted", async () => {
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.channel.read", COMMUNITY, {
+				$type: "social.colibri.beta.channel.read",
+				community: COMMUNITY,
+				cursors: [{ channel: "3lkchannel1", cursor: "3lkaaaaaaaaa2" }],
+			}),
+		);
+		await applyChange(deps, {
+			space: personal,
+			author: MEMBER,
+			puts: [],
+			deletes: [{ collection: "social.colibri.beta.channel.read", rkey: COMMUNITY }],
+		});
+
+		expect(
+			await database.db
+				.select()
+				.from(database.tables.readCursors)
+				.where(eq(database.tables.readCursors.did, MEMBER)),
+		).toEqual([]);
 	});
 });
 

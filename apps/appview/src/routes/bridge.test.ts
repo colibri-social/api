@@ -65,5 +65,6 @@ describe("registrationView", () => {
 		expect(view.links).toHaveLength(1);
 		expect(view.updatedAt).toBeUndefined();
 		expect(view.bridgeHandle).toBeUndefined();
+		expect(view.communityName).toBeUndefined();
 	});
 });

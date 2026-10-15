@@ -35,6 +35,7 @@ const ADMITTED = ALL.filter((projector) => projector.admission);
 const AUTHZ_COLLECTIONS: ReadonlySet<string> = new Set<string>([
 	COLLECTIONS.role,
 	COLLECTIONS.member,
+	COLLECTIONS.category,
 	COLLECTIONS.channel,
 	COLLECTIONS.thread,
 	COLLECTIONS.moderation,

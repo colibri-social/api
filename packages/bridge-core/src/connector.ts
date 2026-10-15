@@ -141,6 +141,12 @@ export type PairingCode = {
 	expiresAt: string;
 };
 
+export type BridgeConnection = {
+	community: string;
+	communityName?: string;
+	registration: string;
+};
+
 export type LinkedRoom = {
 	community: string;
 	registration: string;
@@ -162,6 +168,8 @@ export interface BridgeContext {
 	emit(event: InboundEvent): void;
 	pair(remote: { remoteSpace: string; remoteSpaceName: string }): Promise<PairingCode>;
 	linkedRooms(remoteSpace: string): LinkedRoom[];
+	connections(remoteSpace: string): BridgeConnection[];
+	disconnect(remoteSpace: string, community?: string): Promise<number>;
 }
 
 export interface NetworkConnector {

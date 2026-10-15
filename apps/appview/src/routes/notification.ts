@@ -123,7 +123,10 @@ export const handleUpdateSeenForMessage = async (
 		messageRkey,
 		seenAt,
 	);
-	ctx.announce.toUser(callerDid, seenEvent(unread, { seenAt, channel }));
+	ctx.announce.toUser(
+		callerDid,
+		seenEvent(unread, { seenAt, channel, message: { did: messageAuthor, rkey: messageRkey } }),
+	);
 	return { unread };
 };
 

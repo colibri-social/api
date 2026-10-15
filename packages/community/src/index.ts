@@ -4,6 +4,7 @@ export * from "./authz.js";
 export * from "./bridges.js";
 export * from "./credentials.js";
 export * from "./crypto.js";
+export * from "./emoji-policy.js";
 export * from "./heal.js";
 export * from "./legacy.js";
 export * from "./loader.js";

@@ -113,6 +113,20 @@
 			"when": 1791538409949,
 			"tag": "0015_chubby_changeling",
 			"breakpoints": true
+		},
+		{
+			"idx": 16,
+			"version": "6",
+			"when": 1791790353135,
+			"tag": "0016_steep_mikhail_rasputin",
+			"breakpoints": true
+		},
+		{
+			"idx": 17,
+			"version": "6",
+			"when": 1791792460830,
+			"tag": "0017_nosy_hellion",
+			"breakpoints": true
 		}
 	]
 }

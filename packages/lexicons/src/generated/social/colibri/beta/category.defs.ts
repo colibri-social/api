@@ -21,12 +21,37 @@ type Main = { $type: "social.colibri.beta.category";
   /**
    * The channels in this category, in display order, by space key.
    */
-  "channelOrder":(l.RecordKeyString)[] };
+  "channelOrder":(l.RecordKeyString)[];
+
+  /**
+   * Whether only community admins may post in the category's channels. A channel that sets its own posting restriction overrides this.
+   */
+  "ownerOnly"?:boolean;
+
+  /**
+   * Roles allowed to post in the category's channels. Empty means no role restriction. A channel that sets its own posting restriction overrides this.
+   */
+  "allowedRoles"?:(l.RecordKeyString)[];
+
+  /**
+   * Members allowed to post in the category's channels in addition to allowedRoles.
+   */
+  "allowedMembers"?:(l.DidString)[];
+
+  /**
+   * Roles that may read the category's channels. Empty or absent means every member may read them. A channel with its own non-empty visibleToRoles or visibleToMembers overrides this. A non-empty list makes the category's other channels private, enforced the same way as a private channel.
+   */
+  "visibleToRoles"?:(l.RecordKeyString)[];
+
+  /**
+   * Members that may read the category's channels in addition to visibleToRoles.
+   */
+  "visibleToMembers"?:(l.DidString)[] };
 
 export type { Main };
 
 /** A named group of channels within a community. */
-const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"channelOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )}));
+const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"channelOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), ),"ownerOnly":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"allowedRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"allowedMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ))}));
 
 export { main };
 

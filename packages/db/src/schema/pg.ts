@@ -135,6 +135,7 @@ export const communities = pgTable(
 		requiresApproval: flag("requires_approval").notNull().default(false),
 		linkEmbeds: flag("link_embeds").notNull().default(true),
 		overrideUserNameColors: flag("override_user_name_colors").notNull().default(false),
+		customEmoji: text("custom_emoji").notNull().default("all"),
 		labelers: json<string[]>("labelers")
 			.notNull()
 			.$defaultFn(() => []),
@@ -158,6 +159,11 @@ export const categories = pgTable(
 			.notNull()
 			.$defaultFn(() => []),
 		position: integer("position").notNull().default(0),
+		ownerOnly: flag("owner_only").notNull().default(false),
+		allowedRoles: json<string[]>("allowed_roles"),
+		allowedMembers: json<string[]>("allowed_members"),
+		visibleToRoles: json<string[]>("visible_to_roles"),
+		visibleToMembers: json<string[]>("visible_to_members"),
 	},
 	(t) => [primaryKey({ columns: [t.community, t.rkey] })],
 );

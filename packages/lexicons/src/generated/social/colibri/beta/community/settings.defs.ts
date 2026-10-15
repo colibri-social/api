@@ -34,6 +34,11 @@ type Main = { $type: "social.colibri.beta.community.settings";
   "overrideUserNameColors"?:boolean;
 
   /**
+   * Which custom emoji render in this community. all allows custom emoji from any source, local only the community's own emoji, none disables custom emoji. Disallowed emoji show their fallback text. Defaults to all.
+   */
+  "customEmoji"?:"all" | "local" | "none" | l.UnknownString;
+
+  /**
    * DIDs whose labels this community honours, in addition to the community's own. Empty means the community labels its content itself.
    */
   "labelers"?:(l.DidString)[] };
@@ -41,7 +46,7 @@ type Main = { $type: "social.colibri.beta.community.settings";
 export type { Main };
 
 /** A community's operational settings. Separate from the profile record so the two have different read audiences. */
-const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"categoryOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), ),"requiresApprovalToJoin":/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false),"linkEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), true)),"overrideUserNameColors":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"labelers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ))}));
+const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"categoryOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), ),"requiresApprovalToJoin":/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false),"linkEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), true)),"overrideUserNameColors":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.string<{"knownValues":["all","local","none"]}>(), "all")),"labelers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ))}));
 
 export { main };
 

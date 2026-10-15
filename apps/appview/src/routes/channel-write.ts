@@ -1,4 +1,5 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
+import type { Schema } from "@colibri-social/appview-db";
 import {
 	type ActorAuthz,
 	type CommunityWriter,
@@ -13,6 +14,7 @@ import { toXrpcError } from "../errors.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
 import { type ChannelView, CommunityViews } from "../views/community.js";
+import { categoryFields, categoryRecord } from "./category-record.js";
 import type { RouteDeps } from "./types.js";
 
 type ChannelRow = Awaited<ReturnType<typeof loadChannelRow>>;
@@ -70,7 +72,7 @@ async function loadChannelRow(ctx: AppContext, space: string) {
 	return row ?? null;
 }
 
-const assertVisibilityHierarchy = async (
+export const assertVisibilityHierarchy = async (
 	ctx: AppContext,
 	community: string,
 	authz: ActorAuthz,
@@ -91,18 +93,14 @@ const assertVisibilityHierarchy = async (
 const rewriteCategoryOrder = async (
 	writer: CommunityWriter,
 	community: string,
-	category: { rkey: string; name: string; channelOrder: string[] },
+	category: Schema["categories"]["$inferSelect"],
 	channelOrder: string[],
 ): Promise<void> => {
 	await writer.put(community, {
 		space: writer.spaces(community).configuration,
 		collection: COLLECTIONS.category,
 		rkey: category.rkey,
-		record: {
-			$type: COLLECTIONS.category,
-			name: category.name,
-			channelOrder,
-		},
+		record: categoryRecord({ ...categoryFields(category), channelOrder }),
 	});
 };
 
@@ -167,7 +165,13 @@ export const handleCreateChannel = async (
 			migratedFrom: null,
 		};
 
-		return { channel: communities.channel(row, authz) };
+		return {
+			channel: communities.channel(
+				row,
+				authz,
+				await ctx.loader.categoryAudience(community, row.category),
+			),
+		};
 	} catch (error) {
 		throw toXrpcError(error);
 	}
@@ -266,7 +270,13 @@ export const handleUpdateChannel = async (
 
 		ctx.announce.channelChanged(community, space, "update");
 
-		return { channel: communities.channel(row, authz) };
+		return {
+			channel: communities.channel(
+				row,
+				authz,
+				await ctx.loader.categoryAudience(community, row.category),
+			),
+		};
 	} catch (error) {
 		throw toXrpcError(error);
 	}

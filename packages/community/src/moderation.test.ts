@@ -341,6 +341,64 @@ describe("leaving", () => {
 	});
 });
 
+describe("transferring ownership", () => {
+	it("hands the owner role to the subject and takes it from the caller", async () => {
+		await membership.setRoles(COMMUNITY, OWNER, OWNER, ["owner", "mod"]);
+		const result = await membership.transferOwnership(COMMUNITY, OWNER, MEMBER);
+		expect(result).toEqual({ owner: ["owner"], previousOwner: ["mod"] });
+		expect((await loader.authz(COMMUNITY, MEMBER)).member?.roles).toEqual(["owner"]);
+		expect((await loader.authz(COMMUNITY, OWNER)).member?.roles).toEqual(["mod"]);
+	});
+
+	it("keeps the subject's existing roles", async () => {
+		await membership.transferOwnership(COMMUNITY, OWNER, MOD);
+		expect((await loader.authz(COMMUNITY, MOD)).member?.roles).toEqual(["mod", "owner"]);
+	});
+
+	it("grants before it revokes so the community always has an owner", async () => {
+		writes = [];
+		await membership.transferOwnership(COMMUNITY, OWNER, MEMBER);
+		expect(writes.map((entry) => entry.write.rkey)).toEqual([MEMBER, OWNER]);
+	});
+
+	it("lets the previous owner leave afterwards", async () => {
+		await membership.transferOwnership(COMMUNITY, OWNER, MEMBER);
+		await membership.leave(COMMUNITY, OWNER);
+		expect((await loader.authz(COMMUNITY, OWNER)).member).toBeNull();
+	});
+
+	it("refuses anyone who does not hold the owner role", async () => {
+		await expect(membership.transferOwnership(COMMUNITY, MOD, MEMBER)).rejects.toMatchObject({
+			failure: "notOwner",
+		});
+	});
+
+	it("refuses a subject who is not a member", async () => {
+		await expect(membership.transferOwnership(COMMUNITY, OWNER, OUTSIDER)).rejects.toMatchObject({
+			failure: "notMember",
+		});
+	});
+
+	it("refuses a banned subject", async () => {
+		await moderation.ban(COMMUNITY, OWNER, MEMBER);
+		await expect(membership.transferOwnership(COMMUNITY, OWNER, MEMBER)).rejects.toMatchObject({
+			failure: "banned",
+		});
+	});
+
+	it("refuses a subject who already owns the community", async () => {
+		await addMember("did:plc:second", ["owner"]);
+		await expect(
+			membership.transferOwnership(COMMUNITY, OWNER, "did:plc:second"),
+		).rejects.toMatchObject({ failure: "alreadyOwner" });
+	});
+
+	it("lets the community itself hand its owner role to a member", async () => {
+		const result = await membership.transferOwnership(COMMUNITY, COMMUNITY, MEMBER);
+		expect(result).toEqual({ owner: ["owner"], previousOwner: [] });
+	});
+});
+
 describe("hierarchy", () => {
 	it("lets a moderator kick an ordinary member", async () => {
 		await moderation.kick(COMMUNITY, MOD, MEMBER, "spam");

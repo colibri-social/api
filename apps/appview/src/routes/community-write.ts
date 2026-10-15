@@ -3,6 +3,7 @@ import { sniffMimeType } from "@colibri-social/blobs";
 import {
 	CommunityCredentialError,
 	communitySpaceUris,
+	customEmojiPolicy,
 	generatePassword,
 	has,
 	isAdmin,
@@ -104,6 +105,7 @@ const provisionedView = async (
 		requiresApproval: input.requiresApprovalToJoin ?? false,
 		linkEmbeds: true,
 		overrideUserNameColors: input.overrideUserNameColors ?? false,
+		customEmoji: "all",
 		labelers: [] as string[],
 		migratedFrom: null,
 		profileSpace: provisioned.spaces.profile,
@@ -274,6 +276,7 @@ export const handleUpdateCommunity = async (
 		requiresApprovalToJoin?: boolean;
 		linkEmbeds?: boolean;
 		overrideUserNameColors?: boolean;
+		customEmoji?: string;
 		labelers?: string[];
 	},
 ): Promise<{ community: CommunityView }> => {
@@ -286,6 +289,7 @@ export const handleUpdateCommunity = async (
 	const nextRequiresApproval = input.requiresApprovalToJoin ?? row.requiresApproval;
 	const nextLinkEmbeds = input.linkEmbeds ?? row.linkEmbeds;
 	const nextOverrideUserNameColors = input.overrideUserNameColors ?? row.overrideUserNameColors;
+	const nextCustomEmoji = customEmojiPolicy(input.customEmoji ?? row.customEmoji);
 	const nextLabelers = input.labelers ?? row.labelers;
 
 	const spaces = communitySpaces(input.community);
@@ -321,6 +325,7 @@ export const handleUpdateCommunity = async (
 			requiresApprovalToJoin: nextRequiresApproval,
 			linkEmbeds: nextLinkEmbeds,
 			overrideUserNameColors: nextOverrideUserNameColors,
+			customEmoji: nextCustomEmoji,
 			labelers: nextLabelers,
 		});
 	} catch (error) {
@@ -337,6 +342,7 @@ export const handleUpdateCommunity = async (
 		requiresApproval: nextRequiresApproval,
 		linkEmbeds: nextLinkEmbeds,
 		overrideUserNameColors: nextOverrideUserNameColors,
+		customEmoji: nextCustomEmoji,
 		labelers: nextLabelers,
 	};
 	const total = await countMembers(ctx, input.community);
@@ -590,6 +596,51 @@ export const handleSetMemberRoles = async (
 	return { member };
 };
 
+export const handleTransferOwnership = async (
+	ctx: AppContext,
+	actors: ActorViews,
+	membership: Membership,
+	callerDid: string,
+	input: { community: string; subject: string },
+): Promise<{ owner: MemberView; previousOwner: MemberView }> => {
+	await requireCommunity(ctx, input.community);
+	const [callerBefore, subjectBefore] = await Promise.all([
+		ctx.loader.authz(input.community, callerDid),
+		ctx.loader.authz(input.community, input.subject),
+	]);
+
+	let result: { owner: string[]; previousOwner: string[] };
+	try {
+		result = await membership.transferOwnership(input.community, callerDid, input.subject);
+	} catch (error) {
+		if (error instanceof MembershipError) throw membershipErrorToXrpc(error);
+		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);
+		throw error;
+	}
+
+	const view = async (
+		did: string,
+		before: Awaited<ReturnType<typeof ctx.loader.authz>>,
+		roles: string[],
+	): Promise<MemberView> => ({
+		actor: await actors.one(did),
+		roles: roles.map(asRecordKey),
+		joinedAt: asDatetime(before.member?.joinedAt ?? new Date().toISOString()),
+		nickname: before.member?.nickname ?? undefined,
+	});
+
+	const owner = await view(input.subject, subjectBefore, result.owner);
+	const previousOwner = await view(callerDid, callerBefore, result.previousOwner);
+	ctx.announce.toCommunity(input.community, memberEvent("update", input.community, owner));
+	if (callerBefore.member) {
+		ctx.announce.toCommunity(
+			input.community,
+			memberEvent("update", input.community, previousOwner),
+		);
+	}
+	return { owner, previousOwner };
+};
+
 export const handleReorderCategories = async (
 	ctx: AppContext,
 	callerDid: string,
@@ -806,6 +857,7 @@ export const handleMigrateCommunity = async (
 		requiresApproval: false,
 		linkEmbeds: true,
 		overrideUserNameColors: false,
+		customEmoji: "all",
 		labelers: [] as string[],
 		migratedFrom: legacyUri(legacyDid),
 		profileSpace: spaces.profile,
@@ -916,6 +968,20 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
 			body: await handleSetMemberRoles(ctx, actors, membership, caller.credentials.did, input.body),
+		}),
+	});
+
+	route(server, social.colibri.beta.community.transferOwnership, {
+		auth: auth.required,
+		handler: async ({ input, auth: caller }) => ({
+			encoding: "application/json" as const,
+			body: await handleTransferOwnership(
+				ctx,
+				actors,
+				membership,
+				caller.credentials.did,
+				input.body,
+			),
 		}),
 	});
 

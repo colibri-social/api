@@ -26,7 +26,7 @@ export const $output = /*#__PURE__*/ l.jsonPayload({"statuses":/*#__PURE__*/ l.a
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Pushes the requesting user's read cursors for one community to the AppView, so unread counts update immediately instead of waiting for a sync notification. The client writes its social.colibri.beta.channel.read record for the community to its own personal space first, then calls this. Clients should debounce this rather than calling it on every message. */
+/** Pushes the requesting user's read cursors for one community to the AppView, so unread counts update immediately instead of waiting for a sync notification. The client writes its social.colibri.beta.channel.read record for the community to its own personal space first, then calls this. Clients should debounce this rather than calling it on every message. The user's other sessions receive the cursors that moved as a social.colibri.beta.sync.defs#readCursorEvent. */
 const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","CommunityNotFound"]);
 
 export { main };

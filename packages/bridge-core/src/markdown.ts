@@ -649,7 +649,7 @@ export const normalizeWhitespace = (input: ParsedMarkdown): ParsedMarkdown => {
 	return { text: cleaned, facets: mapped };
 };
 
-const ATOM_KIND = new Set(["mention", "bridgedMention", "channel", "role", "time"]);
+const ATOM_KIND = new Set(["mention", "bridgedMention", "channel", "role", "time", "customEmoji"]);
 
 export interface SourceAtom {
 	start: number;

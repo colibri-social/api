@@ -8,6 +8,7 @@ import {
 } from "@colibri-social/lexicons";
 import { and, eq } from "drizzle-orm";
 import type { Projector } from "../projector.js";
+import { mergeReadCursors } from "../read-cursors.js";
 
 const PERSONAL = [SPACE_TYPES.actorPreferences] as const;
 
@@ -79,23 +80,7 @@ export const readCursors: Projector<social.colibri.beta.channel.read.Main> = {
 	spaceTypes: PERSONAL,
 	schema: social.colibri.beta.channel.read,
 	put: async (deps, ref, value) => {
-		await deps.db
-			.delete(deps.tables.readCursors)
-			.where(
-				and(
-					eq(deps.tables.readCursors.did, ref.author),
-					eq(deps.tables.readCursors.community, value.community),
-				),
-			);
-		if (value.cursors.length === 0) return;
-		await deps.db.insert(deps.tables.readCursors).values(
-			value.cursors.map((entry) => ({
-				did: ref.author,
-				community: value.community,
-				channel: entry.channel,
-				cursor: entry.cursor,
-			})),
-		);
+		await mergeReadCursors(deps, ref.author, value.community, value.cursors);
 	},
 	remove: async (deps, ref) => {
 		await deps.db

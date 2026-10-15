@@ -547,6 +547,39 @@ describe("ChannelViews.messages", () => {
 		const page = await views.messages(SPACE, null, { limit: 10 });
 		expect(page.messages[0]?.legacy).toBe(true);
 	});
+
+	it("drops custom emoji the community's policy disallows and keeps the text", async () => {
+		const own = `at://${COMMUNITY}/blue.moji.collection.item/shipit`;
+		const foreign = "at://did:plc:otherspaceotherspaceother/blue.moji.collection.item/owl";
+		const emoji = (byteStart: number, uri: string) => ({
+			index: { byteStart, byteEnd: byteStart + 4 },
+			features: [{ $type: "social.colibri.beta.richtext.facet#customEmoji", uri }],
+		});
+		const rkey = nextTid();
+		await putMessage(rkey, { text: "🚀 🦉", facets: [emoji(0, own), emoji(5, foreign)] });
+		const uris = async () => {
+			const page = await views.messages(SPACE, null, { limit: 10 });
+			const message = page.messages[0];
+			expect(message?.text).toBe("🚀 🦉");
+			return (message?.facets ?? []).map(
+				(facet) => (facet.features[0] as { uri?: string } | undefined)?.uri,
+			);
+		};
+
+		expect(await uris()).toEqual([own, foreign]);
+
+		const setPolicy = (customEmoji: string) =>
+			database.db
+				.update(database.tables.communities)
+				.set({ customEmoji })
+				.where(eq(database.tables.communities.did, COMMUNITY));
+
+		await setPolicy("local");
+		expect(await uris()).toEqual([own]);
+
+		await setPolicy("none");
+		expect(await uris()).toEqual([]);
+	});
 });
 
 describe("ChannelViews attachments", () => {
