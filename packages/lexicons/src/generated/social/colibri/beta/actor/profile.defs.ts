@@ -24,6 +24,11 @@ type Main = { $type: "social.colibri.beta.actor.profile";
   "description"?:string;
 
   /**
+   * Free-form pronouns text. Always read from this record. When syncBluesky is set and this field is absent, the pronouns of app.bsky.actor.profile apply.
+   */
+  "pronouns"?:string;
+
+  /**
    * Avatar image.
    */
   "avatar"?:l.BlobRef;
@@ -51,7 +56,7 @@ type Main = { $type: "social.colibri.beta.actor.profile";
 export type { Main };
 
 /** A Colibri profile. A public record on the user's own repo, kept separate from app.bsky.actor.profile so Colibri never needs write access to the Bluesky record. */
-const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"displayName":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxGraphemes":64,"maxLength":640})),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxGraphemes":256,"maxLength":2560})),"avatar":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.blob({"accept":["image/jpeg","image/png","image/gif","image/webp"]})),"banner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.blob({"accept":["image/jpeg","image/png","image/gif","image/webp"]})),"syncBluesky":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"theme":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Theme>((() => theme) as any)),"preferredBadge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":64}))}));
+const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"displayName":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxGraphemes":64,"maxLength":640})),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxGraphemes":256,"maxLength":2560})),"pronouns":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxGraphemes":64,"maxLength":640})),"avatar":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.blob({"accept":["image/jpeg","image/png","image/gif","image/webp"]})),"banner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.blob({"accept":["image/jpeg","image/png","image/gif","image/webp"]})),"syncBluesky":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"theme":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Theme>((() => theme) as any)),"preferredBadge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":64}))}));
 
 export { main };
 

@@ -57,6 +57,7 @@ type RawAttachment = {
 	blob?: { ref?: { $link?: string }; mimeType?: string; size?: number };
 	name?: string;
 	spoiler?: boolean;
+	alt?: string;
 };
 
 type RawForward = {
@@ -138,6 +139,7 @@ export class ChannelViews {
 				mimeType,
 				size: item.blob?.size,
 				...(item.spoiler === true ? { spoiler: true } : {}),
+				...(typeof item.alt === "string" && item.alt ? { alt: item.alt } : {}),
 			} as AttachmentView);
 		}
 		return out;

@@ -212,12 +212,17 @@ type AttachmentView = { $type?: "social.colibri.beta.channel.defs#attachmentView
   /**
    * Whether the author marked the file as a spoiler. Clients hide it behind a reveal step.
    */
-  "spoiler"?:boolean };
+  "spoiler"?:boolean;
+
+  /**
+   * The author's text description of the file.
+   */
+  "alt"?:string };
 
 export type { AttachmentView };
 
 /** A file attached to a message. */
-const attachmentView = /*#__PURE__*/ l.typedObject<AttachmentView>($nsid, "attachmentView", /*#__PURE__*/ l.object({"url":/*#__PURE__*/ l.string({"format":"uri"}),"name":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256})),"mimeType":/*#__PURE__*/ l.string(),"size":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"width":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"height":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"spoiler":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
+const attachmentView = /*#__PURE__*/ l.typedObject<AttachmentView>($nsid, "attachmentView", /*#__PURE__*/ l.object({"url":/*#__PURE__*/ l.string({"format":"uri"}),"name":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256})),"mimeType":/*#__PURE__*/ l.string(),"size":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"width":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"height":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"spoiler":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"alt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":20000,"maxGraphemes":2000}))}));
 
 export { attachmentView };
 

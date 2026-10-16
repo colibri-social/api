@@ -92,4 +92,48 @@ describe("ActorViews.hydrate", () => {
 		expect(row?.fetchedAt).not.toBe(STALE);
 		expect(row?.bsky).toBeNull();
 	});
+
+	it.each([
+		{
+			name: "uses the record's pronouns",
+			colibri: { pronouns: "she/her", syncBluesky: false },
+			bsky: { pronouns: "they/them" },
+			expected: "she/her",
+		},
+		{
+			name: "ignores Bluesky pronouns without sync",
+			colibri: { syncBluesky: false },
+			bsky: { pronouns: "they/them" },
+			expected: undefined,
+		},
+		{
+			name: "falls back to Bluesky pronouns while synced",
+			colibri: { syncBluesky: true },
+			bsky: { pronouns: "they/them" },
+			expected: "they/them",
+		},
+		{
+			name: "prefers the record's pronouns while synced",
+			colibri: { pronouns: "she/her", syncBluesky: true },
+			bsky: { pronouns: "they/them" },
+			expected: "she/her",
+		},
+		{
+			name: "uses Bluesky pronouns without a Colibri record",
+			colibri: null,
+			bsky: { pronouns: "he/him" },
+			expected: "he/him",
+		},
+	])("$name", async ({ colibri, bsky, expected }) => {
+		respondWith((collection) => {
+			const value = collection === COLLECTIONS.profile ? colibri : bsky;
+			return value
+				? json(200, { value })
+				: json(400, { error: "RecordNotFound", message: "not found" });
+		});
+
+		const profile = await views.one(ACTOR);
+
+		expect(profile.pronouns).toBe(expected);
+	});
 });

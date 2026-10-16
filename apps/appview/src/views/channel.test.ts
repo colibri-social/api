@@ -657,6 +657,29 @@ describe("ChannelViews attachments", () => {
 		expect(off).not.toHaveProperty("spoiler");
 	});
 
+	it("passes alt text through and omits it when empty", async () => {
+		const rkey = nextTid();
+		const blob = {
+			$type: "blob",
+			ref: { $link: ATTACHMENT_CID },
+			mimeType: "image/png",
+			size: 1234,
+		};
+		await putMessage(rkey, {
+			attachments: [
+				{ name: "bird.png", blob, alt: "A colibri hovering at a flower" },
+				{ name: "plain.png", blob },
+				{ name: "empty.png", blob, alt: "" },
+			],
+		});
+
+		const { messages } = await views.messages(SPACE, null, { limit: 1 });
+		const [described, plain, empty] = messages[0]?.attachments ?? [];
+		expect(described?.alt).toBe("A colibri hovering at a flower");
+		expect(plain).not.toHaveProperty("alt");
+		expect(empty).not.toHaveProperty("alt");
+	});
+
 	it("points a moved message's attachment at the space it is being read in", async () => {
 		const rkey = nextTid();
 		await putMessage(rkey, {

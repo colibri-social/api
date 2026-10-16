@@ -24,6 +24,7 @@ type ColibriProfile = social.colibri.beta.actor.profile.Main;
 type BlueskyProfile = {
 	displayName?: string;
 	description?: string;
+	pronouns?: string;
 	avatar?: unknown;
 	banner?: unknown;
 };
@@ -38,6 +39,7 @@ const resolve = (colibri: ColibriProfile | null, bsky: BlueskyProfile | null) =>
 	return {
 		displayName: (synced ? bsky?.displayName : colibri?.displayName) ?? undefined,
 		description: (synced ? bsky?.description : colibri?.description) ?? undefined,
+		pronouns: colibri?.pronouns || (synced ? bsky?.pronouns : undefined) || undefined,
 		avatarCid: blobCid(synced ? bsky?.avatar : colibri?.avatar),
 		bannerCid: blobCid(synced ? bsky?.banner : colibri?.banner),
 		theme: colibri?.theme,
@@ -179,6 +181,7 @@ export class ActorViews {
 				handle: asHandle(handle ?? "handle.invalid"),
 				displayName: resolved.displayName ?? handle ?? did,
 				description: resolved.description,
+				pronouns: resolved.pronouns,
 				avatar: asUriOrUndefined(this.blobUrl(did, resolved.avatarCid, "avatar")),
 				banner: asUriOrUndefined(this.blobUrl(did, resolved.bannerCid, "banner")),
 				isBot: false,
