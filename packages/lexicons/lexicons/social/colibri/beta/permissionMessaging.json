@@ -32,7 +32,8 @@
 					"resource": "space",
 					"spaceType": "social.colibri.beta.channel.voice",
 					"authority": "*",
-					"action": ["read"]
+					"collection": ["social.colibri.beta.message", "social.colibri.beta.reaction"],
+					"action": ["read", "create", "update", "delete"]
 				},
 				{
 					"type": "permission",
