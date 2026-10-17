@@ -290,3 +290,53 @@ export type { UnreadStatus };
 const unreadStatus = /*#__PURE__*/ l.typedObject<UnreadStatus>($nsid, "unreadStatus", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"hasUnread":/*#__PURE__*/ l.boolean(),"unreadMentions":/*#__PURE__*/ l.integer(),"cursor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"tid"}))}));
 
 export { unreadStatus };
+
+/** The latest message in a channel, reduced to what a channel list preview shows. */
+type ChannelSummary = { $type?: "social.colibri.beta.channel.defs#channelSummary";
+
+  /**
+   * The channel.
+   */
+  "channel":l.SpaceRefString;
+
+  /**
+   * The latest message's record key.
+   */
+  "rkey":l.RecordKeyString;
+
+  /**
+   * Who wrote the latest message.
+   */
+  "author":l.DidString;
+
+  /**
+   * The latest message's text, which is empty when it only carries attachments or a forward.
+   */
+  "text":string;
+
+  /**
+   * What the first attachment is, when the message has any. Images and videos are image, everything else is file.
+   */
+  "attachmentKind"?:"image" | "file" | l.UnknownString;
+
+  /**
+   * How many attachments the message has.
+   */
+  "attachmentCount":number;
+
+  /**
+   * Whether the message forwards another message.
+   */
+  "forward":boolean;
+
+  /**
+   * When the latest message was written.
+   */
+  "createdAt":l.DatetimeString };
+
+export type { ChannelSummary };
+
+/** The latest message in a channel, reduced to what a channel list preview shows. */
+const channelSummary = /*#__PURE__*/ l.typedObject<ChannelSummary>($nsid, "channelSummary", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"author":/*#__PURE__*/ l.string({"format":"did"}),"text":/*#__PURE__*/ l.string(),"attachmentKind":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["image","file"]}>()),"attachmentCount":/*#__PURE__*/ l.integer({"minimum":0}),"forward":/*#__PURE__*/ l.boolean(),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
+
+export { channelSummary };

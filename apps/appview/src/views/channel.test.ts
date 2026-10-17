@@ -1,3 +1,4 @@
+import { l } from "@atproto/lex-schema";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { CommunityLoader } from "@colibri-social/community";
 import {
@@ -5,13 +6,14 @@ import {
 	channelSpace,
 	LABEL_VALUES,
 	SPACE_TYPES,
-	type social,
+	social,
 	threadSpace,
 } from "@colibri-social/lexicons";
 import { nextTid } from "@colibri-social/space";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AppContext } from "../context.js";
+import { handleListSummaries } from "../routes/channel.js";
 import { ActorViews } from "./actor.js";
 import { ChannelViews } from "./channel.js";
 
@@ -968,5 +970,203 @@ describe("ChannelViews.messages with moved messages", () => {
 
 		const destination = await views.messages(THREAD, null, { limit: 10 });
 		expect(destination.messages).toEqual([]);
+	});
+});
+
+describe("ChannelViews.messages around a message", () => {
+	const seed = async (count: number) => {
+		const rkeys = Array.from({ length: count }, () => nextTid());
+		for (const rkey of rkeys) await putMessage(rkey);
+		return rkeys;
+	};
+
+	it("centres the page on the message, newest first, with a cursor each way", async () => {
+		const rkeys = await seed(7);
+
+		const page = await views.messages(SPACE, null, { limit: 4, around: rkeys[3] });
+		expect(page.messages.map((message) => message.rkey)).toEqual([
+			rkeys[5],
+			rkeys[4],
+			rkeys[3],
+			rkeys[2],
+		]);
+		expect(page.cursor).toBe(rkeys[2]);
+		expect(page.forwardCursor).toBe(rkeys[5]);
+
+		const older = await views.messages(SPACE, null, { limit: 10, cursor: page.cursor });
+		expect(older.messages.map((message) => message.rkey)).toEqual([rkeys[1], rkeys[0]]);
+
+		const newer = await views.messages(SPACE, null, {
+			limit: 10,
+			cursor: page.forwardCursor,
+			reverse: true,
+		});
+		expect(newer.messages.map((message) => message.rkey)).toEqual([rkeys[6]]);
+	});
+
+	it("omits both cursors when the page reaches each end", async () => {
+		const rkeys = await seed(3);
+
+		const page = await views.messages(SPACE, null, { limit: 10, around: rkeys[1] });
+		expect(page.messages.map((message) => message.rkey)).toEqual([rkeys[2], rkeys[1], rkeys[0]]);
+		expect(page.cursor).toBeUndefined();
+		expect(page.forwardCursor).toBeUndefined();
+	});
+
+	it("ignores cursor and reverse when around is set", async () => {
+		const rkeys = await seed(3);
+
+		const page = await views.messages(SPACE, null, {
+			limit: 2,
+			around: rkeys[1],
+			cursor: rkeys[0],
+			reverse: true,
+		});
+		expect(page.messages.map((message) => message.rkey)).toEqual([rkeys[2], rkeys[1]]);
+	});
+
+	it("returns only the message at a limit of one, and still points at newer messages", async () => {
+		const rkeys = await seed(3);
+
+		const page = await views.messages(SPACE, null, { limit: 1, around: rkeys[1] });
+		expect(page.messages.map((message) => message.rkey)).toEqual([rkeys[1]]);
+		expect(page.cursor).toBe(rkeys[1]);
+		expect(page.forwardCursor).toBe(rkeys[1]);
+	});
+
+	it("leaves out a withheld message at the centre", async () => {
+		const rkeys = await seed(3);
+		await putLabel(rkeys[1] as string, "hidden");
+
+		const page = await views.messages(SPACE, null, { limit: 4, around: rkeys[1] });
+		expect(page.messages.map((message) => message.rkey)).toEqual([rkeys[2], rkeys[0]]);
+	});
+});
+
+describe("ChannelViews.summaries", () => {
+	const VOICE = channelSpace(COMMUNITY, SPACE_TYPES.channelVoice, "3lkvoicetest00");
+	const QUIET = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkquiettest00");
+	const PRIVATE = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkprivatetest0");
+
+	const putChannel = async (
+		space: string,
+		spaceType: string,
+		skey: string,
+		visibleToMembers: string[] = [],
+	) => {
+		await database.db.insert(database.tables.channels).values({
+			space,
+			community: COMMUNITY,
+			spaceType,
+			skey,
+			name: skey,
+			position: 1,
+			visibleToMembers,
+		});
+	};
+
+	const asListSummariesOutput = (body: unknown): void => {
+		const { output } = l.getMain(social.colibri.beta.channel.listSummaries);
+		const result = output.schema.safeValidate(body);
+		if (!result.success) throw new Error(result.reason.message);
+	};
+
+	const summariesFor = async (did: string) =>
+		views.summaries(COMMUNITY, did, await ctx.loader.authz(COMMUNITY, did));
+
+	beforeEach(async () => {
+		await database.db.insert(database.tables.members).values({
+			community: COMMUNITY,
+			did: AUTHOR_B,
+			roles: [],
+			joinedAt: NOW,
+		});
+	});
+
+	it("summarizes the latest message of each readable text channel", async () => {
+		await putChannel(VOICE, SPACE_TYPES.channelVoice, "3lkvoicetest00");
+		await putChannel(QUIET, SPACE_TYPES.channelText, "3lkquiettest00");
+		await putChannel(PRIVATE, SPACE_TYPES.channelText, "3lkprivatetest0", [AUTHOR_A]);
+		await putMessage(nextTid(), { text: "older" });
+		const latest = nextTid();
+		const blob = (mimeType: string) => ({
+			blob: { $type: "blob", ref: { $link: ATTACHMENT_CID }, mimeType, size: 10 },
+		});
+		await putMessage(latest, {
+			author: AUTHOR_B,
+			text: "",
+			attachments: [blob("video/mp4"), blob("application/pdf")],
+			createdAt: "2026-08-24T00:00:00.000Z",
+		});
+		await putMessage(nextTid(), { space: VOICE });
+		await putMessage(nextTid(), { space: PRIVATE });
+
+		const summaries = await summariesFor(AUTHOR_B);
+		asListSummariesOutput({ summaries });
+		expect(summaries).toEqual([
+			{
+				channel: SPACE,
+				rkey: latest,
+				author: AUTHOR_B,
+				text: "",
+				attachmentKind: "image",
+				attachmentCount: 2,
+				forward: false,
+				createdAt: "2026-08-24T00:00:00.000Z",
+			},
+		]);
+	});
+
+	it("flags a forward and leaves attachmentKind out when there are no attachments", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey, {
+			text: "",
+			forward: { source: { space: SPACE, did: AUTHOR_B, rkey: nextTid() }, text: "hi" },
+		});
+
+		const [summary] = await summariesFor(AUTHOR_B);
+		expect(summary).toMatchObject({ rkey, forward: true, attachmentCount: 0 });
+		expect(summary).not.toHaveProperty("attachmentKind");
+	});
+
+	it("skips a withheld message, but shows it to its own author", async () => {
+		const visible = nextTid();
+		const hidden = nextTid();
+		await putMessage(visible);
+		await putMessage(hidden);
+		await putLabel(hidden, "hidden");
+
+		const [forMember] = await summariesFor(AUTHOR_B);
+		expect(forMember?.rkey).toBe(visible);
+
+		await database.db.insert(database.tables.members).values({
+			community: COMMUNITY,
+			did: AUTHOR_A,
+			roles: [],
+			joinedAt: NOW,
+		});
+		const [forAuthor] = await summariesFor(AUTHOR_A);
+		expect(forAuthor?.rkey).toBe(hidden);
+	});
+
+	it("leaves out a channel whose only message was moved away", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey);
+		await putThread();
+		await putMovedLabel(rkey, THREAD, nextTid());
+
+		expect(await summariesFor(AUTHOR_B)).toEqual([]);
+	});
+
+	it("rejects a caller who is not a member", async () => {
+		await expect(
+			handleListSummaries(ctx, views, COMMUNITY, "did:plc:outsideroutsideroutsiderx"),
+		).rejects.toMatchObject({ customErrorName: "Forbidden" });
+	});
+
+	it("rejects an unknown community", async () => {
+		await expect(
+			handleListSummaries(ctx, views, "did:plc:nocommunitynocommunitynoc", AUTHOR_B),
+		).rejects.toMatchObject({ customErrorName: "CommunityNotFound" });
 	});
 });

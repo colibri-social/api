@@ -504,6 +504,31 @@ const applicationEvent = /*#__PURE__*/ l.typedObject<ApplicationEvent>($nsid, "a
 
 export { applicationEvent };
 
+/** A community's invitation list changed. Only sent to members who can create invitations. */
+type InvitationEvent = { $type?: "social.colibri.beta.sync.defs#invitationEvent";
+
+  /**
+   * What happened.
+   */
+  "event":"create" | "delete" | l.UnknownString;
+
+  /**
+   * The community.
+   */
+  "community":l.DidString;
+
+  /**
+   * The invitation code that was created or deleted.
+   */
+  "code":string };
+
+export type { InvitationEvent };
+
+/** A community's invitation list changed. Only sent to members who can create invitations. */
+const invitationEvent = /*#__PURE__*/ l.typedObject<InvitationEvent>($nsid, "invitationEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["create","delete"]}>(),"community":/*#__PURE__*/ l.string({"format":"did"}),"code":/*#__PURE__*/ l.string()}));
+
+export { invitationEvent };
+
 /** A label was applied or retracted on a record in a subscribed space. */
 type LabelEvent = { $type?: "social.colibri.beta.sync.defs#labelEvent";
 
@@ -595,12 +620,17 @@ type SeenEvent = { $type?: "social.colibri.beta.sync.defs#seenEvent";
   /**
    * The point everything was marked seen up to.
    */
-  "seenAt"?:l.DatetimeString };
+  "seenAt"?:l.DatetimeString;
+
+  /**
+   * Set when the user cleared their inbox. Notifications raised at or before this time are gone from it.
+   */
+  "clearedAt"?:l.DatetimeString };
 
 export type { SeenEvent };
 
 /** The connected user marked notifications seen somewhere else, so this client should clear the same badges. */
-const seenEvent = /*#__PURE__*/ l.typedObject<SeenEvent>($nsid, "seenEvent", /*#__PURE__*/ l.object({"unread":/*#__PURE__*/ l.integer(),"channel":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"})),"message":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any)),"seenAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"}))}));
+const seenEvent = /*#__PURE__*/ l.typedObject<SeenEvent>($nsid, "seenEvent", /*#__PURE__*/ l.object({"unread":/*#__PURE__*/ l.integer(),"channel":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"})),"message":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any)),"seenAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"clearedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"}))}));
 
 export { seenEvent };
 

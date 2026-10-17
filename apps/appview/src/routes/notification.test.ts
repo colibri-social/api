@@ -9,7 +9,10 @@ import { silentAnnouncer } from "../announce.js";
 import type { AppContext } from "../context.js";
 import type { ServerFrame } from "../ws/events.js";
 import {
+	handleClear,
+	handleGetUnreadCount,
 	handleGetUnseen,
+	handleListNotifications,
 	handleMarkReadFromNotification,
 	handleUpdateSeenForMessage,
 } from "./notification.js";
@@ -135,7 +138,12 @@ const insertMessage = async (space: string, rkey: string) => {
 	});
 };
 
-const insertNotification = async (id: string, space: string, rkey: string) => {
+const insertNotification = async (
+	id: string,
+	space: string,
+	rkey: string,
+	indexedAt: string = NOW,
+) => {
 	await database.db.insert(database.tables.notifications).values({
 		id,
 		recipient: MEMBER,
@@ -146,7 +154,7 @@ const insertNotification = async (id: string, space: string, rkey: string) => {
 		messageAuthor: AUTHOR,
 		messageRkey: rkey,
 		mentionRole: null,
-		indexedAt: NOW,
+		indexedAt,
 		seenAt: null,
 	});
 };
@@ -191,6 +199,17 @@ describe("getUnseen", () => {
 		expect(body.notifications).toHaveLength(1);
 		expect(body.notifications[0]?.channel).toBe(CHANNEL);
 		expect(body.notifications[0]?.thread).toBe(THREAD);
+		expect(body.notifications[0]?.threadName).toBe("release planning");
+	});
+
+	it("leaves threadName unset for a notification raised in the channel itself", async () => {
+		await insertMessage(CHANNEL, "3lkmessagex1");
+		await insertNotification("n1", CHANNEL, "3lkmessagex1");
+
+		const body = await handleGetUnseen(ctx, noProfiles, MEMBER, CHANNEL, 50);
+
+		expect(body.notifications[0]?.thread).toBeUndefined();
+		expect(body.notifications[0]?.threadName).toBeUndefined();
 	});
 
 	it("keeps a channel's unseen list free of its threads", async () => {
@@ -219,6 +238,93 @@ describe("getUnseen", () => {
 		await expect(handleGetUnseen(ctx, noProfiles, MEMBER, THREAD, 50)).rejects.toMatchObject({
 			customErrorName: "ChannelNotFound",
 		});
+	});
+});
+
+describe("clear", () => {
+	const LATER = "2026-09-23T00:00:00.000Z";
+
+	const asClearOutput = (body: unknown): void => {
+		const { output } = l.getMain(social.colibri.beta.notification.clear);
+		const result = output.schema.safeValidate(body);
+		if (!result.success) throw new Error(result.reason.message);
+	};
+
+	it("hides and marks seen everything raised at or before the cleared point", async () => {
+		await insertMessage(CHANNEL, "3lkmessagex1");
+		await insertMessage(CHANNEL, "3lkmessagex2");
+		await insertNotification("n1", CHANNEL, "3lkmessagex1");
+		await insertNotification("n2", CHANNEL, "3lkmessagex2", LATER);
+
+		const result = await handleClear(ctx, MEMBER, NOW);
+		asClearOutput(result);
+
+		expect(result).toEqual({ clearedAt: NOW, unread: 1 });
+		expect(await seenAtFor("n1")).toBe(NOW);
+		expect(await seenAtFor("n2")).toBeNull();
+
+		const listed = await handleListNotifications(ctx, noProfiles, MEMBER, {});
+		expect(listed.notifications.map((notification) => notification.id)).toEqual(["n2"]);
+		expect(await handleGetUnreadCount(ctx, MEMBER)).toEqual({ count: 1 });
+		const unseen = await handleGetUnseen(ctx, noProfiles, MEMBER, CHANNEL, 50);
+		expect(unseen.notifications.map((notification) => notification.id)).toEqual(["n2"]);
+	});
+
+	it("keeps a notification hidden after it is marked unseen again", async () => {
+		await insertMessage(CHANNEL, "3lkmessagex1");
+		await insertNotification("n1", CHANNEL, "3lkmessagex1");
+		await handleClear(ctx, MEMBER, NOW);
+
+		await database.db
+			.update(database.tables.notifications)
+			.set({ seenAt: null })
+			.where(eq(database.tables.notifications.id, "n1"));
+
+		expect(await handleGetUnreadCount(ctx, MEMBER)).toEqual({ count: 0 });
+		const unseen = await handleGetUnseen(ctx, noProfiles, MEMBER, CHANNEL, 50);
+		expect(unseen.notifications).toEqual([]);
+	});
+
+	it("never moves the cleared point backwards", async () => {
+		await handleClear(ctx, MEMBER, LATER);
+		const result = await handleClear(ctx, MEMBER, NOW);
+
+		expect(result.clearedAt).toBe(LATER);
+	});
+
+	it("treats a cleared point in the future as now", async () => {
+		const before = new Date().toISOString();
+		const result = await handleClear(ctx, MEMBER, "2999-01-01T00:00:00.000Z");
+		const after = new Date().toISOString();
+
+		expect(result.clearedAt >= before && result.clearedAt <= after).toBe(true);
+	});
+
+	it("leaves other users' notifications alone", async () => {
+		await insertMember(AUTHOR);
+		await insertMessage(CHANNEL, "3lkmessagex1");
+		await insertNotification("n1", CHANNEL, "3lkmessagex1");
+
+		await handleClear(ctx, AUTHOR, LATER);
+
+		expect(await seenAtFor("n1")).toBeNull();
+		expect(await handleGetUnreadCount(ctx, MEMBER)).toEqual({ count: 1 });
+	});
+
+	it("tells the caller's other sessions where the inbox was cleared to", async () => {
+		await handleClear(ctx, MEMBER, NOW);
+
+		expect(announced).toEqual([
+			{
+				did: MEMBER,
+				frame: {
+					$type: "social.colibri.beta.sync.defs#seenEvent",
+					unread: 0,
+					seenAt: NOW,
+					clearedAt: NOW,
+				},
+			},
+		]);
 	});
 });
 

@@ -479,6 +479,11 @@ export const notifications = sqliteTable(
 	],
 );
 
+export const notificationClears = sqliteTable("notification_clears", {
+	did: text("did").primaryKey(),
+	clearedAt: timestamp("cleared_at").notNull(),
+});
+
 export const pushSubscriptions = sqliteTable(
 	"push_subscriptions",
 	{
@@ -700,6 +705,7 @@ export const schema = {
 	readCursors,
 	communityCredentials,
 	notifications,
+	notificationClears,
 	pushSubscriptions,
 	invitations,
 	applications,

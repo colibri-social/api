@@ -1,7 +1,8 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
-import { canRead, decideSpaceAccess } from "@colibri-social/community";
+import { canRead, decideSpaceAccess, isMember } from "@colibri-social/community";
 import { social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
+import type { AppContext } from "../context.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
 import { ChannelViews } from "../views/channel.js";
@@ -9,6 +10,25 @@ import { CommunityViews } from "../views/community.js";
 import { ThreadViews } from "../views/thread.js";
 import { handlePutReadCursors } from "./read-cursors.js";
 import type { RouteDeps } from "./types.js";
+
+export const handleListSummaries = async (
+	ctx: AppContext,
+	channels: ChannelViews,
+	community: string,
+	callerDid: string,
+) => {
+	if (!(await ctx.loader.community(community))) {
+		throw new InvalidRequestError("no community exists with that DID", "CommunityNotFound");
+	}
+	const authz = await ctx.loader.authz(community, callerDid);
+	if (authz.isBanned) {
+		throw new InvalidRequestError("you are banned from this community", "Forbidden");
+	}
+	if (!isMember(authz)) {
+		throw new InvalidRequestError("you are not a member of this community", "Forbidden");
+	}
+	return { summaries: await channels.summaries(community, callerDid, authz) };
+};
 
 export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 	const actors = new ActorViews(ctx);
@@ -68,6 +88,7 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 				limit: params.limit,
 				cursor: params.cursor,
 				reverse: params.reverse,
+				around: params.around,
 			});
 			const anchored = await threads.anchoredIn(
 				params.channel,
@@ -111,6 +132,14 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 			});
 			return { encoding: "application/json" as const, body: { statuses } };
 		},
+	});
+
+	route(server, social.colibri.beta.channel.listSummaries, {
+		auth: auth.required,
+		handler: async ({ params, auth: caller }) => ({
+			encoding: "application/json" as const,
+			body: await handleListSummaries(ctx, channels, params.community, caller.credentials.did),
+		}),
 	});
 
 	route(server, social.colibri.beta.channel.putReadCursors, {

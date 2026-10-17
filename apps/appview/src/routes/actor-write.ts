@@ -280,6 +280,7 @@ export const handleDeleteAccount = async (
 	const tables = ctx.database.tables;
 	const purges = [
 		{ table: tables.notifications, column: tables.notifications.recipient },
+		{ table: tables.notificationClears, column: tables.notificationClears.did },
 		{ table: tables.pushSubscriptions, column: tables.pushSubscriptions.actor },
 		{ table: tables.mutes, column: tables.mutes.did },
 		{ table: tables.actorSettings, column: tables.actorSettings.did },

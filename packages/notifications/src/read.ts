@@ -20,7 +20,7 @@ import {
 	messageRefKey,
 } from "@colibri-social/projections";
 import { spaceRecordUri } from "@colibri-social/space";
-import { and, desc, eq, gte, inArray, isNull, lt, lte, or } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNull, lt, lte, or, type SQL } from "drizzle-orm";
 import type { NotificationDeps } from "./deps.js";
 
 export type NotificationRow = Schema["notifications"]["$inferSelect"];
@@ -120,13 +120,33 @@ export type ListNotificationsResult = { notifications: NotificationRow[]; cursor
 const clampLimit = (limit: number | undefined, fallback: number, max: number): number =>
 	Math.min(Math.max(limit ?? fallback, 1), max);
 
+export const clearedAtFor = async (
+	deps: NotificationDeps,
+	recipient: string,
+): Promise<string | undefined> => {
+	const [row] = await deps.db
+		.select({ clearedAt: deps.tables.notificationClears.clearedAt })
+		.from(deps.tables.notificationClears)
+		.where(eq(deps.tables.notificationClears.did, recipient))
+		.limit(1);
+	return row?.clearedAt;
+};
+
+const afterClear = async (deps: NotificationDeps, recipient: string): Promise<SQL | undefined> => {
+	const clearedAt = await clearedAtFor(deps, recipient);
+	return clearedAt ? gt(deps.tables.notifications.indexedAt, clearedAt) : undefined;
+};
+
 export const listNotifications = async (
 	deps: NotificationDeps,
 	recipient: string,
 	options: ListNotificationsOptions = {},
 ): Promise<ListNotificationsResult> => {
 	const limit = clampLimit(options.limit, 50, 100);
-	const conditions = [eq(deps.tables.notifications.recipient, recipient)];
+	const conditions = [
+		eq(deps.tables.notifications.recipient, recipient),
+		await afterClear(deps, recipient),
+	];
 	if (options.cursor) conditions.push(lt(deps.tables.notifications.id, options.cursor));
 
 	const rows = await deps.db
@@ -154,6 +174,7 @@ export const unreadCount = async (deps: NotificationDeps, recipient: string): Pr
 				eq(deps.tables.notifications.recipient, recipient),
 				isNull(deps.tables.notifications.seenAt),
 				inArray(deps.tables.notifications.kind, [...UNREAD_KINDS]),
+				await afterClear(deps, recipient),
 			),
 		);
 	const visible = await dropWithheld(deps, rows);
@@ -169,6 +190,7 @@ export const badgeCount = async (deps: NotificationDeps, recipient: string): Pro
 				eq(deps.tables.notifications.recipient, recipient),
 				isNull(deps.tables.notifications.seenAt),
 				inArray(deps.tables.notifications.kind, [...UNREAD_KINDS]),
+				await afterClear(deps, recipient),
 			),
 		);
 	if (rows.length === 0) return 0;
@@ -257,6 +279,7 @@ export const unseenForChannelPage = async (
 				eq(deps.tables.notifications.recipient, recipient),
 				eq(deps.tables.notifications.space, channel),
 				isNull(deps.tables.notifications.seenAt),
+				await afterClear(deps, recipient),
 			),
 		)
 		.orderBy(desc(deps.tables.notifications.id))
@@ -287,6 +310,36 @@ export const markSeen = async (
 			),
 		);
 	return unreadCount(deps, recipient);
+};
+
+export type ClearResult = { clearedAt: string; unread: number };
+
+export const clearNotifications = async (
+	deps: NotificationDeps,
+	recipient: string,
+	requestedAt: string,
+): Promise<ClearResult> => {
+	const now = deps.now();
+	const requested = new Date(requestedAt).toISOString();
+	const previous = await clearedAtFor(deps, recipient);
+	const capped = requested > now ? now : requested;
+	const clearedAt = previous && previous > capped ? previous : capped;
+
+	await deps.db
+		.insert(deps.tables.notificationClears)
+		.values({ did: recipient, clearedAt })
+		.onConflictDoUpdate({ target: deps.tables.notificationClears.did, set: { clearedAt } });
+	await deps.db
+		.update(deps.tables.notifications)
+		.set({ seenAt: clearedAt })
+		.where(
+			and(
+				eq(deps.tables.notifications.recipient, recipient),
+				isNull(deps.tables.notifications.seenAt),
+				lte(deps.tables.notifications.indexedAt, clearedAt),
+			),
+		);
+	return { clearedAt, unread: await unreadCount(deps, recipient) };
 };
 
 export const markSeenForMessage = async (
@@ -405,20 +458,26 @@ const toMessageView = (
 	labels: toLabelViews(labels),
 });
 
+type ThreadParent = { channel: string; name: string };
+
 const parentChannels = async (
 	deps: NotificationDeps,
 	spaces: readonly string[],
-): Promise<Map<string, string>> => {
+): Promise<Map<string, ThreadParent>> => {
 	const threads = [...new Set(spaces)].filter((space) =>
 		isThreadSpaceType(spaceTypeOf(space) ?? ""),
 	);
 	if (threads.length === 0) return new Map();
 
 	const rows = await deps.db
-		.select({ space: deps.tables.threads.space, channel: deps.tables.threads.channel })
+		.select({
+			space: deps.tables.threads.space,
+			channel: deps.tables.threads.channel,
+			name: deps.tables.threads.name,
+		})
 		.from(deps.tables.threads)
 		.where(inArray(deps.tables.threads.space, threads));
-	return new Map(rows.map((row) => [row.space, row.channel]));
+	return new Map(rows.map((row) => [row.space, { channel: row.channel, name: row.name }]));
 };
 
 export const hydrateNotifications = async (
@@ -454,8 +513,9 @@ export const hydrateNotifications = async (
 			id: row.id,
 			kind: row.kind,
 			author,
-			channel: asSpaceRef(parent ?? row.space),
+			channel: asSpaceRef(parent?.channel ?? row.space),
 			thread: parent ? asSpaceRef(row.space) : undefined,
+			threadName: parent?.name,
 			community: asDid(row.community),
 			message: messageRow ? toMessageView(messageRow, author, messageLabelsForRow) : undefined,
 			mentionRole: row.mentionRole ?? undefined,

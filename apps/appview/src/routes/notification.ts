@@ -1,8 +1,9 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
 import type { PushPlatform } from "@colibri-social/appview-db";
-import { social } from "@colibri-social/lexicons";
+import { asDatetime, social } from "@colibri-social/lexicons";
 import type { ActorHydrator } from "@colibri-social/notifications";
 import {
+	clearNotifications,
 	hydrateNotifications,
 	isApnsDeviceToken,
 	listNotifications,
@@ -108,6 +109,15 @@ export const handleUpdateSeen = async (ctx: AppContext, callerDid: string, seenA
 	const unread = await markSeen(notificationDeps(ctx), callerDid, seenAt);
 	ctx.announce.toUser(callerDid, seenEvent(unread, { seenAt }));
 	return { unread };
+};
+
+export const handleClear = async (ctx: AppContext, callerDid: string, requestedAt: string) => {
+	const result = await clearNotifications(notificationDeps(ctx), callerDid, requestedAt);
+	ctx.announce.toUser(
+		callerDid,
+		seenEvent(result.unread, { seenAt: result.clearedAt, clearedAt: result.clearedAt }),
+	);
+	return { clearedAt: asDatetime(result.clearedAt), unread: result.unread };
 };
 
 export const handleUpdateSeenForMessage = async (
@@ -341,6 +351,14 @@ export const registerNotificationRoutes = ({ server, ctx, auth }: RouteDeps): vo
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
 			body: await handleUpdateSeen(ctx, caller.credentials.did, input.body.seenAt),
+		}),
+	});
+
+	route(server, social.colibri.beta.notification.clear, {
+		auth: auth.required,
+		handler: async ({ input, auth: caller }) => ({
+			encoding: "application/json" as const,
+			body: await handleClear(ctx, caller.credentials.did, input.body.clearedAt),
 		}),
 	});
 

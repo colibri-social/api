@@ -41,6 +41,11 @@ type NotificationView = { $type?: "social.colibri.beta.notification.defs#notific
   "thread"?:l.SpaceRefString;
 
   /**
+   * The name of the thread in thread, when it is set and the thread is still indexed.
+   */
+  "threadName"?:string;
+
+  /**
    * The community it happened in.
    */
   "community":l.DidString;
@@ -68,6 +73,6 @@ type NotificationView = { $type?: "social.colibri.beta.notification.defs#notific
 export type { NotificationView };
 
 /** A notification for the requesting user. */
-const notificationView = /*#__PURE__*/ l.typedObject<NotificationView>($nsid, "notificationView", /*#__PURE__*/ l.object({"id":/*#__PURE__*/ l.string(),"kind":/*#__PURE__*/ l.string<{"knownValues":["mention","reply","message"]}>(),"author":/*#__PURE__*/ l.ref<ActorDefs.ProfileView>((() => ActorDefs.profileView) as any),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"thread":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"})),"community":/*#__PURE__*/ l.string({"format":"did"}),"message":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ChannelDefs.MessageView>((() => ChannelDefs.messageView) as any)),"mentionRole":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"indexedAt":/*#__PURE__*/ l.string({"format":"datetime"}),"seenAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"}))}));
+const notificationView = /*#__PURE__*/ l.typedObject<NotificationView>($nsid, "notificationView", /*#__PURE__*/ l.object({"id":/*#__PURE__*/ l.string(),"kind":/*#__PURE__*/ l.string<{"knownValues":["mention","reply","message"]}>(),"author":/*#__PURE__*/ l.ref<ActorDefs.ProfileView>((() => ActorDefs.profileView) as any),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"thread":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"})),"threadName":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"community":/*#__PURE__*/ l.string({"format":"did"}),"message":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ChannelDefs.MessageView>((() => ChannelDefs.messageView) as any)),"mentionRole":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"indexedAt":/*#__PURE__*/ l.string({"format":"datetime"}),"seenAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"}))}));
 
 export { notificationView };

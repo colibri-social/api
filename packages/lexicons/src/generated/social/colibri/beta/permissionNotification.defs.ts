@@ -10,6 +10,6 @@ type $nsid = typeof $nsid;
 
 export { $nsid };
 
-const main = /*#__PURE__*/ l.permissionSet($nsid, [/*#__PURE__*/ l.permission("rpc", {"inheritAud":true,"lxm":["social.colibri.beta.notification.listNotifications","social.colibri.beta.notification.getUnreadCount","social.colibri.beta.notification.getUnseen","social.colibri.beta.notification.updateSeen","social.colibri.beta.notification.updateSeenForMessage"]})], {"title":"Colibri notifications","detail":"Read your Colibri notifications and mark them as seen."});
+const main = /*#__PURE__*/ l.permissionSet($nsid, [/*#__PURE__*/ l.permission("rpc", {"inheritAud":true,"lxm":["social.colibri.beta.notification.listNotifications","social.colibri.beta.notification.getUnreadCount","social.colibri.beta.notification.getUnseen","social.colibri.beta.notification.updateSeen","social.colibri.beta.notification.updateSeenForMessage","social.colibri.beta.notification.clear"]})], {"title":"Colibri notifications","detail":"Read your Colibri notifications and mark them as seen."});
 
 export { main };

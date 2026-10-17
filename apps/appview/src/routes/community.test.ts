@@ -7,8 +7,10 @@ import { silentAnnouncer } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { ActorViews } from "../views/actor.js";
 import { CommunityViews } from "../views/community.js";
+import type { ServerFrame } from "../ws/events.js";
 import { handleListCommunities } from "./actor.js";
 import { handleGetCommunity, handleGetInvitation, handleListChannels } from "./community.js";
+import { handleCreateInvitation, handleDeleteInvitation } from "./community-write.js";
 
 const NOW = "2026-08-23T00:00:00.000Z";
 
@@ -391,5 +393,69 @@ describe("listMembers", () => {
 
 		expect(result.members).toEqual([]);
 		expect(result.cursor).toBeNull();
+	});
+});
+
+describe("invitation sync frames", () => {
+	let sent: { community: string; permission: string; frame: ServerFrame }[];
+
+	beforeEach(async () => {
+		sent = [];
+		ctx = {
+			...ctx,
+			announce: {
+				...silentAnnouncer,
+				toCommunityPermission: async (
+					community: string,
+					permission: string,
+					frame: ServerFrame,
+				) => {
+					sent.push({ community, permission, frame });
+				},
+			},
+		} as unknown as AppContext;
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+	});
+
+	it("tells members who can create invitations about a new one", async () => {
+		const { invitation } = await handleCreateInvitation(ctx, COMMUNITY, { community: COMMUNITY });
+
+		expect(sent).toEqual([
+			{
+				community: COMMUNITY,
+				permission: "invitation.create",
+				frame: {
+					$type: "social.colibri.beta.sync.defs#invitationEvent",
+					event: "create",
+					community: COMMUNITY,
+					code: invitation.code,
+				},
+			},
+		]);
+	});
+
+	it("tells them when one is deleted", async () => {
+		const { invitation } = await handleCreateInvitation(ctx, COMMUNITY, { community: COMMUNITY });
+		sent = [];
+
+		await handleDeleteInvitation(ctx, COMMUNITY, COMMUNITY, invitation.code);
+
+		expect(sent.map((entry) => entry.frame)).toEqual([
+			{
+				$type: "social.colibri.beta.sync.defs#invitationEvent",
+				event: "delete",
+				community: COMMUNITY,
+				code: invitation.code,
+			},
+		]);
+	});
+
+	it("sends nothing when the caller may not create invitations", async () => {
+		await insertMember(COMMUNITY, MEMBER, NOW);
+
+		await expect(
+			handleCreateInvitation(ctx, MEMBER, { community: COMMUNITY }),
+		).rejects.toMatchObject({ customErrorName: "Forbidden" });
+		expect(sent).toEqual([]);
 	});
 });

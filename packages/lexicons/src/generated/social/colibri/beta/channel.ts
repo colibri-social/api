@@ -8,6 +8,7 @@ export * as "delete" from "./channel/delete.js";
 export * as getChannel from "./channel/getChannel.js";
 export * as listMessages from "./channel/listMessages.js";
 export * as listReactions from "./channel/listReactions.js";
+export * as listSummaries from "./channel/listSummaries.js";
 export * as listUnreadStatus from "./channel/listUnreadStatus.js";
 export * as putReadCursors from "./channel/putReadCursors.js";
 export * as read from "./channel/read.js";

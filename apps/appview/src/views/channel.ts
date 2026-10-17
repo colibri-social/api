@@ -18,6 +18,7 @@ import {
 	asTid,
 	asUri,
 	COLLECTIONS,
+	SPACE_TYPES,
 	type social,
 } from "@colibri-social/lexicons";
 import {
@@ -30,7 +31,7 @@ import {
 	movedOutOf,
 } from "@colibri-social/projections";
 import { parseSpaceRef, spaceRecordUri } from "@colibri-social/space";
-import { and, asc, desc, eq, gt, inArray, lt, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { linkUrisOf } from "../link-embeds.js";
 import { signBlobUrl } from "../media-token.js";
@@ -43,6 +44,7 @@ export type ReactionView = social.colibri.beta.channel.defs.ReactionView;
 export type UnreadStatus = social.colibri.beta.channel.defs.UnreadStatus;
 export type DeletedMessageView = social.colibri.beta.channel.defs.DeletedMessageView;
 export type ForwardView = social.colibri.beta.channel.defs.ForwardView;
+export type ChannelSummary = social.colibri.beta.channel.defs.ChannelSummary;
 type LabelView = social.colibri.beta.community.defs.LabelView;
 
 type ChannelRow = Schema["channels"]["$inferSelect"];
@@ -77,6 +79,34 @@ type RawForward = {
 	text?: string;
 	facets?: unknown[];
 	attachments?: RawAttachment[];
+};
+
+const SUMMARY_SCAN_BATCH = 25;
+
+const hasBlob = (item: RawAttachment): boolean =>
+	Boolean(item.blob?.ref?.$link && item.blob?.mimeType);
+
+const isForward = (raw: RawForward | null): boolean =>
+	Boolean(raw?.source?.space && raw.source.did && raw.source.rkey);
+
+const toSummary = (channel: string, row: MessageRow): ChannelSummary => {
+	const attachments = ((row.attachments as RawAttachment[] | null) ?? []).filter(hasBlob);
+	const firstMime = attachments[0]?.blob?.mimeType;
+	return {
+		channel: asSpaceRef(channel),
+		rkey: asRecordKey(row.rkey),
+		author: asDid(row.author),
+		text: row.text,
+		...(firstMime
+			? {
+					attachmentKind:
+						firstMime.startsWith("image/") || firstMime.startsWith("video/") ? "image" : "file",
+				}
+			: {}),
+		attachmentCount: attachments.length,
+		forward: isForward(row.forward as RawForward | null),
+		createdAt: asDatetime(row.createdAt),
+	};
 };
 
 export class ChannelViews {
@@ -296,10 +326,43 @@ export class ChannelViews {
 	async messages(
 		space: string,
 		viewer: string | null,
-		options: { limit: number; cursor?: string; reverse?: boolean },
+		options: { limit: number; cursor?: string; reverse?: boolean; around?: string },
+	): Promise<{ messages: MessageView[]; cursor?: string; forwardCursor?: string }> {
+		if (options.around !== undefined) {
+			return this.messagesAround(space, viewer, options.around, options.limit);
+		}
+		return this.page(space, viewer, options);
+	}
+
+	private async messagesAround(
+		space: string,
+		viewer: string | null,
+		around: string,
+		limit: number,
+	): Promise<{ messages: MessageView[]; cursor?: string; forwardCursor?: string }> {
+		const newerLimit = Math.floor(limit / 2);
+		const [older, newer] = await Promise.all([
+			this.page(space, viewer, { limit: limit - newerLimit, cursor: around, inclusive: true }),
+			this.page(space, viewer, { limit: Math.max(newerLimit, 1), cursor: around, reverse: true }),
+		]);
+		const newerMessages = newerLimit > 0 ? newer.messages : [];
+		const forwardCursor =
+			newerLimit > 0 ? newer.cursor : newer.messages.length > 0 ? around : undefined;
+		return {
+			messages: [...[...newerMessages].reverse(), ...older.messages],
+			...(older.cursor ? { cursor: older.cursor } : {}),
+			...(forwardCursor ? { forwardCursor } : {}),
+		};
+	}
+
+	private async page(
+		space: string,
+		viewer: string | null,
+		options: { limit: number; cursor?: string; reverse?: boolean; inclusive?: boolean },
 	): Promise<{ messages: MessageView[]; cursor?: string }> {
 		const limit = options.limit;
 		const reverse = options.reverse ?? false;
+		const inclusive = options.inclusive ?? false;
 		const community = parseSpaceRef(space).authority;
 		const sources = await this.labelSources(community);
 
@@ -311,7 +374,13 @@ export class ChannelViews {
 		const table = this.ctx.database.tables.messages;
 		const order = reverse ? asc(table.rkey) : desc(table.rkey);
 		const from = options.cursor;
-		const boundary = from ? (reverse ? gt(table.rkey, from) : lt(table.rkey, from)) : undefined;
+		const after = inclusive ? gte : gt;
+		const before = inclusive ? lte : lt;
+		const boundary = from
+			? reverse
+				? after(table.rkey, from)
+				: before(table.rkey, from)
+			: undefined;
 
 		const native = await this.ctx.database.db
 			.select()
@@ -328,8 +397,11 @@ export class ChannelViews {
 			placed.push({ row, key: row.rkey });
 		}
 
-		const beyondCursor = (key: string): boolean =>
-			from === undefined ? true : reverse ? key > from : key < from;
+		const beyondCursor = (key: string): boolean => {
+			if (from === undefined) return true;
+			if (inclusive && key === from) return true;
+			return reverse ? key > from : key < from;
+		};
 
 		const ordered = placed
 			.filter((entry) => beyondCursor(entry.key))
@@ -351,6 +423,72 @@ export class ChannelViews {
 		}
 
 		return { messages, cursor };
+	}
+
+	async summaries(community: string, viewer: string, authz: ActorAuthz): Promise<ChannelSummary[]> {
+		const table = this.ctx.database.tables.channels;
+		const rows = await this.ctx.database.db
+			.select()
+			.from(table)
+			.where(and(eq(table.community, community), eq(table.spaceType, SPACE_TYPES.channelText)))
+			.orderBy(asc(table.position));
+		const audiences = await this.ctx.loader.categoryAudiences(community);
+		const readable = rows.filter((row) =>
+			canRead(authz, toChannelState(row, row.category ? audiences.get(row.category) : null)),
+		);
+		const latest = await Promise.all(
+			readable.map(async (row) => {
+				const message = await this.latestVisible(row.space, viewer);
+				return message ? toSummary(row.space, message) : undefined;
+			}),
+		);
+		return latest.filter((summary): summary is ChannelSummary => summary !== undefined);
+	}
+
+	private async latestVisible(space: string, viewer: string): Promise<MessageRow | undefined> {
+		const community = parseSpaceRef(space).authority;
+		const { sources, seesHidden } = await this.labelPolicy(space, community, viewer);
+		const [gone, arrived] = await Promise.all([
+			movedOutOf(this.ctx.database, space, sources),
+			movedInto(this.ctx.database, space, sources),
+		]);
+
+		const visible = async (rows: readonly MessageRow[]): Promise<MessageRow[]> => {
+			const bySpace = new Map<string, MessageRow[]>();
+			for (const row of rows) bySpace.set(row.space, [...(bySpace.get(row.space) ?? []), row]);
+			const out: MessageRow[] = [];
+			for (const [rowSpace, group] of bySpace) {
+				const hidden = hiddenFrom(await messageLabels(this.ctx.database, rowSpace, sources, group));
+				for (const row of group) {
+					const withheld =
+						hidden.has(messageRefKey(row.author, row.rkey)) && !seesHidden && row.author !== viewer;
+					if (!withheld) out.push(row);
+				}
+			}
+			return out.sort((a, b) => b.rkey.localeCompare(a.rkey));
+		};
+
+		const moved = (await visible(await this.fetchMoved(arrived)))[0];
+		const table = this.ctx.database.tables.messages;
+		let before: string | undefined;
+		for (;;) {
+			const batch = await this.ctx.database.db
+				.select()
+				.from(table)
+				.where(
+					before ? and(eq(table.space, space), lt(table.rkey, before)) : eq(table.space, space),
+				)
+				.orderBy(desc(table.rkey))
+				.limit(SUMMARY_SCAN_BATCH);
+			const native = (
+				await visible(batch.filter((row) => !gone.has(messageRefKey(row.author, row.rkey))))
+			)[0];
+			if (native) return moved && moved.rkey > native.rkey ? moved : native;
+			const last = batch.at(-1);
+			if (batch.length < SUMMARY_SCAN_BATCH || !last) return moved;
+			if (moved && moved.rkey > last.rkey) return moved;
+			before = last.rkey;
+		}
 	}
 
 	private async fetchMoved(moved: readonly MovedMessage[]): Promise<MessageRow[]> {

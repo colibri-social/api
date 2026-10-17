@@ -33,6 +33,7 @@ import { XrpcError } from "@colibri-social/space";
 import { and, asc, eq } from "drizzle-orm";
 import {
 	announceApplication,
+	announceInvitation,
 	communityEvent,
 	communityProgressEvent,
 	memberEvent,
@@ -697,6 +698,7 @@ export const handleCreateInvitation = async (
 		expiresAt: input.expiresAt ?? null,
 	};
 	await ctx.database.db.insert(ctx.database.tables.invitations).values(row);
+	announceInvitation(ctx, "create", input.community, row.code);
 	return { invitation: invitationView(row) };
 };
 
@@ -727,6 +729,7 @@ export const handleDeleteInvitation = async (
 	await ctx.database.db
 		.delete(ctx.database.tables.invitations)
 		.where(eq(ctx.database.tables.invitations.code, code));
+	announceInvitation(ctx, "delete", community, code);
 };
 
 export const handleRegisterCredentials = async (

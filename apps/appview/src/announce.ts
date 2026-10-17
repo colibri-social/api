@@ -162,11 +162,17 @@ export const preferencesEvent = (
 
 export const seenEvent = (
 	unread: number,
-	where: { seenAt: string; channel?: string; message?: { did: string; rkey: string } },
+	where: {
+		seenAt: string;
+		channel?: string;
+		message?: { did: string; rkey: string };
+		clearedAt?: string;
+	},
 ): ServerFrame => ({
 	$type: "social.colibri.beta.sync.defs#seenEvent",
 	unread,
 	seenAt: where.seenAt,
+	...(where.clearedAt ? { clearedAt: where.clearedAt } : {}),
 	...(where.channel ? { channel: where.channel } : {}),
 	...(where.message ? { message: { did: where.message.did, rkey: where.message.rkey } } : {}),
 });
@@ -196,6 +202,17 @@ export const applicationEvent = (
 	event,
 	community,
 	subject,
+});
+
+export const invitationEvent = (
+	event: "create" | "delete",
+	community: string,
+	code: string,
+): ServerFrame => ({
+	$type: "social.colibri.beta.sync.defs#invitationEvent",
+	event,
+	community,
+	code,
 });
 
 export const moderationEvent = (
@@ -265,6 +282,22 @@ export const announceApplication = (
 			ctx.log.warn(
 				{ community, reason: error instanceof Error ? error.message : error },
 				"application.announce.failed",
+			);
+		});
+};
+
+export const announceInvitation = (
+	ctx: AppContext,
+	event: "create" | "delete",
+	community: string,
+	code: string,
+): void => {
+	void ctx.announce
+		.toCommunityPermission(community, "invitation.create", invitationEvent(event, community, code))
+		.catch((error: unknown) => {
+			ctx.log.warn(
+				{ community, reason: error instanceof Error ? error.message : error },
+				"invitation.announce.failed",
 			);
 		});
 };

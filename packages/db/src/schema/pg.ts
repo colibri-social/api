@@ -485,6 +485,11 @@ export const notifications = pgTable(
 	],
 );
 
+export const notificationClears = pgTable("notification_clears", {
+	did: text("did").primaryKey(),
+	clearedAt: timestamp("cleared_at").notNull(),
+});
+
 export const pushSubscriptions = pgTable(
 	"push_subscriptions",
 	{
@@ -706,6 +711,7 @@ export const schema = {
 	readCursors,
 	communityCredentials,
 	notifications,
+	notificationClears,
 	pushSubscriptions,
 	invitations,
 	applications,
