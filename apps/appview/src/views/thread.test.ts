@@ -68,6 +68,11 @@ beforeEach(async () => {
 		database,
 		config: { PUBLIC_URL: "https://appview.test" },
 		loader: new CommunityLoader({ db: database.db, tables: database.tables }),
+		linkEmbeds: {
+			peek: () => undefined,
+			resolve: async () => new Map(),
+			settle: async () => {},
+		},
 		identity: {
 			resolveDid: async () => {
 				throw new Error("no identity in tests");

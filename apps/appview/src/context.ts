@@ -11,7 +11,12 @@ import {
 	SecretBox,
 	spaceRegistry,
 } from "@colibri-social/community";
-import { createGifsClient, createPreviewCache, createTtlCache } from "@colibri-social/embeds";
+import {
+	createGifsClient,
+	createPreviewCache,
+	createTtlCache,
+	type LinkEmbed,
+} from "@colibri-social/embeds";
 import {
 	buildDidDocument,
 	IdentityResolver,
@@ -40,6 +45,11 @@ import { GAME_CACHE_MAX_ENTRIES, GAME_CACHE_TTL_MS, type GameEntry } from "./act
 import { type Announcer, silentAnnouncer } from "./announce.js";
 import { type AuthzChanges, createAuthzChanges } from "./authz-changes.js";
 import type { Config } from "./config.js";
+import {
+	createLinkEmbedResolver,
+	PREVIEW_CACHE_MAX_ENTRIES,
+	PREVIEW_CACHE_TTL_MS,
+} from "./link-embeds.js";
 import { createLogger, type Logger } from "./logger.js";
 import { drizzleCredentialStorage, drizzleIdentityStore, drizzleSyncStore } from "./stores.js";
 import { createVideoArtworkClient } from "./video-artwork.js";
@@ -205,7 +215,11 @@ export const createContext = async (config: Config) => {
 	});
 
 	const gifs = config.KLIPY_API_KEY ? createGifsClient({ apiKey: config.KLIPY_API_KEY }) : null;
-	const previews = createPreviewCache();
+	const previews = createPreviewCache<LinkEmbed>({
+		maxEntries: PREVIEW_CACHE_MAX_ENTRIES,
+		ttlMs: PREVIEW_CACHE_TTL_MS,
+	});
+	const linkEmbeds = createLinkEmbedResolver({ cache: previews, log });
 	const artwork = createTtlCache<ArtworkEntry>({
 		maxEntries: ARTWORK_CACHE_MAX_ENTRIES,
 		ttlMs: ARTWORK_CACHE_TTL_MS,
@@ -262,6 +276,7 @@ export const createContext = async (config: Config) => {
 		blobs,
 		gifs,
 		previews,
+		linkEmbeds,
 		artwork,
 		games,
 		videoArtwork,

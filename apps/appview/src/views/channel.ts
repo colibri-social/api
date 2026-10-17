@@ -32,8 +32,10 @@ import {
 import { parseSpaceRef, spaceRecordUri } from "@colibri-social/space";
 import { and, asc, desc, eq, gt, inArray, lt, ne, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
+import { linkUrisOf } from "../link-embeds.js";
 import { signBlobUrl } from "../media-token.js";
 import type { ActorViews, ProfileView } from "./actor.js";
+import { type LinkEmbedView, toLinkEmbedView } from "./embed.js";
 
 export type MessageView = social.colibri.beta.channel.defs.MessageView;
 export type AttachmentView = social.colibri.beta.channel.defs.AttachmentView;
@@ -48,6 +50,10 @@ type MessageRow = Schema["messages"]["$inferSelect"];
 type ReactionRow = Schema["reactions"]["$inferSelect"];
 
 type MessageKey = { author: string; rkey: string };
+
+export type HydrateOptions = { embedWaitMs?: number };
+
+const DEFAULT_EMBED_WAIT_MS = 2_000;
 
 type Placed = { row: MessageRow; key: string };
 
@@ -385,11 +391,12 @@ export class ChannelViews {
 		viewer: string | null,
 		key: MessageKey,
 		readingSpace: string = space,
+		options: HydrateOptions = {},
 	): Promise<MessageView | null> {
 		const rows = await this.fetchMessagesByKey(space, [key]);
 		const row = rows.get(messageRefKey(key.author, key.rkey));
 		if (!row) return null;
-		const [view] = await this.hydrate(space, viewer, [row], readingSpace);
+		const [view] = await this.hydrate(space, viewer, [row], readingSpace, options);
 		return view ?? null;
 	}
 
@@ -417,6 +424,7 @@ export class ChannelViews {
 		viewer: string | null,
 		page: MessageRow[],
 		readingSpace: string = space,
+		options: HydrateOptions = {},
 	): Promise<MessageView[]> {
 		if (page.length === 0) return [];
 
@@ -441,13 +449,30 @@ export class ChannelViews {
 					.filter((ref): ref is string => typeof ref === "string"),
 			),
 		];
-		const [profiles, labels, reactionRows, sourceNames, communityRow] = await Promise.all([
-			this.actors.hydrate(authors),
-			messageLabels(this.ctx.database, space, sources, subjects),
-			this.fetchReactionsByTargets(space, subjects),
-			this.spaceNames(forwardSpaces),
-			this.ctx.loader.community(community),
-		]);
+		const linksByRow = new Map(
+			page.map((row) => [row, linkUrisOf(row.facets, row.suppressedEmbeds)] as const),
+		);
+		const [profiles, labels, reactionRows, sourceNames, communityRow, previews] = await Promise.all(
+			[
+				this.actors.hydrate(authors),
+				messageLabels(this.ctx.database, space, sources, subjects),
+				this.fetchReactionsByTargets(space, subjects),
+				this.spaceNames(forwardSpaces),
+				this.ctx.loader.community(community),
+				this.ctx.linkEmbeds.resolve(
+					[...linksByRow.values()].flat(),
+					options.embedWaitMs ?? DEFAULT_EMBED_WAIT_MS,
+				),
+			],
+		);
+		const embedsFor = (row: MessageRow): LinkEmbedView[] | undefined => {
+			const embeds: LinkEmbedView[] = [];
+			for (const uri of linksByRow.get(row) ?? []) {
+				const preview = previews.get(uri);
+				if (preview) embeds.push(toLinkEmbedView(this.ctx, preview, uri));
+			}
+			return embeds.length > 0 ? embeds : undefined;
+		};
 		const hidden = hiddenFrom(labels);
 		const emojiPolicy = customEmojiPolicy(communityRow?.customEmoji);
 		const facetsFor = (facets: unknown) =>
@@ -525,6 +550,7 @@ export class ChannelViews {
 				parent,
 				forward: buildForward(row),
 				attachments: this.attachments(readingSpace, row, viewer),
+				embeds: includeParent ? embedsFor(row) : undefined,
 				reactions: this.aggregateReactions(
 					reactionRows.filter(
 						(reaction) => reaction.targetAuthor === row.author && reaction.targetRkey === row.rkey,

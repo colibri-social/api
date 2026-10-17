@@ -30,6 +30,8 @@ import {
 	threadFrameForBridges,
 } from "./announce.js";
 import type { AppContext } from "./context.js";
+import { fireAndForget } from "./fire-and-forget.js";
+import { linkUrisOf } from "./link-embeds.js";
 import { notificationDeps as buildNotificationDeps } from "./notification-deps.js";
 import { pushDelivery } from "./push-delivery.js";
 import { loadPreferences } from "./routes/actor.js";
@@ -302,7 +304,8 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		rkey: string,
 		imported = false,
 	): Promise<void> => {
-		const message = await channels.message(space, null, { author, rkey });
+		const key = { author, rkey };
+		const message = await channels.message(space, null, key, space, { embedWaitMs: 0 });
 		if (!message) return;
 		events.publishToChannel(space, (viewer) => ({
 			$type: "social.colibri.beta.sync.defs#messageEvent",
@@ -311,6 +314,28 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			message: channels.forViewer(message, viewer),
 			...(imported ? { imported: true } : {}),
 		}));
+
+		const unresolved = linkUrisOf(message.facets, message.suppressedEmbeds).filter(
+			(uri) => !ctx.linkEmbeds.peek(uri),
+		);
+		if (unresolved.length === 0) return;
+		fireAndForget(
+			ctx.log,
+			"sync.embedRepublishFailed",
+			async () => {
+				await ctx.linkEmbeds.settle(unresolved);
+				if (!unresolved.some((uri) => ctx.linkEmbeds.peek(uri))) return;
+				const enriched = await channels.message(space, null, key, space, { embedWaitMs: 0 });
+				if (!enriched) return;
+				events.publishToChannel(space, (viewer) => ({
+					$type: "social.colibri.beta.sync.defs#messageEvent",
+					event: "update",
+					channel: space,
+					message: channels.forViewer(enriched, viewer),
+				}));
+			},
+			{ space, author, rkey },
+		);
 	};
 
 	const publishThread = async (

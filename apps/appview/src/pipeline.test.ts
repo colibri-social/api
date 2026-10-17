@@ -1,11 +1,14 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { CommunityLoader } from "@colibri-social/community";
+import { createTtlCache, type LinkEmbed } from "@colibri-social/embeds";
 import { COLLECTIONS, channelSpace, SPACE_TYPES, threadSpace } from "@colibri-social/lexicons";
 import { nextTid } from "@colibri-social/space";
 import type { RepoChange } from "@colibri-social/space-sync";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppContext } from "./context.js";
+import { createLinkEmbedResolver } from "./link-embeds.js";
+import type { Logger } from "./logger.js";
 import { verifyMediaGrant } from "./media-token.js";
 import { connectPipeline } from "./pipeline.js";
 import type { ChannelFrame, EventServer, ServerFrame } from "./ws/events.js";
@@ -69,6 +72,7 @@ let disconnect: () => void;
 let communityDeletes: string[];
 let authzChanges: string[];
 let forgotten: string[];
+let releasePreview: () => void;
 
 const framesOfType = (suffix: string) =>
 	published.filter((entry) => entry.frame.$type === `social.colibri.beta.sync.defs#${suffix}`);
@@ -217,6 +221,14 @@ beforeEach(async () => {
 			pushProviders: [],
 		},
 		loader: new CommunityLoader({ db: database.db, tables: database.tables }),
+		linkEmbeds: createLinkEmbedResolver({
+			cache: createTtlCache<LinkEmbed>(),
+			log: { debug: () => {} } as unknown as Logger,
+			fetchPreview: (uri) =>
+				new Promise<LinkEmbed>((resolve) => {
+					releasePreview = () => resolve({ uri, siteName: "Tenor" });
+				}),
+		}),
 		log: { warn: () => {}, debug: () => {} },
 		identity: {
 			resolveDid: async () => {
@@ -512,6 +524,49 @@ describe("connectPipeline", () => {
 				Math.floor(Date.now() / 1000),
 			),
 		).toBe(true);
+	});
+
+	it("publishes a message at once and again once its link preview resolves", async () => {
+		const rkey = nextTid();
+		const tenor = "https://tenor.com/view/touhou-fumo-plushie-plush-hello-gif-21004226";
+		const facets = [
+			{
+				index: { byteStart: 0, byteEnd: tenor.length },
+				features: [{ $type: "social.colibri.beta.richtext.facet#link", uri: tenor }],
+			},
+		];
+		await putMessageRow(rkey, tenor);
+		await database.db
+			.update(database.tables.messages)
+			.set({ facets })
+			.where(eq(database.tables.messages.rkey, rkey));
+
+		emit({
+			space: SPACE,
+			author: AUTHOR,
+			puts: [
+				{
+					collection: COLLECTIONS.message,
+					rkey,
+					cid: "bafyreictestlink",
+					value: { $type: COLLECTIONS.message, text: tenor, facets, createdAt: NOW },
+				},
+			],
+			deletes: [],
+		});
+		await vi.waitFor(() => expect(framesOfType("messageEvent")).toHaveLength(1));
+		const created = framesOfType("messageEvent")[0]?.frame;
+		expect(created).toMatchObject({ event: "create" });
+		expect(created?.message).toMatchObject({ embeds: undefined });
+
+		releasePreview();
+		await vi.waitFor(() => expect(framesOfType("messageEvent")).toHaveLength(2));
+
+		const update = framesOfType("messageEvent")[1]?.frame;
+		expect(update).toMatchObject({ event: "update", channel: SPACE });
+		expect(update?.message).toHaveProperty("embeds", [
+			expect.objectContaining({ uri: tenor, siteName: "Tenor" }),
+		]);
 	});
 
 	it("publishes a bare reference on delete", async () => {

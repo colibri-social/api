@@ -126,6 +126,11 @@ beforeEach(async () => {
 		database,
 		config: { PUBLIC_URL: "https://appview.test" },
 		loader: new CommunityLoader({ db: database.db, tables: database.tables }),
+		linkEmbeds: {
+			peek: () => undefined,
+			resolve: async () => new Map(),
+			settle: async () => {},
+		},
 		identity: {
 			resolveDid: async () => {
 				throw new Error("no identity in tests");
@@ -606,6 +611,67 @@ describe("ChannelViews.messages", () => {
 
 		await setPolicy("none");
 		expect(await uris()).toEqual([]);
+	});
+
+	it("attaches resolved link previews to the message and leaves its parent bare", async () => {
+		const tenor = "https://tenor.com/view/touhou-fumo-plushie-plush-hello-gif-21004226";
+		const link = {
+			index: { byteStart: 0, byteEnd: tenor.length },
+			features: [{ $type: "social.colibri.beta.richtext.facet#link", uri: tenor }],
+		};
+		const requested: string[][] = [];
+		ctx.linkEmbeds = {
+			peek: () => undefined,
+			resolve: async (uris) => {
+				requested.push([...uris]);
+				return new Map([[tenor, { uri: `${tenor}#fragment`, siteName: "Tenor" }]]);
+			},
+			settle: async () => {},
+		};
+		const parent = nextTid();
+		await putMessage(parent, { text: tenor, facets: [link] });
+		const reply = nextTid();
+		await putMessage(reply, {
+			text: tenor,
+			facets: [link],
+			parentAuthor: AUTHOR_A,
+			parentRkey: parent,
+		});
+
+		const page = await views.messages(SPACE, null, { limit: 10 });
+		const replyView = page.messages.find((message) => message.rkey === reply);
+
+		expect(replyView?.embeds).toEqual([expect.objectContaining({ uri: tenor, siteName: "Tenor" })]);
+		expect((replyView?.parent as { embeds?: unknown } | undefined)?.embeds).toBeUndefined();
+		expect(requested.flat()).toEqual([tenor, tenor]);
+	});
+
+	it("skips links the author suppressed", async () => {
+		const uri = "https://example.test/";
+		const requested: string[][] = [];
+		ctx.linkEmbeds = {
+			peek: () => undefined,
+			resolve: async (uris) => {
+				requested.push([...uris]);
+				return new Map();
+			},
+			settle: async () => {},
+		};
+		await putMessage(nextTid(), {
+			text: uri,
+			facets: [
+				{
+					index: { byteStart: 0, byteEnd: uri.length },
+					features: [{ $type: "social.colibri.beta.richtext.facet#link", uri }],
+				},
+			],
+			suppressedEmbeds: [uri],
+		});
+
+		const page = await views.messages(SPACE, null, { limit: 10 });
+
+		expect(page.messages[0]?.embeds).toBeUndefined();
+		expect(requested.flat()).toEqual([]);
 	});
 });
 
