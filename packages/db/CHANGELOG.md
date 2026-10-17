@@ -1,5 +1,11 @@
 # @colibri-social/appview-db
 
+## 0.11.0
+
+### Minor Changes
+
+- 25670ca: Clearing the inbox now clears it on every device, the channel list shows each channel's latest message in one request, jumping to an older message opens right at it, notifications name their thread, and the invites list updates live.
+
 ## 0.10.0
 
 ### Minor Changes
