@@ -1,5 +1,11 @@
 # @colibri-social/voice
 
+## 0.2.0
+
+### Minor Changes
+
+- bf32399: Adds optional `camera` and `screen` flags to `social.colibri.beta.actor.defs#voiceState`. The AppView sets them from each participant's video producers and sends a voice `update` event to the community when a camera or screen share starts or stops, so clients can show who is sharing in channels they haven't joined.
+
 ## 0.1.3
 
 ### Patch Changes

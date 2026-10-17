@@ -1,5 +1,28 @@
 # @colibri-social/appview
 
+## 2.17.0
+
+### Minor Changes
+
+- bf32399: Adds optional `width` and `height` to message attachments. The AppView passes them through to `width` and `height` on attachment views when both are positive integers.
+- 25670ca: Clearing the inbox now clears it on every device, the channel list shows each channel's latest message in one request, jumping to an older message opens right at it, notifications name their thread, and the invites list updates live.
+- 7d1d763: Fills `embeds` on message views with link previews for up to five links per message, skipping links the author suppressed. Reads wait up to 2 seconds for previews that aren't cached yet. Live message events go out right away and are followed by an `update` event once a pending preview resolves. Direct image and video links become image or video embeds without fetching a page. Previews stay cached for 6 hours, and failed links are retried after 5 minutes.
+- 8e4e6c1: Adds `social.colibri.beta.notification.markReadFromNotification`, an unauthenticated procedure that marks a channel or thread read from a signed push token, and grants it in `social.colibri.beta.permissionPush`. Push payloads carry `type`, `kind`, `spaceName`, `placeName`, `subtitle`, `body`, `badge`, `readUrl` and `readToken`. APNs alerts use the author as title, the in-app subtitle, the unread badge, `ping.caf` and the `message` category. Reading a channel, deleting a message and editing a message send `read`, `delete` and `edit` background pushes to APNs and FCM devices. Set `PUSH_ACTION_SECRET` to sign the read tokens.
+- bf32399: Adds optional `camera` and `screen` flags to `social.colibri.beta.actor.defs#voiceState`. The AppView sets them from each participant's video producers and sends a voice `update` event to the community when a camera or screen share starts or stops, so clients can show who is sharing in channels they haven't joined.
+
+### Patch Changes
+
+- Updated dependencies [bf32399]
+- Updated dependencies [25670ca]
+- Updated dependencies [8e4e6c1]
+- Updated dependencies [bf32399]
+  - @colibri-social/lexicons@2.18.0
+  - @colibri-social/notifications@1.6.0
+  - @colibri-social/appview-db@0.11.0
+  - @colibri-social/voice@0.2.0
+  - @colibri-social/community@2.8.4
+  - @colibri-social/projections@1.9.3
+
 ## 2.16.0
 
 ### Minor Changes

@@ -1,5 +1,22 @@
 # @colibri-social/notifications
 
+## 1.6.0
+
+### Minor Changes
+
+- 25670ca: Clearing the inbox now clears it on every device, the channel list shows each channel's latest message in one request, jumping to an older message opens right at it, notifications name their thread, and the invites list updates live.
+- 8e4e6c1: Adds `social.colibri.beta.notification.markReadFromNotification`, an unauthenticated procedure that marks a channel or thread read from a signed push token, and grants it in `social.colibri.beta.permissionPush`. Push payloads carry `type`, `kind`, `spaceName`, `placeName`, `subtitle`, `body`, `badge`, `readUrl` and `readToken`. APNs alerts use the author as title, the in-app subtitle, the unread badge, `ping.caf` and the `message` category. Reading a channel, deleting a message and editing a message send `read`, `delete` and `edit` background pushes to APNs and FCM devices. Set `PUSH_ACTION_SECRET` to sign the read tokens.
+
+### Patch Changes
+
+- Updated dependencies [bf32399]
+- Updated dependencies [25670ca]
+- Updated dependencies [8e4e6c1]
+- Updated dependencies [bf32399]
+  - @colibri-social/lexicons@2.18.0
+  - @colibri-social/appview-db@0.11.0
+  - @colibri-social/projections@1.9.3
+
 ## 1.5.2
 
 ### Patch Changes
