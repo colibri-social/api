@@ -1,7 +1,8 @@
 import { communitySpaceUris, purgeCommunity } from "@colibri-social/community";
 import { COLLECTIONS, LABEL_VALUES, SPACE_TYPES } from "@colibri-social/lexicons";
 import {
-	createSenders,
+	deliverMessageDeleted,
+	deliverMessageEdited,
 	deliverNotification,
 	hydrateNotifications,
 	type IndexedNotificationRow,
@@ -30,6 +31,7 @@ import {
 } from "./announce.js";
 import type { AppContext } from "./context.js";
 import { notificationDeps as buildNotificationDeps } from "./notification-deps.js";
+import { pushDelivery } from "./push-delivery.js";
 import { loadPreferences } from "./routes/actor.js";
 import { reportFailure } from "./sentry.js";
 import { ActorViews } from "./views/actor.js";
@@ -102,6 +104,16 @@ const labelFrame = (
 	src,
 });
 
+const readCursorsOf = (value: Record<string, unknown>): { channel: string; cursor: string }[] => {
+	const cursors = Array.isArray(value.cursors) ? value.cursors : [];
+	return cursors.flatMap((entry) => {
+		const cursor = entry as { channel?: unknown; cursor?: unknown };
+		return typeof cursor.channel === "string" && typeof cursor.cursor === "string"
+			? [{ channel: cursor.channel, cursor: cursor.cursor }]
+			: [];
+	});
+};
+
 export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 	const actors = new ActorViews(ctx);
 	const channels = new ChannelViews(ctx, actors);
@@ -152,7 +164,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		});
 	});
 
-	const senders = createSenders(ctx.config.notifications);
+	const push = pushDelivery(ctx);
 
 	const notifications = buildNotificationDeps(ctx);
 
@@ -194,17 +206,51 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		servable: ServableNotification[],
 		text: string,
 	): Promise<void> => {
-		if (servable.length === 0 || ctx.config.pushProviders.length === 0) return;
+		if (servable.length === 0 || !push.enabled) return;
 
 		const quiet = await doNotDisturb(servable.map(({ row }) => row.recipient));
 		await Promise.all(
 			servable
 				.filter(({ row }) => !quiet.has(row.recipient))
 				.map(({ row, routing }) =>
-					deliverNotification(notifications, senders, row, { text }, routing).catch((error) =>
-						ctx.log.warn({ error }, "push.deliveryFailed"),
-					),
+					deliverNotification(
+						notifications,
+						push.senders,
+						row,
+						{ text },
+						routing,
+						push.options,
+					).catch((error) => ctx.log.warn({ error }, "push.deliveryFailed")),
 				),
+		);
+	};
+
+	const pushMessageEdited = async (
+		space: string,
+		author: string,
+		rkey: string,
+		text: string,
+	): Promise<void> => {
+		if (!push.enabled) return;
+		const [profile] = (await actors.hydrate([author])).values();
+		await deliverMessageEdited(
+			notifications,
+			push.senders,
+			{ space, author, rkey, text },
+			profile
+				? {
+						name: profile.displayName || profile.handle,
+						...(profile.avatar ? { avatar: profile.avatar } : {}),
+					}
+				: undefined,
+			push.options,
+		);
+	};
+
+	const pushMessageDeleted = (space: string, author: string, rkey: string): void => {
+		if (!push.enabled) return;
+		void deliverMessageDeleted(notifications, push.senders, { space, author, rkey }).catch(
+			(error) => ctx.log.warn({ error }, "push.deleteFailed"),
 		);
 	};
 
@@ -333,6 +379,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			for (const put of change.puts) {
 				if (put.collection === COLLECTIONS.channelRead) {
 					await publishReadCursors(space.authority, put.rkey);
+					push.readMoved(space.authority, put.rkey, readCursorsOf(put.value));
 				}
 			}
 			return;
@@ -360,16 +407,26 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 				if (isThreadSpace(space)) await publishThreadActivity(change.space, space.community);
 
 				const parent = put.value.parent as { did?: string; rkey?: string } | undefined;
-				void indexMessage(notifications, {
-					space: change.space,
-					community: space.community,
-					author: change.author,
-					rkey: put.rkey,
-					facets: (put.value.facets as unknown[] | undefined) ?? null,
-					parentAuthor: parent?.did ?? null,
-					parentRkey: parent?.rkey ?? null,
-				})
-					.then((rows) => publishNotifications(rows, previewTextOf(put.value)))
+				const community = space.community;
+				const text = previewTextOf(put.value);
+				const edited = put.value.updatedAt
+					? pushMessageEdited(change.space, change.author, put.rkey, text).catch((error) =>
+							ctx.log.warn({ error }, "push.editFailed"),
+						)
+					: Promise.resolve();
+				void edited
+					.then(() =>
+						indexMessage(notifications, {
+							space: change.space,
+							community,
+							author: change.author,
+							rkey: put.rkey,
+							facets: (put.value.facets as unknown[] | undefined) ?? null,
+							parentAuthor: parent?.did ?? null,
+							parentRkey: parent?.rkey ?? null,
+						}),
+					)
+					.then((rows) => publishNotifications(rows, text))
 					.catch((error) => ctx.log.warn({ error }, "notifications.indexFailed"));
 			}
 
@@ -429,6 +486,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		for (const entry of change.deletes) {
 			if (entry.collection === COLLECTIONS.message) {
 				events.publishToChannel(change.space, messageDeleted(change, entry.rkey));
+				pushMessageDeleted(change.space, change.author, entry.rkey);
 			}
 			if (space.community && entry.collection === COLLECTIONS.channel) {
 				events.channelChanged(space.community, change.space, "delete");
@@ -465,5 +523,6 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 	return () => {
 		unsubscribe();
 		unsubscribeDeleted();
+		push.close();
 	};
 };

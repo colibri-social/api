@@ -8,22 +8,26 @@ import {
 	listNotifications,
 	markSeen,
 	markSeenForMessage,
+	markSeenInSpaceThrough,
 	registerApns,
 	registerFcm,
 	registerWebPush,
+	resolveReadTarget,
 	unreadCount,
 	unregisterApns,
 	unregisterFcm,
 	unregisterWebPush,
 	unseenForChannelPage,
+	verifyReadToken,
 } from "@colibri-social/notifications";
-import { spaceContextFor } from "@colibri-social/projections";
+import { isChannelSpace, isThreadSpace, spaceContextFor } from "@colibri-social/projections";
 import { and, eq } from "drizzle-orm";
 import { seenEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { mayReadStates, notificationDeps } from "../notification-deps.js";
-import { route } from "../route.js";
+import { publicRoute, route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
+import { moveReadCursors } from "./read-cursors.js";
 import type { RouteDeps } from "./types.js";
 
 const channelNotFound = (channel: string) =>
@@ -245,6 +249,56 @@ export const handleUnregisterPush = async (
 	throw new InvalidRequestError(`unknown push provider '${input.provider}'`, "InvalidRequest");
 };
 
+const invalidToken = (message: string) => new InvalidRequestError(message, "InvalidToken");
+
+export const handleMarkReadFromNotification = async (
+	ctx: AppContext,
+	token: string,
+	nowMs: number = Date.now(),
+): Promise<void> => {
+	const secret = ctx.config.PUSH_ACTION_SECRET;
+	if (!secret) throw invalidToken("this AppView does not issue read tokens");
+
+	const verified = verifyReadToken(secret, token, nowMs);
+	if (!verified.ok) {
+		throw new InvalidRequestError(
+			verified.reason === "ExpiredToken"
+				? "the read token has expired"
+				: "the read token is invalid",
+			verified.reason,
+		);
+	}
+	const { did, channel, through } = verified.claims;
+
+	const context = spaceContextFor(channel);
+	if (!context?.community || !(isChannelSpace(context) || isThreadSpace(context))) {
+		throw invalidToken("the read token names no channel");
+	}
+	const deps = notificationDeps(ctx);
+	const target = await resolveReadTarget(deps, context.community, context.skey);
+	if (!target || (target.thread ?? target.channel) !== context.uri) {
+		throw invalidToken(`no channel matches ${channel}`);
+	}
+
+	const seenAt = new Date(nowMs).toISOString();
+	const seen = await markSeenInSpaceThrough(deps, did, context.uri, through, seenAt);
+	if (seen.length > 0) {
+		const unread = await unreadCount(deps, did);
+		for (const row of seen) {
+			ctx.announce.toUser(
+				did,
+				seenEvent(unread, {
+					seenAt,
+					channel: context.uri,
+					message: { did: row.messageAuthor, rkey: row.messageRkey },
+				}),
+			);
+		}
+	}
+
+	await moveReadCursors(ctx, did, context.community, [{ channel: context.skey, cursor: through }]);
+};
+
 export const registerNotificationRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 	const actors = new ActorViews(ctx);
 	const hydrateActors: ActorHydrator = (dids) => actors.hydrate(dids);
@@ -316,6 +370,13 @@ export const registerNotificationRoutes = ({ server, ctx, auth }: RouteDeps): vo
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			await handleUnregisterPush(ctx, caller.credentials.did, input.body);
+			return { encoding: "application/json" as const, body: {} };
+		},
+	});
+
+	publicRoute(server, social.colibri.beta.notification.markReadFromNotification, {
+		handler: async ({ input }) => {
+			await handleMarkReadFromNotification(ctx, input.body.token);
 			return { encoding: "application/json" as const, body: {} };
 		},
 	});

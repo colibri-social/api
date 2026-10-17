@@ -11,6 +11,11 @@ import { connectPipeline } from "./pipeline.js";
 import type { ChannelFrame, EventServer, ServerFrame } from "./ws/events.js";
 
 const stalledIndexing = { enabled: false };
+const pushed = vi.hoisted(() => ({
+	deleted: [] as unknown[],
+	edited: [] as unknown[],
+	readMoved: [] as unknown[][],
+}));
 
 vi.mock("@colibri-social/notifications", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@colibri-social/notifications")>();
@@ -18,8 +23,31 @@ vi.mock("@colibri-social/notifications", async (importOriginal) => {
 		...actual,
 		indexMessage: (...args: Parameters<typeof actual.indexMessage>) =>
 			stalledIndexing.enabled ? new Promise<never>(() => {}) : actual.indexMessage(...args),
+		deliverMessageDeleted: async (_deps: unknown, _senders: unknown, message: unknown) => {
+			pushed.deleted.push(message);
+			return 0;
+		},
+		deliverMessageEdited: async (
+			_deps: unknown,
+			_senders: unknown,
+			message: unknown,
+			sender: unknown,
+		) => {
+			pushed.edited.push({ message, sender });
+			return 0;
+		},
 	};
 });
+
+vi.mock("./push-delivery.js", () => ({
+	pushDelivery: () => ({
+		enabled: true,
+		senders: {},
+		options: {},
+		readMoved: (...args: unknown[]) => pushed.readMoved.push(args),
+		close: () => {},
+	}),
+}));
 
 const COMMUNITY = "did:plc:2hnjxkqm6bpuvvpjbztkxxxx";
 const AUTHOR = "did:plc:7fkdlwjqmzcuvvpjbztkaaaa";
@@ -173,6 +201,9 @@ const labelChange = (subjectRkey: string, val: string, neg: boolean): RepoChange
 beforeEach(async () => {
 	database = await openTestDatabase();
 	published = [];
+	pushed.deleted = [];
+	pushed.edited = [];
+	pushed.readMoved = [];
 	communityDeletes = [];
 	authzChanges = [];
 	forgotten = [];
@@ -638,6 +669,9 @@ describe("personal space events", () => {
 		});
 		await vi.waitFor(() => expect(framesOfType("readCursorEvent")).toHaveLength(1));
 
+		expect(pushed.readMoved).toEqual([
+			[AUTHOR, COMMUNITY, [{ channel: CHANNEL_SKEY, cursor: "3lkaaaaaaaaa2" }]],
+		]);
 		expect(framesOfType("readCursorEvent")[0]).toEqual({
 			space: AUTHOR,
 			frame: {
@@ -716,6 +750,45 @@ describe("thread follow events", () => {
 
 		expect(framesOfType("threadEvent")[0]?.frame).toMatchObject({
 			thread: { space: THREAD, viewer: { following: false } },
+		});
+	});
+});
+
+describe("push updates for deleted and edited messages", () => {
+	it("pushes a delete for a deleted message", async () => {
+		emit({
+			space: SPACE,
+			author: AUTHOR,
+			puts: [],
+			deletes: [{ collection: COLLECTIONS.message, rkey: "3lkmsgdeleted" }],
+		});
+
+		await vi.waitFor(() =>
+			expect(pushed.deleted).toEqual([{ space: SPACE, author: AUTHOR, rkey: "3lkmsgdeleted" }]),
+		);
+	});
+
+	it("pushes an edit with the new text for an updated message, and nothing for a new one", async () => {
+		await putMessageRow("3lkmsgedited", "fixed");
+		await putMessageRow("3lkmsgfresh", "new");
+		emit(messageChange("3lkmsgfresh"));
+		emit({
+			space: SPACE,
+			author: AUTHOR,
+			puts: [
+				{
+					collection: COLLECTIONS.message,
+					rkey: "3lkmsgedited",
+					cid: "bafyreictestedit",
+					value: { $type: COLLECTIONS.message, text: "fixed", createdAt: NOW, updatedAt: NOW },
+				},
+			],
+			deletes: [],
+		});
+
+		await vi.waitFor(() => expect(pushed.edited).toHaveLength(1));
+		expect(pushed.edited[0]).toMatchObject({
+			message: { space: SPACE, author: AUTHOR, rkey: "3lkmsgedited", text: "fixed" },
 		});
 	});
 });

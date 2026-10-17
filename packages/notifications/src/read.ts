@@ -20,7 +20,7 @@ import {
 	messageRefKey,
 } from "@colibri-social/projections";
 import { spaceRecordUri } from "@colibri-social/space";
-import { and, desc, eq, inArray, isNull, lt, lte, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, lte, or } from "drizzle-orm";
 import type { NotificationDeps } from "./deps.js";
 
 export type NotificationRow = Schema["notifications"]["$inferSelect"];
@@ -159,6 +159,89 @@ export const unreadCount = async (deps: NotificationDeps, recipient: string): Pr
 	const visible = await dropWithheld(deps, rows);
 	return visible.length;
 };
+
+export const badgeCount = async (deps: NotificationDeps, recipient: string): Promise<number> => {
+	const rows = await deps.db
+		.select()
+		.from(deps.tables.notifications)
+		.where(
+			and(
+				eq(deps.tables.notifications.recipient, recipient),
+				isNull(deps.tables.notifications.seenAt),
+				inArray(deps.tables.notifications.kind, [...UNREAD_KINDS]),
+			),
+		);
+	if (rows.length === 0) return 0;
+
+	const communities = [...new Set(rows.map((row) => row.community))];
+	const muted = await deps.db
+		.select({ subject: deps.tables.mutes.subject })
+		.from(deps.tables.mutes)
+		.where(
+			and(eq(deps.tables.mutes.did, recipient), inArray(deps.tables.mutes.subject, communities)),
+		);
+	const mutedCommunities = new Set(muted.map((row) => row.subject));
+	const unmuted = rows.filter((row) => !mutedCommunities.has(row.community));
+	return (await dropWithheld(deps, unmuted)).length;
+};
+
+export const markSeenInSpaceThrough = async (
+	deps: NotificationDeps,
+	recipient: string,
+	space: string,
+	through: string,
+	seenAt: string,
+): Promise<NotificationRow[]> => {
+	const condition = and(
+		eq(deps.tables.notifications.recipient, recipient),
+		eq(deps.tables.notifications.space, space),
+		isNull(deps.tables.notifications.seenAt),
+		lte(deps.tables.notifications.messageRkey, through),
+	);
+	const rows = await deps.db.select().from(deps.tables.notifications).where(condition);
+	if (rows.length === 0) return [];
+	await deps.db.update(deps.tables.notifications).set({ seenAt }).where(condition);
+	return rows;
+};
+
+export const hasNotificationsThrough = async (
+	deps: NotificationDeps,
+	recipient: string,
+	space: string,
+	through: string,
+	since: string,
+): Promise<boolean> => {
+	const [row] = await deps.db
+		.select({ id: deps.tables.notifications.id })
+		.from(deps.tables.notifications)
+		.where(
+			and(
+				eq(deps.tables.notifications.recipient, recipient),
+				eq(deps.tables.notifications.space, space),
+				lte(deps.tables.notifications.messageRkey, through),
+				gte(deps.tables.notifications.indexedAt, since),
+			),
+		)
+		.limit(1);
+	return Boolean(row);
+};
+
+export const notificationsForMessage = async (
+	deps: NotificationDeps,
+	space: string,
+	messageAuthor: string,
+	messageRkey: string,
+): Promise<NotificationRow[]> =>
+	deps.db
+		.select()
+		.from(deps.tables.notifications)
+		.where(
+			and(
+				eq(deps.tables.notifications.space, space),
+				eq(deps.tables.notifications.messageAuthor, messageAuthor),
+				eq(deps.tables.notifications.messageRkey, messageRkey),
+			),
+		);
 
 export const unseenForChannelPage = async (
 	deps: NotificationDeps,

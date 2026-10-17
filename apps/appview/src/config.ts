@@ -99,6 +99,12 @@ export const configSchema = z.object({
 	APNS_KEY_ID: optionalString,
 	APNS_TEAM_ID: optionalString,
 	APNS_TOPIC: optionalString,
+	PUSH_ACTION_SECRET: z
+		.string()
+		.trim()
+		.min(32, "expected at least 32 characters, generate one with: openssl rand -base64 32")
+		.optional()
+		.or(z.literal("").transform(() => undefined)),
 	KLIPY_API_KEY: optionalString,
 	VIDEO_ARTWORK_ENABLED: boolish(false),
 
@@ -199,6 +205,7 @@ export const describeConfig = (config: Config): Record<string, string> => ({
 		? "can be created"
 		: "read only, no PDS admin password",
 	push: config.pushProviders.length ? config.pushProviders.join(" and ") : "disabled",
+	pushActions: config.PUSH_ACTION_SECRET ? "enabled" : "disabled, no PUSH_ACTION_SECRET",
 	gifs: config.gifsEnabled ? "enabled" : "disabled",
 	voice: config.VOICE_ENABLED ? "enabled" : "disabled",
 	cors: config.corsOrigins.length ? config.corsOrigins.join(" ") : "no browser origin allowed",

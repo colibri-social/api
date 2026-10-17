@@ -1,11 +1,17 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { CommunityLoader } from "@colibri-social/community";
 import { eq } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { silentAnnouncer } from "../announce.js";
 import type { AppContext } from "../context.js";
 import type { ServerFrame } from "../ws/events.js";
 import { handlePutReadCursors } from "./read-cursors.js";
+
+const readMoved = vi.fn();
+
+vi.mock("../push-delivery.js", () => ({
+	pushDelivery: () => ({ readMoved }),
+}));
 
 const NOW = "2026-10-15T00:00:00.000Z";
 const COMMUNITY = "did:plc:communityxxxxxxxxxxxxxxxxxxx";
@@ -38,6 +44,7 @@ const stored = async () =>
 beforeEach(async () => {
 	database = await openTestDatabase();
 	announced = [];
+	readMoved.mockClear();
 	ctx = {
 		announce: {
 			...silentAnnouncer,
@@ -86,6 +93,20 @@ describe("putReadCursors", () => {
 					],
 				},
 			},
+		]);
+	});
+
+	it("hands the cursors that moved to the push fan-out", async () => {
+		await put([{ channel: GENERAL, cursor: "3lkaaaaaaaaa7" }]);
+		await put([
+			{ channel: GENERAL, cursor: "3lkaaaaaaaaa4" },
+			{ channel: RANDOM, cursor: "3lkaaaaaaaaa6" },
+		]);
+		await put([{ channel: RANDOM, cursor: "3lkaaaaaaaaa6" }]);
+
+		expect(readMoved.mock.calls).toEqual([
+			[MEMBER, COMMUNITY, [{ channel: GENERAL, cursor: "3lkaaaaaaaaa7" }]],
+			[MEMBER, COMMUNITY, [{ channel: RANDOM, cursor: "3lkaaaaaaaaa6" }]],
 		]);
 	});
 

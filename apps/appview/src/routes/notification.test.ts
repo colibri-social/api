@@ -2,11 +2,23 @@ import { l } from "@atproto/lex-schema";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { CommunityLoader } from "@colibri-social/community";
 import { channelSpace, SPACE_TYPES, social, threadSpace } from "@colibri-social/lexicons";
-import type { ActorHydrator } from "@colibri-social/notifications";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { type ActorHydrator, issueReadToken } from "@colibri-social/notifications";
+import { eq } from "drizzle-orm";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { silentAnnouncer } from "../announce.js";
 import type { AppContext } from "../context.js";
-import { handleGetUnseen, handleUpdateSeenForMessage } from "./notification.js";
+import type { ServerFrame } from "../ws/events.js";
+import {
+	handleGetUnseen,
+	handleMarkReadFromNotification,
+	handleUpdateSeenForMessage,
+} from "./notification.js";
+
+const readMoved = vi.fn();
+
+vi.mock("../push-delivery.js", () => ({
+	pushDelivery: () => ({ readMoved }),
+}));
 
 const NOW = "2026-09-22T00:00:00.000Z";
 
@@ -18,8 +30,12 @@ const CHANNEL = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkchannel1");
 const THREAD = threadSpace(COMMUNITY, "3lkthreadxx1");
 const MISSING_THREAD = threadSpace(COMMUNITY, "3lkthreadxx9");
 
+const SECRET = "p".repeat(32);
+const NOW_MS = Date.parse(NOW);
+
 let database: TestDatabase;
 let ctx: AppContext;
+let announced: { did: string; frame: ServerFrame }[];
 
 const noProfiles: ActorHydrator = async () => new Map();
 
@@ -142,8 +158,14 @@ const seenAtFor = async (id: string): Promise<string | null> => {
 
 beforeEach(async () => {
 	database = await openTestDatabase();
+	announced = [];
+	readMoved.mockClear();
 	ctx = {
-		announce: silentAnnouncer,
+		announce: {
+			...silentAnnouncer,
+			toUser: (did: string, frame: ServerFrame) => announced.push({ did, frame }),
+		},
+		config: { PUSH_ACTION_SECRET: SECRET, PUBLIC_URL: "https://appview.test" },
 		database,
 		loader: new CommunityLoader({ db: database.db, tables: database.tables }),
 	} as unknown as AppContext;
@@ -237,5 +259,103 @@ describe("updateSeenForMessage", () => {
 				}),
 			},
 		]);
+	});
+});
+
+describe("markReadFromNotification", () => {
+	const token = (channel: string, through: string, did = MEMBER, nowMs = NOW_MS) =>
+		issueReadToken(SECRET, { did, channel, through }, nowMs);
+
+	const cursors = async () =>
+		database.db
+			.select({
+				channel: database.tables.readCursors.channel,
+				cursor: database.tables.readCursors.cursor,
+			})
+			.from(database.tables.readCursors)
+			.where(eq(database.tables.readCursors.did, MEMBER));
+
+	it("moves the read cursor, marks the channel's notifications seen and tells every session", async () => {
+		await insertNotification("n1", CHANNEL, "3lkmessagex1");
+		await insertNotification("n2", CHANNEL, "3lkmessagex2");
+		await insertNotification("n3", CHANNEL, "3lkmessagex3");
+
+		await handleMarkReadFromNotification(ctx, token(CHANNEL, "3lkmessagex2"), NOW_MS);
+
+		expect(await cursors()).toEqual([{ channel: "3lkchannel1", cursor: "3lkmessagex2" }]);
+		expect(await seenAtFor("n1")).toBe(NOW);
+		expect(await seenAtFor("n2")).toBe(NOW);
+		expect(await seenAtFor("n3")).toBeNull();
+
+		expect(announced.map((entry) => entry.frame.$type)).toEqual([
+			"social.colibri.beta.sync.defs#seenEvent",
+			"social.colibri.beta.sync.defs#seenEvent",
+			"social.colibri.beta.sync.defs#readCursorEvent",
+		]);
+		expect(announced[0]?.frame).toMatchObject({ unread: 1, channel: CHANNEL });
+		expect(announced[2]?.frame).toEqual({
+			$type: "social.colibri.beta.sync.defs#readCursorEvent",
+			community: COMMUNITY,
+			cursors: [{ channel: "3lkchannel1", cursor: "3lkmessagex2" }],
+		});
+		expect(readMoved).toHaveBeenCalledWith(MEMBER, COMMUNITY, [
+			{ channel: "3lkchannel1", cursor: "3lkmessagex2" },
+		]);
+	});
+
+	it("marks a thread read under the thread's own key", async () => {
+		await insertThread();
+		await insertNotification("n1", THREAD, "3lkmessagex1");
+
+		await handleMarkReadFromNotification(ctx, token(THREAD, "3lkmessagex1"), NOW_MS);
+
+		expect(await cursors()).toEqual([{ channel: "3lkthreadxx1", cursor: "3lkmessagex1" }]);
+		expect(await seenAtFor("n1")).toBe(NOW);
+	});
+
+	it("never moves the cursor backwards", async () => {
+		await handleMarkReadFromNotification(ctx, token(CHANNEL, "3lkmessagex5"), NOW_MS);
+		await handleMarkReadFromNotification(ctx, token(CHANNEL, "3lkmessagex3"), NOW_MS);
+
+		expect(await cursors()).toEqual([{ channel: "3lkchannel1", cursor: "3lkmessagex5" }]);
+		expect(readMoved).toHaveBeenCalledTimes(1);
+	});
+
+	it("rejects an expired token", async () => {
+		const expired = token(CHANNEL, "3lkmessagex1", MEMBER, NOW_MS - 8 * 24 * 60 * 60 * 1000);
+
+		await expect(handleMarkReadFromNotification(ctx, expired, NOW_MS)).rejects.toMatchObject({
+			customErrorName: "ExpiredToken",
+		});
+		expect(await cursors()).toEqual([]);
+	});
+
+	it("rejects a tampered token", async () => {
+		const [claims, signature] = token(CHANNEL, "3lkmessagex1").split(".");
+		const parsed = JSON.parse(Buffer.from(claims ?? "", "base64url").toString("utf8"));
+		const forged = `${Buffer.from(JSON.stringify({ ...parsed, did: AUTHOR })).toString("base64url")}.${signature}`;
+
+		await expect(handleMarkReadFromNotification(ctx, forged, NOW_MS)).rejects.toMatchObject({
+			customErrorName: "InvalidToken",
+		});
+		expect(await cursors()).toEqual([]);
+	});
+
+	it("rejects a token for a channel that does not exist", async () => {
+		await expect(
+			handleMarkReadFromNotification(ctx, token(MISSING_THREAD, "3lkmessagex1"), NOW_MS),
+		).rejects.toMatchObject({ customErrorName: "InvalidToken" });
+		await expect(
+			handleMarkReadFromNotification(ctx, token("not-a-space", "3lkmessagex1"), NOW_MS),
+		).rejects.toMatchObject({ customErrorName: "InvalidToken" });
+		expect(await cursors()).toEqual([]);
+	});
+
+	it("rejects every token while no secret is configured", async () => {
+		const unsigned = { ...ctx, config: { PUBLIC_URL: "https://appview.test" } } as AppContext;
+
+		await expect(
+			handleMarkReadFromNotification(unsigned, token(CHANNEL, "3lkmessagex1"), NOW_MS),
+		).rejects.toMatchObject({ customErrorName: "InvalidToken" });
 	});
 });

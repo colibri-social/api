@@ -57,11 +57,14 @@ const subscription = (overrides: Partial<PushSubscriptionRow> = {}): PushSubscri
 });
 
 const payload: PushPayload = {
+	type: "message",
 	kind: "mention",
 	title: "New mention",
 	body: "hello there",
 	tag: "did:plc:author/3lkmsg1",
 	data: {
+		type: "message",
+		kind: "mention",
 		channel: "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchannel1",
 		channelUri: "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchannel1",
 		messageAuthor: "did:plc:author",
@@ -70,6 +73,26 @@ const payload: PushPayload = {
 			"social.colibri:/channel/did:plc:community/social.colibri.beta.channel.text/3lkchannel1",
 		authorName: "Alice",
 		authorAvatarUrl: "https://appview.example/avatar.jpg",
+		spaceName: "Protocol Nerds",
+		placeName: "general",
+		subtitle: "Mentioned you · Protocol Nerds › #general",
+		body: "hello there",
+		badge: "3",
+		readUrl:
+			"https://appview.example/xrpc/social.colibri.beta.notification.markReadFromNotification",
+		readToken: "claims.signature",
+		tag: "did:plc:author/3lkmsg1",
+		title: "New mention",
+	},
+};
+
+const readPayload: PushPayload = {
+	type: "read",
+	data: {
+		type: "read",
+		channelUri: "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchannel1",
+		through: "3lkmsg1",
+		badge: "2",
 	},
 };
 
@@ -124,6 +147,34 @@ describe("apnsSender", () => {
 		expect(JSON.parse(request?.body ?? "")).toEqual(apnsBody(payload));
 	});
 
+	it("posts read, delete and edit updates as background pushes", async () => {
+		expect(await sender.send(subscription(), readPayload)).toBe("delivered");
+		expect(
+			await sender.send(subscription(), {
+				...payload,
+				type: "edit",
+				data: { ...payload.data, type: "edit" },
+			}),
+		).toBe("delivered");
+
+		const [read, edit] = production.received;
+		expect(read?.headers["apns-push-type"]).toBe("background");
+		expect(read?.headers["apns-priority"]).toBe("5");
+		expect(read?.headers["apns-collapse-id"]).toBeUndefined();
+		expect(JSON.parse(read?.body ?? "")).toEqual({
+			aps: { "content-available": 1, badge: 2 },
+			type: "read",
+			channelUri: readPayload.data.channelUri,
+			through: "3lkmsg1",
+			badge: "2",
+		});
+
+		expect(edit?.headers["apns-push-type"]).toBe("background");
+		expect(edit?.headers["apns-priority"]).toBe("5");
+		expect(edit?.headers["apns-collapse-id"]).toBe(payload.tag);
+		expect(JSON.parse(edit?.body ?? "").aps).toEqual({ "content-available": 1, badge: 3 });
+	});
+
 	it("routes sandbox tokens to the sandbox host", async () => {
 		await sender.send(subscription({ environment: "sandbox" }), payload);
 
@@ -150,23 +201,37 @@ describe("apnsSender", () => {
 });
 
 describe("apnsBody", () => {
-	it("names the sender and marks mentions time sensitive", () => {
+	it("titles the alert with the author and sets subtitle, badge, sound and category", () => {
 		expect(apnsBody(payload).aps).toEqual({
-			alert: { title: "Alice", subtitle: "New mention", body: "hello there" },
-			sound: "default",
+			alert: {
+				title: "Alice",
+				subtitle: "Mentioned you · Protocol Nerds › #general",
+				body: "hello there",
+			},
+			badge: 3,
+			sound: "ping.caf",
+			category: "message",
 			"thread-id": payload.data.channelUri,
 			"mutable-content": 1,
 			"interruption-level": "time-sensitive",
 		});
 	});
 
-	it("drops the generic subtitle for plain messages", () => {
+	it("puts every data field next to aps", () => {
+		const { aps: _aps, ...rest } = apnsBody(payload);
+		expect(rest).toEqual(payload.data);
+	});
+
+	it("keeps plain messages at the active interruption level", () => {
 		const aps = apnsBody({ ...payload, kind: "message", title: "New message" }).aps as {
-			alert: Record<string, string>;
 			"interruption-level": string;
 		};
-		expect(aps.alert).toEqual({ title: "Alice", body: "hello there" });
 		expect(aps["interruption-level"]).toBe("active");
+	});
+
+	it("sends a zero badge when the count is missing or malformed", () => {
+		const aps = apnsBody({ ...readPayload, data: { ...readPayload.data, badge: "x" } }).aps;
+		expect(aps).toEqual({ "content-available": 1, badge: 0 });
 	});
 });
 

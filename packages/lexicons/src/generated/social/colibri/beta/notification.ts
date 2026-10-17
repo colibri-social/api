@@ -6,6 +6,7 @@ export * as defs from "./notification/defs.js";
 export * as getUnreadCount from "./notification/getUnreadCount.js";
 export * as getUnseen from "./notification/getUnseen.js";
 export * as listNotifications from "./notification/listNotifications.js";
+export * as markReadFromNotification from "./notification/markReadFromNotification.js";
 export * as registerPush from "./notification/registerPush.js";
 export * as unregisterPush from "./notification/unregisterPush.js";
 export * as updateSeen from "./notification/updateSeen.js";

@@ -91,3 +91,26 @@ describe("APNs", () => {
 		expect(config.notifications.apns).toBeUndefined();
 	});
 });
+
+describe("PUSH_ACTION_SECRET", () => {
+	const withSecret = (value: string | undefined) =>
+		loadConfig({
+			...REQUIRED,
+			APPVIEW_DID: "did:web:appview.example.com",
+			PUSH_ACTION_SECRET: value,
+		});
+
+	it("is optional, and an empty value counts as unset", () => {
+		expect(withSecret(undefined).PUSH_ACTION_SECRET).toBeUndefined();
+		expect(withSecret("").PUSH_ACTION_SECRET).toBeUndefined();
+	});
+
+	it("accepts a secret of at least 32 characters", () => {
+		const secret = "c".repeat(44);
+		expect(withSecret(secret).PUSH_ACTION_SECRET).toBe(secret);
+	});
+
+	it("refuses a short secret", () => {
+		expect(() => withSecret("short")).toThrow(/openssl rand -base64 32/);
+	});
+});

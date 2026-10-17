@@ -1,7 +1,8 @@
 import { createHash, createPrivateKey, type KeyObject, sign } from "node:crypto";
 import { type ClientHttp2Session, connect, constants } from "node:http2";
 import type { ApnsConfig } from "./config.js";
-import type { PushPayload, PushSender } from "./push.js";
+import type { PushSender } from "./push.js";
+import { isAlertPush, type PushPayload, pushDataStrings } from "./push-data.js";
 
 export type ApnsHosts = { production: string; sandbox: string };
 
@@ -50,23 +51,41 @@ export const apnsCollapseId = (tag: string): string =>
 
 export const isApnsDeviceToken = (token: string): boolean => DEVICE_TOKEN.test(token);
 
+const badgeNumber = (badge: string): number => {
+	const value = Number.parseInt(badge, 10);
+	return Number.isFinite(value) && value > 0 ? value : 0;
+};
+
 export const apnsBody = (payload: PushPayload): Record<string, unknown> => {
-	const sender = payload.data.authorName;
-	const subtitle = sender && payload.kind !== "message" ? payload.title : undefined;
+	const data = pushDataStrings(payload.data);
+	const badge = badgeNumber(payload.data.badge);
+	if (!isAlertPush(payload)) {
+		return { aps: { "content-available": 1, badge }, ...data };
+	}
 	return {
 		aps: {
 			alert: {
-				title: sender ?? payload.title,
-				...(subtitle ? { subtitle } : {}),
-				body: payload.body,
+				title: payload.data.authorName ?? payload.title ?? "",
+				...(payload.data.subtitle ? { subtitle: payload.data.subtitle } : {}),
+				body: payload.data.body ?? payload.body ?? "",
 			},
-			sound: "default",
-			"thread-id": payload.data.channelUri ?? payload.data.channel,
+			badge,
+			sound: "ping.caf",
+			category: "message",
+			"thread-id": payload.data.channelUri,
 			"mutable-content": 1,
 			"interruption-level": payload.kind === "mention" ? "time-sensitive" : "active",
 		},
-		...payload.data,
-		tag: payload.tag,
+		...data,
+	};
+};
+
+export const apnsHeaders = (payload: PushPayload): Record<string, string> => {
+	const alert = isAlertPush(payload);
+	return {
+		"apns-push-type": alert ? "alert" : "background",
+		"apns-priority": alert ? "10" : "5",
+		...(payload.tag ? { "apns-collapse-id": apnsCollapseId(payload.tag) } : {}),
 	};
 };
 
@@ -172,10 +191,8 @@ export const apnsSender = (
 					{
 						[constants.HTTP2_HEADER_PATH]: `/3/device/${subscription.token}`,
 						authorization: `bearer ${currentProviderToken()}`,
-						"apns-push-type": "alert",
 						"apns-topic": credentials.topic,
-						"apns-priority": "10",
-						"apns-collapse-id": apnsCollapseId(payload.tag),
+						...apnsHeaders(payload),
 						"content-type": "application/json",
 					},
 					JSON.stringify(apnsBody(payload)),
