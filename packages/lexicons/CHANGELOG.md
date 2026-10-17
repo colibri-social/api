@@ -1,5 +1,13 @@
 # @colibri-social/lexicons
 
+## 2.17.0
+
+### Minor Changes
+
+- 9034d25: `social.colibri.beta.message#attachment` takes an optional `alt` string of up to 2000 graphemes. `social.colibri.beta.channel.defs#attachmentView` serves it when the author set one.
+- 9034d25: `social.colibri.beta.actor.profile` takes an optional `pronouns` string of up to 64 graphemes. The profile view in `social.colibri.beta.actor.defs` serves the resolved `pronouns`, which fall back to the Bluesky profile's pronouns when `syncBluesky` is on and the Colibri record sets none.
+- 58b7b76: The `social.colibri.beta.permissionMessaging` permission set now grants `read`, `create`, `update` and `delete` on `social.colibri.beta.message` and `social.colibri.beta.reaction` in voice channel spaces
+
 ## 2.16.0
 
 ### Minor Changes

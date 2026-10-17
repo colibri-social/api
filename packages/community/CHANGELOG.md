@@ -1,5 +1,15 @@
 # @colibri-social/community
 
+## 2.8.3
+
+### Patch Changes
+
+- Updated dependencies [9034d25]
+- Updated dependencies [9034d25]
+- Updated dependencies [58b7b76]
+  - @colibri-social/lexicons@2.17.0
+  - @colibri-social/projections@1.9.2
+
 ## 2.8.2
 
 ### Patch Changes
