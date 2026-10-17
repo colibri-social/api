@@ -141,8 +141,27 @@ describe("VoiceRoom", () => {
 
 		room.closeProducer("did:plc:a", producer.id);
 
-		expect(removed).toEqual([{ did: "did:plc:a", producerId: producer.id }]);
+		expect(removed).toEqual([{ did: "did:plc:a", producerId: producer.id, source: "mic" }]);
 		expect(room.snapshotProducers()).toEqual([]);
+	});
+
+	it("reports camera and screen sharing from the participant's video producers", async () => {
+		const { room } = await createRoom();
+		const transport = await room.createTransport("did:plc:a", "send");
+		const produce = (kind: "audio" | "video", source: string) =>
+			room.produce("did:plc:a", transport.id, { kind, rtpParameters: {} as never, source });
+
+		await produce("audio", "mic");
+		await produce("audio", "screen");
+		expect(room.getSharing("did:plc:a")).toEqual({ camera: false, screen: false });
+
+		const camera = await produce("video", "camera");
+		await produce("video", "screen");
+		expect(room.getSharing("did:plc:a")).toEqual({ camera: true, screen: true });
+
+		room.closeProducer("did:plc:a", camera.id);
+		expect(room.getSharing("did:plc:a")).toEqual({ camera: false, screen: true });
+		expect(room.getSharing("did:plc:unknown")).toEqual({ camera: false, screen: false });
 	});
 
 	it("removes a participant and their producers on leave", async () => {

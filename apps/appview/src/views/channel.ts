@@ -62,9 +62,14 @@ const placementRefKey = (row: MessageRow): string => `${row.space} ${row.author}
 type RawAttachment = {
 	blob?: { ref?: { $link?: string }; mimeType?: string; size?: number };
 	name?: string;
+	width?: number;
+	height?: number;
 	spoiler?: boolean;
 	alt?: string;
 };
+
+const isDimension = (value: unknown): value is number =>
+	typeof value === "number" && Number.isInteger(value) && value > 0;
 
 type RawForward = {
 	source?: { space?: string; did?: string; rkey?: string; cid?: string };
@@ -144,6 +149,9 @@ export class ChannelViews {
 				name: item.name,
 				mimeType,
 				size: item.blob?.size,
+				...(isDimension(item.width) && isDimension(item.height)
+					? { width: item.width, height: item.height }
+					: {}),
 				...(item.spoiler === true ? { spoiler: true } : {}),
 				...(typeof item.alt === "string" && item.alt ? { alt: item.alt } : {}),
 			} as AttachmentView);

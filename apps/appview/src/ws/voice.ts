@@ -57,6 +57,8 @@ const frameName = (value: unknown): ClientFrameName | null => {
 const toInternalSource = (source: string): string => (source === "microphone" ? "mic" : source);
 const toWireSource = (source: string): string => (source === "mic" ? "microphone" : source);
 
+const SHARING_SOURCES: ReadonlySet<string> = new Set(["camera", "screen"]);
+
 const messageOf = (cause: unknown): string =>
 	cause instanceof Error ? cause.message : "the sfu rejected this request";
 
@@ -629,13 +631,15 @@ export class VoiceServer {
 				},
 				did,
 			);
+			if (kind === "video") this.announceSharing(voice, channel, did, source);
 		});
-		voice.on("producer-removed", ({ channel, did, producerId }) => {
+		voice.on("producer-removed", ({ channel, did, producerId, source }) => {
 			this.broadcast(
 				channel,
 				{ $type: "social.colibri.beta.voice.defs#producerRemoved", producerId, did },
 				did,
 			);
+			this.announceSharing(voice, channel, did, source);
 		});
 		voice.on("speaking-changed", ({ channel, did, speaking }) => {
 			this.broadcast(channel, {
@@ -653,14 +657,13 @@ export class VoiceServer {
 				serverMuted: server.serverMuted,
 				serverDeafened: server.serverDeafened,
 			});
-			this.announce(channel, did, "update", {
-				channel: asSpaceRef(channel),
-				muted,
-				deafened,
-				serverMuted: server.serverMuted,
-				serverDeafened: server.serverDeafened,
-			});
+			this.announce(channel, did, "update", voiceStateIn(voice, channel, did));
 		});
+	}
+
+	private announceSharing(voice: VoiceSfu, channel: string, did: string, source: string): void {
+		if (!SHARING_SOURCES.has(source) || voice.presenceOf(did) !== channel) return;
+		this.announce(channel, did, "update", voiceStateIn(voice, channel, did));
 	}
 
 	private announce(

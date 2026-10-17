@@ -229,12 +229,22 @@ type VoiceState = { $type?: "social.colibri.beta.actor.defs#voiceState";
   /**
    * Whether a moderator deafened them. When this is true they cannot undeafen themselves.
    */
-  "serverDeafened"?:boolean };
+  "serverDeafened"?:boolean;
+
+  /**
+   * Whether the user is sharing their camera.
+   */
+  "camera"?:boolean;
+
+  /**
+   * Whether the user is sharing their screen.
+   */
+  "screen"?:boolean };
 
 export type { VoiceState };
 
 /** A user's voice connection. */
-const voiceState = /*#__PURE__*/ l.typedObject<VoiceState>($nsid, "voiceState", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"muted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"deafened":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"serverMuted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"serverDeafened":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
+const voiceState = /*#__PURE__*/ l.typedObject<VoiceState>($nsid, "voiceState", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"muted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"deafened":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"serverMuted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"serverDeafened":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"camera":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"screen":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
 
 export { voiceState };
 

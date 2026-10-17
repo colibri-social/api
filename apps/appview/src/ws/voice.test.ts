@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { type ActorAuthz, anonymousAuthz, type ChannelState } from "@colibri-social/community";
 import { COLLECTIONS, channelSpace, SPACE_TYPES, social } from "@colibri-social/lexicons";
 import { VoiceSfu, type WorkerPoolLike } from "@colibri-social/voice";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { asRouter, createFakeRouter } from "../../../../packages/voice/src/mock-mediasoup.js";
 import { type AuthzChanges, createAuthzChanges } from "../authz-changes.js";
@@ -483,6 +483,67 @@ describe("VoiceServer", () => {
 				did: ALICE,
 				voice: { muted: true, serverMuted: true },
 			},
+		});
+
+		ws.close();
+	});
+
+	it("announces camera and screen sharing to the community, and keeps it across a mute", async () => {
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+
+		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrame(ws);
+		send(ws, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
+		const transport = await nextFrameOfType(ws, "transportOptions");
+
+		send(ws, {
+			$type: "social.colibri.beta.voice.defs#produce",
+			transportId: transport.id,
+			kind: "audio",
+			rtpParameters: {},
+			source: "microphone",
+		});
+		await nextFrameOfType(ws, "producerInfo");
+		expect(announced.map((entry) => entry.frame.event)).toEqual(["join"]);
+
+		send(ws, {
+			$type: "social.colibri.beta.voice.defs#produce",
+			transportId: transport.id,
+			kind: "video",
+			rtpParameters: {},
+			source: "camera",
+		});
+		const camera = await nextFrameOfType(ws, "producerInfo");
+		expect(announced.at(-1)?.frame).toMatchObject({
+			event: "update",
+			did: ALICE,
+			voice: { camera: true },
+		});
+
+		send(ws, {
+			$type: "social.colibri.beta.voice.defs#produce",
+			transportId: transport.id,
+			kind: "video",
+			rtpParameters: {},
+			source: "screen",
+		});
+		await nextFrameOfType(ws, "producerInfo");
+		expect(announced.at(-1)?.frame).toMatchObject({ voice: { camera: true, screen: true } });
+
+		await sfu.moderate(VOICE_CHANNEL, ALICE, { muted: true });
+		expect(announced.at(-1)?.frame).toMatchObject({
+			voice: { muted: true, camera: true, screen: true },
+		});
+
+		send(ws, {
+			$type: "social.colibri.beta.voice.defs#closeProducer",
+			producerId: camera.producerId,
+		});
+		await vi.waitFor(() => {
+			const voice = announced.at(-1)?.frame.voice as Record<string, unknown>;
+			expect(voice.screen).toBe(true);
+			expect(voice).not.toHaveProperty("camera");
 		});
 
 		ws.close();

@@ -5,12 +5,15 @@ type VoiceStateView = social.colibri.beta.actor.defs.VoiceState;
 
 export const voiceStateIn = (sfu: VoiceSfu, channel: string, did: string): VoiceStateView => {
 	const state = sfu.getVoiceState(channel, did);
+	const sharing = sfu.getSharing(channel, did);
 	return {
 		channel: asSpaceRef(channel),
 		muted: state.muted,
 		deafened: state.deafened,
 		serverMuted: state.serverMuted,
 		serverDeafened: state.serverDeafened,
+		...(sharing.camera ? { camera: true } : {}),
+		...(sharing.screen ? { screen: true } : {}),
 	};
 };
 

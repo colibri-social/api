@@ -17,6 +17,7 @@ import {
 	type TransportDirection,
 	type VoicePatch,
 	VoiceRoom,
+	type VoiceSharing,
 	type VoiceState,
 	type VoiceStateOrigin,
 } from "./room.js";
@@ -41,7 +42,7 @@ export type VoiceSfuEvents = {
 			paused: boolean;
 		},
 	];
-	"producer-removed": [{ channel: string; did: string; producerId: string }];
+	"producer-removed": [{ channel: string; did: string; producerId: string; source: string }];
 	"speaking-changed": [{ channel: string; did: string; speaking: boolean }];
 	"voice-state-changed": [{ channel: string; did: string; origin: VoiceStateOrigin } & VoiceState];
 };
@@ -106,6 +107,10 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 		return room
 			? room.getVoiceState(did)
 			: { muted: false, deafened: false, serverMuted: false, serverDeafened: false };
+	}
+
+	getSharing(channel: string, did: string): VoiceSharing {
+		return this.rooms.get(channel)?.getSharing(did) ?? { camera: false, screen: false };
 	}
 
 	async join(channel: string, did: string): Promise<void> {

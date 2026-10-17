@@ -135,6 +135,16 @@ type Attachment = { $type?: "social.colibri.beta.message#attachment";
   "name"?:string;
 
   /**
+   * Intrinsic pixel width, when the file is an image or video.
+   */
+  "width"?:number;
+
+  /**
+   * Intrinsic pixel height, when the file is an image or video.
+   */
+  "height"?:number;
+
+  /**
    * Whether clients hide the file behind a reveal step until the reader chooses to see it.
    */
   "spoiler"?:boolean;
@@ -147,6 +157,6 @@ type Attachment = { $type?: "social.colibri.beta.message#attachment";
 export type { Attachment };
 
 /** A file attached to a message. */
-const attachment = /*#__PURE__*/ l.typedObject<Attachment>($nsid, "attachment", /*#__PURE__*/ l.object({"blob":/*#__PURE__*/ l.blob(),"name":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256})),"spoiler":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"alt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":20000,"maxGraphemes":2000}))}));
+const attachment = /*#__PURE__*/ l.typedObject<Attachment>($nsid, "attachment", /*#__PURE__*/ l.object({"blob":/*#__PURE__*/ l.blob(),"name":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256})),"width":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":1})),"height":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":1})),"spoiler":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"alt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":20000,"maxGraphemes":2000}))}));
 
 export { attachment };

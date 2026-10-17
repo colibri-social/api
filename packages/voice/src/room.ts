@@ -32,6 +32,8 @@ export type VoicePatch = { muted?: boolean; deafened?: boolean };
 
 export type VoiceStateOrigin = "self" | "server";
 
+export type VoiceSharing = { camera: boolean; screen: boolean };
+
 type ParticipantVoice = {
 	selfMuted: boolean;
 	selfDeafened: boolean;
@@ -76,7 +78,7 @@ export type VoiceRoomEvents = {
 	"producer-added": [
 		{ did: string; producerId: string; kind: MediaKind; source: string; paused: boolean },
 	];
-	"producer-removed": [{ did: string; producerId: string }];
+	"producer-removed": [{ did: string; producerId: string; source: string }];
 	"speaking-changed": [{ did: string; speaking: boolean }];
 	"voice-state-changed": [{ did: string; origin: VoiceStateOrigin } & VoiceState];
 };
@@ -254,6 +256,16 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 
 	getVoiceState(did: string): VoiceState {
 		return effectiveVoice(this.participants.get(did)?.voice ?? SILENT);
+	}
+
+	getSharing(did: string): VoiceSharing {
+		const sharing = { camera: false, screen: false };
+		for (const { producer, source } of this.participants.get(did)?.producers.values() ?? []) {
+			if (producer.kind !== "video") continue;
+			if (source === "camera") sharing.camera = true;
+			if (source === "screen") sharing.screen = true;
+		}
+		return sharing;
 	}
 
 	snapshotProducers(): ProducerSnapshot[] {
@@ -479,11 +491,14 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 			return;
 		}
 
-		const producerIds = [...participant.producers.keys()];
+		const producers = [...participant.producers].map(([producerId, { source }]) => ({
+			producerId,
+			source,
+		}));
 		this.releaseMedia(participant);
 		this.stopSpeaking(did);
-		for (const producerId of producerIds) {
-			this.emit("producer-removed", { did, producerId });
+		for (const { producerId, source } of producers) {
+			this.emit("producer-removed", { did, producerId, source });
 		}
 	}
 
@@ -566,9 +581,11 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 
 	private forgetProducer(did: string, producerId: string): void {
 		const participant = this.participants.get(did);
-		if (participant?.producers.delete(producerId)) {
+		const entry = participant?.producers.get(producerId);
+		if (participant && entry) {
+			participant.producers.delete(producerId);
 			this.producerIndex.delete(producerId);
-			this.emit("producer-removed", { did, producerId });
+			this.emit("producer-removed", { did, producerId, source: entry.source });
 		}
 	}
 

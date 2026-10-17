@@ -723,6 +723,30 @@ describe("ChannelViews attachments", () => {
 		expect(off).not.toHaveProperty("spoiler");
 	});
 
+	it("passes dimensions through only when both are positive integers", async () => {
+		const rkey = nextTid();
+		const blob = {
+			$type: "blob",
+			ref: { $link: ATTACHMENT_CID },
+			mimeType: "image/png",
+			size: 1234,
+		};
+		await putMessage(rkey, {
+			attachments: [
+				{ name: "sized.png", blob, width: 160, height: 120 },
+				{ name: "half.png", blob, width: 160 },
+				{ name: "bad.png", blob, width: 0, height: 1.5 },
+			],
+		});
+
+		const { messages } = await views.messages(SPACE, null, { limit: 1 });
+		const [sized, half, bad] = messages[0]?.attachments ?? [];
+		expect(sized).toMatchObject({ width: 160, height: 120 });
+		expect(half).not.toHaveProperty("width");
+		expect(bad).not.toHaveProperty("width");
+		expect(bad).not.toHaveProperty("height");
+	});
+
 	it("passes alt text through and omits it when empty", async () => {
 		const rkey = nextTid();
 		const blob = {
