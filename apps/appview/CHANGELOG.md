@@ -1,5 +1,24 @@
 # @colibri-social/appview
 
+## 2.18.0
+
+### Minor Changes
+
+- 56da297: Communities can have custom emoji and emoji packs. They're stored as Bluemoji records in the community's own repo, any repo's emoji can be listed with `emoji.getCatalog`, and changes reach clients live through `emojiEvent`.
+
+### Patch Changes
+
+- Updated dependencies [56da297]
+  - @colibri-social/lexicons@2.19.0
+  - @colibri-social/appview-db@0.12.0
+  - @colibri-social/community@2.9.0
+  - @colibri-social/space@0.6.0
+  - @colibri-social/emoji@0.1.0
+  - @colibri-social/notifications@1.6.1
+  - @colibri-social/projections@1.9.4
+  - @colibri-social/blobs@0.0.8
+  - @colibri-social/space-sync@0.5.3
+
 ## 2.17.0
 
 ### Minor Changes

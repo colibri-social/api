@@ -1,5 +1,11 @@
 # @colibri-social/bridge-discord
 
+## 0.3.5
+
+### Patch Changes
+
+- @colibri-social/bridge-core@0.2.5
+
 ## 0.3.4
 
 ### Patch Changes
