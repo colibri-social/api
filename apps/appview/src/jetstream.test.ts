@@ -19,6 +19,7 @@ let connections: WebSocket[];
 let requests: URL[];
 let jetstream: Jetstream;
 let upgradeServer: Server | null;
+let userFrames: Array<{ did: string; frame: Record<string, unknown> }> = [];
 
 const identityFrame = (seq: number, did = DID) =>
 	JSON.stringify({
@@ -56,6 +57,7 @@ const commitFrame = (
 	operation: "create" | "update" | "delete",
 	record?: Record<string, unknown>,
 	did = DID,
+	rkey = "self",
 ) =>
 	JSON.stringify({
 		$type: "message",
@@ -64,7 +66,7 @@ const commitFrame = (
 			did,
 			collection,
 			operation,
-			rkey: "self",
+			rkey,
 			rev: "3lkrevxxxxxxx",
 			...(record ? { record } : {}),
 			seq,
@@ -98,7 +100,11 @@ const contextFor = (url: string): AppContext =>
 			SIGNING_KEY: "abcdef0123456789",
 		},
 		database,
-		announce: { toUser: () => {}, toCommunity: () => {} },
+		announce: {
+			toUser: (did: string, frame: Record<string, unknown>) => userFrames.push({ did, frame }),
+			toCommunity: () => {},
+		},
+		loader: { community: async () => null },
 		artwork: createTtlCache<ArtworkEntry>(),
 		identity: { resolveDid: async () => ({ pds: null }) },
 		log: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} },
@@ -243,7 +249,7 @@ describe("endpoint", () => {
 });
 
 describe("subscription", () => {
-	it("asks for identity, account, profile and listening commits only", async () => {
+	it("asks for identity, account, profile, listening and emoji commits only", async () => {
 		await startAgainstServer();
 		const request = requests[0] as URL;
 
@@ -257,6 +263,9 @@ describe("subscription", () => {
 			"app.rocksky.actor.status",
 			"fm.atradio.actor.status",
 			"games.atmosphere.status",
+			"blue.moji.collection.item",
+			"blue.moji.packs.pack",
+			"blue.moji.packs.packitem",
 		]);
 		expect(request.searchParams.has("wantedCollections")).toBe(false);
 	});
@@ -591,5 +600,71 @@ describe("listening commits", () => {
 		await settle();
 
 		expect(await storedActivity()).toBeNull();
+	});
+});
+
+describe("emoji commits", () => {
+	const ITEM = "blue.moji.collection.item";
+	const BLOB = "bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiibsojllbf5xhqzy6a";
+	const wave = {
+		$type: ITEM,
+		name: ":wave:",
+		createdAt: "2026-10-18T00:00:00.000Z",
+		formats: {
+			$type: "blue.moji.collection.item#formats_v1",
+			png_128: { $type: "blob", ref: { $link: BLOB }, mimeType: "image/png", size: 10 },
+		},
+	};
+
+	const track = () =>
+		database.db
+			.insert(database.tables.emojiBackfills)
+			.values({ owner: DID, completedAt: "2026-10-18T00:00:00.000Z" });
+
+	const storedItems = () =>
+		database.db
+			.select()
+			.from(database.tables.emojiItems)
+			.where(eq(database.tables.emojiItems.owner, DID));
+
+	beforeEach(() => {
+		userFrames = [];
+	});
+
+	it("stores an emoji of a tracked repo and tells its owner", async () => {
+		await track();
+		const socket = await startAgainstServer();
+
+		socket.send(commitFrame(1, ITEM, "create", wave, DID, "wave"));
+		await settle();
+
+		const rows = await storedItems();
+		expect(rows.map((row) => [row.rkey, row.name, row.provider])).toEqual([
+			["wave", "wave", "blue.moji"],
+		]);
+		expect(userFrames).toHaveLength(1);
+		expect(userFrames[0]?.frame.$type).toBe("social.colibri.beta.sync.defs#emojiEvent");
+	});
+
+	it("ignores emoji of a repo nobody asked for", async () => {
+		const socket = await startAgainstServer();
+
+		socket.send(commitFrame(1, ITEM, "create", wave, DID, "wave"));
+		await settle();
+
+		expect(await storedItems()).toEqual([]);
+		expect(userFrames).toEqual([]);
+	});
+
+	it("drops an emoji when its record is deleted", async () => {
+		await track();
+		const socket = await startAgainstServer();
+
+		socket.send(commitFrame(1, ITEM, "create", wave, DID, "wave"));
+		await settle();
+		socket.send(commitFrame(2, ITEM, "delete", undefined, DID, "wave"));
+		await settle();
+
+		expect(await storedItems()).toEqual([]);
 	});
 });

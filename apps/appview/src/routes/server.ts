@@ -27,6 +27,7 @@ export const describeServer = (ctx: AppContext): ServerDescription => {
 	if (ctx.config.pushProviders.length > 0) features.push("push");
 	if (ctx.config.gifsEnabled) features.push("gifs");
 	features.push("embeds");
+	features.push("emoji");
 
 	return {
 		did: asDid(ctx.config.APPVIEW_DID),

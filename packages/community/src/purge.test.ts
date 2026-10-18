@@ -61,6 +61,36 @@ const seed = async (community: string) => {
 
 	await db.insert(tables.applications).values({ community, did: MEMBER, createdAt: NOW });
 
+	await db.insert(tables.emojiItems).values({
+		owner: community,
+		collection: "blue.moji.collection.item",
+		rkey: "wave",
+		provider: "blue.moji",
+		uri: `at://${community}/blue.moji.collection.item/wave`,
+		name: "wave",
+		value: {},
+		indexedAt: NOW,
+	});
+	await db.insert(tables.emojiPacks).values({
+		owner: community,
+		collection: "blue.moji.packs.pack",
+		rkey: "pack1",
+		provider: "blue.moji",
+		uri: `at://${community}/blue.moji.packs.pack/pack1`,
+		value: {},
+		indexedAt: NOW,
+	});
+	await db.insert(tables.emojiPackItems).values({
+		owner: community,
+		collection: "blue.moji.packs.packitem",
+		rkey: "item1",
+		provider: "blue.moji",
+		pack: `at://${community}/blue.moji.packs.pack/pack1`,
+		subject: `at://${community}/blue.moji.collection.item/wave`,
+		createdAt: NOW,
+	});
+	await db.insert(tables.emojiBackfills).values({ owner: community, completedAt: NOW });
+
 	await db.insert(tables.moderationLog).values({
 		community,
 		rkey: "mod1",
@@ -188,6 +218,10 @@ const countsFor = async (community: string) => {
 		channels: await db.select().from(tables.channels),
 		invitations: await db.select().from(tables.invitations),
 		applications: await db.select().from(tables.applications),
+		emojiItems: await db.select().from(tables.emojiItems),
+		emojiPacks: await db.select().from(tables.emojiPacks),
+		emojiPackItems: await db.select().from(tables.emojiPackItems),
+		emojiBackfills: await db.select().from(tables.emojiBackfills),
 		moderationLog: await db.select().from(tables.moderationLog),
 		readCursors: await db.select().from(tables.readCursors),
 		notifications: await db.select().from(tables.notifications),
@@ -211,6 +245,10 @@ const countsFor = async (community: string) => {
 		channels: all.channels.filter((r) => r.community === community).length,
 		invitations: all.invitations.filter((r) => r.community === community).length,
 		applications: all.applications.filter((r) => r.community === community).length,
+		emojiItems: all.emojiItems.filter((r) => r.owner === community).length,
+		emojiPacks: all.emojiPacks.filter((r) => r.owner === community).length,
+		emojiPackItems: all.emojiPackItems.filter((r) => r.owner === community).length,
+		emojiBackfills: all.emojiBackfills.filter((r) => r.owner === community).length,
 		moderationLog: all.moderationLog.filter((r) => r.community === community).length,
 		readCursors: all.readCursors.filter((r) => r.community === community).length,
 		notifications: all.notifications.filter((r) => r.community === community).length,
@@ -235,6 +273,10 @@ const empty = {
 	channels: 0,
 	invitations: 0,
 	applications: 0,
+	emojiItems: 0,
+	emojiPacks: 0,
+	emojiPackItems: 0,
+	emojiBackfills: 0,
 	moderationLog: 0,
 	readCursors: 0,
 	notifications: 0,

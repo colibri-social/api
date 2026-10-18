@@ -47,7 +47,7 @@
 							"items": {
 								"type": "string",
 								"description": "A feature identifier.",
-								"knownValues": ["voice", "push", "gifs", "embeds"]
+								"knownValues": ["voice", "push", "gifs", "embeds", "emoji"]
 							}
 						},
 						"defaultCommunity": {

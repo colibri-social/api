@@ -8,6 +8,7 @@ import * as BetaDefs from "../defs.defs.js";
 import * as BridgeDefs from "../bridge/defs.defs.js";
 import * as CommunityDefs from "../community/defs.defs.js";
 import * as ThreadDefs from "../thread/defs.defs.js";
+import * as EmojiDefs from "../emoji/defs.defs.js";
 import * as BetaLabel from "../label.defs.js";
 import * as NotificationDefs from "../notification/defs.defs.js";
 import * as ChannelRead from "../channel/read.defs.js";
@@ -528,6 +529,26 @@ export type { InvitationEvent };
 const invitationEvent = /*#__PURE__*/ l.typedObject<InvitationEvent>($nsid, "invitationEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["create","delete"]}>(),"community":/*#__PURE__*/ l.string({"format":"did"}),"code":/*#__PURE__*/ l.string()}));
 
 export { invitationEvent };
+
+/** A repo's custom emoji or packs changed. Sent to a community's subscribers for its own emoji, and to a user's own connections for theirs. Carries the whole catalog so clients replace it in one step. */
+type EmojiEvent = { $type?: "social.colibri.beta.sync.defs#emojiEvent";
+
+  /**
+   * The community or user whose catalog changed.
+   */
+  "owner":l.DidString;
+
+  /**
+   * The catalog after the change.
+   */
+  "catalog":EmojiDefs.CatalogView };
+
+export type { EmojiEvent };
+
+/** A repo's custom emoji or packs changed. Sent to a community's subscribers for its own emoji, and to a user's own connections for theirs. Carries the whole catalog so clients replace it in one step. */
+const emojiEvent = /*#__PURE__*/ l.typedObject<EmojiEvent>($nsid, "emojiEvent", /*#__PURE__*/ l.object({"owner":/*#__PURE__*/ l.string({"format":"did"}),"catalog":/*#__PURE__*/ l.ref<EmojiDefs.CatalogView>((() => EmojiDefs.catalogView) as any)}));
+
+export { emojiEvent };
 
 /** A label was applied or retracted on a record in a subscribed space. */
 type LabelEvent = { $type?: "social.colibri.beta.sync.defs#labelEvent";

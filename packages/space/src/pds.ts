@@ -132,6 +132,32 @@ export class PdsClient {
 		});
 	}
 
+	putRepoRecord(
+		session: PdsSession,
+		write: { collection: string; rkey: string; record: Record<string, unknown> },
+	): Promise<WriteResult> {
+		return session.run((auth) =>
+			this.xrpc.procedure<WriteResult>(
+				"com.atproto.repo.putRecord",
+				{ ...write, repo: session.did },
+				auth,
+			),
+		);
+	}
+
+	deleteRepoRecord(
+		session: PdsSession,
+		params: { collection: string; rkey: string },
+	): Promise<void> {
+		return session.run(async (auth) => {
+			await this.xrpc.procedure(
+				"com.atproto.repo.deleteRecord",
+				{ ...params, repo: session.did },
+				auth,
+			);
+		});
+	}
+
 	applyWrites(
 		session: PdsSession,
 		params: { space: SpaceRefString; writes: unknown[] },

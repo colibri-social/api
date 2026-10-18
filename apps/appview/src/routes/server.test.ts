@@ -30,10 +30,10 @@ describe("describeServer", () => {
 	});
 
 	it("lists only the features that are actually configured", () => {
-		expect(describeServer(contextWith()).features).toEqual(["embeds"]);
+		expect(describeServer(contextWith()).features).toEqual(["embeds", "emoji"]);
 		expect(
 			describeServer(contextWith({ VOICE_ENABLED: true, gifsEnabled: true })).features,
-		).toEqual(["voice", "gifs", "embeds"]);
+		).toEqual(["voice", "gifs", "embeds", "emoji"]);
 	});
 
 	it("leaves out the default community when none is configured", () => {

@@ -1,4 +1,5 @@
 import type { ClientRequest, IncomingMessage } from "node:http";
+import { emojiRegistry } from "@colibri-social/emoji";
 import { asDatetime, asRecordKey, COLLECTIONS } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import { WebSocket } from "ws";
@@ -6,6 +7,7 @@ import { applyActivityRecord, clearActivityFrom } from "./activity.js";
 import { ACTIVITY_COLLECTIONS, activityProviderFor } from "./activity-providers.js";
 import { memberEvent } from "./announce.js";
 import type { AppContext } from "./context.js";
+import { announceEmoji, applyEmojiChange, isEmojiTracked } from "./emoji.js";
 import { JETSTREAM_SUBPROTOCOL, jetstreamEndpoint } from "./jetstream-url.js";
 import { ActorViews } from "./views/actor.js";
 
@@ -20,7 +22,12 @@ const REJECTION_BODY_TIMEOUT_MS = 5_000;
 const EVENT_TYPE_PREFIX = "network.bsky.jetstream.subscribeEvents#";
 const WANTED_KINDS = ["commit", "identity", "account"] as const;
 const BSKY_PROFILE = "app.bsky.actor.profile";
-const WANTED_COLLECTIONS = [COLLECTIONS.profile, BSKY_PROFILE, ...ACTIVITY_COLLECTIONS];
+const WANTED_COLLECTIONS = [
+	COLLECTIONS.profile,
+	BSKY_PROFILE,
+	...ACTIVITY_COLLECTIONS,
+	...emojiRegistry.collections,
+];
 
 type IdentityPayload = {
 	seq: number;
@@ -40,6 +47,7 @@ type CommitPayload = {
 	operation?: string;
 	collection?: string;
 	rkey?: string;
+	cid?: string;
 	record?: Record<string, unknown>;
 };
 
@@ -297,6 +305,7 @@ export class Jetstream {
 		if (kind === "commit") {
 			await this.refreshProfile(payload);
 			await this.refreshActivity(payload);
+			await this.refreshEmoji(payload);
 			return;
 		}
 
@@ -347,6 +356,26 @@ export class Jetstream {
 			return;
 		}
 		await applyActivityRecord(this.ctx, did, collection, payload.record);
+	}
+
+	private async refreshEmoji(payload: Payload): Promise<void> {
+		const { collection, rkey } = payload;
+		if (collection === undefined || rkey === undefined) return;
+		if (!emojiRegistry.forCollection(collection)) return;
+
+		const did = payload.did as string;
+		if (!(await isEmojiTracked(this.ctx, did))) return;
+
+		const deleted = payload.operation === "delete" || !payload.record;
+		await applyEmojiChange(this.ctx, {
+			owner: did,
+			collection,
+			rkey,
+			cid: payload.cid ?? null,
+			value: deleted ? null : (payload.record as Record<string, unknown>),
+		});
+		const community = await this.ctx.loader.community(did);
+		await announceEmoji(this.ctx, did, community ? "community" : "user");
 	}
 
 	private async announceProfile(did: string): Promise<void> {

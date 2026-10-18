@@ -23,6 +23,7 @@ COPY packages/bridge-discord/package.json packages/bridge-discord/
 COPY packages/community/package.json packages/community/
 COPY packages/db/package.json packages/db/
 COPY packages/embeds/package.json packages/embeds/
+COPY packages/emoji/package.json packages/emoji/
 COPY packages/identity/package.json packages/identity/
 COPY packages/lexicons/package.json packages/lexicons/
 COPY packages/notifications/package.json packages/notifications/

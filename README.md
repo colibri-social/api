@@ -36,6 +36,7 @@ carries the `openssl` lines that generate the two secrets.
 | `packages/notifications` | Notification indexing, Web Push and FCM                                                                                      |
 | `packages/blobs`         | CID-verified blob proxy for permissioned blobs, with image variants                                                          |
 | `packages/embeds`        | SSRF-guarded link previews and the GIF picker                                                                                |
+| `packages/emoji`         | Custom emoji providers that parse and build each supported emoji lexicon's records                                           |
 | `packages/voice`         | mediasoup voice SFU                                                                                                          |
 | `apps/appview`           | The server                                                                                                                   |
 | `apps/migrate`           | One-shot migration of repo-backed communities onto spaces                                                                    |

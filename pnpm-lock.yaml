@@ -158,6 +158,9 @@ importers:
       '@colibri-social/embeds':
         specifier: workspace:*
         version: link:../../packages/embeds
+      '@colibri-social/emoji':
+        specifier: workspace:*
+        version: link:../../packages/emoji
       '@colibri-social/identity':
         specifier: workspace:*
         version: link:../../packages/identity
@@ -372,6 +375,8 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 4.4.3
+
+  packages/emoji: {}
 
   packages/identity:
     dependencies:

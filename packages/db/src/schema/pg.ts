@@ -541,6 +541,63 @@ export const applications = pgTable(
 	],
 );
 
+export const emojiItems = pgTable(
+	"emoji_items",
+	{
+		owner: text("owner").notNull(),
+		collection: text("collection").notNull(),
+		rkey: text("rkey").notNull(),
+		provider: text("provider").notNull(),
+		uri: text("uri").notNull(),
+		cid: text("cid"),
+		name: text("name").notNull(),
+		value: json<Record<string, unknown>>("value").notNull(),
+		indexedAt: timestamp("indexed_at").notNull(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.owner, t.collection, t.rkey] }),
+		index("emoji_items_owner_name_idx").on(t.owner, t.name),
+	],
+);
+
+export const emojiPacks = pgTable(
+	"emoji_packs",
+	{
+		owner: text("owner").notNull(),
+		collection: text("collection").notNull(),
+		rkey: text("rkey").notNull(),
+		provider: text("provider").notNull(),
+		uri: text("uri").notNull(),
+		cid: text("cid"),
+		value: json<Record<string, unknown>>("value").notNull(),
+		indexedAt: timestamp("indexed_at").notNull(),
+	},
+	(t) => [primaryKey({ columns: [t.owner, t.collection, t.rkey] })],
+);
+
+export const emojiPackItems = pgTable(
+	"emoji_pack_items",
+	{
+		owner: text("owner").notNull(),
+		collection: text("collection").notNull(),
+		rkey: text("rkey").notNull(),
+		provider: text("provider").notNull(),
+		pack: text("pack").notNull(),
+		subject: text("subject").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.owner, t.collection, t.rkey] }),
+		index("emoji_pack_items_pack_idx").on(t.pack),
+		index("emoji_pack_items_subject_idx").on(t.subject),
+	],
+);
+
+export const emojiBackfills = pgTable("emoji_backfills", {
+	owner: text("owner").primaryKey(),
+	completedAt: timestamp("completed_at").notNull(),
+});
+
 export const userPresence = pgTable("user_presence", {
 	did: text("did").primaryKey(),
 	derivedState: text("derived_state").notNull().$type<OnlineState>().default("offline"),
@@ -715,6 +772,10 @@ export const schema = {
 	pushSubscriptions,
 	invitations,
 	applications,
+	emojiItems,
+	emojiPacks,
+	emojiPackItems,
+	emojiBackfills,
 	userPresence,
 	actorActivity,
 	identityCache,

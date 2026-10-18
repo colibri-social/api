@@ -16,6 +16,7 @@ import { registerCommunityRoutes } from "./routes/community.js";
 import { registerCommunityWriteRoutes } from "./routes/community-write.js";
 import { registerEmbedRoutes } from "./routes/embed.js";
 import { mountEmbedMediaRoutes } from "./routes/embed-media.js";
+import { registerEmojiRoutes } from "./routes/emoji.js";
 import { mountIdentityRoutes } from "./routes/identity.js";
 import { registerModerationRoutes } from "./routes/moderation.js";
 import { registerNotificationRoutes } from "./routes/notification.js";
@@ -71,6 +72,7 @@ export const createAppServer = (ctx: AppContext): Server => {
 	registerThreadWriteRoutes(deps);
 	registerVoiceRoutes(deps);
 	registerEmbedRoutes(deps);
+	registerEmojiRoutes(deps);
 	registerNotificationRoutes(deps);
 	registerServerRoutes(deps);
 	// NOTE: Humming was dropped with the rebuild, implementation follows after reconsideration

@@ -81,6 +81,22 @@ export class CommunityWriter {
 		await this.mirrorRemove(community, params);
 	}
 
+	async putPublic(
+		community: string,
+		write: { collection: string; rkey: string; record: Record<string, unknown> },
+	): Promise<{ uri: string; cid: string }> {
+		const { pds, session } = await this.deps.credentials.connect(community);
+		return pds.putRepoRecord(session, write);
+	}
+
+	async removePublic(
+		community: string,
+		params: { collection: string; rkey: string },
+	): Promise<void> {
+		const { pds, session } = await this.deps.credentials.connect(community);
+		await pds.deleteRepoRecord(session, params);
+	}
+
 	async createSpaceFor(
 		community: string,
 		params: Parameters<PdsClient["createSpace"]>[1],
