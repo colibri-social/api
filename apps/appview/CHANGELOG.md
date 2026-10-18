@@ -1,5 +1,23 @@
 # @colibri-social/appview
 
+## 2.23.0
+
+### Minor Changes
+
+- 8eba18b: Link previews carry more of what a page declares. `linkEmbed` gains `themeColor`, `layout`, `provider`, `author`, `publishedAt`, a `media` gallery and a `post` with formatted text, a content warning, engagement counts, a quoted post and the source language of a translation. The AppView reads `theme-color`, `twitter:card`, repeated `og:image` tags, the site icon and `article:published_time`, follows oEmbed links, resolves Mastodon statuses behind ActivityPub alternate links, and resolves X and fixer-domain post links through the FxEmbed API, honoring a trailing language code as a translation request.
+
+### Patch Changes
+
+- 8eba18b: Store messages and reactions sent in voice channel chats, only push voice chat notifications and edits to people in the call, and add the `inboxPresentation` client preference
+- Updated dependencies [8eba18b]
+- Updated dependencies [8eba18b]
+  - @colibri-social/lexicons@2.24.0
+  - @colibri-social/embeds@0.2.0
+  - @colibri-social/projections@1.12.1
+  - @colibri-social/appview-db@0.15.1
+  - @colibri-social/notifications@1.8.2
+  - @colibri-social/community@2.11.1
+
 ## 2.22.0
 
 ### Minor Changes
