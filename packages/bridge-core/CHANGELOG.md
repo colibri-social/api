@@ -1,5 +1,14 @@
 # @colibri-social/bridge-core
 
+## 0.2.6
+
+### Patch Changes
+
+- e23e784: Bare `http` and `https` URLs in bridged messages become link facets, so they get link previews and a message that is only a GIF URL shows the GIF. URLs inside code stay plain text, and `www.` and email literals aren't linked.
+- Updated dependencies [d2236e7]
+- Updated dependencies [d2236e7]
+  - @colibri-social/lexicons@2.20.0
+
 ## 0.2.5
 
 ### Patch Changes
