@@ -8,6 +8,7 @@ import {
 	type IndexedNotificationRow,
 	indexMessage,
 	type PushRouting,
+	type PushSenderProfile,
 } from "@colibri-social/notifications";
 import {
 	emojiSubjectOwner,
@@ -39,7 +40,7 @@ import { notificationDeps as buildNotificationDeps } from "./notification-deps.j
 import { pushDelivery } from "./push-delivery.js";
 import { loadPreferences } from "./routes/actor.js";
 import { reportFailure } from "./sentry.js";
-import { ActorViews } from "./views/actor.js";
+import { ActorViews, type ProfileView } from "./views/actor.js";
 import { ChannelViews } from "./views/channel.js";
 import { CommunityViews } from "./views/community.js";
 import { ThreadViews } from "./views/thread.js";
@@ -173,6 +174,13 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 
 	const notifications = buildNotificationDeps(ctx);
 
+	const notificationAuthors = actors.notificationAuthors();
+
+	const senderProfile = (profile: ProfileView): PushSenderProfile => ({
+		name: profile.displayName || profile.handle,
+		...(profile.avatar ? { avatar: profile.avatar } : {}),
+	});
+
 	const previewTextOf = (value: Record<string, unknown>): string => {
 		const own = String(value.text ?? "");
 		if (own.length > 0) return own;
@@ -185,7 +193,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		text: string,
 	): Promise<void> => {
 		if (rows.length === 0) return;
-		const views = await hydrateNotifications(notifications, rows, (dids) => actors.hydrate(dids));
+		const views = await hydrateNotifications(notifications, rows, notificationAuthors);
 		const byId = new Map(rows.map((row) => [row.id, row]));
 		const servable: ServableNotification[] = [];
 		for (const view of views) {
@@ -197,10 +205,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 				routing: {
 					channel: view.channel,
 					...(view.thread ? { thread: view.thread } : {}),
-					sender: {
-						name: view.author.displayName || view.author.handle,
-						...(view.author.avatar ? { avatar: view.author.avatar } : {}),
-					},
+					sender: senderProfile(view.author),
 				},
 			});
 		}
@@ -237,15 +242,25 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		text: string,
 	): Promise<void> => {
 		if (!push.enabled) return;
-		const [profile] = (await actors.hydrate([author])).values();
+		const table = ctx.database.tables.messages;
+		const [[profile], [message]] = await Promise.all([
+			actors.hydrate([author]).then((profiles) => [...profiles.values()]),
+			ctx.database.db
+				.select({ author: table.author, community: table.community, bridged: table.bridged })
+				.from(table)
+				.where(and(eq(table.space, space), eq(table.author, author), eq(table.rkey, rkey)))
+				.limit(1),
+		]);
 		await deliverMessageEdited(
 			notifications,
 			push.senders,
 			{ space, author, rkey, text },
 			profile
-				? {
-						name: profile.displayName || profile.handle,
-						...(profile.avatar ? { avatar: profile.avatar } : {}),
+				? (recipient) => {
+						const resolved = message
+							? actors.resolveMessageAuthor(message, profile, space, recipient)
+							: profile;
+						return senderProfile(resolved ?? profile);
 					}
 				: undefined,
 			push.options,

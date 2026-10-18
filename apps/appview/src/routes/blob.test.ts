@@ -1,5 +1,6 @@
+import { Writable } from "node:stream";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
-import { BlobNotFoundError } from "@colibri-social/blobs";
+import { BlobNotFoundError, BlobRejectedError, type BlobResult } from "@colibri-social/blobs";
 import { CommunityLoader } from "@colibri-social/community";
 import {
 	COLLECTIONS,
@@ -40,6 +41,8 @@ let handler: Handler;
 let served: number;
 let fetchedFrom: Array<string | undefined>;
 let missingIn: Set<string>;
+let nextResult: (() => BlobResult) | null;
+let logged: { level: string; detail: Record<string, unknown>; event: string }[];
 
 const fakeResponse = () => {
 	const captured: Captured = { status: 200, headers: {}, body: undefined };
@@ -59,6 +62,38 @@ const fakeResponse = () => {
 			captured.body = value ?? captured.body;
 			return res;
 		},
+	};
+	return { res, captured };
+};
+
+const streamingResponse = () => {
+	const captured: Captured & { chunks: Buffer[]; destroyed: boolean } = {
+		status: 200,
+		headers: {},
+		body: undefined,
+		chunks: [],
+		destroyed: false,
+	};
+	const res = new Writable({
+		write(chunk: Buffer, _encoding, callback) {
+			captured.chunks.push(chunk);
+			callback();
+		},
+		destroy(error, callback) {
+			captured.destroyed = true;
+			callback(error);
+		},
+	}) as Writable & Record<string, unknown>;
+	res.setHeader = (name: string, value: string) => {
+		captured.headers[name.toLowerCase()] = String(value);
+	};
+	res.status = (code: number) => {
+		captured.status = code;
+		return res;
+	};
+	res.json = (value: unknown) => {
+		captured.body = value;
+		return res;
 	};
 	return { res, captured };
 };
@@ -127,6 +162,8 @@ beforeEach(async () => {
 	served = 0;
 	fetchedFrom = [];
 	missingIn = new Set();
+	nextResult = null;
+	logged = [];
 	const spaces = communitySpaces(COMMUNITY);
 
 	await database.db.insert(database.tables.communities).values({
@@ -164,7 +201,13 @@ beforeEach(async () => {
 		config: { PUBLIC_URL: "https://appview.test", SIGNING_KEY },
 		database,
 		loader: new CommunityLoader({ db: database.db, tables: database.tables }),
-		log: { warn: () => {}, debug: () => {} },
+		log: {
+			warn: (detail: Record<string, unknown>, event: string) =>
+				logged.push({ level: "warn", detail, event }),
+			info: (detail: Record<string, unknown>, event: string) =>
+				logged.push({ level: "info", detail, event }),
+			debug: () => {},
+		},
 		bridges: { mayRead: async () => false },
 		serviceAuth: {
 			verify: async (token: string) => {
@@ -178,6 +221,7 @@ beforeEach(async () => {
 				fetchedFrom.push(space);
 				if (space && missingIn.has(space)) throw new BlobNotFoundError();
 				served += 1;
+				if (nextResult) return nextResult();
 				return {
 					status: "ok" as const,
 					bytes: new Uint8Array([1, 2, 3]),
@@ -307,5 +351,126 @@ describe("blob.get authorization", () => {
 		);
 		expect(result.status).toBe(401);
 		expect(served).toBe(0);
+	});
+
+	it("logs a missing blob with its code", async () => {
+		missingIn.add(SPACE);
+		await get({ did: AUTHOR, cid: CID, space: SPACE, ...signedFor(MEMBER) });
+		expect(logged).toContainEqual(
+			expect.objectContaining({
+				level: "info",
+				detail: expect.objectContaining({ code: "BlobNotFound" }),
+			}),
+		);
+	});
+});
+
+describe("blob.get streaming", () => {
+	const streamed = async (
+		chunks: Uint8Array[],
+		failure?: Error,
+		mimeType = "video/mp4",
+		query: Record<string, string> = {},
+	) => {
+		nextResult = () => ({
+			status: "stream",
+			stream: (async function* () {
+				for (const chunk of chunks) yield chunk;
+				if (failure) throw failure;
+			})(),
+			mimeType,
+			totalSize: 6,
+			length: 6,
+		});
+		const { res, captured } = streamingResponse();
+		await handler(
+			{
+				query: { did: AUTHOR, cid: CID, space: SPACE, ...signedFor(MEMBER), ...query },
+				headers: {},
+				url: "/xrpc/social.colibri.beta.blob.get",
+			},
+			res,
+		);
+		return captured;
+	};
+
+	it("streams a full blob with its declared length", async () => {
+		const captured = await streamed([new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6])]);
+		expect(captured.status).toBe(200);
+		expect(captured.headers["content-length"]).toBe("6");
+		expect(Buffer.concat(captured.chunks)).toEqual(Buffer.from([1, 2, 3, 4, 5, 6]));
+		expect(logged.map((entry) => entry.event)).not.toContain("blob.streamAborted");
+	});
+
+	it("destroys the response and logs when the CID check fails at the end", async () => {
+		const captured = await streamed(
+			[new Uint8Array([1, 2, 3])],
+			new BlobRejectedError("cidMismatch"),
+		);
+		expect(captured.destroyed).toBe(true);
+		expect(Buffer.concat(captured.chunks).byteLength).toBeLessThan(6);
+		expect(logged).toContainEqual(
+			expect.objectContaining({
+				level: "warn",
+				event: "blob.streamAborted",
+				detail: expect.objectContaining({ code: "BlobCidMismatch" }),
+			}),
+		);
+	});
+
+	it("streams a non-media blob as a sandboxed download", async () => {
+		const captured = await streamed(
+			[new Uint8Array([1, 2, 3, 4, 5, 6])],
+			undefined,
+			"application/octet-stream",
+			{ filename: "notes.zip" },
+		);
+		expect(captured.headers).toMatchObject({
+			"content-type": "application/octet-stream",
+			"content-disposition": 'attachment; filename="notes.zip"',
+			"x-content-type-options": "nosniff",
+			"content-security-policy": "sandbox; default-src 'none'",
+		});
+	});
+});
+
+describe("blob.get downloads", () => {
+	const buffered = (mimeType: string) => () => ({
+		status: "ok" as const,
+		bytes: new Uint8Array([1, 2, 3]),
+		mimeType,
+		totalSize: 3,
+	});
+
+	it("serves a non-media blob as a sandboxed download", async () => {
+		nextResult = buffered("application/octet-stream");
+		const result = await get({ did: AUTHOR, cid: CID, space: SPACE, ...signedFor(MEMBER) });
+		expect(result.status).toBe(200);
+		expect(result.headers).toMatchObject({
+			"content-type": "application/octet-stream",
+			"content-disposition": "attachment",
+			"x-content-type-options": "nosniff",
+			"content-security-policy": "sandbox; default-src 'none'",
+		});
+	});
+
+	it("keeps the filename on a download", async () => {
+		nextResult = buffered("application/octet-stream");
+		const result = await get({
+			did: AUTHOR,
+			cid: CID,
+			space: SPACE,
+			...signedFor(MEMBER),
+			filename: "photo.heic",
+		});
+		expect(result.headers["content-disposition"]).toBe('attachment; filename="photo.heic"');
+	});
+
+	it("keeps the sniffed type of a media blob", async () => {
+		nextResult = buffered("image/png");
+		const result = await get({ did: AUTHOR, cid: CID, space: SPACE, ...signedFor(MEMBER) });
+		expect(result.headers["content-type"]).toBe("image/png");
+		expect(result.headers["content-disposition"]).toBeUndefined();
+		expect(result.headers["content-security-policy"]).toBeUndefined();
 	});
 });

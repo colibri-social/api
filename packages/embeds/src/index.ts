@@ -8,3 +8,4 @@ export * from "./net.js";
 export * from "./preview.js";
 export * from "./types.js";
 export * from "./video.js";
+export * from "./youtube.js";

@@ -7,8 +7,19 @@ import { containsHeadClose, extractMetaTags, extractTitleTag } from "./html.js";
 import type { ImageMeasurer } from "./image.js";
 import type { EmbedImage, EmbedVideo, LinkEmbed, MeasuredImage } from "./types.js";
 import { type PlayableVideoType, playableVideoType, videoTypeFromExtension } from "./video.js";
+import {
+	fetchYouTubeOEmbed,
+	isYouTubeConsentPage,
+	parseYouTubeUrl,
+	YOUTUBE_CONSENT_COOKIE,
+	YOUTUBE_SITE_NAME,
+	type YouTubeLink,
+	youtubeFallbackPageUrl,
+} from "./youtube.js";
 
 const DEFAULT_MAX_HEAD_BYTES = 1024 * 1024;
+
+export const HTML_ACCEPT = "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8";
 
 let defaultPreviewCache: TtlCache<LinkEmbed> | undefined;
 
@@ -138,22 +149,20 @@ async function withMeasuredImage(
 	return { ...embed, image: { ...image, width: measured.width, height: measured.height } };
 }
 
-export async function fetchLinkPreview(
+type PageFetch = {
+	pageUrl: string;
+	headers?: Record<string, string>;
+};
+
+async function fetchOpenGraphPreview(
 	rawUrl: string,
-	options: LinkPreviewOptions = {},
-): Promise<LinkEmbed> {
-	const cache =
-		options.cache === null ? undefined : (options.cache ?? resolveDefaultPreviewCache());
-	const cacheKey = cache ? normalizeUrlCacheKey(rawUrl) : undefined;
-
-	if (cache && cacheKey) {
-		const cached = cache.get(cacheKey);
-		if (cached) return cached;
-	}
-
+	page: PageFetch,
+	options: LinkPreviewOptions,
+): Promise<{ embed: LinkEmbed; finalUrl: URL }> {
 	let result: GuardedFetchResult;
 	try {
-		result = await guardedFetch(rawUrl, {
+		result = await guardedFetch(page.pageUrl, {
+			headers: { accept: HTML_ACCEPT, ...page.headers },
 			timeoutMs: options.timeoutMs,
 			maxRedirects: options.maxRedirects,
 			maxResponseBytes: options.maxBytes ?? DEFAULT_MAX_HEAD_BYTES,
@@ -171,7 +180,45 @@ export async function fetchLinkPreview(
 	}
 
 	const html = result.body.toString("utf8");
-	const extracted = extractLinkMetadata(rawUrl, html, result.url);
+	return { embed: extractLinkMetadata(rawUrl, html, result.url), finalUrl: result.url };
+}
+
+async function fetchYouTubePreview(
+	rawUrl: string,
+	link: YouTubeLink,
+	options: LinkPreviewOptions,
+): Promise<LinkEmbed> {
+	const fromOEmbed = await fetchYouTubeOEmbed(rawUrl, link, options);
+	if (fromOEmbed) return fromOEmbed;
+
+	const { embed, finalUrl } = await fetchOpenGraphPreview(
+		rawUrl,
+		{ pageUrl: youtubeFallbackPageUrl(link), headers: { cookie: YOUTUBE_CONSENT_COOKIE } },
+		options,
+	);
+	if (isYouTubeConsentPage(embed, finalUrl)) {
+		throw upstreamFailure("YouTube answered with its consent page");
+	}
+	return { ...embed, siteName: YOUTUBE_SITE_NAME };
+}
+
+export async function fetchLinkPreview(
+	rawUrl: string,
+	options: LinkPreviewOptions = {},
+): Promise<LinkEmbed> {
+	const cache =
+		options.cache === null ? undefined : (options.cache ?? resolveDefaultPreviewCache());
+	const cacheKey = cache ? normalizeUrlCacheKey(rawUrl) : undefined;
+
+	if (cache && cacheKey) {
+		const cached = cache.get(cacheKey);
+		if (cached) return cached;
+	}
+
+	const youtube = parseYouTubeUrl(rawUrl);
+	const extracted = youtube
+		? await fetchYouTubePreview(rawUrl, youtube, options)
+		: (await fetchOpenGraphPreview(rawUrl, { pageUrl: rawUrl }, options)).embed;
 	const embed = await withMeasuredImage(extracted, options.measureImage);
 
 	if (cache && cacheKey) cache.set(cacheKey, embed);

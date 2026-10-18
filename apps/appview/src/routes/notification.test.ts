@@ -2,7 +2,7 @@ import { l } from "@atproto/lex-schema";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { CommunityLoader } from "@colibri-social/community";
 import { channelSpace, SPACE_TYPES, social, threadSpace } from "@colibri-social/lexicons";
-import { type ActorHydrator, issueReadToken } from "@colibri-social/notifications";
+import { issueReadToken, type NotificationAuthors } from "@colibri-social/notifications";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { silentAnnouncer } from "../announce.js";
@@ -40,7 +40,7 @@ let database: TestDatabase;
 let ctx: AppContext;
 let announced: { did: string; frame: ServerFrame }[];
 
-const noProfiles: ActorHydrator = async () => new Map();
+const noProfiles: NotificationAuthors = { hydrate: async () => new Map() };
 
 const asGetUnseenOutput = (body: unknown): void => {
 	const { output } = l.getMain(social.colibri.beta.notification.getUnseen);

@@ -99,6 +99,19 @@ const addRole = (rkey: string, position: number, isProtected = false, permission
 		channelOverrides: [],
 	});
 
+const addDefaultRole = (rkey: string) =>
+	database.db.insert(database.tables.roles).values({
+		community: COMMUNITY,
+		rkey,
+		name: "Members",
+		permissions: ["thread.create"],
+		position: 0,
+		isDefault: true,
+	});
+
+const rolesOf = async (did: string): Promise<string[] | undefined> =>
+	(await loader.authz(COMMUNITY, did)).member?.roles;
+
 const addMember = (did: string, roles: string[]) =>
 	database.db.insert(database.tables.members).values({
 		community: COMMUNITY,
@@ -203,9 +216,76 @@ afterEach(async () => {
 	await database.destroy();
 });
 
+describe("default roles", () => {
+	beforeEach(async () => {
+		await addDefaultRole("members");
+	});
+
+	it("gives a joiner every default role", async () => {
+		expect(await membership.join(COMMUNITY, OUTSIDER)).toEqual({
+			status: "joined",
+			roles: ["members"],
+		});
+		expect(await rolesOf(OUTSIDER)).toEqual(["members"]);
+		const authz = await loader.authz(COMMUNITY, OUTSIDER);
+		expect(authz.roles.map((role) => role.rkey)).toEqual(["members"]);
+	});
+
+	it("gives an invited joiner every default role", async () => {
+		await addInvitation(1);
+
+		await membership.join(COMMUNITY, OUTSIDER, INVITE);
+		expect(await rolesOf(OUTSIDER)).toEqual(["members"]);
+	});
+
+	it("gives an approved applicant every default role", async () => {
+		await requireApproval();
+		await membership.join(COMMUNITY, OUTSIDER);
+
+		expect(await membership.approve(COMMUNITY, OUTSIDER)).toEqual(["members"]);
+		expect(await rolesOf(OUTSIDER)).toEqual(["members"]);
+	});
+
+	it("keeps every default role when roles are set without it", async () => {
+		await addMember(OUTSIDER, ["members"]);
+
+		expect(await membership.setRoles(COMMUNITY, OWNER, OUTSIDER, ["mod"])).toEqual([
+			"mod",
+			"members",
+		]);
+		expect(await rolesOf(OUTSIDER)).toEqual(["mod", "members"]);
+
+		expect(await membership.setRoles(COMMUNITY, OWNER, OUTSIDER, [])).toEqual(["members"]);
+		expect(await rolesOf(OUTSIDER)).toEqual(["members"]);
+	});
+
+	it("adds a missing default role back when roles change", async () => {
+		await addMember(OUTSIDER, []);
+
+		expect(await membership.setRoles(COMMUNITY, MOD, OUTSIDER, [])).toEqual(["members"]);
+	});
+
+	it("keeps the default role on both sides of an ownership transfer", async () => {
+		await addMember(OUTSIDER, ["members"]);
+
+		const transfer = await membership.transferOwnership(COMMUNITY, OWNER, OUTSIDER);
+
+		expect(transfer.owner).toEqual(["members", "owner"]);
+		expect(transfer.previousOwner).toEqual(["members"]);
+	});
+
+	it("merges default roles with the roles granted on admission", async () => {
+		expect(await membership.admit(COMMUNITY, OUTSIDER, ["mod", "members"])).toEqual([
+			"mod",
+			"members",
+		]);
+		expect(await rolesOf(OUTSIDER)).toEqual(["mod", "members"]);
+	});
+});
+
 describe("joining", () => {
 	it("admits straight away when the community is open", async () => {
-		expect(await membership.join(COMMUNITY, OUTSIDER)).toEqual({ status: "joined" });
+		expect(await membership.join(COMMUNITY, OUTSIDER)).toEqual({ status: "joined", roles: [] });
 		const authz = await loader.authz(COMMUNITY, OUTSIDER);
 		expect(authz.member).not.toBeNull();
 	});
@@ -270,7 +350,10 @@ describe("joining", () => {
 	it("admits an invited joiner straight away when the community is open", async () => {
 		await addInvitation(1);
 
-		expect(await membership.join(COMMUNITY, OUTSIDER, INVITE)).toEqual({ status: "joined" });
+		expect(await membership.join(COMMUNITY, OUTSIDER, INVITE)).toEqual({
+			status: "joined",
+			roles: [],
+		});
 		expect((await loader.authz(COMMUNITY, OUTSIDER)).member).not.toBeNull();
 		expect(await usesOf(INVITE)).toBe(1);
 	});

@@ -199,6 +199,7 @@ export const role: Projector<social.colibri.beta.role.Main> = {
 	schema: social.colibri.beta.role,
 	put: async (deps, ref, value) => {
 		const community = communityOf(ref.space);
+		const isDefault = value.default ?? false;
 		const row = {
 			community,
 			rkey: ref.rkey,
@@ -207,9 +208,10 @@ export const role: Projector<social.colibri.beta.role.Main> = {
 			badge: roleBadgeFromRecord(value.badge),
 			permissions: [...value.permissions],
 			position: value.position,
-			hoisted: value.hoisted ?? false,
-			mentionable: value.mentionable ?? false,
+			hoisted: !isDefault && (value.hoisted ?? false),
+			mentionable: !isDefault && (value.mentionable ?? false),
 			protected: value.protected ?? false,
+			isDefault,
 			channelOverrides: (value.channelOverrides ?? []).map((override) => ({
 				channel: override.channel,
 				allow: [...(override.allow ?? [])],

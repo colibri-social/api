@@ -1,7 +1,7 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
 import type { PushPlatform } from "@colibri-social/appview-db";
 import { asDatetime, social } from "@colibri-social/lexicons";
-import type { ActorHydrator } from "@colibri-social/notifications";
+import type { NotificationAuthors } from "@colibri-social/notifications";
 import {
 	clearNotifications,
 	hydrateNotifications,
@@ -76,13 +76,13 @@ const requireMessage = async (
 
 export const handleListNotifications = async (
 	ctx: AppContext,
-	hydrateActors: ActorHydrator,
+	authors: NotificationAuthors,
 	callerDid: string,
 	options: { limit?: number; cursor?: string },
 ) => {
 	const deps = notificationDeps(ctx);
 	const page = await listNotifications(deps, callerDid, options);
-	const notifications = await hydrateNotifications(deps, page.notifications, hydrateActors);
+	const notifications = await hydrateNotifications(deps, page.notifications, authors);
 	return { notifications, cursor: page.cursor };
 };
 
@@ -92,7 +92,7 @@ export const handleGetUnreadCount = async (ctx: AppContext, callerDid: string) =
 
 export const handleGetUnseen = async (
 	ctx: AppContext,
-	hydrateActors: ActorHydrator,
+	authors: NotificationAuthors,
 	callerDid: string,
 	channel: string,
 	limit: number,
@@ -101,7 +101,7 @@ export const handleGetUnseen = async (
 	const deps = notificationDeps(ctx);
 	const page = await unseenForChannelPage(deps, callerDid, channel, limit);
 	return {
-		notifications: await hydrateNotifications(deps, page.rows, hydrateActors, page.labels),
+		notifications: await hydrateNotifications(deps, page.rows, authors, page.labels),
 	};
 };
 
@@ -311,13 +311,13 @@ export const handleMarkReadFromNotification = async (
 
 export const registerNotificationRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 	const actors = new ActorViews(ctx);
-	const hydrateActors: ActorHydrator = (dids) => actors.hydrate(dids);
+	const authors = actors.notificationAuthors();
 
 	route(server, social.colibri.beta.notification.listNotifications, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => ({
 			encoding: "application/json" as const,
-			body: await handleListNotifications(ctx, hydrateActors, caller.credentials.did, {
+			body: await handleListNotifications(ctx, authors, caller.credentials.did, {
 				limit: params.limit,
 				cursor: params.cursor,
 			}),
@@ -338,7 +338,7 @@ export const registerNotificationRoutes = ({ server, ctx, auth }: RouteDeps): vo
 			encoding: "application/json" as const,
 			body: await handleGetUnseen(
 				ctx,
-				hydrateActors,
+				authors,
 				caller.credentials.did,
 				params.channel,
 				params.limit,

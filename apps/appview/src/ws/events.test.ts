@@ -46,6 +46,7 @@ const insiderRole = (): RoleState => ({
 	hoisted: false,
 	mentionable: false,
 	protected: false,
+	isDefault: false,
 	channelOverrides: [],
 });
 

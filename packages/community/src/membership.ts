@@ -41,7 +41,7 @@ export type OwnershipTransfer = {
 	previousOwner: string[];
 };
 
-export type JoinOutcome = { status: "joined" } | { status: "pending" };
+export type JoinOutcome = { status: "joined"; roles: string[] } | { status: "pending" };
 
 export class Membership {
 	private readonly now: () => Date;
@@ -105,11 +105,22 @@ export class Membership {
 
 		if (invitation) await this.consumeInvitation(invitation);
 
-		await this.admit(community, actor);
-		return { status: "joined" };
+		const roles = await this.admit(community, actor);
+		return { status: "joined", roles };
 	}
 
-	async admit(community: string, subject: string, roles: string[] = []): Promise<void> {
+	async defaultRoles(community: string): Promise<string[]> {
+		return (await this.deps.loader.roles(community))
+			.filter((role) => role.isDefault)
+			.map((role) => role.rkey);
+	}
+
+	async withDefaultRoles(community: string, roles: readonly string[]): Promise<string[]> {
+		return [...new Set([...roles, ...(await this.defaultRoles(community))])];
+	}
+
+	async admit(community: string, subject: string, granted: string[] = []): Promise<string[]> {
+		const roles = await this.withDefaultRoles(community, granted);
 		await this.deps.writer.put(community, {
 			space: this.deps.writer.spaces(community).members,
 			collection: COLLECTIONS.member,
@@ -129,9 +140,10 @@ export class Membership {
 					eq(this.deps.tables.applications.did, subject),
 				),
 			);
+		return roles;
 	}
 
-	async approve(community: string, subject: string): Promise<void> {
+	async approve(community: string, subject: string): Promise<string[]> {
 		const [application] = await this.deps.db
 			.select()
 			.from(this.deps.tables.applications)
@@ -145,8 +157,9 @@ export class Membership {
 		if (!application) {
 			throw new MembershipError("applicationNotFound", `${subject} has not applied to join`);
 		}
-		await this.admit(community, subject);
+		const roles = await this.admit(community, subject);
 		if (application.invitation) await this.consumeInvitation(application.invitation);
+		return roles;
 	}
 
 	async dismiss(community: string, subject: string, dismissed: boolean): Promise<void> {
@@ -218,8 +231,9 @@ export class Membership {
 	private async writeRoles(
 		community: string,
 		member: { did: string; joinedAt: string; nickname: string | null },
-		roles: string[],
-	): Promise<void> {
+		requested: string[],
+	): Promise<string[]> {
+		const roles = await this.withDefaultRoles(community, requested);
 		await this.deps.writer.put(community, {
 			space: this.deps.writer.spaces(community).members,
 			collection: COLLECTIONS.member,
@@ -232,6 +246,7 @@ export class Membership {
 				...(member.nickname ? { nickname: member.nickname } : {}),
 			},
 		});
+		return roles;
 	}
 
 	async transferOwnership(
@@ -262,12 +277,16 @@ export class Membership {
 			throw new MembershipError("roleNotFound", "this community has no owner role");
 		}
 
-		const owner = [...new Set([...target.member.roles, ...ownerRoles])];
-		await this.writeRoles(community, target.member, owner);
+		const owner = await this.writeRoles(community, target.member, [
+			...new Set([...target.member.roles, ...ownerRoles]),
+		]);
 
 		if (!acting.member) return { owner, previousOwner: [] };
-		const previousOwner = acting.member.roles.filter((rkey) => !ownerRoles.includes(rkey));
-		await this.writeRoles(community, acting.member, previousOwner);
+		const previousOwner = await this.writeRoles(
+			community,
+			acting.member,
+			acting.member.roles.filter((rkey) => !ownerRoles.includes(rkey)),
+		);
 		return { owner, previousOwner };
 	}
 
@@ -275,8 +294,8 @@ export class Membership {
 		community: string,
 		actor: string,
 		subject: string,
-		roles: string[],
-	): Promise<void> {
+		requested: string[],
+	): Promise<string[]> {
 		const [acting, target] = await Promise.all([
 			this.deps.loader.authz(community, actor),
 			this.deps.loader.authz(community, subject),
@@ -287,6 +306,12 @@ export class Membership {
 		}
 
 		const known = await this.deps.loader.roles(community);
+		const roles = [
+			...new Set([
+				...requested,
+				...known.filter((role) => role.isDefault).map((role) => role.rkey),
+			]),
+		];
 		const byKey = new Map(known.map((role) => [role.rkey, role]));
 		const touched = [...new Set([...roles, ...target.member.roles])].filter(
 			(rkey) => !roles.includes(rkey) || !target.member?.roles.includes(rkey),
@@ -294,6 +319,7 @@ export class Membership {
 		for (const rkey of touched) {
 			const role = byKey.get(rkey);
 			if (!role) throw new MembershipError("roleNotFound", `no role ${rkey} in this community`);
+			if (role.isDefault) continue;
 			if (!acting.isOwner && !outranksPositionOf(acting, role.position)) {
 				throw new MembershipError("hierarchy", `you do not outrank the role ${role.name}`);
 			}
@@ -311,6 +337,7 @@ export class Membership {
 				...(target.member.nickname ? { nickname: target.member.nickname } : {}),
 			},
 		});
+		return roles;
 	}
 }
 

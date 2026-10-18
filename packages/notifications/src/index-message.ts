@@ -111,7 +111,7 @@ const expandRoleMentions = async (
 	const authorizedRoles: Array<{ rkey: string; name: string }> = [];
 	for (const roleKey of roleKeys) {
 		const role = rolesByKey.get(roleKey);
-		if (!role) continue;
+		if (!role || role.isDefault) continue;
 		if (!role.mentionable && !(await authorCanMentionAnyRole())) continue;
 		authorizedRoles.push({ rkey: role.rkey, name: role.name });
 	}

@@ -242,6 +242,7 @@ export const roles = pgTable(
 		hoisted: flag("hoisted").notNull().default(false),
 		mentionable: flag("mentionable").notNull().default(false),
 		protected: flag("protected").notNull().default(false),
+		isDefault: flag("is_default").notNull().default(false),
 		channelOverrides: json<RoleChannelOverride[]>("channel_overrides")
 			.notNull()
 			.$defaultFn(() => []),

@@ -37,6 +37,7 @@ const provisioned = (did: string) => ({
 	handle: "byo.example",
 	spaces: communitySpaces(did),
 	ownerRole: "3lkowner000000",
+	memberRole: "3lkmembers0000",
 	channels: { text: "at://text", voice: "at://voice" },
 });
 

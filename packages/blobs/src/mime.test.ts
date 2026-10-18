@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { BlobRejectedError } from "./errors.js";
-import { ALLOWED_MIME_TYPES, sniffMimeType } from "./mime.js";
+import { ALLOWED_MIME_TYPES, DOWNLOAD_MIME_TYPE, sniffMimeType, sniffServedType } from "./mime.js";
 
 const pngBytes = () =>
 	sharp({ create: { width: 4, height: 4, channels: 3, background: { r: 1, g: 2, b: 3 } } })
@@ -46,5 +46,20 @@ describe("sniffMimeType", () => {
 		expect(ALLOWED_MIME_TYPES).toContain("image/jpeg");
 		expect(ALLOWED_MIME_TYPES).toContain("application/pdf");
 		expect(ALLOWED_MIME_TYPES).not.toContain("text/html");
+	});
+});
+
+describe("sniffServedType", () => {
+	it("keeps the sniffed type of a media blob", async () => {
+		expect(await sniffServedType(await pngBytes())).toBe("image/png");
+	});
+
+	it("serves HTML, SVG and unknown bytes as a download", async () => {
+		const html = new TextEncoder().encode("<!doctype html><html><body>hi</body></html>");
+		const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+		const zip = new Uint8Array([0x50, 0x4b, 0x03, 0x04, ...new Uint8Array(60)]);
+		for (const bytes of [html, svg, zip, new Uint8Array(32)]) {
+			expect(await sniffServedType(bytes)).toBe(DOWNLOAD_MIME_TYPE);
+		}
 	});
 });

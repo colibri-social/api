@@ -270,6 +270,23 @@ describe("adopting an existing account", () => {
 		expect(collections).toContain("social.colibri.beta.community.settings");
 	});
 
+	it("creates a default members role that the creator holds next to the owner role", async () => {
+		const result = await adopt();
+
+		const roles = writes.filter((write) => write.collection === "social.colibri.beta.role");
+		expect(roles.map((write) => write.record)).toEqual([
+			expect.objectContaining({ name: "Owner", protected: true }),
+			expect.objectContaining({
+				name: "Members",
+				permissions: ["thread.create"],
+				position: 0,
+				default: true,
+			}),
+		]);
+		const creator = writes.find((write) => write.collection === "social.colibri.beta.member");
+		expect(creator?.record.roles).toEqual([result.ownerRole, result.memberRole]);
+	});
+
 	it("records every space it creates, so the sync engine can find them", async () => {
 		const provisioned = await adopt();
 

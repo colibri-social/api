@@ -29,13 +29,19 @@ const member = async (did: string, roles: string[] = []) => {
 
 const role = async (
 	rkey: string,
-	options: Partial<{ name: string; mentionable: boolean; permissions: string[] }> = {},
+	options: Partial<{
+		name: string;
+		mentionable: boolean;
+		permissions: string[];
+		isDefault: boolean;
+	}> = {},
 ) => {
 	await database.db.insert(database.tables.roles).values({
 		community: COMMUNITY,
 		rkey,
 		name: options.name ?? rkey,
 		mentionable: options.mentionable ?? false,
+		isDefault: options.isDefault ?? false,
 		permissions: options.permissions ?? [],
 	});
 };
@@ -354,6 +360,35 @@ describe("indexMessage", () => {
 			const rows = await rowsFor(holder);
 			expect(rows).toHaveLength(1);
 			expect(rows[0]?.kind).toBe("mention");
+		});
+
+		it("never notifies holders of the default role, even when it claims to be mentionable", async () => {
+			const holder = "did:plc:holder0000000000000000000";
+			await role("3lkmembers", { name: "Members", mentionable: true, isDefault: true });
+			await role("3lkrole2", { name: "Staff", permissions: ["mention.roles"] });
+			await member(holder, ["3lkmembers"]);
+			await notificationLevel(holder, "mentionsAndReplies");
+			await database.db
+				.update(database.tables.members)
+				.set({ roles: ["3lkrole2"] })
+				.where(
+					and(
+						eq(database.tables.members.community, COMMUNITY),
+						eq(database.tables.members.did, AUTHOR),
+					),
+				);
+
+			await indexMessage(deps, {
+				space: CHANNEL,
+				community: COMMUNITY,
+				author: AUTHOR,
+				rkey: "3lkmsg1",
+				facets: [roleFacet("3lkmembers")],
+				parentAuthor: null,
+				parentRkey: null,
+			});
+
+			expect(await rowsFor(holder)).toHaveLength(0);
 		});
 
 		it("does not notify role holders for a non-mentionable role when the author lacks mention.roles", async () => {

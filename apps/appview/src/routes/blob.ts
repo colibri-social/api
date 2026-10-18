@@ -1,4 +1,11 @@
-import { BlobNotFoundError, BlobRejectedError, type Variant } from "@colibri-social/blobs";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import {
+	BlobNotFoundError,
+	BlobRejectedError,
+	isDownloadMimeType,
+	type Variant,
+} from "@colibri-social/blobs";
 import { decideSpaceAccess } from "@colibri-social/community";
 import { movedInto } from "@colibri-social/projections";
 import { tryParseSpaceRef } from "@colibri-social/space";
@@ -82,6 +89,32 @@ const unauthenticated = (message: string): SpaceViewer => ({
 	error: "AuthRequired",
 	message,
 });
+
+const rejectionCode = (error: BlobRejectedError): string => {
+	if (error.reason === "cidMismatch") return "BlobCidMismatch";
+	if (error.reason === "tooLarge") return "BlobTooLarge";
+	return "BlobMimeNotAllowed";
+};
+
+const isClientDisconnect = (error: unknown): boolean =>
+	(error as { code?: unknown } | null)?.code === "ERR_STREAM_PREMATURE_CLOSE";
+
+const streamBlob = async (
+	ctx: AppContext,
+	res: Response,
+	stream: AsyncIterable<Uint8Array>,
+	blob: { did: string; cid: string; space: string | undefined },
+): Promise<void> => {
+	try {
+		await pipeline(Readable.from(stream, { objectMode: false }), res);
+	} catch (error) {
+		res.destroy();
+		if (isClientDisconnect(error)) return;
+		const code =
+			error instanceof BlobRejectedError ? rejectionCode(error) : "BlobStreamInterrupted";
+		ctx.log.warn({ code, ...blob, error }, "blob.streamAborted");
+	}
+};
 
 export const mountBlobRoutes = (ctx: AppContext, app: Router): void => {
 	const viewerForSpace = async (
@@ -207,34 +240,47 @@ export const mountBlobRoutes = (ctx: AppContext, app: Router): void => {
 				if (space) res.setHeader("vary", "authorization");
 
 				const filename = asString(req.query.filename);
-				if (filename) {
+				const download = isDownloadMimeType(blob.mimeType);
+				if (filename || download) {
 					res.setHeader(
 						"content-disposition",
-						`attachment; filename="${encodeURIComponent(filename)}"`,
+						filename ? `attachment; filename="${encodeURIComponent(filename)}"` : "attachment",
 					);
+				}
+				if (download) {
+					res.setHeader("x-content-type-options", "nosniff");
+					res.setHeader("content-security-policy", "sandbox; default-src 'none'");
 				}
 
 				if (blob.range) {
 					res.setHeader(
 						"content-range",
-						`bytes ${blob.range.start}-${blob.range.end}/${blob.totalSize}`,
+						`bytes ${blob.range.start}-${blob.range.end}/${blob.totalSize ?? "*"}`,
 					);
 					res.status(206);
+				}
+
+				if (blob.status === "stream") {
+					if (blob.length !== null) res.setHeader("content-length", String(blob.length));
+					await streamBlob(ctx, res, blob.stream, { did, cid, space });
+					return;
 				}
 
 				res.setHeader("content-length", String(blob.bytes.byteLength));
 				res.end(Buffer.from(blob.bytes));
 			} catch (error) {
 				if (error instanceof BlobNotFoundError) {
+					ctx.log.info({ code: "BlobNotFound", did, cid, space }, "blob.notFound");
 					res.status(404).json({ error: "BlobNotFound", message: error.message });
 					return;
 				}
 				if (error instanceof BlobRejectedError) {
 					const status = error.reason === "cidMismatch" ? 502 : 400;
+					ctx.log.warn({ code: rejectionCode(error), did, cid, space, status }, "blob.rejected");
 					res.status(status).json({ error: "InvalidRequest", message: error.message });
 					return;
 				}
-				ctx.log.warn({ did, cid, error }, "blob.failed");
+				ctx.log.warn({ code: "BlobUpstreamFailure", did, cid, error }, "blob.failed");
 				res.status(502).json({ error: "UpstreamFailure", message: "could not serve this blob" });
 			}
 		}),

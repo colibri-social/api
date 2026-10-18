@@ -345,6 +345,11 @@ type RoleView = { $type?: "social.colibri.beta.community.defs#roleView";
   "protected"?:boolean;
 
   /**
+   * Whether every member holds this role from the moment they join.
+   */
+  "default"?:boolean;
+
+  /**
    * Per-channel overrides.
    */
   "channelOverrides"?:(RoleChannelOverride)[];
@@ -357,7 +362,7 @@ type RoleView = { $type?: "social.colibri.beta.community.defs#roleView";
 export type { RoleView };
 
 /** A role. */
-const roleView = /*#__PURE__*/ l.typedObject<RoleView>($nsid, "roleView", /*#__PURE__*/ l.object({"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"name":/*#__PURE__*/ l.string(),"color":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":7})),"badge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<RoleIconBadge>((() => roleIconBadge) as any),/*#__PURE__*/ l.typedRef<RoleImageBadgeView>((() => roleImageBadgeView) as any)], false)),"permissions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ),"position":/*#__PURE__*/ l.integer(),"hoisted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"mentionable":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"protected":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"channelOverrides":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RoleChannelOverride>((() => roleChannelOverride) as any), )),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer())}));
+const roleView = /*#__PURE__*/ l.typedObject<RoleView>($nsid, "roleView", /*#__PURE__*/ l.object({"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"name":/*#__PURE__*/ l.string(),"color":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":7})),"badge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<RoleIconBadge>((() => roleIconBadge) as any),/*#__PURE__*/ l.typedRef<RoleImageBadgeView>((() => roleImageBadgeView) as any)], false)),"permissions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ),"position":/*#__PURE__*/ l.integer(),"hoisted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"mentionable":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"protected":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"default":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"channelOverrides":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RoleChannelOverride>((() => roleChannelOverride) as any), )),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer())}));
 
 export { roleView };
 

@@ -188,7 +188,9 @@ describe("hidden messages", () => {
 		expect((await listNotifications(deps, RECIPIENT)).notifications).toHaveLength(0);
 
 		const rows = await database.db.select().from(database.tables.notifications);
-		expect(await hydrateNotifications(deps, rows, async () => new Map())).toHaveLength(0);
+		expect(await hydrateNotifications(deps, rows, { hydrate: async () => new Map() })).toHaveLength(
+			0,
+		);
 	});
 
 	it("brings the notification back when the hidden label is retracted", async () => {
@@ -207,7 +209,7 @@ describe("hidden messages", () => {
 		await insertLabel("3lkmsg1", "spoiler");
 
 		const rows = await database.db.select().from(database.tables.notifications);
-		const [view] = await hydrateNotifications(deps, rows, async () => new Map());
+		const [view] = await hydrateNotifications(deps, rows, { hydrate: async () => new Map() });
 		expect(view?.message?.text).toBe("hello world");
 		expect(view?.message?.labels).toEqual([
 			expect.objectContaining({ src: COMMUNITY, val: "spoiler" }),
@@ -237,7 +239,9 @@ describe("hydrateNotifications", () => {
 			syncBluesky: false,
 		};
 		const rows = await database.db.select().from(database.tables.notifications);
-		const [view] = await hydrateNotifications(deps, rows, async () => new Map([[AUTHOR, profile]]));
+		const [view] = await hydrateNotifications(deps, rows, {
+			hydrate: async () => new Map([[AUTHOR, profile]]),
+		});
 
 		expect(view?.author).toEqual(profile);
 		expect(view?.message?.text).toBe("hello world");
@@ -249,16 +253,101 @@ describe("hydrateNotifications", () => {
 		readable = new Set();
 
 		const rows = await database.db.select().from(database.tables.notifications);
-		expect(await hydrateNotifications(deps, rows, async () => new Map())).toHaveLength(0);
+		expect(await hydrateNotifications(deps, rows, { hydrate: async () => new Map() })).toHaveLength(
+			0,
+		);
 		expect(await listNotifications(deps, RECIPIENT)).toMatchObject({ notifications: [] });
 	});
 
 	it("falls back to a stub profile when the actor hydrator doesn't resolve a DID", async () => {
 		await insertNotification({ kind: "message" });
 		const rows = await database.db.select().from(database.tables.notifications);
-		const [view] = await hydrateNotifications(deps, rows, async () => new Map());
+		const [view] = await hydrateNotifications(deps, rows, { hydrate: async () => new Map() });
 		expect(view?.author.did).toBe(AUTHOR);
 		expect(view?.message).toBeUndefined();
+	});
+
+	it("resolves a bridged author for the notification and its embedded message", async () => {
+		await database.db.insert(database.tables.messages).values({
+			space: CHANNEL,
+			author: COMMUNITY,
+			rkey: "3lkmsg1",
+			community: COMMUNITY,
+			text: "from the bridge",
+			facets: null,
+			createdAt: "2026-08-23T00:00:00.000Z",
+			indexedAt: "2026-08-23T00:00:00.000Z",
+			bridged: {
+				registration: "3lkregistration",
+				platform: "chat",
+				remoteId: "42",
+				name: "Remote Ruth",
+			},
+		});
+		await database.db.insert(database.tables.notifications).values({
+			id: nextId(),
+			recipient: RECIPIENT,
+			kind: "mention",
+			community: COMMUNITY,
+			space: CHANNEL,
+			author: COMMUNITY,
+			messageAuthor: COMMUNITY,
+			messageRkey: "3lkmsg1",
+			mentionRole: null,
+			indexedAt: "2026-08-23T00:00:00.000Z",
+			seenAt: null,
+		});
+		const community: ProfileView = {
+			did: COMMUNITY,
+			handle: "community.test",
+			displayName: "Community",
+			isBot: false,
+			syncBluesky: false,
+		};
+		const seen: { name?: string; recipient: string }[] = [];
+
+		const rows = await database.db.select().from(database.tables.notifications);
+		const [view] = await hydrateNotifications(deps, rows, {
+			hydrate: async () => new Map([[COMMUNITY, community]]),
+			resolveMessageAuthor: (message, profile, recipient) => {
+				seen.push({ name: message.bridged?.name, recipient });
+				return { ...profile, displayName: message.bridged?.name ?? profile.displayName };
+			},
+		});
+
+		expect(seen).toEqual([{ name: "Remote Ruth", recipient: RECIPIENT }]);
+		expect(view?.author.displayName).toBe("Remote Ruth");
+		expect(view?.message?.author.displayName).toBe("Remote Ruth");
+	});
+
+	it("keeps the notification author when it differs from the message author", async () => {
+		await insertMessage("3lkmsg1");
+		await database.db.insert(database.tables.notifications).values({
+			id: nextId(),
+			recipient: RECIPIENT,
+			kind: "reply",
+			community: COMMUNITY,
+			space: CHANNEL,
+			author: RECIPIENT,
+			messageAuthor: AUTHOR,
+			messageRkey: "3lkmsg1",
+			mentionRole: null,
+			indexedAt: "2026-08-23T00:00:00.000Z",
+			seenAt: null,
+		});
+		let calls = 0;
+
+		const rows = await database.db.select().from(database.tables.notifications);
+		const [view] = await hydrateNotifications(deps, rows, {
+			hydrate: async () => new Map(),
+			resolveMessageAuthor: (_message, profile) => {
+				calls += 1;
+				return profile;
+			},
+		});
+
+		expect(calls).toBe(0);
+		expect(view?.author.did).toBe(RECIPIENT);
 	});
 });
 
@@ -291,7 +380,12 @@ describe("unseenForChannelPage", () => {
 		await insertLabel("3lkmsg1", "spoiler");
 
 		const page = await unseenForChannelPage(deps, RECIPIENT, CHANNEL);
-		const views = await hydrateNotifications(deps, page.rows, async () => new Map(), page.labels);
+		const views = await hydrateNotifications(
+			deps,
+			page.rows,
+			{ hydrate: async () => new Map() },
+			page.labels,
+		);
 
 		expect(views).toHaveLength(1);
 		expect(views[0]?.message?.labels).toEqual([
@@ -306,7 +400,12 @@ describe("unseenForChannelPage", () => {
 		}
 
 		const page = await unseenForChannelPage(deps, RECIPIENT, CHANNEL);
-		const views = await hydrateNotifications(deps, page.rows, async () => new Map(), page.labels);
+		const views = await hydrateNotifications(
+			deps,
+			page.rows,
+			{ hydrate: async () => new Map() },
+			page.labels,
+		);
 
 		expect(views).toHaveLength(3);
 		expect(views.map((view) => view.message?.text).sort()).toEqual([

@@ -561,6 +561,24 @@ describe("delivery with place, badge and read action", () => {
 		});
 	});
 
+	it("asks for the edit sender once per recipient", async () => {
+		await insertNotification({ space: THREAD });
+		const asked: string[] = [];
+
+		await deliverMessageEdited(
+			deps,
+			senders(),
+			{ space: THREAD, author: notification.author, rkey: "3lkmsg1", text: "fixed typo" },
+			(recipient) => {
+				asked.push(recipient);
+				return { name: "Remote Ruth" };
+			},
+		);
+
+		expect(asked).toEqual([ACTOR]);
+		expect(sent[0]?.payload).toMatchObject({ data: { authorName: "Remote Ruth" } });
+	});
+
 	it("sends a read only for a channel with notifications through the cursor", async () => {
 		await insertNotification({ messageRkey: "3lkmsg5" });
 

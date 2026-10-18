@@ -25,6 +25,7 @@ const toRole = (row: Schema["roles"]["$inferSelect"]): RoleState => ({
 	hoisted: row.hoisted,
 	mentionable: row.mentionable,
 	protected: row.protected,
+	isDefault: row.isDefault,
 	channelOverrides: row.channelOverrides,
 });
 

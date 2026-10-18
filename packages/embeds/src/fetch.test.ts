@@ -179,6 +179,32 @@ describe("guardedFetch redirect handling", () => {
 		expect(result.body.toString("utf8")).toBe("hello");
 	});
 
+	it("sends English locale headers that a caller can override", async () => {
+		const mockAgent = newMockAgent();
+		const pool = mockAgent.get("http://93.184.216.34");
+		pool
+			.intercept({
+				path: "/default",
+				method: "GET",
+				headers: { "accept-language": "en-US,en;q=0.9" },
+			})
+			.reply(200, "hello");
+		pool
+			.intercept({ path: "/override", method: "GET", headers: { "accept-language": "fi" } })
+			.reply(200, "moi");
+
+		const defaulted = await guardedFetch("http://93.184.216.34/default", {
+			dispatcher: mockAgent,
+		});
+		const overridden = await guardedFetch("http://93.184.216.34/override", {
+			dispatcher: mockAgent,
+			headers: { "accept-language": "fi" },
+		});
+
+		expect(defaulted.body.toString("utf8")).toBe("hello");
+		expect(overridden.body.toString("utf8")).toBe("moi");
+	});
+
 	it("gives up after the redirect cap is exceeded", async () => {
 		const mockAgent = newMockAgent();
 		const pool = mockAgent.get("http://93.184.216.34");

@@ -133,6 +133,7 @@ const messageRecordUri = (space: string, author: string, rkey: string): string |
 export const messageTag = (author: string, rkey: string): string => `${author}/${rkey}`;
 
 export type PushSenderProfile = { name: string; avatar?: string };
+export type PushSenderFor = (recipient: string) => PushSenderProfile | undefined;
 
 export type PushRouting = {
 	channel: string;
@@ -332,15 +333,18 @@ export const deliverMessageEdited = async (
 	deps: NotificationDeps,
 	senders: Senders,
 	message: MessageRef & { text: string },
-	sender: PushSenderProfile | undefined,
+	sender: PushSenderProfile | PushSenderFor | undefined,
 	options: DeliveryOptions = {},
 ): Promise<number> => {
 	const rows = await notificationsForMessage(deps, message.space, message.author, message.rkey);
 	if (rows.length === 0) return 0;
 	const place = await resolvePlace(deps, message.space);
+	const profileFor = (recipient: string) =>
+		typeof sender === "function" ? sender(recipient) : sender;
 	await Promise.all(
-		rows.map((row) =>
-			deliverNotification(
+		rows.map((row) => {
+			const profile = profileFor(row.recipient);
+			return deliverNotification(
 				deps,
 				senders,
 				row,
@@ -348,11 +352,11 @@ export const deliverMessageEdited = async (
 				{
 					channel: place.channel,
 					...(place.thread ? { thread: place.thread } : {}),
-					...(sender ? { sender } : {}),
+					...(profile ? { sender: profile } : {}),
 				},
 				{ ...options, type: "edit", place },
-			),
-		),
+			);
+		}),
 	);
 	return rows.length;
 };

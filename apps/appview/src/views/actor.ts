@@ -9,9 +9,11 @@ import {
 	COLLECTIONS,
 	type social,
 } from "@colibri-social/lexicons";
+import type { NotificationAuthors } from "@colibri-social/notifications";
 import { PdsClient, XrpcError } from "@colibri-social/space";
 import { inArray } from "drizzle-orm";
 import type { AppContext } from "../context.js";
+import { signBlobUrl } from "../media-token.js";
 import { presenceOf } from "../presence.js";
 import { loadActivities } from "./activity.js";
 
@@ -32,6 +34,12 @@ type BlueskyProfile = {
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
 export type HydrateOptions = { refresh?: ReadonlySet<string> };
+
+export type AuthoredMessage = {
+	author: string;
+	community: string | null;
+	bridged: BridgedAttribution | null;
+};
 const BSKY_PROFILE = "app.bsky.actor.profile";
 
 const resolve = (colibri: ColibriProfile | null, bsky: BlueskyProfile | null) => {
@@ -112,6 +120,41 @@ export class ActorViews {
 				},
 			});
 		return { colibri, bsky };
+	}
+
+	spaceBlobUrl(did: string, cid: string, space: string, viewer: string | null): string {
+		const url = new URL("/xrpc/social.colibri.beta.blob.get", this.ctx.config.PUBLIC_URL);
+		url.searchParams.set("did", did);
+		url.searchParams.set("cid", cid);
+		url.searchParams.set("space", space);
+		return viewer ? this.signForViewer(url.toString(), viewer) : url.toString();
+	}
+
+	signForViewer(url: string, viewer: string): string {
+		return signBlobUrl(this.ctx.config.SIGNING_KEY, url, viewer, Math.floor(Date.now() / 1000));
+	}
+
+	resolveMessageAuthor(
+		message: AuthoredMessage,
+		profile: ProfileView | undefined,
+		space: string,
+		viewer: string | null,
+	): ProfileView | undefined {
+		if (!profile || !message.bridged || message.author !== message.community) return profile;
+		const cid = blobCid(message.bridged.avatar);
+		return this.bridgedProfile(
+			profile,
+			message.bridged,
+			cid ? this.spaceBlobUrl(message.community, cid, space, viewer) : undefined,
+		);
+	}
+
+	notificationAuthors(): NotificationAuthors {
+		return {
+			hydrate: (dids) => this.hydrate(dids),
+			resolveMessageAuthor: (message, profile, recipient) =>
+				this.resolveMessageAuthor(message, profile, message.space, recipient) ?? profile,
+		};
 	}
 
 	bridgedProfile(

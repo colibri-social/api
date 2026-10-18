@@ -297,7 +297,7 @@ export class ThreadViews {
 			mentioned.push(...extractMentionedDids(facets));
 			for (const key of extractMentionedRoles(facets)) {
 				const role = rolesByKey.get(key);
-				if (!role || mentionedRoles.has(key)) continue;
+				if (!role || role.isDefault || mentionedRoles.has(key)) continue;
 				if (role.mentionable || canMentionAnyRole(message.author)) mentionedRoles.add(key);
 			}
 		}

@@ -8,6 +8,7 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_REDIRECTS = 5;
 const DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 const USER_AGENT = "Mozilla/5.0 (compatible; ColibriBot/1.0; +https://colibri.social)";
+export const ACCEPT_LANGUAGE = "en-US,en;q=0.9";
 
 export type ResolvedAddress = {
 	address: string;
@@ -214,7 +215,11 @@ export async function guardedFetch(
 				response = await request(current, {
 					dispatcher,
 					method: (options.method ?? "GET") as Dispatcher.HttpMethod,
-					headers: { "user-agent": USER_AGENT, ...options.headers },
+					headers: {
+						"user-agent": USER_AGENT,
+						"accept-language": ACCEPT_LANGUAGE,
+						...options.headers,
+					},
 					body: options.body,
 					signal,
 				});

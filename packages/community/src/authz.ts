@@ -15,6 +15,7 @@ export type RoleState = {
 	hoisted: boolean;
 	mentionable: boolean;
 	protected: boolean;
+	isDefault: boolean;
 	channelOverrides: ChannelOverride[];
 };
 

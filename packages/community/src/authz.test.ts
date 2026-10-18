@@ -45,6 +45,7 @@ const member = (did: string, roles: string[] = []): ActorAuthz => ({
 		hoisted: false,
 		mentionable: false,
 		protected: false,
+		isDefault: false,
 		channelOverrides: [],
 	})),
 });

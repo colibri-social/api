@@ -4,6 +4,8 @@ import {
 	CommunityCredentialError,
 	communitySpaceUris,
 	customEmojiPolicy,
+	DEFAULT_ROLE_NAME,
+	DEFAULT_ROLE_PERMISSIONS,
 	generatePassword,
 	has,
 	isAdmin,
@@ -40,6 +42,7 @@ import {
 	memberGoneEvent,
 } from "../announce.js";
 import type { AppContext } from "../context.js";
+import { backfillDefaultRole } from "../heal.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
 import type { CommunityView } from "../views/community.js";
@@ -120,7 +123,12 @@ const provisionedView = async (
 		community: provisioned.did,
 		isOwner: false,
 		isBanned: false,
-		member: { did: callerDid, roles: [provisioned.ownerRole], joinedAt: now, nickname: null },
+		member: {
+			did: callerDid,
+			roles: [provisioned.ownerRole, provisioned.memberRole],
+			joinedAt: now,
+			nickname: null,
+		},
 		roles: [
 			{
 				rkey: provisioned.ownerRole,
@@ -130,6 +138,18 @@ const provisionedView = async (
 				hoisted: true,
 				mentionable: false,
 				protected: true,
+				isDefault: false,
+				channelOverrides: [],
+			},
+			{
+				rkey: provisioned.memberRole,
+				name: DEFAULT_ROLE_NAME,
+				permissions: [...DEFAULT_ROLE_PERMISSIONS],
+				position: 0,
+				hoisted: false,
+				mentionable: false,
+				protected: false,
+				isDefault: true,
 				channelOverrides: [],
 			},
 		],
@@ -538,7 +558,7 @@ export const handleJoinCommunity = async (
 
 		const member: MemberView = {
 			actor: await actors.one(callerDid),
-			roles: [],
+			roles: outcome.roles.map(asRecordKey),
 			joinedAt: asDatetime(new Date().toISOString()),
 			nickname: undefined,
 		};
@@ -579,8 +599,9 @@ export const handleSetMemberRoles = async (
 	if (!has(authz, "role.manage")) throw forbidden("role.manage");
 
 	const targetBefore = await ctx.loader.authz(input.community, input.subject);
+	let roles: string[];
 	try {
-		await membership.setRoles(input.community, callerDid, input.subject, input.roles);
+		roles = await membership.setRoles(input.community, callerDid, input.subject, input.roles);
 	} catch (error) {
 		if (error instanceof MembershipError) throw membershipErrorToXrpc(error);
 		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);
@@ -589,7 +610,7 @@ export const handleSetMemberRoles = async (
 
 	const member: MemberView = {
 		actor: await actors.one(input.subject),
-		roles: input.roles.map(asRecordKey),
+		roles: roles.map(asRecordKey),
 		joinedAt: asDatetime(targetBefore.member?.joinedAt ?? new Date().toISOString()),
 		nickname: targetBefore.member?.nickname ?? undefined,
 	};
@@ -775,6 +796,7 @@ export const handleRegisterCredentials = async (
 		password: input.password,
 		source: "registered",
 	});
+	void backfillDefaultRole(ctx, input.community);
 };
 
 const legacyUri = (community: string) =>
@@ -870,6 +892,7 @@ export const handleMigrateCommunity = async (
 		indexedAt: new Date().toISOString(),
 	};
 
+	await backfillDefaultRole(ctx, legacyDid);
 	const authz = await ctx.loader.authz(legacyDid, callerDid);
 	return { community: await communities.community(row, authz, report.members) };
 };

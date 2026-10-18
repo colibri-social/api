@@ -54,6 +54,11 @@ type Main = { $type: "social.colibri.beta.role";
   "protected"?:boolean;
 
   /**
+   * Whether every member holds this role from the moment they join. Set on the members role created with the community. A default role cannot be deleted.
+   */
+  "default"?:boolean;
+
+  /**
    * Per-channel permission overrides.
    */
   "channelOverrides"?:(ChannelOverride)[] };
@@ -61,7 +66,7 @@ type Main = { $type: "social.colibri.beta.role";
 export type { Main };
 
 /** A named bundle of permissions assignable to community members. */
-const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"color":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":7})),"badge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<IconBadge>((() => iconBadge) as any),/*#__PURE__*/ l.typedRef<ImageBadge>((() => imageBadge) as any)], false)),"permissions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ),"position":/*#__PURE__*/ l.integer(),"hoisted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"mentionable":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"protected":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"channelOverrides":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ChannelOverride>((() => channelOverride) as any), ))}));
+const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"color":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":7})),"badge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<IconBadge>((() => iconBadge) as any),/*#__PURE__*/ l.typedRef<ImageBadge>((() => imageBadge) as any)], false)),"permissions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ),"position":/*#__PURE__*/ l.integer(),"hoisted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"mentionable":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"protected":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"default":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"channelOverrides":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ChannelOverride>((() => channelOverride) as any), ))}));
 
 export { main };
 

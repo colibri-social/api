@@ -76,6 +76,7 @@ const fakeWriter = (): CommunityWriter => {
 					hoisted?: boolean;
 					mentionable?: boolean;
 					protected?: boolean;
+					default?: boolean;
 					channelOverrides?: Array<{ channel: string; allow: string[]; deny: string[] }>;
 					badge?: BadgeRecord;
 				};
@@ -90,6 +91,7 @@ const fakeWriter = (): CommunityWriter => {
 					hoisted: record.hoisted ?? false,
 					mentionable: record.mentionable ?? false,
 					protected: record.protected ?? false,
+					isDefault: record.default ?? false,
 					channelOverrides: record.channelOverrides ?? [],
 				};
 				await database.db
@@ -297,6 +299,68 @@ describe("updating a role", () => {
 			},
 		);
 		expect(result.role.name).toBe("Helper renamed");
+	});
+});
+
+describe("the default role", () => {
+	beforeEach(async () => {
+		await database.db.insert(database.tables.roles).values({
+			community: COMMUNITY,
+			rkey: "members",
+			name: "Members",
+			permissions: ["thread.create"],
+			position: 0,
+			isDefault: true,
+		});
+	});
+
+	it("refuses deleting it", async () => {
+		await expect(
+			handleDeleteRole(ctx, fakeWriter(), COMMUNITY, OWNER, "members"),
+		).rejects.toMatchObject({ customErrorName: "RoleDefault" });
+		expect(removals).toEqual([]);
+	});
+
+	it("stays the default role when it is edited", async () => {
+		const result = await handleUpdateRole(
+			ctx,
+			fakeWriter(),
+			communities,
+			COMMUNITY,
+			MOD,
+			"members",
+			{ name: "Everyone" },
+		);
+
+		expect(result.role.default).toBe(true);
+		expect(writes.at(-1)?.write.record.default).toBe(true);
+	});
+
+	it("never lets it become hoisted or mentionable", async () => {
+		const result = await handleUpdateRole(
+			ctx,
+			fakeWriter(),
+			communities,
+			COMMUNITY,
+			MOD,
+			"members",
+			{ hoisted: true, mentionable: true },
+		);
+
+		expect(result.role.hoisted).toBe(false);
+		expect(result.role.mentionable).toBe(false);
+		expect(writes.at(-1)?.write.record).toMatchObject({ hoisted: false, mentionable: false });
+	});
+
+	it("marks only the default role as default in the view", async () => {
+		const created = await handleCreateRole(ctx, fakeWriter(), communities, COMMUNITY, MOD, {
+			name: "New",
+			permissions: [],
+			position: 10,
+		});
+
+		expect(created.role.default).toBe(false);
+		expect(writes.at(-1)?.write.record.default).toBeUndefined();
 	});
 });
 

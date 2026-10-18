@@ -37,6 +37,12 @@ const roleNotFound = () =>
 const roleProtected = (action: "modified" | "deleted") =>
 	new InvalidRequestError(`this role is protected and cannot be ${action}`, "RoleProtected");
 
+const roleDefault = () =>
+	new InvalidRequestError("every member holds this role, so it cannot be deleted", "RoleDefault");
+
+const defaultFlag = (isDefault: boolean): Record<string, unknown> =>
+	isDefault ? { default: true } : {};
+
 const roleHierarchy = (message: string) => new InvalidRequestError(message, "RoleHierarchy");
 
 const invalidBadge = (message: string) => new InvalidRequestError(message, "InvalidRequest");
@@ -188,6 +194,7 @@ export const handleCreateRole = async (
 					hoisted: input.hoisted ?? false,
 					mentionable: input.mentionable ?? false,
 					protected: false,
+					isDefault: false,
 					channelOverrides: [],
 				},
 				actor,
@@ -243,8 +250,8 @@ export const handleUpdateRole = async (
 		const name = input.name ?? existing.name;
 		const color = input.color ?? existing.color ?? undefined;
 		const permissions = input.permissions ?? existing.permissions;
-		const hoisted = input.hoisted ?? existing.hoisted;
-		const mentionable = input.mentionable ?? existing.mentionable;
+		const hoisted = !existing.isDefault && (input.hoisted ?? existing.hoisted);
+		const mentionable = !existing.isDefault && (input.mentionable ?? existing.mentionable);
 		const channelOverrides = (input.channelOverrides ?? existing.channelOverrides).map(
 			(override) => ({
 				channel: override.channel,
@@ -265,6 +272,7 @@ export const handleUpdateRole = async (
 				hoisted,
 				mentionable,
 				protected: false,
+				...defaultFlag(existing.isDefault),
 				channelOverrides,
 				...(color ? { color } : {}),
 				...badgeRecord(badge),
@@ -285,6 +293,7 @@ export const handleUpdateRole = async (
 					hoisted,
 					mentionable,
 					protected: false,
+					isDefault: existing.isDefault,
 					channelOverrides,
 				},
 				actor,
@@ -309,6 +318,7 @@ export const handleDeleteRole = async (
 		const existing = await loadRoleRow(ctx, community, rkey);
 		if (!existing) throw roleNotFound();
 		if (existing.protected) throw roleProtected("deleted");
+		if (existing.isDefault) throw roleDefault();
 		if (!outranksPosition(authz, existing.position)) {
 			throw roleHierarchy("this role is at or above your own highest role's position");
 		}
@@ -424,9 +434,10 @@ export const handlePutRoleBadgeImage = async (
 				name: existing.name,
 				permissions: existing.permissions,
 				position: existing.position,
-				hoisted: existing.hoisted,
-				mentionable: existing.mentionable,
+				hoisted: !existing.isDefault && existing.hoisted,
+				mentionable: !existing.isDefault && existing.mentionable,
 				protected: false,
+				...defaultFlag(existing.isDefault),
 				channelOverrides,
 				...(existing.color ? { color: existing.color } : {}),
 				...badgeRecord(badge),

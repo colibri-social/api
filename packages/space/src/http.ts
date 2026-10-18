@@ -18,6 +18,7 @@ export type XrpcClientOptions = {
 	service: string;
 	fetch?: typeof globalThis.fetch;
 	timeoutMs?: number;
+	idleTimeoutMs?: number;
 	userAgent?: string;
 };
 
@@ -46,6 +47,47 @@ const parseFailure = async (response: Response, method: string): Promise<XrpcErr
 	return new XrpcError(response.status, code, message, method);
 };
 
+const idleTimeoutError = (method: string) =>
+	new XrpcError(504, "UpstreamTimeout", "the upstream body stalled", method);
+
+const withIdleTimeout = (
+	body: ReadableStream<Uint8Array>,
+	controller: AbortController,
+	idleMs: number,
+	method: string,
+): ReadableStream<Uint8Array> => {
+	const reader = body.getReader();
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let stalled = false;
+	const stop = () => {
+		if (timer) clearTimeout(timer);
+		timer = undefined;
+	};
+	return new ReadableStream<Uint8Array>({
+		async pull(out) {
+			timer = setTimeout(() => {
+				stalled = true;
+				controller.abort(idleTimeoutError(method));
+				void reader.cancel().catch(() => undefined);
+			}, idleMs);
+			try {
+				const { done, value } = await reader.read();
+				stop();
+				if (stalled) out.error(idleTimeoutError(method));
+				else if (done) out.close();
+				else out.enqueue(value);
+			} catch (error) {
+				stop();
+				out.error(stalled ? idleTimeoutError(method) : error);
+			}
+		},
+		async cancel(reason) {
+			stop();
+			await reader.cancel(reason).catch(() => undefined);
+		},
+	});
+};
+
 const setAll = (headers: Headers, values: Record<string, string>): void => {
 	for (const [name, value] of Object.entries(values)) headers.set(name, value);
 };
@@ -53,10 +95,12 @@ const setAll = (headers: Headers, values: Record<string, string>): void => {
 export class XrpcClient {
 	private readonly fetchImpl: typeof globalThis.fetch;
 	private readonly timeoutMs: number;
+	private readonly idleTimeoutMs: number;
 
 	constructor(private readonly options: XrpcClientOptions) {
 		this.fetchImpl = options.fetch ?? globalThis.fetch;
 		this.timeoutMs = options.timeoutMs ?? 30_000;
+		this.idleTimeoutMs = options.idleTimeoutMs ?? 30_000;
 	}
 
 	get service(): string {
@@ -88,7 +132,23 @@ export class XrpcClient {
 		params: QueryParams = {},
 		auth: Auth = { kind: "none" },
 	): Promise<Response> {
-		return this.send(nsid, "GET", params, undefined, auth);
+		const controller = new AbortController();
+		const headersTimer = setTimeout(
+			() => controller.abort(new DOMException("headers timed out", "TimeoutError")),
+			this.timeoutMs,
+		);
+		let response: Response;
+		try {
+			response = await this.send(nsid, "GET", params, undefined, auth, controller.signal);
+		} finally {
+			clearTimeout(headersTimer);
+		}
+		if (!response.body) return response;
+		return new Response(withIdleTimeout(response.body, controller, this.idleTimeoutMs, nsid), {
+			status: response.status,
+			statusText: response.statusText,
+			headers: response.headers,
+		});
 	}
 
 	private urlFor(nsid: string, params: QueryParams): string {
@@ -134,6 +194,7 @@ export class XrpcClient {
 		params: QueryParams,
 		body: unknown,
 		auth: Auth,
+		signal: AbortSignal = AbortSignal.timeout(this.timeoutMs),
 	): Promise<Response> {
 		const url = this.urlFor(nsid, params);
 		const attempt = async (): Promise<Response> => {
@@ -143,7 +204,7 @@ export class XrpcClient {
 				method,
 				headers,
 				body: body === undefined ? undefined : JSON.stringify(body),
-				signal: AbortSignal.timeout(this.timeoutMs),
+				signal,
 			});
 		};
 

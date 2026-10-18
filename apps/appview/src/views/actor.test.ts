@@ -137,3 +137,66 @@ describe("ActorViews.hydrate", () => {
 		expect(profile.pronouns).toBe(expected);
 	});
 });
+
+describe("resolveMessageAuthor", () => {
+	const COMMUNITY = "did:plc:communityxxxxxxxxxxxxxxxxxxx";
+	const SPACE = `at://${COMMUNITY}/social.colibri.beta.channel.text/3lkchannelaaaa`;
+	const VIEWER = "did:plc:viewerxxxxxxxxxxxxxxxxxxxxxx";
+	const community = {
+		did: COMMUNITY,
+		handle: "community.test",
+		displayName: "Community",
+		isBot: false,
+		syncBluesky: false,
+	} as never;
+	const bridged = {
+		registration: "3lkbridgeaaaa",
+		platform: "chat",
+		remoteId: "ruth-1",
+		name: "Remote Ruth",
+		avatar: { $type: "blob", ref: { $link: AVATAR_CID }, mimeType: "image/png", size: 1 },
+	};
+	const resolver = () =>
+		new ActorViews({
+			config: { PUBLIC_URL: "https://appview.test", SIGNING_KEY: "c".repeat(64) },
+		} as unknown as AppContext);
+
+	it("swaps in the remote author with an avatar signed for the viewer", () => {
+		const author = resolver().resolveMessageAuthor(
+			{ author: COMMUNITY, community: COMMUNITY, bridged },
+			community,
+			SPACE,
+			VIEWER,
+		);
+
+		expect(author?.displayName).toBe("Remote Ruth");
+		expect(author?.bridge?.remoteId).toBe("ruth-1");
+		const avatar = new URL(author?.avatar ?? "");
+		expect(avatar.searchParams.get("did")).toBe(COMMUNITY);
+		expect(avatar.searchParams.get("space")).toBe(SPACE);
+		expect(avatar.searchParams.get("viewer")).toBe(VIEWER);
+		expect(avatar.searchParams.get("sig")).toBeTruthy();
+	});
+
+	it("leaves the avatar unsigned when there is no viewer", () => {
+		const author = resolver().resolveMessageAuthor(
+			{ author: COMMUNITY, community: COMMUNITY, bridged },
+			community,
+			SPACE,
+			null,
+		);
+
+		expect(new URL(author?.avatar ?? "").searchParams.has("sig")).toBe(false);
+	});
+
+	it("keeps the profile for a message the community did not write", () => {
+		const author = resolver().resolveMessageAuthor(
+			{ author: ACTOR, community: COMMUNITY, bridged },
+			community,
+			SPACE,
+			VIEWER,
+		);
+
+		expect(author).toBe(community);
+	});
+});

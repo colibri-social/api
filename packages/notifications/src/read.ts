@@ -32,6 +32,15 @@ export type MessageView = social.colibri.beta.channel.defs.MessageView;
 export type Facet = social.colibri.beta.richtext.facet.Main;
 
 export type ActorHydrator = (dids: string[]) => Promise<Map<string, ProfileView>>;
+export type MessageAuthorResolver = (
+	message: MessageRow,
+	profile: ProfileView,
+	recipient: string,
+) => ProfileView;
+export type NotificationAuthors = {
+	hydrate: ActorHydrator;
+	resolveMessageAuthor?: MessageAuthorResolver;
+};
 export type LabelView = social.colibri.beta.community.defs.LabelView;
 export type ForwardView = social.colibri.beta.channel.defs.ForwardView;
 
@@ -483,7 +492,7 @@ const parentChannels = async (
 export const hydrateNotifications = async (
 	deps: NotificationDeps,
 	rows: readonly NotificationRow[],
-	hydrateActors: ActorHydrator,
+	authors: NotificationAuthors,
 	known?: LabelIndex,
 ): Promise<NotificationView[]> => {
 	if (rows.length === 0) return [];
@@ -495,7 +504,7 @@ export const hydrateNotifications = async (
 
 	const authorDids = [...new Set(servable.map((row) => row.author))];
 	const [profiles, messages, channels] = await Promise.all([
-		hydrateActors(authorDids),
+		authors.hydrate(authorDids),
 		loadMessages(deps, servable),
 		parentChannels(
 			deps,
@@ -504,8 +513,12 @@ export const hydrateNotifications = async (
 	]);
 
 	return servable.map((row) => {
-		const author = profiles.get(row.author) ?? fallbackProfile(row.author);
+		const profile = profiles.get(row.author) ?? fallbackProfile(row.author);
 		const messageRow = messages.get(messageKey(row.space, row.messageAuthor, row.messageRkey));
+		const author =
+			messageRow && messageRow.author === row.author && authors.resolveMessageAuthor
+				? authors.resolveMessageAuthor(messageRow, profile, row.recipient)
+				: profile;
 		const messageLabelsForRow =
 			labels.get(row.space)?.get(messageRefKey(row.messageAuthor, row.messageRkey)) ?? [];
 		const parent = channels.get(row.space);

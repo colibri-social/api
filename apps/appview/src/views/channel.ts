@@ -34,8 +34,7 @@ import { parseSpaceRef, spaceRecordUri } from "@colibri-social/space";
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { linkUrisOf } from "../link-embeds.js";
-import { signBlobUrl } from "../media-token.js";
-import type { ActorViews, ProfileView } from "./actor.js";
+import type { ActorViews } from "./actor.js";
 import { type LinkEmbedView, toLinkEmbedView } from "./embed.js";
 
 export type MessageView = social.colibri.beta.channel.defs.MessageView;
@@ -121,15 +120,11 @@ export class ChannelViews {
 	) {}
 
 	private blobUrl(did: string, cid: string, space: string, viewer: string | null): string {
-		const url = new URL("/xrpc/social.colibri.beta.blob.get", this.ctx.config.PUBLIC_URL);
-		url.searchParams.set("did", did);
-		url.searchParams.set("cid", cid);
-		url.searchParams.set("space", space);
-		return viewer ? this.signFor(url.toString(), viewer) : url.toString();
+		return this.actors.spaceBlobUrl(did, cid, space, viewer);
 	}
 
 	private signFor(url: string, viewer: string): string {
-		return signBlobUrl(this.ctx.config.SIGNING_KEY, url, viewer, Math.floor(Date.now() / 1000));
+		return this.actors.signForViewer(url, viewer);
 	}
 
 	forViewer(message: MessageView, viewer: string): MessageView {
@@ -231,24 +226,6 @@ export class ChannelViews {
 						viewerReacted: viewer ? reactors.includes(viewer) : undefined,
 					}) as ReactionView,
 			);
-	}
-
-	private authorOf(
-		row: MessageRow,
-		community: string,
-		profiles: Map<string, ProfileView>,
-		space: string,
-		viewer: string | null,
-	): ProfileView | undefined {
-		const profile = profiles.get(row.author);
-		if (!profile || !row.bridged || row.author !== community) return profile;
-		const avatar = row.bridged.avatar as { ref?: { $link?: string } } | undefined;
-		const cid = avatar?.ref?.$link;
-		return this.actors.bridgedProfile(
-			profile,
-			row.bridged,
-			cid ? this.blobUrl(community, cid, space, viewer) : undefined,
-		);
 	}
 
 	async labelSources(community: string): Promise<string[]> {
@@ -707,7 +684,12 @@ export class ChannelViews {
 				uri: asAtUri(spaceRecordUri(space, row.author, COLLECTIONS.message, row.rkey)),
 				rkey: asRecordKey(row.rkey),
 				channel: asSpaceRef(space),
-				author: this.authorOf(row, community, profiles, readingSpace, viewer) as never,
+				author: this.actors.resolveMessageAuthor(
+					row,
+					profiles.get(row.author),
+					readingSpace,
+					viewer,
+				) as never,
 				text: row.text,
 				facets: facetsFor(row.facets),
 				createdAt: asDatetime(row.createdAt),

@@ -25,7 +25,7 @@ export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
 /** Deletes a role. */
-const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","Forbidden","CommunityNotFound","RoleNotFound","RoleProtected","RoleHierarchy","CredentialsUnavailable"]);
+const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","Forbidden","CommunityNotFound","RoleNotFound","RoleProtected","RoleDefault","RoleHierarchy","CredentialsUnavailable"]);
 
 export { main };
 

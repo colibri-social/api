@@ -2,6 +2,7 @@ import { LRUCache } from "lru-cache";
 import type { Variant } from "./variants.js";
 
 export const DEFAULT_CACHE_MAX_BYTES = 256 * 1024 * 1024;
+export const DEFAULT_CACHE_MAX_ENTRY_BYTES = 16 * 1024 * 1024;
 
 export type BlobCacheEntry = {
 	bytes: Uint8Array;
@@ -9,15 +10,18 @@ export type BlobCacheEntry = {
 };
 
 export type BlobCacheKey = {
+	did: string;
+	space?: string;
 	cid: string;
 	variant?: Variant;
 };
 
-export const blobCacheKey = ({ cid, variant }: BlobCacheKey): string =>
-	variant ? `${cid}@${variant}` : cid;
+export const blobCacheKey = ({ did, space, cid, variant }: BlobCacheKey): string =>
+	[did, space ?? "", cid, variant ?? ""].join(" ");
 
 export type BlobCacheOptions = {
 	maxBytes?: number;
+	maxEntryBytes?: number;
 };
 
 export type BlobCacheStats = {
@@ -26,14 +30,18 @@ export type BlobCacheStats = {
 };
 
 export class BlobCache {
+	readonly maxEntryBytes: number;
 	private readonly store: LRUCache<string, BlobCacheEntry>;
 	private hitCount = 0;
 	private missCount = 0;
 
 	constructor(options: BlobCacheOptions = {}) {
+		const maxBytes = options.maxBytes ?? DEFAULT_CACHE_MAX_BYTES;
+		this.maxEntryBytes = Math.min(options.maxEntryBytes ?? DEFAULT_CACHE_MAX_ENTRY_BYTES, maxBytes);
 		this.store = new LRUCache<string, BlobCacheEntry>({
-			maxSize: options.maxBytes ?? DEFAULT_CACHE_MAX_BYTES,
-			sizeCalculation: (entry) => entry.bytes.byteLength,
+			maxSize: maxBytes,
+			maxEntrySize: this.maxEntryBytes,
+			sizeCalculation: (entry) => Math.max(entry.bytes.byteLength, 1),
 		});
 	}
 
@@ -45,6 +53,7 @@ export class BlobCache {
 	}
 
 	set(key: BlobCacheKey, entry: BlobCacheEntry): void {
+		if (entry.bytes.byteLength > this.maxEntryBytes) return;
 		this.store.set(blobCacheKey(key), entry);
 	}
 

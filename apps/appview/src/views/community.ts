@@ -163,6 +163,7 @@ export class CommunityViews {
 			hoisted: row.hoisted,
 			mentionable: row.mentionable,
 			protected: row.protected,
+			default: row.isDefault,
 			channelOverrides: row.channelOverrides.map((override) => ({
 				channel: asRecordKey(override.channel),
 				allow: override.allow,

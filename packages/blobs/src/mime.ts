@@ -30,3 +30,15 @@ export const sniffMimeType = async (bytes: Uint8Array): Promise<AllowedMimeType>
 	}
 	return mimeType;
 };
+
+export const DOWNLOAD_MIME_TYPE = "application/octet-stream";
+
+export type ServedMimeType = AllowedMimeType | typeof DOWNLOAD_MIME_TYPE;
+
+export const isDownloadMimeType = (mimeType: string): boolean => mimeType === DOWNLOAD_MIME_TYPE;
+
+export const sniffServedType = async (bytes: Uint8Array): Promise<ServedMimeType> => {
+	const detected = await fileTypeFromBuffer(bytes);
+	const mimeType = detected?.mime.split(";")[0]?.trim();
+	return mimeType && isAllowedMimeType(mimeType) ? mimeType : DOWNLOAD_MIME_TYPE;
+};

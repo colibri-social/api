@@ -186,6 +186,27 @@ describe("community projections", () => {
 	});
 });
 
+describe("default roles", () => {
+	it("projects a default role as neither hoisted nor mentionable, whatever the record claims", async () => {
+		await applyChange(
+			deps,
+			put(SPACES.members, COMMUNITY, "social.colibri.beta.role", "3lkmembers", {
+				$type: "social.colibri.beta.role",
+				name: "Members",
+				permissions: ["thread.create"],
+				position: 0,
+				hoisted: true,
+				mentionable: true,
+				default: true,
+			}),
+		);
+
+		expect(skipped).toEqual([]);
+		const [row] = await database.db.select().from(database.tables.roles);
+		expect(row).toMatchObject({ isDefault: true, hoisted: false, mentionable: false });
+	});
+});
+
 describe("role badges", () => {
 	const roleWithBadge = (badge: Record<string, unknown>) => ({
 		$type: "social.colibri.beta.role",

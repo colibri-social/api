@@ -248,8 +248,9 @@ export const handleApproveApplication = async (
 		throw new InvalidRequestError(`${subject} already holds a member record`, "AlreadyMember");
 	}
 
+	let roles: string[];
 	try {
-		await membership.approve(community, subject);
+		roles = await membership.approve(community, subject);
 	} catch (error) {
 		if (error instanceof MembershipError) throw membershipErrorToXrpc(error);
 		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);
@@ -258,7 +259,7 @@ export const handleApproveApplication = async (
 
 	const member: MemberView = {
 		actor: await actors.one(subject),
-		roles: [],
+		roles: roles.map(asRecordKey),
 		joinedAt: asDatetime(new Date().toISOString()),
 		nickname: undefined,
 	};

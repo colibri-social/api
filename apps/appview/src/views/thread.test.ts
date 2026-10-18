@@ -169,7 +169,7 @@ describe("ThreadViews members", () => {
 		});
 	};
 
-	const putRole = async (mentionable: boolean) => {
+	const putRole = async (mentionable: boolean, isDefault = false) => {
 		await database.db.insert(database.tables.roles).values({
 			community: COMMUNITY,
 			rkey: ROLE,
@@ -177,6 +177,7 @@ describe("ThreadViews members", () => {
 			permissions: [],
 			position: 1,
 			mentionable,
+			isDefault,
 		});
 	};
 
@@ -222,6 +223,16 @@ describe("ThreadViews members", () => {
 		const members = await threads.members((await threads.row(THREAD))!);
 
 		expect(members).toEqual([AUTHOR, POSTER, PINGED, ROLE_HOLDER, FOLLOWER]);
+	});
+
+	it("skips a mention of the default role even when it claims to be mentionable", async () => {
+		await putRole(true, true);
+		await putThread();
+		await postInThread(POSTER, [roleMention(ROLE)]);
+
+		const members = await threads.members((await threads.row(THREAD))!);
+
+		expect(members).toEqual([POSTER]);
 	});
 
 	it("skips a role mention the author may not make", async () => {

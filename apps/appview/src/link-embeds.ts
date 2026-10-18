@@ -3,6 +3,7 @@ import {
 	createImageMeasurer,
 	fetchLinkPreview,
 	type ImageMeasurer,
+	isEmbedError,
 	type LinkEmbed,
 	normalizeUrlCacheKey,
 	type TtlCache,
@@ -106,7 +107,8 @@ export const createLinkEmbedResolver = (options: LinkEmbedResolverOptions): Link
 				cache.set(key, embed);
 			} catch (error) {
 				missedUntil.set(key, now() + MISS_TTL_MS);
-				log.debug({ uri, err: error }, "embed.unfurlFailed");
+				const code = isEmbedError(error) ? error.code : "UnfurlFailed";
+				log.debug({ uri, code, err: error }, "embed.unfurlFailed");
 			} finally {
 				inflight.delete(key);
 			}

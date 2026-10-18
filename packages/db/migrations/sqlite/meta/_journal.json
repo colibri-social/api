@@ -155,6 +155,13 @@
 			"when": 1792319731189,
 			"tag": "0021_busy_joystick",
 			"breakpoints": true
+		},
+		{
+			"idx": 22,
+			"version": "6",
+			"when": 1792327192359,
+			"tag": "0022_minor_carnage",
+			"breakpoints": true
 		}
 	]
 }

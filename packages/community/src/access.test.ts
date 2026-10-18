@@ -28,6 +28,7 @@ const role = (overrides: Partial<RoleState> = {}): RoleState => ({
 	hoisted: false,
 	mentionable: false,
 	protected: false,
+	isDefault: false,
 	channelOverrides: [],
 	...overrides,
 });

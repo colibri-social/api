@@ -21,6 +21,7 @@ import {
 } from "@colibri-social/space";
 import type { CommunityCredentials, CommunityHost } from "./credentials.js";
 import { generateHandlePrefix, generatePassword } from "./crypto.js";
+import { defaultRoleRecord } from "./heal.js";
 import type { SpaceRegistry } from "./spaces.js";
 
 export type ProvisionStep =
@@ -67,6 +68,7 @@ export type ProvisionedCommunity = {
 	handle: string;
 	spaces: CommunitySpaces;
 	ownerRole: string;
+	memberRole: string;
 	channels: { text: string; voice: string };
 };
 
@@ -276,6 +278,13 @@ export class CommunityProvisioner {
 				protected: true,
 			},
 		});
+		const memberRole = nextTid();
+		await host.pds.putRecord(host.session, {
+			space: spaces.members,
+			collection: COLLECTIONS.role,
+			rkey: memberRole,
+			record: defaultRoleRecord(0),
+		});
 		await host.pds.putRecord(host.session, {
 			space: spaces.members,
 			collection: COLLECTIONS.member,
@@ -283,7 +292,7 @@ export class CommunityProvisioner {
 			record: {
 				$type: COLLECTIONS.member,
 				subject: request.creator,
-				roles: [ownerRole],
+				roles: [ownerRole, memberRole],
 				joinedAt: this.now().toISOString(),
 			},
 		});
@@ -295,7 +304,7 @@ export class CommunityProvisioner {
 		});
 
 		report("done", TOTAL_STEPS, community);
-		return { spaces, ownerRole, channels };
+		return { spaces, ownerRole, memberRole, channels };
 	}
 
 	private handleFor(): string {
