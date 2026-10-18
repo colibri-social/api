@@ -1,5 +1,12 @@
 # @colibri-social/space-sync
 
+## 0.5.3
+
+### Patch Changes
+
+- Updated dependencies [56da297]
+  - @colibri-social/space@0.6.0
+
 ## 0.5.2
 
 ### Patch Changes
