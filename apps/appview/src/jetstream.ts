@@ -7,7 +7,8 @@ import { applyActivityRecord, clearActivityFrom } from "./activity.js";
 import { ACTIVITY_COLLECTIONS, activityProviderFor } from "./activity-providers.js";
 import { memberEvent } from "./announce.js";
 import type { AppContext } from "./context.js";
-import { announceEmoji, applyEmojiChange, isEmojiTracked } from "./emoji.js";
+import { applyEmojiChange, isEmojiTracked } from "./emoji.js";
+import { announceEmoji } from "./emoji-library.js";
 import { JETSTREAM_SUBPROTOCOL, jetstreamEndpoint } from "./jetstream-url.js";
 import { ActorViews } from "./views/actor.js";
 

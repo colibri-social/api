@@ -530,11 +530,11 @@ const invitationEvent = /*#__PURE__*/ l.typedObject<InvitationEvent>($nsid, "inv
 
 export { invitationEvent };
 
-/** A repo's custom emoji or packs changed. Sent to a community's subscribers for its own emoji, and to a user's own connections for theirs. Carries the whole catalog so clients replace it in one step. */
+/** A community's custom emoji or packs changed. Sent to the community's subscribers. Carries the whole catalog so clients replace it in one step. */
 type EmojiEvent = { $type?: "social.colibri.beta.sync.defs#emojiEvent";
 
   /**
-   * The community or user whose catalog changed.
+   * The community whose catalog changed.
    */
   "owner":l.DidString;
 
@@ -545,10 +545,25 @@ type EmojiEvent = { $type?: "social.colibri.beta.sync.defs#emojiEvent";
 
 export type { EmojiEvent };
 
-/** A repo's custom emoji or packs changed. Sent to a community's subscribers for its own emoji, and to a user's own connections for theirs. Carries the whole catalog so clients replace it in one step. */
+/** A community's custom emoji or packs changed. Sent to the community's subscribers. Carries the whole catalog so clients replace it in one step. */
 const emojiEvent = /*#__PURE__*/ l.typedObject<EmojiEvent>($nsid, "emojiEvent", /*#__PURE__*/ l.object({"owner":/*#__PURE__*/ l.string({"format":"did"}),"catalog":/*#__PURE__*/ l.ref<EmojiDefs.CatalogView>((() => EmojiDefs.catalogView) as any)}));
 
 export { emojiEvent };
+
+/** The user's emoji library changed. Sent to a user's own connections when their own emoji change, a follow is added or removed, or the owner of something they follow changes their emoji. Carries the whole library so clients replace it in one step. */
+type EmojiLibraryEvent = { $type?: "social.colibri.beta.sync.defs#emojiLibraryEvent";
+
+  /**
+   * The user's whole library after the change.
+   */
+  "library":EmojiDefs.LibraryView };
+
+export type { EmojiLibraryEvent };
+
+/** The user's emoji library changed. Sent to a user's own connections when their own emoji change, a follow is added or removed, or the owner of something they follow changes their emoji. Carries the whole library so clients replace it in one step. */
+const emojiLibraryEvent = /*#__PURE__*/ l.typedObject<EmojiLibraryEvent>($nsid, "emojiLibraryEvent", /*#__PURE__*/ l.object({"library":/*#__PURE__*/ l.ref<EmojiDefs.LibraryView>((() => EmojiDefs.libraryView) as any)}));
+
+export { emojiLibraryEvent };
 
 /** A label was applied or retracted on a record in a subscribed space. */
 type LabelEvent = { $type?: "social.colibri.beta.sync.defs#labelEvent";

@@ -643,7 +643,43 @@ describe("emoji commits", () => {
 			["wave", "wave", "blue.moji"],
 		]);
 		expect(userFrames).toHaveLength(1);
-		expect(userFrames[0]?.frame.$type).toBe("social.colibri.beta.sync.defs#emojiEvent");
+		expect(userFrames[0]?.frame.$type).toBe("social.colibri.beta.sync.defs#emojiLibraryEvent");
+	});
+
+	it("sends a fresh library to followers of the changed repo and nobody else", async () => {
+		const FOLLOWER = "did:plc:followeraaaaaaaaaaaaaaaaaa";
+		const BYSTANDER = "did:plc:bystanderaaaaaaaaaaaaaaaaa";
+		await track();
+		await database.db.insert(database.tables.emojiFollows).values([
+			{
+				follower: FOLLOWER,
+				rkey: "3kfollow",
+				subject: `at://${DID}/${ITEM}/wave`,
+				subjectOwner: DID,
+				createdAt: "2026-10-18T00:00:00.000Z",
+			},
+			{
+				follower: BYSTANDER,
+				rkey: "3kother",
+				subject: `at://did:plc:elsewhereaaaaaaaaaaaaaaaa/${ITEM}/owl`,
+				subjectOwner: "did:plc:elsewhereaaaaaaaaaaaaaaaa",
+				createdAt: "2026-10-18T00:00:00.000Z",
+			},
+		]);
+		const socket = await startAgainstServer();
+
+		socket.send(commitFrame(1, ITEM, "create", wave, DID, "wave"));
+		await settle();
+
+		expect(userFrames.map((entry) => entry.did).sort()).toEqual([DID, FOLLOWER].sort());
+		const follower = userFrames.find((entry) => entry.did === FOLLOWER)?.frame as {
+			$type: string;
+			library: { follows: Array<{ state: string; emojis: Array<{ name: string }> }> };
+		};
+		expect(follower.$type).toBe("social.colibri.beta.sync.defs#emojiLibraryEvent");
+		expect(follower.library.follows).toHaveLength(1);
+		expect(follower.library.follows[0]?.state).toBe("available");
+		expect(follower.library.follows[0]?.emojis.map((emoji) => emoji.name)).toEqual(["wave"]);
 	});
 
 	it("ignores emoji of a repo nobody asked for", async () => {

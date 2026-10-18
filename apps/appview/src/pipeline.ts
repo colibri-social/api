@@ -10,6 +10,7 @@ import {
 	type PushRouting,
 } from "@colibri-social/notifications";
 import {
+	emojiSubjectOwner,
 	isChannelSpace,
 	isPersonalSpace,
 	isThreadSpace,
@@ -30,6 +31,8 @@ import {
 	threadFrameForBridges,
 } from "./announce.js";
 import type { AppContext } from "./context.js";
+import { ensureEmojiTracked } from "./emoji.js";
+import { announceLibrary } from "./emoji-library.js";
 import { fireAndForget } from "./fire-and-forget.js";
 import { linkUrisOf } from "./link-embeds.js";
 import { notificationDeps as buildNotificationDeps } from "./notification-deps.js";
@@ -392,6 +395,24 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		}
 	};
 
+	const publishEmojiLibrary = async (did: string, puts: RepoChange["puts"]): Promise<void> => {
+		const owners = new Set(
+			puts.flatMap((put) => {
+				if (put.collection !== COLLECTIONS.emojiFollow) return [];
+				const owner = emojiSubjectOwner(String(put.value.subject ?? ""));
+				return owner && owner !== did ? [owner] : [];
+			}),
+		);
+		for (const owner of owners) {
+			await ensureEmojiTracked(ctx, owner).catch((error: unknown) =>
+				ctx.log.debug({ err: error, owner }, "emoji.ownerUnreachable"),
+			);
+		}
+		await announceLibrary(ctx, did).catch((error: unknown) =>
+			ctx.log.warn({ err: error, did }, "emoji.libraryAnnounceFailed"),
+		);
+	};
+
 	const handle = async (change: RepoChange): Promise<void> => {
 		const space = spaceContextFor(change.space);
 		if (!space) return;
@@ -407,6 +428,10 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 					push.readMoved(space.authority, put.rkey, readCursorsOf(put.value));
 				}
 			}
+			const follows = [...change.puts, ...change.deletes].filter(
+				(entry) => entry.collection === COLLECTIONS.emojiFollow,
+			);
+			if (follows.length > 0) await publishEmojiLibrary(space.authority, change.puts);
 			return;
 		}
 

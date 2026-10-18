@@ -99,11 +99,6 @@ type EmojiView = { $type?: "social.colibri.beta.emoji.defs#emojiView";
   "adultOnly"?:boolean;
 
   /**
-   * The emoji this one was copied from.
-   */
-  "copyOf"?:l.AtUriString;
-
-  /**
    * When the record was created.
    */
   "createdAt":l.DatetimeString };
@@ -111,7 +106,7 @@ type EmojiView = { $type?: "social.colibri.beta.emoji.defs#emojiView";
 export type { EmojiView };
 
 /** A custom emoji, normalised from its provider's record. */
-const emojiView = /*#__PURE__*/ l.typedObject<EmojiView>($nsid, "emojiView", /*#__PURE__*/ l.object({"uri":/*#__PURE__*/ l.string({"format":"at-uri"}),"cid":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"cid"})),"provider":/*#__PURE__*/ l.string<{"knownValues":["blue.moji"]}>(),"owner":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string(),"alt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"fallback":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"images":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmojiImage>((() => emojiImage) as any), ),"adultOnly":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"copyOf":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
+const emojiView = /*#__PURE__*/ l.typedObject<EmojiView>($nsid, "emojiView", /*#__PURE__*/ l.object({"uri":/*#__PURE__*/ l.string({"format":"at-uri"}),"cid":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"cid"})),"provider":/*#__PURE__*/ l.string<{"knownValues":["blue.moji"]}>(),"owner":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string(),"alt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"fallback":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"images":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmojiImage>((() => emojiImage) as any), ),"adultOnly":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
 
 export { emojiView };
 
@@ -160,7 +155,7 @@ const packView = /*#__PURE__*/ l.typedObject<PackView>($nsid, "packView", /*#__P
 
 export { packView };
 
-/** Every custom emoji and pack in one repo. For a community this is its own emoji. For a user it is the emoji they uploaded or copied. */
+/** Every custom emoji and pack in one repo. */
 type CatalogView = { $type?: "social.colibri.beta.emoji.defs#catalogView";
 
   /**
@@ -180,7 +175,112 @@ type CatalogView = { $type?: "social.colibri.beta.emoji.defs#catalogView";
 
 export type { CatalogView };
 
-/** Every custom emoji and pack in one repo. For a community this is its own emoji. For a user it is the emoji they uploaded or copied. */
+/** Every custom emoji and pack in one repo. */
 const catalogView = /*#__PURE__*/ l.typedObject<CatalogView>($nsid, "catalogView", /*#__PURE__*/ l.object({"owner":/*#__PURE__*/ l.string({"format":"did"}),"emojis":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmojiView>((() => emojiView) as any), ),"packs":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<PackView>((() => packView) as any), )}));
 
 export { catalogView };
+
+/** A pack or single emoji the user follows, resolved against the owner's current catalog. */
+type FollowView = { $type?: "social.colibri.beta.emoji.defs#followView";
+
+  /**
+   * The follow record.
+   */
+  "uri":l.AtUriString;
+
+  /**
+   * The followed pack or emoji.
+   */
+  "subject":l.AtUriString;
+
+  /**
+   * Whether the subject is a pack or a single emoji.
+   */
+  "kind":"pack" | "emoji" | l.UnknownString;
+
+  /**
+   * available when the subject resolves. missing when the owner deleted it. unreachable when the owner's repo cannot be read, for example a deactivated or taken down account.
+   */
+  "state":"available" | "missing" | "unreachable" | l.UnknownString;
+
+  /**
+   * Who holds the subject.
+   */
+  "owner":EmojiOwner;
+
+  /**
+   * The pack, when kind is pack and state is available.
+   */
+  "pack"?:PackView;
+
+  /**
+   * The pack's current emoji in pack order, or the single followed emoji. Empty unless state is available.
+   */
+  "emojis":(EmojiView)[];
+
+  /**
+   * When the user started following.
+   */
+  "createdAt":l.DatetimeString };
+
+export type { FollowView };
+
+/** A pack or single emoji the user follows, resolved against the owner's current catalog. */
+const followView = /*#__PURE__*/ l.typedObject<FollowView>($nsid, "followView", /*#__PURE__*/ l.object({"uri":/*#__PURE__*/ l.string({"format":"at-uri"}),"subject":/*#__PURE__*/ l.string({"format":"at-uri"}),"kind":/*#__PURE__*/ l.string<{"knownValues":["pack","emoji"]}>(),"state":/*#__PURE__*/ l.string<{"knownValues":["available","missing","unreachable"]}>(),"owner":/*#__PURE__*/ l.ref<EmojiOwner>((() => emojiOwner) as any),"pack":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<PackView>((() => packView) as any)),"emojis":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmojiView>((() => emojiView) as any), ),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
+
+export { followView };
+
+/** The user or community that holds an emoji or pack. */
+type EmojiOwner = { $type?: "social.colibri.beta.emoji.defs#emojiOwner";
+
+  /**
+   * The owner.
+   */
+  "did":l.DidString;
+
+  /**
+   * Whether the owner is a user or a community.
+   */
+  "kind":"user" | "community" | l.UnknownString;
+
+  /**
+   * The owner's handle.
+   */
+  "handle"?:l.HandleString;
+
+  /**
+   * The user's display name or the community's name.
+   */
+  "displayName"?:string;
+
+  /**
+   * The user's avatar or the community's icon.
+   */
+  "avatar"?:l.UriString };
+
+export type { EmojiOwner };
+
+/** The user or community that holds an emoji or pack. */
+const emojiOwner = /*#__PURE__*/ l.typedObject<EmojiOwner>($nsid, "emojiOwner", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"kind":/*#__PURE__*/ l.string<{"knownValues":["user","community"]}>(),"handle":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"handle"})),"displayName":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"avatar":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"}))}));
+
+export { emojiOwner };
+
+/** A user's emoji library. */
+type LibraryView = { $type?: "social.colibri.beta.emoji.defs#libraryView";
+
+  /**
+   * The emoji and packs in the user's own repo.
+   */
+  "own":CatalogView;
+
+  /**
+   * Everything the user follows, oldest follow first.
+   */
+  "follows":(FollowView)[] };
+
+export type { LibraryView };
+
+/** A user's emoji library. */
+const libraryView = /*#__PURE__*/ l.typedObject<LibraryView>($nsid, "libraryView", /*#__PURE__*/ l.object({"own":/*#__PURE__*/ l.ref<CatalogView>((() => catalogView) as any),"follows":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<FollowView>((() => followView) as any), )}));
+
+export { libraryView };

@@ -89,7 +89,6 @@ const parseItem = (value: unknown): ParsedEmoji | null => {
 			? { fallback: (value.fallbackText as string).trim() }
 			: {}),
 		...(value.adultOnly === true ? { adultOnly: true } : {}),
-		...(typeof value.copyOf === "string" ? { copyOf: value.copyOf } : {}),
 	};
 };
 

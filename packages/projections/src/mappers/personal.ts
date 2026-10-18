@@ -6,6 +6,7 @@ import {
 	social,
 } from "@colibri-social/lexicons";
 import { and, eq } from "drizzle-orm";
+import { emojiSubjectOwner, putEmojiFollow, removeEmojiFollow } from "../emoji-follows.js";
 import {
 	isNotificationLevel,
 	toGifFavorite,
@@ -170,5 +171,26 @@ export const readCursors: Projector<social.colibri.beta.channel.read.Main> = {
 					eq(deps.tables.readCursors.community, ref.rkey),
 				),
 			);
+	},
+};
+
+export const emojiFollow: Projector<social.colibri.beta.emoji.follow.Main> = {
+	collection: COLLECTIONS.emojiFollow,
+	writer: "authority",
+	spaceTypes: PERSONAL,
+	schema: social.colibri.beta.emoji.follow,
+	put: async (deps, ref, value) => {
+		const subjectOwner = emojiSubjectOwner(value.subject);
+		if (!subjectOwner || subjectOwner === ref.author) return;
+		await putEmojiFollow(deps, {
+			follower: ref.author,
+			rkey: ref.rkey,
+			subject: value.subject,
+			subjectOwner,
+			createdAt: value.createdAt,
+		});
+	},
+	remove: async (deps, ref) => {
+		await removeEmojiFollow(deps, ref.author, ref.rkey);
 	},
 };

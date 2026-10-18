@@ -39,6 +39,7 @@ export const COLLECTIONS = {
 	community: "social.colibri.beta.community",
 	communitySettings: "social.colibri.beta.community.settings",
 	composerState: "social.colibri.beta.actor.composerState",
+	emojiFollow: "social.colibri.beta.emoji.follow",
 	label: "social.colibri.beta.label",
 	member: "social.colibri.beta.member",
 	message: "social.colibri.beta.message",

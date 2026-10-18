@@ -89,7 +89,11 @@ const hasBlob = (item: RawAttachment): boolean =>
 const isForward = (raw: RawForward | null): boolean =>
 	Boolean(raw?.source?.space && raw.source.did && raw.source.rkey);
 
-const toSummary = (channel: string, row: MessageRow): ChannelSummary => {
+const toSummary = (
+	channel: string,
+	row: MessageRow,
+	facets: social.colibri.beta.richtext.facet.Main[] | undefined,
+): ChannelSummary => {
 	const attachments = ((row.attachments as RawAttachment[] | null) ?? []).filter(hasBlob);
 	const firstMime = attachments[0]?.blob?.mimeType;
 	return {
@@ -97,6 +101,7 @@ const toSummary = (channel: string, row: MessageRow): ChannelSummary => {
 		rkey: asRecordKey(row.rkey),
 		author: asDid(row.author),
 		text: row.text,
+		...(facets?.length ? { facets } : {}),
 		...(firstMime
 			? {
 					attachmentKind:
@@ -432,14 +437,28 @@ export class ChannelViews {
 			.from(table)
 			.where(and(eq(table.community, community), eq(table.spaceType, SPACE_TYPES.channelText)))
 			.orderBy(asc(table.position));
-		const audiences = await this.ctx.loader.categoryAudiences(community);
+		const [audiences, communityRow] = await Promise.all([
+			this.ctx.loader.categoryAudiences(community),
+			this.ctx.loader.community(community),
+		]);
+		const emojiPolicy = customEmojiPolicy(communityRow?.customEmoji);
 		const readable = rows.filter((row) =>
 			canRead(authz, toChannelState(row, row.category ? audiences.get(row.category) : null)),
 		);
 		const latest = await Promise.all(
 			readable.map(async (row) => {
 				const message = await this.latestVisible(row.space, viewer);
-				return message ? toSummary(row.space, message) : undefined;
+				return message
+					? toSummary(
+							row.space,
+							message,
+							filterCustomEmojiFacets(
+								(message.facets as social.colibri.beta.richtext.facet.Main[] | null) ?? undefined,
+								emojiPolicy,
+								community,
+							),
+						)
+					: undefined;
 			}),
 		);
 		return latest.filter((summary): summary is ChannelSummary => summary !== undefined);

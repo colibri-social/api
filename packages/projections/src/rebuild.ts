@@ -18,6 +18,7 @@ const PROJECTION_TABLES = [
 	"actorSettings",
 	"spaceNotifications",
 	"readCursors",
+	"emojiFollows",
 ] as const;
 
 export type RebuildProgress = {

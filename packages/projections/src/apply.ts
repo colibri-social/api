@@ -29,6 +29,7 @@ const ALL: ErasedProjector[] = [
 	erase(personal.composerState),
 	erase(personal.spaceNotification),
 	erase(personal.readCursors),
+	erase(personal.emojiFollow),
 ];
 
 const BY_COLLECTION = new Map(ALL.map((projector) => [projector.collection, projector]));

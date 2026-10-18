@@ -22,7 +22,6 @@ export type ParsedEmoji = {
 	fallback?: string;
 	images: EmojiImage[];
 	adultOnly?: boolean;
-	copyOf?: string;
 	createdAt: string;
 };
 

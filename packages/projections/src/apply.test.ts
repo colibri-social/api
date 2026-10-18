@@ -668,6 +668,44 @@ describe("personal spaces", () => {
 		expect(row?.subject).toBe(OUTSIDER);
 	});
 
+	it("projects an emoji follow and removes it on delete", async () => {
+		const subject = `at://${OUTSIDER}/blue.moji.packs.pack/3lkpack1`;
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.emoji.follow", "3lkfollow1", {
+				$type: "social.colibri.beta.emoji.follow",
+				subject,
+				createdAt: NOW,
+			}),
+		);
+
+		const rows = await database.db.select().from(database.tables.emojiFollows);
+		expect(rows).toEqual([
+			{ follower: MEMBER, rkey: "3lkfollow1", subject, subjectOwner: OUTSIDER, createdAt: NOW },
+		]);
+
+		await applyChange(deps, {
+			space: personal,
+			author: MEMBER,
+			puts: [],
+			deletes: [{ collection: "social.colibri.beta.emoji.follow", rkey: "3lkfollow1" }],
+		});
+		expect(await database.db.select().from(database.tables.emojiFollows)).toEqual([]);
+	});
+
+	it("ignores an emoji follow of the author's own repo", async () => {
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.emoji.follow", "3lkfollow2", {
+				$type: "social.colibri.beta.emoji.follow",
+				subject: `at://${MEMBER}/blue.moji.collection.item/wave`,
+				createdAt: NOW,
+			}),
+		);
+
+		expect(await database.db.select().from(database.tables.emojiFollows)).toEqual([]);
+	});
+
 	it("projects a channel mute as its space reference", async () => {
 		const channel = `at://${COMMUNITY}/space/social.colibri.beta.channel.text/3lkchan1`;
 		await applyChange(

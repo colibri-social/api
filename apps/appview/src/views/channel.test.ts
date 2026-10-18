@@ -1129,6 +1129,40 @@ describe("ChannelViews.summaries", () => {
 		expect(summary).not.toHaveProperty("attachmentKind");
 	});
 
+	it("carries the latest message's facets and drops custom emoji the policy disallows", async () => {
+		const own = `at://${COMMUNITY}/blue.moji.collection.item/kek`;
+		const foreign = "at://did:plc:otherspaceotherspaceother/blue.moji.collection.item/owl";
+		const emoji = (byteStart: number, byteEnd: number, uri: string) => ({
+			index: { byteStart, byteEnd },
+			features: [{ $type: "social.colibri.beta.richtext.facet#customEmoji", uri }],
+		});
+		await putMessage(nextTid(), {
+			text: "fine :kek: :owl:",
+			facets: [emoji(5, 10, own), emoji(11, 16, foreign)],
+		});
+		const uris = async () => {
+			const [summary] = await summariesFor(AUTHOR_B);
+			return (summary?.facets ?? []).map(
+				(facet) => (facet.features[0] as { uri?: string } | undefined)?.uri,
+			);
+		};
+
+		expect(await uris()).toEqual([own, foreign]);
+
+		await database.db
+			.update(database.tables.communities)
+			.set({ customEmoji: "local" })
+			.where(eq(database.tables.communities.did, COMMUNITY));
+		expect(await uris()).toEqual([own]);
+
+		await database.db
+			.update(database.tables.communities)
+			.set({ customEmoji: "none" })
+			.where(eq(database.tables.communities.did, COMMUNITY));
+		const [summary] = await summariesFor(AUTHOR_B);
+		expect(summary).not.toHaveProperty("facets");
+	});
+
 	it("skips a withheld message, but shows it to its own author", async () => {
 		const visible = nextTid();
 		const hidden = nextTid();

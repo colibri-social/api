@@ -268,22 +268,3 @@ export const loadCatalog = async (
 
 	return { owner, emojis, packs } as CatalogView;
 };
-
-export const emojiEvent = (catalog: CatalogView) => ({
-	$type: "social.colibri.beta.sync.defs#emojiEvent",
-	owner: catalog.owner,
-	catalog,
-});
-
-export const announceEmoji = async (
-	ctx: AppContext,
-	owner: string,
-	audience: "community" | "user",
-	registry: EmojiRegistry = emojiRegistry,
-): Promise<CatalogView> => {
-	const catalog = await loadCatalog(ctx, owner, registry);
-	const frame = emojiEvent(catalog);
-	if (audience === "community") ctx.announce.toCommunity(owner, frame);
-	else ctx.announce.toUser(owner, frame);
-	return catalog;
-};

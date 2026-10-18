@@ -315,6 +315,11 @@ type ChannelSummary = { $type?: "social.colibri.beta.channel.defs#channelSummary
   "text":string;
 
   /**
+   * The latest message's annotations, with custom emoji the community's policy disallows left out.
+   */
+  "facets"?:(RichtextFacet.Main)[];
+
+  /**
    * What the first attachment is, when the message has any. Images and videos are image, everything else is file.
    */
   "attachmentKind"?:"image" | "file" | l.UnknownString;
@@ -337,6 +342,6 @@ type ChannelSummary = { $type?: "social.colibri.beta.channel.defs#channelSummary
 export type { ChannelSummary };
 
 /** The latest message in a channel, reduced to what a channel list preview shows. */
-const channelSummary = /*#__PURE__*/ l.typedObject<ChannelSummary>($nsid, "channelSummary", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"author":/*#__PURE__*/ l.string({"format":"did"}),"text":/*#__PURE__*/ l.string(),"attachmentKind":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["image","file"]}>()),"attachmentCount":/*#__PURE__*/ l.integer({"minimum":0}),"forward":/*#__PURE__*/ l.boolean(),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
+const channelSummary = /*#__PURE__*/ l.typedObject<ChannelSummary>($nsid, "channelSummary", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"author":/*#__PURE__*/ l.string({"format":"did"}),"text":/*#__PURE__*/ l.string(),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"attachmentKind":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["image","file"]}>()),"attachmentCount":/*#__PURE__*/ l.integer({"minimum":0}),"forward":/*#__PURE__*/ l.boolean(),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
 
 export { channelSummary };

@@ -11,11 +11,11 @@ import {
 	supportsPacks,
 } from "@colibri-social/emoji";
 import { social } from "@colibri-social/lexicons";
+import { putEmojiFollow, removeEmojiFollow } from "@colibri-social/projections";
 import { nextTid } from "@colibri-social/space";
 import { and, eq } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import {
-	announceEmoji,
 	applyEmojiChange,
 	type CatalogView,
 	emojiUri,
@@ -23,6 +23,14 @@ import {
 	loadCatalog,
 	parseEmojiUri,
 } from "../emoji.js";
+import {
+	announceEmoji,
+	announceLibrary,
+	type FollowView,
+	followKindOf,
+	type LibraryView,
+	loadLibrary,
+} from "../emoji-library.js";
 import { toXrpcError } from "../errors.js";
 import { publicRoute, route } from "../route.js";
 import type { RouteDeps } from "./types.js";
@@ -526,11 +534,92 @@ export const handleDeletePack = async (
 	}
 };
 
+const subjectExists = async (
+	ctx: AppContext,
+	kind: "pack" | "emoji",
+	key: { owner: string; collection: string; rkey: string },
+): Promise<boolean> => {
+	const { db, tables } = ctx.database;
+	const table = kind === "pack" ? tables.emojiPacks : tables.emojiItems;
+	const [row] = await db
+		.select({ uri: table.uri })
+		.from(table)
+		.where(
+			and(
+				eq(table.owner, key.owner),
+				eq(table.collection, key.collection),
+				eq(table.rkey, key.rkey),
+			),
+		)
+		.limit(1);
+	return row !== undefined;
+};
+
+export const handleGetLibrary = async (
+	ctx: AppContext,
+	actor: string,
+	registry: EmojiRegistry = emojiRegistry,
+): Promise<{ library: LibraryView }> => ({ library: await loadLibrary(ctx, actor, registry) });
+
+export const handlePutFollow = async (
+	ctx: AppContext,
+	actor: string,
+	input: { rkey: string; subject?: string; createdAt?: string },
+	registry: EmojiRegistry = emojiRegistry,
+): Promise<{ follow?: FollowView }> => {
+	try {
+		if (input.subject === undefined) {
+			await removeEmojiFollow(ctx.database, actor, input.rkey);
+			await announceLibrary(ctx, actor, registry);
+			return {};
+		}
+		const subject = input.subject;
+		const parsed = parseEmojiUri(subject);
+		const kind = followKindOf(subject, registry);
+		if (!parsed || !kind) {
+			throw fail(
+				"UnsupportedProvider",
+				"the subject is not a pack or emoji of a supported provider",
+			);
+		}
+		if (parsed.owner === actor) throw fail("OwnEmoji", "you can't follow your own emoji");
+		await tracked(ctx, parsed.owner, registry);
+		if (!(await subjectExists(ctx, kind, parsed))) {
+			throw kind === "pack"
+				? fail("PackNotFound", "no pack exists at that URI")
+				: fail("EmojiNotFound", "no emoji exists at that URI");
+		}
+		await putEmojiFollow(ctx.database, {
+			follower: actor,
+			rkey: input.rkey,
+			subject,
+			subjectOwner: parsed.owner,
+			createdAt: input.createdAt ?? new Date().toISOString(),
+		});
+		const library = await announceLibrary(ctx, actor, registry);
+		const follow = library.follows.find((entry) => entry.subject === subject);
+		return follow ? { follow } : {};
+	} catch (error) {
+		throw toXrpcError(error);
+	}
+};
+
 export const registerEmojiRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 	const json = <T>(body: T) => ({ encoding: "application/json" as const, body });
 
 	publicRoute(server, social.colibri.beta.emoji.getCatalog, {
 		handler: async ({ params }) => json(await handleGetCatalog(ctx, params.owner)),
+	});
+
+	route(server, social.colibri.beta.emoji.getLibrary, {
+		auth: auth.required,
+		handler: async ({ auth: caller }) => json(await handleGetLibrary(ctx, caller.credentials.did)),
+	});
+
+	route(server, social.colibri.beta.emoji.putFollow, {
+		auth: auth.required,
+		handler: async ({ input, auth: caller }) =>
+			json(await handlePutFollow(ctx, caller.credentials.did, input.body)),
 	});
 
 	route(server, social.colibri.beta.emoji.upload, {

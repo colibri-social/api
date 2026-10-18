@@ -592,6 +592,22 @@ export const emojiBackfills = sqliteTable("emoji_backfills", {
 	completedAt: timestamp("completed_at").notNull(),
 });
 
+export const emojiFollows = sqliteTable(
+	"emoji_follows",
+	{
+		follower: text("follower").notNull(),
+		rkey: text("rkey").notNull(),
+		subject: text("subject").notNull(),
+		subjectOwner: text("subject_owner").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.follower, t.rkey] }),
+		uniqueIndex("emoji_follows_one_per_subject_idx").on(t.follower, t.subject),
+		index("emoji_follows_subject_owner_idx").on(t.subjectOwner),
+	],
+);
+
 export const userPresence = sqliteTable("user_presence", {
 	did: text("did").primaryKey(),
 	derivedState: text("derived_state").notNull().$type<OnlineState>().default("offline"),
@@ -770,6 +786,7 @@ export const schema = {
 	emojiPacks,
 	emojiPackItems,
 	emojiBackfills,
+	emojiFollows,
 	userPresence,
 	actorActivity,
 	identityCache,
