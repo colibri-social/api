@@ -1,5 +1,16 @@
 # @colibri-social/notifications
 
+## 1.8.1
+
+### Patch Changes
+
+- 2cb2fa1: Messages in a thread only notify the thread's followers and earlier posters. Mentions and replies still reach anyone who can read the thread.
+- Updated dependencies [54abd78]
+- Updated dependencies [54abd78]
+  - @colibri-social/lexicons@2.23.0
+  - @colibri-social/appview-db@0.15.0
+  - @colibri-social/projections@1.12.0
+
 ## 1.8.0
 
 ### Minor Changes

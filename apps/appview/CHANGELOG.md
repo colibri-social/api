@@ -1,5 +1,24 @@
 # @colibri-social/appview
 
+## 2.22.0
+
+### Minor Changes
+
+- 54abd78: Reactions can name the emoji record behind a custom shortcode. `social.colibri.beta.reaction` accepts an optional `customEmoji` reference, and `reactionView` and the live `reactionEvent` carry it. A reaction view reports the reference from the earliest reaction that named one.
+- 54abd78: Threads can be closed and locked. `social.colibri.beta.thread.update` accepts `closed` and `locked`, and thread views carry `closedAt`, `locked` and the new `canEdit`, `canClose`, `canDelete` and `canLock` viewer flags. The member who opened a thread can rename, close, reopen and delete it while they can still read it. Members with `thread.manage` can do all of that on any thread and can lock it, which leaves writing to them alone. A new message in a closed thread reopens it.
+
+### Patch Changes
+
+- 54abd78: Channel and thread `unreadMentions` count replies to the viewer as well as mentions.
+- Updated dependencies [54abd78]
+- Updated dependencies [54abd78]
+- Updated dependencies [2cb2fa1]
+  - @colibri-social/lexicons@2.23.0
+  - @colibri-social/appview-db@0.15.0
+  - @colibri-social/projections@1.12.0
+  - @colibri-social/community@2.11.0
+  - @colibri-social/notifications@1.8.1
+
 ## 2.21.0
 
 ### Minor Changes
