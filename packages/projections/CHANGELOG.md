@@ -1,5 +1,19 @@
 # @colibri-social/projections
 
+## 1.11.0
+
+### Minor Changes
+
+- 384edf8: Every community has a Members role that everyone holds from the moment they join, so members can start threads. It can be edited but not deleted or taken away from anyone, it can't be mentioned, and communities and members missing it get it back automatically
+
+### Patch Changes
+
+- Updated dependencies [384edf8]
+- Updated dependencies [384edf8]
+  - @colibri-social/lexicons@2.22.0
+  - @colibri-social/appview-db@0.14.0
+  - @colibri-social/space@0.7.0
+
 ## 1.10.1
 
 ### Patch Changes

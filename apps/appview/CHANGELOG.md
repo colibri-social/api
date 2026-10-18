@@ -1,5 +1,30 @@
 # @colibri-social/appview
 
+## 2.21.0
+
+### Minor Changes
+
+- 384edf8: Every community has a Members role that everyone holds from the moment they join, so members can start threads. It can be edited but not deleted or taken away from anyone, it can't be mentioned, and communities and members missing it get it back automatically
+
+### Patch Changes
+
+- 384edf8: Notifications, push banners and edit pushes for bridged messages show the remote author's name and avatar instead of the community. `hydrateNotifications` takes a `NotificationAuthors` object with an optional `resolveMessageAuthor`, and `deliverMessageEdited` accepts a sender per recipient
+- 384edf8: `blob.get` streams large blobs while it checks their CID, so the AppView no longer holds whole videos in memory. A CID mismatch found at the end aborts the connection. The blob cache only keeps blobs up to 16 MB, keys entries by DID, space and CID, and shares one upstream fetch between concurrent requests for the same blob. Blobs outside the media types are served as sandboxed `application/octet-stream` downloads, and missing and rejected blobs are logged with a code. `XrpcClient.stream` applies its timeout to the response headers only and aborts a body that sends nothing for `idleTimeoutMs`, 30 seconds by default
+- 384edf8: Link previews for YouTube come from YouTube's oEmbed endpoint. Watch, `youtu.be`, Shorts, live, embed, mobile and YouTube Music links resolve to one canonical watch URL that keeps a `t` timestamp. The preview shows the video title, the channel name as its description, "YouTube" as the site name, and the largest available thumbnail with its real dimensions, vertical for Shorts where YouTube has one. When oEmbed refuses a video, the preview falls back to the watch page with a consent cookie and `hl=en`, and a consent page fails the preview. Every outbound embed fetch sends `accept-language: en-US,en;q=0.9`, and page fetches send an HTML `accept` header. Failed unfurls are logged with a code.
+- Updated dependencies [384edf8]
+- Updated dependencies [384edf8]
+- Updated dependencies [384edf8]
+- Updated dependencies [384edf8]
+  - @colibri-social/notifications@1.8.0
+  - @colibri-social/lexicons@2.22.0
+  - @colibri-social/appview-db@0.14.0
+  - @colibri-social/projections@1.11.0
+  - @colibri-social/community@2.10.0
+  - @colibri-social/blobs@0.1.0
+  - @colibri-social/space@0.7.0
+  - @colibri-social/embeds@0.1.0
+  - @colibri-social/space-sync@0.5.4
+
 ## 2.20.0
 
 ### Minor Changes
