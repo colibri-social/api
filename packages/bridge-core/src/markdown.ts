@@ -1,7 +1,9 @@
 import type { social } from "@colibri-social/lexicons";
 import type { Nodes, Parent } from "mdast";
 import { fromMarkdown } from "mdast-util-from-markdown";
+import { gfmAutolinkLiteralFromMarkdown } from "mdast-util-gfm-autolink-literal";
 import { gfmStrikethroughFromMarkdown } from "mdast-util-gfm-strikethrough";
+import { gfmAutolinkLiteral } from "micromark-extension-gfm-autolink-literal";
 import { gfmStrikethrough } from "micromark-extension-gfm-strikethrough";
 
 export type ColibriRichTextFacet = social.colibri.beta.richtext.facet.Main;
@@ -9,8 +11,8 @@ export type ColibriRichTextFacet = social.colibri.beta.richtext.facet.Main;
 type Feature = ColibriRichTextFacet["features"][number];
 
 const FROM_MARKDOWN_OPTIONS = {
-	extensions: [gfmStrikethrough({ singleTilde: false })],
-	mdastExtensions: [gfmStrikethroughFromMarkdown()],
+	extensions: [gfmStrikethrough({ singleTilde: false }), gfmAutolinkLiteral()],
+	mdastExtensions: [gfmStrikethroughFromMarkdown(), gfmAutolinkLiteralFromMarkdown()],
 };
 
 export type MarkdownTokenKind =
@@ -228,6 +230,18 @@ export const tokenizeMarkdown = (source: string): MarkdownToken[] => {
 	return tokens.sort((a, b) => a.content[0] - b.content[0]);
 };
 
+const LINK_OPENERS = new Set(["[", "<"]);
+const WEB_URL = /^https?:\/\//i;
+const SPOILER_MARKER = "||";
+
+const literalLinkToken = (source: string, start: number, end: number): MarkdownToken | null => {
+	const literal = source.slice(start, end);
+	if (!WEB_URL.test(literal)) return null;
+	const spoilerAt = literal.indexOf(SPOILER_MARKER);
+	const uri = spoilerAt === -1 ? literal : literal.slice(0, spoilerAt);
+	return { kind: "link", markers: [], content: [start, start + uri.length], uri };
+};
+
 const tokenizeUnquoted = (source: string): MarkdownToken[] => {
 	const tree = fromMarkdown(source, FROM_MARKDOWN_OPTIONS);
 	const tokens: MarkdownToken[] = [];
@@ -274,6 +288,11 @@ const tokenizeUnquoted = (source: string): MarkdownToken[] => {
 				break;
 			}
 			case "link": {
+				if (!LINK_OPENERS.has(source[offset(node)] ?? "")) {
+					const literal = literalLinkToken(source, offset(node), endOffset(node));
+					if (literal) tokens.push(literal);
+					break;
+				}
 				const first = node.children[0];
 				const last = node.children.at(-1);
 				if (first && last && node.url) {
