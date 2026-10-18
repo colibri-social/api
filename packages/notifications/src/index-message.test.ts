@@ -198,6 +198,78 @@ describe("indexMessage", () => {
 		expect(rows[0]?.kind).toBe("message");
 	});
 
+	describe("in a thread", () => {
+		const THREAD = threadSpace(COMMUNITY, "3lkthread2");
+		const outsider = "did:plc:outsider0000000000000000";
+
+		const sendInThread = (rkey: string, facets: unknown[] | null = null) =>
+			indexMessage(deps, {
+				space: THREAD,
+				community: COMMUNITY,
+				author: AUTHOR,
+				rkey,
+				facets,
+				parentAuthor: null,
+				parentRkey: null,
+			});
+
+		const posted = async (did: string, rkey: string) => {
+			await database.db.insert(database.tables.messages).values({
+				space: THREAD,
+				author: did,
+				rkey,
+				community: COMMUNITY,
+				text: "hello",
+				createdAt: NOW,
+				indexedAt: NOW,
+			});
+		};
+
+		it("does not notify a member who neither follows nor posted in it", async () => {
+			await member(outsider);
+
+			await sendInThread("3lkthreadmsg1");
+
+			expect(await rowsFor(outsider)).toHaveLength(0);
+		});
+
+		it("notifies a follower with a plain message notification", async () => {
+			const follower = "did:plc:follower0000000000000000";
+			await member(follower);
+			await database.db
+				.insert(database.tables.threadFollows)
+				.values({ space: THREAD, did: follower, createdAt: NOW });
+
+			await sendInThread("3lkthreadmsg2");
+
+			const rows = await rowsFor(follower);
+			expect(rows).toHaveLength(1);
+			expect(rows[0]?.kind).toBe("message");
+		});
+
+		it("notifies a member who posted in it earlier", async () => {
+			const poster = "did:plc:poster00000000000000000";
+			await member(poster);
+			await posted(poster, "3lkthreadmsg3");
+
+			await sendInThread("3lkthreadmsg4");
+
+			const rows = await rowsFor(poster);
+			expect(rows).toHaveLength(1);
+			expect(rows[0]?.kind).toBe("message");
+		});
+
+		it("still notifies a mentioned member outside it", async () => {
+			await member(outsider);
+
+			await sendInThread("3lkthreadmsg5", [mentionFacet(outsider)]);
+
+			const rows = await rowsFor(outsider);
+			expect(rows).toHaveLength(1);
+			expect(rows[0]?.kind).toBe("mention");
+		});
+	});
+
 	it("prefers a mention over a plain message and inserts only one row", async () => {
 		const recipient = "did:plc:recipient000000000000000";
 		await member(recipient);

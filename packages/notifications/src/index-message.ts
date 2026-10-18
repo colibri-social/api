@@ -1,4 +1,5 @@
 import type { NotificationKind, NotificationLevel, Schema } from "@colibri-social/appview-db";
+import { isThreadSpaceType, spaceTypeOf } from "@colibri-social/lexicons";
 import { and, eq, inArray } from "drizzle-orm";
 import type { NotificationDeps } from "./deps.js";
 import { nextId } from "./id.js";
@@ -142,6 +143,25 @@ const allMemberDids = async (deps: NotificationDeps, community: string): Promise
 	return rows.map((row) => row.did);
 };
 
+const threadAudienceDids = async (deps: NotificationDeps, space: string): Promise<string[]> => {
+	const [followRows, posterRows] = await Promise.all([
+		deps.db
+			.select({ did: deps.tables.threadFollows.did })
+			.from(deps.tables.threadFollows)
+			.where(eq(deps.tables.threadFollows.space, space)),
+		deps.db
+			.selectDistinct({ did: deps.tables.messages.author })
+			.from(deps.tables.messages)
+			.where(eq(deps.tables.messages.space, space)),
+	]);
+	return [...new Set([...followRows, ...posterRows].map((row) => row.did))];
+};
+
+const plainMessageAudience = (deps: NotificationDeps, message: IndexMessageInput) =>
+	isThreadSpaceType(spaceTypeOf(message.space) ?? "")
+		? threadAudienceDids(deps, message.space)
+		: allMemberDids(deps, message.community);
+
 const filterRecipients = async (
 	deps: NotificationDeps,
 	message: IndexMessageInput,
@@ -269,7 +289,7 @@ export const indexMessage = async (
 		});
 	}
 
-	for (const did of await allMemberDids(deps, message.community)) {
+	for (const did of await plainMessageAudience(deps, message)) {
 		if (did === message.author || recipients.has(did)) continue;
 		recipients.set(did, { did, kind: "message", mentionRole: null });
 	}
