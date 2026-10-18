@@ -222,6 +222,12 @@ describe("blob.get authorization", () => {
 		expect(result.headers.etag).toBe(`"${CID}"`);
 	});
 
+	it("lets any web origin read a signed link", async () => {
+		const result = await get({ did: AUTHOR, cid: CID, space: SPACE, ...signedFor(MEMBER) });
+		expect(result.headers["access-control-allow-origin"]).toBe("*");
+		expect(result.headers["access-control-expose-headers"]).toContain("content-range");
+	});
+
 	it("refuses a signed link whose viewer is not a member", async () => {
 		const result = await get({ did: AUTHOR, cid: CID, space: SPACE, ...signedFor(OUTSIDER) });
 		expect(result.status).toBe(403);

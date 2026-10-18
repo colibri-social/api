@@ -149,6 +149,8 @@ export const mountBlobRoutes = (ctx: AppContext, app: Router): void => {
 	app.get(
 		"/xrpc/social.colibri.beta.blob.get",
 		asyncHandler(ctx, "blob.get.failed", async (req: Request, res: Response) => {
+			res.setHeader("access-control-allow-origin", "*");
+			res.setHeader("access-control-expose-headers", "accept-ranges, content-range");
 			const did = asString(req.query.did);
 			const cid = asString(req.query.cid);
 			if (!did || !cid) {
