@@ -1,11 +1,12 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
-import { social } from "@colibri-social/lexicons";
+import { canReadThread } from "@colibri-social/community";
+import { asDid, social } from "@colibri-social/lexicons";
 import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
 import { ChannelViews } from "../views/channel.js";
-import { type ThreadRow, ThreadViews } from "../views/thread.js";
+import { type ThreadRow, ThreadViews, toThreadState } from "../views/thread.js";
 import type { RouteDeps } from "./types.js";
 
 const threadNotFound = (thread: string) =>
@@ -41,6 +42,29 @@ export const registerThreadRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 			if (!view) throw forbidden("the requester may not read this thread");
 
 			return { encoding: "application/json" as const, body: { thread: view } };
+		},
+	});
+
+	route(server, social.colibri.beta.thread.listMembers, {
+		auth: auth.required,
+		handler: async ({ params, auth: caller }) => {
+			const row = await threads.row(params.thread);
+			if (!row) throw threadNotFound(params.thread);
+
+			const viewer = caller.credentials.did;
+			const [authz, channel] = await Promise.all([
+				ctx.loader.authz(row.community, viewer),
+				ctx.loader.channel(row.channel),
+			]);
+			if (!channel || !canReadThread(authz, channel, toThreadState(row))) {
+				throw forbidden("the requester may not read this thread");
+			}
+
+			const members = await threads.members(row);
+			return {
+				encoding: "application/json" as const,
+				body: { members: members.map(asDid) },
+			};
 		},
 	});
 

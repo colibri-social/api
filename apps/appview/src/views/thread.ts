@@ -16,6 +16,11 @@ import {
 	asTid,
 	type social,
 } from "@colibri-social/lexicons";
+import {
+	extractMentionedDids,
+	extractMentionedRoles,
+	MENTION_ROLES_PERMISSION,
+} from "@colibri-social/notifications";
 import { movedInto } from "@colibri-social/projections";
 import { and, count, desc, eq, inArray } from "drizzle-orm";
 import type { AppContext } from "../context.js";
@@ -244,6 +249,95 @@ export class ThreadViews {
 				} as ThreadView;
 			}),
 		);
+	}
+
+	async members(row: ThreadRow): Promise<string[]> {
+		const channel = await this.ctx.loader.channel(row.channel);
+		if (!channel) return [];
+
+		const messageTable = this.ctx.database.tables.messages;
+		const followTable = this.ctx.database.tables.threadFollows;
+		const sources = await this.channels.labelSources(row.community);
+		const [messageRows, movedIn, followRows, roles] = await Promise.all([
+			this.ctx.database.db
+				.select({ author: messageTable.author, facets: messageTable.facets })
+				.from(messageTable)
+				.where(eq(messageTable.space, row.space))
+				.orderBy(desc(messageTable.rkey)),
+			movedInto(this.ctx.database, row.space, sources),
+			this.ctx.database.db
+				.select({ did: followTable.did })
+				.from(followTable)
+				.where(eq(followTable.space, row.space)),
+			this.ctx.loader.roles(row.community),
+		]);
+
+		const memberTable = this.ctx.database.tables.members;
+		const memberRows = await this.ctx.database.db
+			.select()
+			.from(memberTable)
+			.where(eq(memberTable.community, row.community));
+		const membersByDid = new Map(memberRows.map((member) => [member.did, member]));
+		const rolesByKey = new Map(roles.map((role) => [role.rkey, role]));
+
+		const canMentionAnyRole = (author: string): boolean => {
+			if (author === row.community) return true;
+			const held = membersByDid.get(author)?.roles ?? [];
+			return held.some((key) =>
+				rolesByKey.get(key)?.permissions.includes(MENTION_ROLES_PERMISSION),
+			);
+		};
+
+		const posters: string[] = [];
+		const mentioned: string[] = [];
+		const mentionedRoles = new Set<string>();
+		for (const message of messageRows) {
+			posters.push(message.author);
+			const facets = message.facets ?? [];
+			mentioned.push(...extractMentionedDids(facets));
+			for (const key of extractMentionedRoles(facets)) {
+				const role = rolesByKey.get(key);
+				if (!role || mentionedRoles.has(key)) continue;
+				if (role.mentionable || canMentionAnyRole(message.author)) mentionedRoles.add(key);
+			}
+		}
+		for (const moved of movedIn) posters.push(moved.author);
+
+		const roleMembers = memberRows
+			.filter((member) => member.roles.some((key) => mentionedRoles.has(key)))
+			.map((member) => member.did);
+		const candidates = [
+			...(row.anchorAuthor ? [row.anchorAuthor] : []),
+			...posters,
+			...mentioned,
+			...roleMembers,
+			...followRows.map((follow) => follow.did),
+		];
+
+		const state = toThreadState(row);
+		const out: string[] = [];
+		const seen = new Set<string>();
+		for (const did of candidates) {
+			if (seen.has(did)) continue;
+			seen.add(did);
+			const member = membersByDid.get(did);
+			if (!member) continue;
+			const authz: ActorAuthz = {
+				actor: did,
+				community: row.community,
+				isOwner: false,
+				isBanned: false,
+				member: {
+					did,
+					roles: member.roles,
+					joinedAt: member.joinedAt,
+					nickname: member.nickname,
+				},
+				roles: member.roles.flatMap((key) => rolesByKey.get(key) ?? []),
+			};
+			if (canReadThread(authz, channel, state)) out.push(did);
+		}
+		return out;
 	}
 
 	async view(

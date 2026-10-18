@@ -83,6 +83,7 @@
 						"social.colibri.beta.thread.create",
 						"social.colibri.beta.thread.update",
 						"social.colibri.beta.thread.getThread",
+						"social.colibri.beta.thread.listMembers",
 						"social.colibri.beta.thread.listThreads"
 					]
 				},

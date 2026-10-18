@@ -150,3 +150,97 @@ describe("ThreadViews anchor messages", () => {
 		expect(view?.anchorMessage).toBeUndefined();
 	});
 });
+
+describe("ThreadViews members", () => {
+	const POSTER = "did:plc:7fkdlwjqmzcuvvpjbztkbbbb";
+	const PINGED = "did:plc:7fkdlwjqmzcuvvpjbztkcccc";
+	const ROLE_HOLDER = "did:plc:7fkdlwjqmzcuvvpjbztkdddd";
+	const FOLLOWER = "did:plc:7fkdlwjqmzcuvvpjbztkeeee";
+	const BYSTANDER = "did:plc:7fkdlwjqmzcuvvpjbztkffff";
+	const OUTSIDER = "did:plc:7fkdlwjqmzcuvvpjbztkgggg";
+	const ROLE = "3lkroletest0000";
+
+	const putMember = async (did: string, roles: string[] = []) => {
+		await database.db.insert(database.tables.members).values({
+			community: COMMUNITY,
+			did,
+			roles,
+			joinedAt: NOW,
+		});
+	};
+
+	const putRole = async (mentionable: boolean) => {
+		await database.db.insert(database.tables.roles).values({
+			community: COMMUNITY,
+			rkey: ROLE,
+			name: "helpers",
+			permissions: [],
+			position: 1,
+			mentionable,
+		});
+	};
+
+	const postInThread = async (author: string, facets: unknown[] = []) => {
+		await database.db.insert(database.tables.messages).values({
+			space: THREAD,
+			author,
+			rkey: nextTid(),
+			community: COMMUNITY,
+			text: "in the thread",
+			facets,
+			createdAt: NOW,
+			fromLegacyRepo: false,
+			indexedAt: NOW,
+		});
+	};
+
+	const mention = (did: string) => ({
+		index: { byteStart: 0, byteEnd: 1 },
+		features: [{ $type: "social.colibri.beta.richtext.facet#mention", did }],
+	});
+
+	const roleMention = (role: string) => ({
+		index: { byteStart: 0, byteEnd: 1 },
+		features: [{ $type: "social.colibri.beta.richtext.facet#role", role }],
+	});
+
+	beforeEach(async () => {
+		for (const did of [AUTHOR, POSTER, PINGED, FOLLOWER, BYSTANDER]) await putMember(did);
+		await putMember(ROLE_HOLDER, [ROLE]);
+	});
+
+	it("lists the anchor author, posters, mentions, role mentions and followers", async () => {
+		await putRole(true);
+		const rkey = nextTid();
+		await putMessage(rkey);
+		await putThread(rkey);
+		await postInThread(POSTER, [mention(PINGED), roleMention(ROLE), mention(OUTSIDER)]);
+		await database.db
+			.insert(database.tables.threadFollows)
+			.values({ space: THREAD, did: FOLLOWER, createdAt: NOW });
+
+		const members = await threads.members((await threads.row(THREAD))!);
+
+		expect(members).toEqual([AUTHOR, POSTER, PINGED, ROLE_HOLDER, FOLLOWER]);
+	});
+
+	it("skips a role mention the author may not make", async () => {
+		await putRole(false);
+		await putThread();
+		await postInThread(POSTER, [roleMention(ROLE)]);
+
+		const members = await threads.members((await threads.row(THREAD))!);
+
+		expect(members).toEqual([POSTER]);
+	});
+
+	it("leaves out members who may not read a private thread", async () => {
+		await putThread();
+		await database.db.update(database.tables.threads).set({ visibleToMembers: [POSTER] });
+		await postInThread(POSTER, [mention(PINGED)]);
+
+		const members = await threads.members((await threads.row(THREAD))!);
+
+		expect(members).toEqual([POSTER]);
+	});
+});

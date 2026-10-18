@@ -17,7 +17,7 @@ export type IndexedNotificationRow = Schema["notifications"]["$inferSelect"];
 
 const FACET_MENTION_TYPE = "social.colibri.beta.richtext.facet#mention";
 const FACET_ROLE_TYPE = "social.colibri.beta.richtext.facet#role";
-const MENTION_ROLES_PERMISSION = "mention.roles";
+export const MENTION_ROLES_PERMISSION = "mention.roles";
 
 type FacetFeature = { $type?: unknown; did?: unknown; role?: unknown };
 type Facet = { features?: FacetFeature[] };
@@ -27,7 +27,7 @@ const featuresOf = (raw: unknown): FacetFeature[] => {
 	return Array.isArray(facet?.features) ? facet.features : [];
 };
 
-const extractMentionedDids = (facets: readonly unknown[]): string[] => {
+export const extractMentionedDids = (facets: readonly unknown[]): string[] => {
 	const out: string[] = [];
 	const seen = new Set<string>();
 	for (const facet of facets) {
@@ -41,7 +41,7 @@ const extractMentionedDids = (facets: readonly unknown[]): string[] => {
 	return out;
 };
 
-const extractMentionedRoles = (facets: readonly unknown[]): string[] => {
+export const extractMentionedRoles = (facets: readonly unknown[]): string[] => {
 	const out: string[] = [];
 	const seen = new Set<string>();
 	for (const facet of facets) {

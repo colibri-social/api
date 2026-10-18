@@ -7,6 +7,7 @@ export * as defs from "./thread/defs.js";
 export * as "delete" from "./thread/delete.js";
 export * as follow from "./thread/follow.js";
 export * as getThread from "./thread/getThread.js";
+export * as listMembers from "./thread/listMembers.js";
 export * as listThreads from "./thread/listThreads.js";
 export * as moveMessages from "./thread/moveMessages.js";
 export * as repoint from "./thread/repoint.js";
