@@ -1,5 +1,15 @@
 # @colibri-social/community
 
+## 2.9.1
+
+### Patch Changes
+
+- Updated dependencies [d2236e7]
+- Updated dependencies [d2236e7]
+  - @colibri-social/lexicons@2.20.0
+  - @colibri-social/appview-db@0.13.0
+  - @colibri-social/projections@1.10.0
+
 ## 2.9.0
 
 ### Minor Changes

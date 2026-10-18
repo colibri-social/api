@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/emoji",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Custom emoji providers: parsing and building the records of each supported emoji lexicon",
 	"type": "module",
 	"private": true,
