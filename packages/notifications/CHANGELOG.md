@@ -1,5 +1,16 @@
 # @colibri-social/notifications
 
+## 1.8.2
+
+### Patch Changes
+
+- 8eba18b: Store messages and reactions sent in voice channel chats, only push voice chat notifications and edits to people in the call, and add the `inboxPresentation` client preference
+- Updated dependencies [8eba18b]
+- Updated dependencies [8eba18b]
+  - @colibri-social/lexicons@2.24.0
+  - @colibri-social/projections@1.12.1
+  - @colibri-social/appview-db@0.15.1
+
 ## 1.8.1
 
 ### Patch Changes
