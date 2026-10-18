@@ -1,5 +1,19 @@
 # @colibri-social/appview
 
+## 2.20.0
+
+### Minor Changes
+
+- 3e21750: `thread.listMembers` lists who belongs to a thread: the author of the anchor message, everyone who posted in it or had messages moved into it, everyone mentioned in it directly or through a role they hold, and everyone who follows it
+
+### Patch Changes
+
+- Updated dependencies [3e21750]
+  - @colibri-social/lexicons@2.21.0
+  - @colibri-social/notifications@1.7.0
+  - @colibri-social/community@2.9.2
+  - @colibri-social/projections@1.10.1
+
 ## 2.19.0
 
 ### Minor Changes
