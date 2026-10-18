@@ -1,5 +1,11 @@
 # @colibri-social/lexicons
 
+## 2.22.0
+
+### Minor Changes
+
+- 384edf8: Every community has a Members role that everyone holds from the moment they join, so members can start threads. It can be edited but not deleted or taken away from anyone, it can't be mentioned, and communities and members missing it get it back automatically
+
 ## 2.21.0
 
 ### Minor Changes
