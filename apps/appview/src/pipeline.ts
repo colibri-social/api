@@ -225,6 +225,13 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		await pushNotifications(servable, text);
 	};
 
+	const outsideVoiceChannel = (target: string, recipient: string): boolean => {
+		const space = spaceContextFor(target);
+		if (space?.spaceType !== SPACE_TYPES.channelVoice) return false;
+		const joined = ctx.voice?.presenceOf(recipient);
+		return !joined || spaceContextFor(joined)?.uri !== space.uri;
+	};
+
 	const pushNotifications = async (
 		servable: ServableNotification[],
 		text: string,
@@ -234,7 +241,9 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		const quiet = await doNotDisturb(servable.map(({ row }) => row.recipient));
 		await Promise.all(
 			servable
-				.filter(({ row }) => !quiet.has(row.recipient))
+				.filter(
+					({ row }) => !quiet.has(row.recipient) && !outsideVoiceChannel(row.space, row.recipient),
+				)
 				.map(({ row, routing }) =>
 					deliverNotification(
 						notifications,
@@ -276,7 +285,10 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 						return senderProfile(resolved ?? profile);
 					}
 				: undefined,
-			push.options,
+			{
+				...push.options,
+				reaches: (recipient) => !outsideVoiceChannel(space, recipient),
+			},
 		);
 	};
 

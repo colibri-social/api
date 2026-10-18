@@ -1,5 +1,10 @@
-import type { LinkEmbed } from "@colibri-social/embeds";
-import { asUri, type social } from "@colibri-social/lexicons";
+import type { EmbedAuthor, EmbedMedia, LinkEmbed, RichBlock } from "@colibri-social/embeds";
+import {
+	asDatetimeOrUndefined,
+	asUri,
+	asUriOrUndefined,
+	type social,
+} from "@colibri-social/lexicons";
 import type { AppContext } from "../context.js";
 import { type EmbedMediaKind, embedMediaUrl } from "../embed-token.js";
 
@@ -21,6 +26,24 @@ export const toLinkEmbedView = (
 			kind,
 			target,
 		);
+
+	const media = (item: EmbedMedia) => ({
+		kind: item.kind,
+		url: asUri(proxied(item.kind === "image" ? "image" : "video", item.url)),
+		previewUrl: item.previewUrl ? asUri(proxied("image", item.previewUrl)) : undefined,
+		mimeType: item.mimeType,
+		width: item.width,
+		height: item.height,
+		alt: item.alt,
+	});
+	const author = (value: EmbedAuthor) => ({
+		name: value.name,
+		handle: value.handle,
+		url: asUriOrUndefined(value.url),
+		avatar: value.avatar ? asUri(proxied("image", value.avatar)) : undefined,
+	});
+	const post = embed.post;
+	const quote = post?.quote;
 
 	return {
 		uri: asUri(uri),
@@ -44,5 +67,46 @@ export const toLinkEmbedView = (
 					duration: embed.video.duration,
 				}
 			: undefined,
+		themeColor: embed.themeColor,
+		layout: embed.layout,
+		provider: embed.provider
+			? {
+					name: embed.provider.name,
+					url: asUriOrUndefined(embed.provider.url),
+					icon: embed.provider.icon ? asUri(proxied("image", embed.provider.icon)) : undefined,
+				}
+			: undefined,
+		author: embed.author ? author(embed.author) : undefined,
+		publishedAt: asDatetimeOrUndefined(embed.publishedAt),
+		media: embed.media?.map(media),
+		post: post
+			? {
+					body: post.body.map(richBlock),
+					sensitive: post.sensitive,
+					contentWarning: post.contentWarning,
+					stats: post.stats,
+					translatedFrom: post.translatedFrom,
+					quote: quote
+						? {
+								uri: asUri(quote.uri),
+								author: author(quote.author),
+								body: quote.body.map(richBlock),
+								media: quote.media?.map(media),
+								publishedAt: asDatetimeOrUndefined(quote.publishedAt),
+								translatedFrom: quote.translatedFrom,
+							}
+						: undefined,
+				}
+			: undefined,
 	};
 };
+
+const richBlock = (block: RichBlock) => ({
+	kind: block.kind,
+	spans: block.spans.map((span) => ({
+		text: span.text,
+		bold: span.bold,
+		italic: span.italic,
+		href: asUriOrUndefined(span.href),
+	})),
+});

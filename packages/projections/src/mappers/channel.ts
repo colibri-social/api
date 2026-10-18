@@ -15,7 +15,7 @@ export const message: Projector<social.colibri.beta.message.Main> = {
 	collection: COLLECTIONS.message,
 	writer: "any",
 	admission: { rows: "messages" },
-	spaceTypes: [SPACE_TYPES.channelText, SPACE_TYPES.channelThread],
+	spaceTypes: [SPACE_TYPES.channelText, SPACE_TYPES.channelVoice, SPACE_TYPES.channelThread],
 	schema: social.colibri.beta.message,
 	put: async (deps, ref, value) => {
 		const row = {
@@ -76,7 +76,7 @@ export const reaction: Projector<social.colibri.beta.reaction.Main> = {
 	collection: COLLECTIONS.reaction,
 	writer: "any",
 	admission: { rows: "reactions" },
-	spaceTypes: [SPACE_TYPES.channelText, SPACE_TYPES.channelThread],
+	spaceTypes: [SPACE_TYPES.channelText, SPACE_TYPES.channelVoice, SPACE_TYPES.channelThread],
 	schema: social.colibri.beta.reaction,
 	put: async (deps, ref, value) => {
 		const bridged = honouredAttribution(ref, value.bridged);

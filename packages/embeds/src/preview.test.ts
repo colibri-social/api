@@ -281,3 +281,103 @@ describe("fetchLinkPreview image measurement", () => {
 		expect(second.image?.height).toBe(630);
 	});
 });
+
+describe("extractLinkMetadata card hints", () => {
+	const base = new URL("https://example.com/post");
+	const html = `
+		<html><head>
+			<meta name="theme-color" content="#ABC" />
+			<meta name="twitter:card" content="summary" />
+			<meta property="og:site_name" content="Example" />
+			<meta property="article:published_time" content="2026-10-01T12:00:00+02:00" />
+			<meta property="og:image" content="/1.png" />
+			<meta property="og:image" content="/2.png" />
+			<link rel="icon" type="image/svg+xml" href="/icon.svg">
+			<link rel="icon" sizes="16x16" href="/icon16.png">
+			<link rel="icon" sizes="64x64" href="/icon64.png">
+			<link rel="icon" sizes="32x32" href="/icon32.png">
+		</head></html>
+	`;
+
+	it("reads theme color, layout, publish date, icon and gallery", () => {
+		const embed = extractLinkMetadata("https://example.com/post", html, base);
+		expect(embed.themeColor).toBe("#aabbcc");
+		expect(embed.layout).toBe("summary");
+		expect(embed.publishedAt).toBe("2026-10-01T10:00:00.000Z");
+		expect(embed.provider).toEqual({ name: "Example", icon: "https://example.com/icon32.png" });
+		expect(embed.media).toEqual([
+			{ kind: "image", url: "https://example.com/1.png" },
+			{ kind: "image", url: "https://example.com/2.png" },
+		]);
+	});
+
+	it("ignores invalid theme colors", () => {
+		const embed = extractLinkMetadata(
+			"https://example.com/post",
+			'<meta name="theme-color" content="red">',
+			base,
+		);
+		expect(embed.themeColor).toBeUndefined();
+	});
+});
+
+describe("fetchLinkPreview enrichment", () => {
+	it("merges oEmbed provider and a Mastodon status into the card", async () => {
+		const mockAgent = newMockAgent();
+		const origin = mockAgent.get("http://93.184.216.34");
+		origin.intercept({ path: "/@jane/1", method: "GET" }).reply(
+			200,
+			`<html><head>
+				<meta property="og:title" content="Jane (@jane)" />
+				<meta property="og:description" content="Plain text" />
+				<link rel="alternate" type="application/json+oembed" href="/oembed">
+				<link rel="alternate" type="application/activity+json" href="/users/jane/statuses/1">
+			</head></html>`,
+			{ headers: { "content-type": "text/html" } },
+		);
+		origin
+			.intercept({ path: "/oembed", method: "GET" })
+			.reply(200, JSON.stringify({ provider_name: "Example Social", author_name: "Jane" }));
+		origin.intercept({ path: "/api/v1/statuses/1", method: "GET" }).reply(
+			200,
+			JSON.stringify({
+				created_at: "2026-10-01T00:00:00Z",
+				content: "<p><strong>Hi</strong></p>",
+				account: { username: "jane", display_name: "Jane", url: "http://93.184.216.34/@jane" },
+				media_attachments: [],
+			}),
+		);
+
+		const embed = await fetchLinkPreview("http://93.184.216.34/@jane/1", {
+			dispatcher: mockAgent,
+			cache: null,
+		});
+
+		expect(embed.provider?.name).toBe("Example Social");
+		expect(embed.author?.handle).toBe("jane@93.184.216.34");
+		expect(embed.description).toBeUndefined();
+		expect(embed.post?.body).toEqual([{ kind: "paragraph", spans: [{ text: "Hi", bold: true }] }]);
+	});
+
+	it("keeps the plain card when the status fetch fails", async () => {
+		const mockAgent = newMockAgent();
+		const origin = mockAgent.get("http://93.184.216.34");
+		origin.intercept({ path: "/@jane/1", method: "GET" }).reply(
+			200,
+			`<html><head>
+				<meta property="og:description" content="Plain text" />
+				<link rel="alternate" type="application/activity+json" href="/users/jane/statuses/1">
+			</head></html>`,
+			{ headers: { "content-type": "text/html" } },
+		);
+		origin.intercept({ path: "/api/v1/statuses/1", method: "GET" }).reply(404, "{}");
+
+		const embed = await fetchLinkPreview("http://93.184.216.34/@jane/1", {
+			dispatcher: mockAgent,
+			cache: null,
+		});
+
+		expect(embed.description).toBe("Plain text");
+		expect(embed.post).toBeUndefined();
+	});
+});

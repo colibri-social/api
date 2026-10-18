@@ -5,11 +5,21 @@ const NAMED_ENTITIES: Record<string, string> = {
 	quot: '"',
 	apos: "'",
 	nbsp: " ",
+	ensp: "\u2002",
+	emsp: "\u2003",
+	thinsp: "\u2009",
+	hellip: "\u2026",
+	ndash: "\u2013",
+	mdash: "\u2014",
+	lsquo: "\u2018",
+	rsquo: "\u2019",
+	ldquo: "\u201c",
+	rdquo: "\u201d",
 };
 
 const ENTITY_PATTERN = /&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g;
 
-function decodeEntities(input: string): string {
+export function decodeEntities(input: string): string {
 	return input.replace(ENTITY_PATTERN, (match, entity: string) => {
 		if (entity.startsWith("#")) {
 			const isHex = entity[1] === "x" || entity[1] === "X";
@@ -48,6 +58,41 @@ export function extractMetaTags(html: string): Map<string, string> {
 		if (trimmed.length > 0 && !metas.has(lowerKey)) metas.set(lowerKey, trimmed);
 	}
 	return metas;
+}
+
+export function extractMetaValues(html: string, key: string): string[] {
+	const wanted = key.toLowerCase();
+	const values: string[] = [];
+	for (const match of html.matchAll(META_TAG_PATTERN)) {
+		const attrs = parseAttributes(match[0]);
+		const name = (attrs.get("property") ?? attrs.get("name"))?.toLowerCase();
+		const content = attrs.get("content")?.trim();
+		if (name === wanted && content) values.push(content);
+	}
+	return values;
+}
+
+export type LinkTag = {
+	rel: string[];
+	href: string;
+	type?: string;
+	sizes?: string;
+};
+
+const LINK_TAG_PATTERN = /<link\b[^>]*>/gi;
+
+export function extractLinkTags(html: string): LinkTag[] {
+	const links: LinkTag[] = [];
+	for (const match of html.matchAll(LINK_TAG_PATTERN)) {
+		const attrs = parseAttributes(match[0]);
+		const href = attrs.get("href")?.trim();
+		const rel = attrs.get("rel")?.toLowerCase().split(/\s+/).filter(Boolean) ?? [];
+		if (!href || rel.length === 0) continue;
+		const type = attrs.get("type")?.trim().toLowerCase();
+		const sizes = attrs.get("sizes")?.trim().toLowerCase();
+		links.push({ rel, href, ...(type ? { type } : {}), ...(sizes ? { sizes } : {}) });
+	}
+	return links;
 }
 
 const TITLE_TAG_PATTERN = /<title\b[^>]*>([\s\S]*?)<\/title>/i;

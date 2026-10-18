@@ -17,8 +17,8 @@ import {
 	asSpaceRef,
 	asTid,
 	asUri,
+	CHANNEL_SPACE_TYPES,
 	COLLECTIONS,
-	SPACE_TYPES,
 	type social,
 } from "@colibri-social/lexicons";
 import {
@@ -424,7 +424,7 @@ export class ChannelViews {
 		const rows = await this.ctx.database.db
 			.select()
 			.from(table)
-			.where(and(eq(table.community, community), eq(table.spaceType, SPACE_TYPES.channelText)))
+			.where(and(eq(table.community, community), inArray(table.spaceType, CHANNEL_SPACE_TYPES)))
 			.orderBy(asc(table.position));
 		const [audiences, communityRow] = await Promise.all([
 			this.ctx.loader.categoryAudiences(community),

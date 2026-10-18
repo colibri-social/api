@@ -334,9 +334,12 @@ export const deliverMessageEdited = async (
 	senders: Senders,
 	message: MessageRef & { text: string },
 	sender: PushSenderProfile | PushSenderFor | undefined,
-	options: DeliveryOptions = {},
+	options: DeliveryOptions & { reaches?: (recipient: string) => boolean } = {},
 ): Promise<number> => {
-	const rows = await notificationsForMessage(deps, message.space, message.author, message.rkey);
+	const { reaches, ...delivery } = options;
+	const rows = (
+		await notificationsForMessage(deps, message.space, message.author, message.rkey)
+	).filter((row) => !reaches || reaches(row.recipient));
 	if (rows.length === 0) return 0;
 	const place = await resolvePlace(deps, message.space);
 	const profileFor = (recipient: string) =>
@@ -354,7 +357,7 @@ export const deliverMessageEdited = async (
 					...(place.thread ? { thread: place.thread } : {}),
 					...(profile ? { sender: profile } : {}),
 				},
-				{ ...options, type: "edit", place },
+				{ ...delivery, type: "edit", place },
 			);
 		}),
 	);

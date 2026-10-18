@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { containsHeadClose, extractMetaTags, extractTitleTag } from "./html.js";
+import {
+	containsHeadClose,
+	extractLinkTags,
+	extractMetaTags,
+	extractMetaValues,
+	extractTitleTag,
+} from "./html.js";
 
 describe("extractMetaTags", () => {
 	it("reads property and name attributes regardless of order", () => {
@@ -73,5 +79,33 @@ describe("containsHeadClose", () => {
 
 	it("returns false when there is no closing head tag yet", () => {
 		expect(containsHeadClose(Buffer.from("<head><title>still going"))).toBe(false);
+	});
+});
+
+describe("extractMetaValues", () => {
+	it("returns every value of a repeated key in order", () => {
+		const html = `
+			<meta property="og:image" content="https://example.com/1.png" />
+			<meta property="og:image" content="https://example.com/2.png" />
+			<meta property="og:title" content="Ignored" />
+		`;
+		expect(extractMetaValues(html, "og:image")).toEqual([
+			"https://example.com/1.png",
+			"https://example.com/2.png",
+		]);
+	});
+});
+
+describe("extractLinkTags", () => {
+	it("reads rel tokens, type, sizes and decoded hrefs", () => {
+		const html = `
+			<link rel="icon" type="image/png" sizes="32x32" href="/icon.png?a=1&amp;b=2">
+			<link rel="alternate" href='https://example.com/oembed' type="application/json+oembed">
+			<link rel="stylesheet">
+		`;
+		expect(extractLinkTags(html)).toEqual([
+			{ rel: ["icon"], href: "/icon.png?a=1&b=2", type: "image/png", sizes: "32x32" },
+			{ rel: ["alternate"], href: "https://example.com/oembed", type: "application/json+oembed" },
+		]);
 	});
 });

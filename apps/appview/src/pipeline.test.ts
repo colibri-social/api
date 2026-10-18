@@ -18,6 +18,7 @@ const pushed = vi.hoisted(() => ({
 	deleted: [] as unknown[],
 	edited: [] as unknown[],
 	readMoved: [] as unknown[][],
+	notified: [] as string[],
 }));
 
 vi.mock("@colibri-social/notifications", async (importOriginal) => {
@@ -30,13 +31,17 @@ vi.mock("@colibri-social/notifications", async (importOriginal) => {
 			pushed.deleted.push(message);
 			return 0;
 		},
+		deliverNotification: async (_deps: unknown, _senders: unknown, row: { recipient: string }) => {
+			pushed.notified.push(row.recipient);
+		},
 		deliverMessageEdited: async (
 			_deps: unknown,
 			_senders: unknown,
 			message: unknown,
 			sender: unknown,
+			options?: { reaches?: (recipient: string) => boolean },
 		) => {
-			pushed.edited.push({ message, sender });
+			pushed.edited.push({ message, sender, reaches: options?.reaches });
 			return 0;
 		},
 	};
@@ -74,6 +79,7 @@ let authzChanges: string[];
 let forgotten: string[];
 let releasePreview: () => void;
 let threadWrites: { community: string; space: string; record: Record<string, unknown> }[];
+let voicePresence: Map<string, string>;
 
 const framesOfType = (suffix: string) =>
 	published.filter((entry) => entry.frame.$type === `social.colibri.beta.sync.defs#${suffix}`);
@@ -213,6 +219,8 @@ beforeEach(async () => {
 	authzChanges = [];
 	forgotten = [];
 	threadWrites = [];
+	pushed.notified = [];
+	voicePresence = new Map();
 
 	const ctx = {
 		database,
@@ -254,6 +262,7 @@ beforeEach(async () => {
 		authzChanges: {
 			publish: (change: { community: string }) => authzChanges.push(change.community),
 		},
+		voice: { presenceOf: (did: string) => voicePresence.get(did) },
 		writer: {
 			put: async (community: string, write: { space: string; record: Record<string, unknown> }) => {
 				threadWrites.push({ community, space: write.space, record: write.record });
@@ -927,5 +936,105 @@ describe("closed threads", () => {
 		await new Promise((resolve) => setTimeout(resolve, 50));
 
 		expect(threadWrites).toHaveLength(1);
+	});
+});
+
+describe("voice channel pushes", () => {
+	const VOICE_SKEY = "3lkpipelinevoice";
+	const VOICE = channelSpace(COMMUNITY, SPACE_TYPES.channelVoice, VOICE_SKEY);
+	const LISTENER = "did:plc:listenerlistenerlistenerl";
+	const ELSEWHERE = "did:plc:elsewhereelsewhereelsewh";
+
+	beforeEach(async () => {
+		await database.db.insert(database.tables.channels).values({
+			space: VOICE,
+			community: COMMUNITY,
+			spaceType: SPACE_TYPES.channelVoice,
+			skey: VOICE_SKEY,
+			name: "lounge",
+		});
+		await database.db.insert(database.tables.members).values([
+			{ community: COMMUNITY, did: AUTHOR, roles: [], joinedAt: NOW },
+			{ community: COMMUNITY, did: LISTENER, roles: [], joinedAt: NOW },
+			{ community: COMMUNITY, did: ELSEWHERE, roles: [], joinedAt: NOW },
+		]);
+	});
+
+	const mentionBoth = (space: string): RepoChange => ({
+		space,
+		author: AUTHOR,
+		puts: [
+			{
+				collection: COLLECTIONS.message,
+				rkey: nextTid(),
+				cid: "bafyreicvoicemsg",
+				value: {
+					$type: COLLECTIONS.message,
+					text: "ab",
+					createdAt: NOW,
+					facets: [
+						mentionFacet(LISTENER),
+						{ ...mentionFacet(ELSEWHERE), index: { byteStart: 1, byteEnd: 2 } },
+					],
+				},
+			},
+		],
+		deletes: [],
+	});
+
+	it("pushes a voice channel message only to people connected to that channel", async () => {
+		voicePresence.set(LISTENER, VOICE);
+		voicePresence.set(
+			ELSEWHERE,
+			channelSpace(COMMUNITY, SPACE_TYPES.channelVoice, "3lkothervoice"),
+		);
+
+		emit(mentionBoth(VOICE));
+		await vi.waitFor(() =>
+			expect(
+				framesOfType("notificationEvent")
+					.map((entry) => entry.space)
+					.sort(),
+			).toEqual([ELSEWHERE, LISTENER].sort()),
+		);
+		await vi.waitFor(() => expect(pushed.notified).toEqual([LISTENER]));
+	});
+
+	it("pushes a voice channel edit only to people connected to that channel", async () => {
+		voicePresence.set(LISTENER, VOICE);
+		await database.db.insert(database.tables.messages).values({
+			space: VOICE,
+			author: AUTHOR,
+			rkey: "3lkvoiceedited",
+			community: COMMUNITY,
+			text: "before",
+			createdAt: NOW,
+			fromLegacyRepo: false,
+			indexedAt: NOW,
+		});
+		emit({
+			space: VOICE,
+			author: AUTHOR,
+			puts: [
+				{
+					collection: COLLECTIONS.message,
+					rkey: "3lkvoiceedited",
+					cid: "bafyreicvoiceedit",
+					value: { $type: COLLECTIONS.message, text: "after", createdAt: NOW, updatedAt: NOW },
+				},
+			],
+			deletes: [],
+		});
+		await vi.waitFor(() => expect(pushed.edited).toHaveLength(1));
+		const { reaches } = pushed.edited[0] as { reaches?: (recipient: string) => boolean };
+		expect(reaches?.(LISTENER)).toBe(true);
+		expect(reaches?.(ELSEWHERE)).toBe(false);
+	});
+
+	it("pushes a text channel message to everyone it notifies, wherever they are connected", async () => {
+		emit(mentionBoth(SPACE));
+		await vi.waitFor(() =>
+			expect([...pushed.notified].sort()).toEqual([ELSEWHERE, LISTENER].sort()),
+		);
 	});
 });

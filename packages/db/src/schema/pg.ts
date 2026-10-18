@@ -77,6 +77,7 @@ export type ClientPreferences = {
 	blueskyClient?: string;
 	customBlueskyClientBase?: string;
 	developerMode?: boolean;
+	inboxPresentation?: string;
 	voiceView?: StoredVoiceView;
 	experiments?: string[];
 };

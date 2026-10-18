@@ -634,17 +634,45 @@ describe("member-written collections", () => {
 		expect(skipped[0]?.reason).toMatch(/text/);
 	});
 
-	it("refuses a message written into a voice channel space", async () => {
+	it("accepts a message written into a voice channel space", async () => {
 		const voice = channelSpace(COMMUNITY, "social.colibri.beta.channel.voice", "3lkvoice1");
 		await applyChange(
 			deps,
 			put(voice, MEMBER, "social.colibri.beta.message", "3lkmsg4", {
 				$type: "social.colibri.beta.message",
-				text: "nope",
+				text: "can you hear me",
 				createdAt: NOW,
 			}),
 		);
-		expect(await database.db.select().from(database.tables.messages)).toEqual([]);
+		const [row] = await database.db.select().from(database.tables.messages);
+		expect(row).toMatchObject({ space: voice, author: MEMBER, text: "can you hear me" });
+		expect(skipped).toEqual([]);
+	});
+
+	it("accepts a reaction written into a voice channel space", async () => {
+		const voice = channelSpace(COMMUNITY, "social.colibri.beta.channel.voice", "3lkvoice1");
+		await applyChange(
+			deps,
+			put(voice, MEMBER, "social.colibri.beta.reaction", "3lkreact4", {
+				$type: "social.colibri.beta.reaction",
+				target: { did: MEMBER, rkey: "3lkmsg4" },
+				emoji: "👍",
+			}),
+		);
+		const [row] = await database.db.select().from(database.tables.reactions);
+		expect(row).toMatchObject({ space: voice, author: MEMBER, targetRkey: "3lkmsg4", emoji: "👍" });
+		expect(skipped).toEqual([]);
+	});
+
+	it("refuses a thread follow written into a voice channel space", async () => {
+		const voice = channelSpace(COMMUNITY, "social.colibri.beta.channel.voice", "3lkvoice1");
+		await applyChange(
+			deps,
+			put(voice, MEMBER, "social.colibri.beta.thread.follow", "self", {
+				$type: "social.colibri.beta.thread.follow",
+				createdAt: NOW,
+			}),
+		);
 		expect(skipped[0]?.reason).toMatch(/not expected/);
 	});
 
@@ -943,6 +971,7 @@ describe("personal spaces", () => {
 				},
 				theme: "light",
 				developerMode: true,
+				inboxPresentation: "modal",
 				experiments: ["light-mode-v1"],
 			}),
 		);
@@ -953,6 +982,7 @@ describe("personal spaces", () => {
 			controls: { swipeLeftAction: "reply", doubleTapEnabled: true },
 			theme: "light",
 			developerMode: true,
+			inboxPresentation: "modal",
 			experiments: ["light-mode-v1"],
 		});
 	});

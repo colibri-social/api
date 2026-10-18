@@ -1140,7 +1140,7 @@ describe("ChannelViews.summaries", () => {
 		});
 	});
 
-	it("summarizes the latest message of each readable text channel", async () => {
+	it("summarizes the latest message of each readable text and voice channel", async () => {
 		await putChannel(VOICE, SPACE_TYPES.channelVoice, "3lkvoicetest00");
 		await putChannel(QUIET, SPACE_TYPES.channelText, "3lkquiettest00");
 		await putChannel(PRIVATE, SPACE_TYPES.channelText, "3lkprivatetest0", [AUTHOR_A]);
@@ -1155,7 +1155,8 @@ describe("ChannelViews.summaries", () => {
 			attachments: [blob("video/mp4"), blob("application/pdf")],
 			createdAt: "2026-08-24T00:00:00.000Z",
 		});
-		await putMessage(nextTid(), { space: VOICE });
+		const voiceLatest = nextTid();
+		await putMessage(voiceLatest, { space: VOICE, text: "brb" });
 		await putMessage(nextTid(), { space: PRIVATE });
 
 		const summaries = await summariesFor(AUTHOR_B);
@@ -1170,6 +1171,15 @@ describe("ChannelViews.summaries", () => {
 				attachmentCount: 2,
 				forward: false,
 				createdAt: "2026-08-24T00:00:00.000Z",
+			},
+			{
+				channel: VOICE,
+				rkey: voiceLatest,
+				author: AUTHOR_A,
+				text: "brb",
+				attachmentCount: 0,
+				forward: false,
+				createdAt: NOW,
 			},
 		]);
 	});

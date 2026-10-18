@@ -41,12 +41,47 @@ type LinkEmbed = { $type?: "social.colibri.beta.embed.defs#linkEmbed";
   /**
    * Playable video.
    */
-  "video"?:EmbedVideo };
+  "video"?:EmbedVideo;
+
+  /**
+   * Accent color the page declares, as #rrggbb.
+   */
+  "themeColor"?:string;
+
+  /**
+   * Card layout the page asks for.
+   */
+  "layout"?:"summary" | "largeImage" | "player" | l.UnknownString;
+
+  /**
+   * Service that published the page.
+   */
+  "provider"?:EmbedProvider;
+
+  /**
+   * Author of the page or post.
+   */
+  "author"?:EmbedAuthor;
+
+  /**
+   * When the page or post was published.
+   */
+  "publishedAt"?:l.DatetimeString;
+
+  /**
+   * Gallery of images and videos, in page order.
+   */
+  "media"?:(EmbedMedia)[];
+
+  /**
+   * Social post content, present when the link resolves to one.
+   */
+  "post"?:EmbedPost };
 
 export type { LinkEmbed };
 
 /** A link preview. */
-const linkEmbed = /*#__PURE__*/ l.typedObject<LinkEmbed>($nsid, "linkEmbed", /*#__PURE__*/ l.object({"uri":/*#__PURE__*/ l.string({"format":"uri"}),"title":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"siteName":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"image":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<EmbedImage>((() => embedImage) as any)),"video":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<EmbedVideo>((() => embedVideo) as any))}));
+const linkEmbed = /*#__PURE__*/ l.typedObject<LinkEmbed>($nsid, "linkEmbed", /*#__PURE__*/ l.object({"uri":/*#__PURE__*/ l.string({"format":"uri"}),"title":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"siteName":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"image":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<EmbedImage>((() => embedImage) as any)),"video":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<EmbedVideo>((() => embedVideo) as any)),"themeColor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":7})),"layout":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["summary","largeImage","player"]}>()),"provider":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<EmbedProvider>((() => embedProvider) as any)),"author":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<EmbedAuthor>((() => embedAuthor) as any)),"publishedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"media":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedMedia>((() => embedMedia) as any), {"maxLength":4})),"post":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<EmbedPost>((() => embedPost) as any))}));
 
 export { linkEmbed };
 
@@ -114,6 +149,266 @@ export type { EmbedVideo };
 const embedVideo = /*#__PURE__*/ l.typedObject<EmbedVideo>($nsid, "embedVideo", /*#__PURE__*/ l.object({"url":/*#__PURE__*/ l.string({"format":"uri"}),"mimeType":/*#__PURE__*/ l.string<{"knownValues":["video/mp4","video/webm"]}>(),"width":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"height":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"duration":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer())}));
 
 export { embedVideo };
+
+/** The service behind a link preview. */
+type EmbedProvider = { $type?: "social.colibri.beta.embed.defs#embedProvider";
+
+  /**
+   * Display name.
+   */
+  "name":string;
+
+  /**
+   * Home page.
+   */
+  "url"?:l.UriString;
+
+  /**
+   * Icon URL served by this AppView's image proxy.
+   */
+  "icon"?:l.UriString };
+
+export type { EmbedProvider };
+
+/** The service behind a link preview. */
+const embedProvider = /*#__PURE__*/ l.typedObject<EmbedProvider>($nsid, "embedProvider", /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string(),"url":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"icon":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"}))}));
+
+export { embedProvider };
+
+/** The author of a link preview. */
+type EmbedAuthor = { $type?: "social.colibri.beta.embed.defs#embedAuthor";
+
+  /**
+   * Display name.
+   */
+  "name":string;
+
+  /**
+   * Account handle, without a leading @.
+   */
+  "handle"?:string;
+
+  /**
+   * Profile or post URL.
+   */
+  "url"?:l.UriString;
+
+  /**
+   * Avatar URL served by this AppView's image proxy.
+   */
+  "avatar"?:l.UriString };
+
+export type { EmbedAuthor };
+
+/** The author of a link preview. */
+const embedAuthor = /*#__PURE__*/ l.typedObject<EmbedAuthor>($nsid, "embedAuthor", /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string(),"handle":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"url":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"avatar":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"}))}));
+
+export { embedAuthor };
+
+/** One gallery item. */
+type EmbedMedia = { $type?: "social.colibri.beta.embed.defs#embedMedia";
+
+  /**
+   * Media kind. gifv is a silent looping video.
+   */
+  "kind":"image" | "video" | "gifv" | l.UnknownString;
+
+  /**
+   * URL served by this AppView's image or video proxy.
+   */
+  "url":l.UriString;
+
+  /**
+   * Poster image for a video, served by this AppView's image proxy.
+   */
+  "previewUrl"?:l.UriString;
+
+  /**
+   * Content type of a video.
+   */
+  "mimeType"?:"video/mp4" | "video/webm" | l.UnknownString;
+
+  /**
+   * Intrinsic pixel width.
+   */
+  "width"?:number;
+
+  /**
+   * Intrinsic pixel height.
+   */
+  "height"?:number;
+
+  /**
+   * Alternative text.
+   */
+  "alt"?:string };
+
+export type { EmbedMedia };
+
+/** One gallery item. */
+const embedMedia = /*#__PURE__*/ l.typedObject<EmbedMedia>($nsid, "embedMedia", /*#__PURE__*/ l.object({"kind":/*#__PURE__*/ l.string<{"knownValues":["image","video","gifv"]}>(),"url":/*#__PURE__*/ l.string({"format":"uri"}),"previewUrl":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"mimeType":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["video/mp4","video/webm"]}>()),"width":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"height":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"alt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())}));
+
+export { embedMedia };
+
+/** Content of a social post. */
+type EmbedPost = { $type?: "social.colibri.beta.embed.defs#embedPost";
+
+  /**
+   * Formatted post text.
+   */
+  "body":(RichBlock)[];
+
+  /**
+   * Whether the author marked the post as sensitive.
+   */
+  "sensitive"?:boolean;
+
+  /**
+   * Content warning text.
+   */
+  "contentWarning"?:string;
+
+  /**
+   * Engagement counts.
+   */
+  "stats"?:EmbedStats;
+
+  /**
+   * The post this post quotes.
+   */
+  "quote"?:EmbedQuote;
+
+  /**
+   * Source language code when body holds a translation.
+   */
+  "translatedFrom"?:string };
+
+export type { EmbedPost };
+
+/** Content of a social post. */
+const embedPost = /*#__PURE__*/ l.typedObject<EmbedPost>($nsid, "embedPost", /*#__PURE__*/ l.object({"body":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichBlock>((() => richBlock) as any), ),"sensitive":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"contentWarning":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"stats":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<EmbedStats>((() => embedStats) as any)),"quote":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<EmbedQuote>((() => embedQuote) as any)),"translatedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())}));
+
+export { embedPost };
+
+/** Engagement counts on a post. */
+type EmbedStats = { $type?: "social.colibri.beta.embed.defs#embedStats";
+
+  /**
+   * Reply count.
+   */
+  "replies"?:number;
+
+  /**
+   * Repost count.
+   */
+  "reposts"?:number;
+
+  /**
+   * Like count.
+   */
+  "likes"?:number;
+
+  /**
+   * View count.
+   */
+  "views"?:number };
+
+export type { EmbedStats };
+
+/** Engagement counts on a post. */
+const embedStats = /*#__PURE__*/ l.typedObject<EmbedStats>($nsid, "embedStats", /*#__PURE__*/ l.object({"replies":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":0})),"reposts":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":0})),"likes":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":0})),"views":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":0}))}));
+
+export { embedStats };
+
+/** A quoted post. */
+type EmbedQuote = { $type?: "social.colibri.beta.embed.defs#embedQuote";
+
+  /**
+   * URL of the quoted post.
+   */
+  "uri":l.UriString;
+
+  /**
+   * Author of the quoted post.
+   */
+  "author":EmbedAuthor;
+
+  /**
+   * Formatted text of the quoted post.
+   */
+  "body":(RichBlock)[];
+
+  /**
+   * Media on the quoted post.
+   */
+  "media"?:(EmbedMedia)[];
+
+  /**
+   * When the quoted post was published.
+   */
+  "publishedAt"?:l.DatetimeString;
+
+  /**
+   * Source language code when body holds a translation.
+   */
+  "translatedFrom"?:string };
+
+export type { EmbedQuote };
+
+/** A quoted post. */
+const embedQuote = /*#__PURE__*/ l.typedObject<EmbedQuote>($nsid, "embedQuote", /*#__PURE__*/ l.object({"uri":/*#__PURE__*/ l.string({"format":"uri"}),"author":/*#__PURE__*/ l.ref<EmbedAuthor>((() => embedAuthor) as any),"body":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichBlock>((() => richBlock) as any), ),"media":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedMedia>((() => embedMedia) as any), {"maxLength":4})),"publishedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"translatedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())}));
+
+export { embedQuote };
+
+/** A block of formatted text. */
+type RichBlock = { $type?: "social.colibri.beta.embed.defs#richBlock";
+
+  /**
+   * Block kind.
+   */
+  "kind":"paragraph" | "quote" | l.UnknownString;
+
+  /**
+   * Inline runs. A newline in text is a line break.
+   */
+  "spans":(RichSpan)[] };
+
+export type { RichBlock };
+
+/** A block of formatted text. */
+const richBlock = /*#__PURE__*/ l.typedObject<RichBlock>($nsid, "richBlock", /*#__PURE__*/ l.object({"kind":/*#__PURE__*/ l.string<{"knownValues":["paragraph","quote"]}>(),"spans":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichSpan>((() => richSpan) as any), )}));
+
+export { richBlock };
+
+/** An inline run of formatted text. */
+type RichSpan = { $type?: "social.colibri.beta.embed.defs#richSpan";
+
+  /**
+   * Plain text.
+   */
+  "text":string;
+
+  /**
+   * Bold.
+   */
+  "bold"?:boolean;
+
+  /**
+   * Italic.
+   */
+  "italic"?:boolean;
+
+  /**
+   * Link target.
+   */
+  "href"?:l.UriString };
+
+export type { RichSpan };
+
+/** An inline run of formatted text. */
+const richSpan = /*#__PURE__*/ l.typedObject<RichSpan>($nsid, "richSpan", /*#__PURE__*/ l.object({"text":/*#__PURE__*/ l.string(),"bold":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"italic":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"href":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"}))}));
+
+export { richSpan };
 
 /** A GIF from the picker. */
 type GifView = { $type?: "social.colibri.beta.embed.defs#gifView";
