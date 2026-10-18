@@ -1,4 +1,4 @@
-import type { BridgedAttribution, Schema } from "@colibri-social/appview-db";
+import type { BridgedAttribution, ReactionEmojiRef, Schema } from "@colibri-social/appview-db";
 import {
 	type ActorAuthz,
 	type CategoryAudience,
@@ -199,19 +199,31 @@ export class ChannelViews {
 	}
 
 	private aggregateReactions(rows: ReactionRow[], viewer: string | null): ReactionView[] {
-		const byEmoji = new Map<string, { reactors: string[]; bridged: BridgedAttribution[] }>();
+		const byEmoji = new Map<
+			string,
+			{
+				reactors: string[];
+				bridged: BridgedAttribution[];
+				custom?: { rkey: string; ref: ReactionEmojiRef };
+			}
+		>();
 		for (const row of rows) {
 			const group = byEmoji.get(row.emoji) ?? { reactors: [], bridged: [] };
 			if (row.bridged) group.bridged.push(row.bridged);
 			else group.reactors.push(row.author);
+			if (row.customEmoji && (!group.custom || row.rkey < group.custom.rkey))
+				group.custom = { rkey: row.rkey, ref: row.customEmoji };
 			byEmoji.set(row.emoji, group);
 		}
 		return [...byEmoji.entries()]
 			.sort(([a], [b]) => a.localeCompare(b))
 			.map(
-				([emoji, { reactors, bridged }]) =>
+				([emoji, { reactors, bridged, custom }]) =>
 					({
 						emoji,
+						customEmoji: custom
+							? { uri: custom.ref.uri, ...(custom.ref.cid ? { cid: custom.ref.cid } : {}) }
+							: undefined,
 						count: reactors.length + bridged.length,
 						reactors: reactors.map(asDid),
 						bridgedReactors:
@@ -813,10 +825,14 @@ export class ChannelViews {
 					? and(
 							eq(table.space, space),
 							eq(table.recipient, did),
-							eq(table.kind, "mention"),
+							inArray(table.kind, ["mention", "reply"]),
 							gt(table.messageRkey, cursor),
 						)
-					: and(eq(table.space, space), eq(table.recipient, did), eq(table.kind, "mention")),
+					: and(
+							eq(table.space, space),
+							eq(table.recipient, did),
+							inArray(table.kind, ["mention", "reply"]),
+						),
 			);
 		if (rows.length === 0) return 0;
 

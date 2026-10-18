@@ -87,6 +87,9 @@ export const reaction: Projector<social.colibri.beta.reaction.Main> = {
 			targetAuthor: value.target.did,
 			targetRkey: value.target.rkey,
 			emoji: value.emoji,
+			customEmoji: value.customEmoji
+				? { uri: value.customEmoji.uri, cid: value.customEmoji.cid }
+				: null,
 			bridged,
 			bridgedFrom: bridgedFromKey(bridged),
 		};

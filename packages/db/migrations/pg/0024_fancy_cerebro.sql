@@ -1,0 +1,1 @@
+ALTER TABLE "reactions" ADD COLUMN "custom_emoji" jsonb;

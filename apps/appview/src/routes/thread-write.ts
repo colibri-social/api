@@ -2,6 +2,9 @@ import { InvalidRequestError } from "@atproto/xrpc-server";
 import {
 	type ActorAuthz,
 	type ChannelState,
+	canCloseThread,
+	canDeleteThread,
+	canLockThread,
 	canManageThread,
 	canPost,
 	canRead,
@@ -10,6 +13,7 @@ import {
 	Membership,
 	Moderation,
 	outranksPosition,
+	type ThreadState,
 } from "@colibri-social/community";
 import {
 	CHANNEL_SPACE_TYPES,
@@ -34,7 +38,13 @@ import { toXrpcError } from "../errors.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
 import { ChannelViews } from "../views/channel.js";
-import { anchorOf, type ThreadRow, type ThreadView, ThreadViews } from "../views/thread.js";
+import {
+	anchorOf,
+	type ThreadRow,
+	type ThreadView,
+	ThreadViews,
+	toThreadState,
+} from "../views/thread.js";
 import type { RouteDeps } from "./types.js";
 
 const forbidden = (message: string) => new InvalidRequestError(message, "Forbidden");
@@ -76,6 +86,8 @@ export const threadRecord = (
 		anchor: ReturnType<typeof anchorOf>;
 		visibleToRoles: string[];
 		visibleToMembers: string[];
+		closedAt: string | null;
+		locked: boolean;
 		bridged?: Record<string, unknown>;
 	},
 ) => ({
@@ -96,8 +108,51 @@ export const threadRecord = (
 		: {}),
 	...(row.visibleToRoles.length ? { visibleToRoles: row.visibleToRoles } : {}),
 	...(row.visibleToMembers.length ? { visibleToMembers: row.visibleToMembers } : {}),
+	...(row.closedAt ? { closedAt: row.closedAt } : {}),
+	...(row.locked ? { locked: true } : {}),
 	...(row.bridged ? { bridged: row.bridged } : {}),
 });
+
+export const storedBridged = async (
+	ctx: AppContext,
+	row: Pick<ThreadRow, "space" | "community">,
+): Promise<Record<string, unknown> | undefined> => {
+	const table = ctx.database.tables.records;
+	const [stored] = await ctx.database.db
+		.select({ value: table.value })
+		.from(table)
+		.where(
+			and(
+				eq(table.space, row.space),
+				eq(table.author, row.community),
+				eq(table.collection, COLLECTIONS.thread),
+				eq(table.rkey, SELF),
+			),
+		)
+		.limit(1);
+	const bridged = stored?.value.bridged;
+	return bridged && typeof bridged === "object" ? (bridged as Record<string, unknown>) : undefined;
+};
+
+export const reopenThread = async (ctx: AppContext, row: ThreadRow): Promise<void> => {
+	await ctx.writer.put(row.community, {
+		space: row.space,
+		collection: COLLECTIONS.thread,
+		rkey: SELF,
+		record: threadRecord({
+			name: row.name,
+			channel: row.channel,
+			createdBy: row.createdBy,
+			createdAt: row.createdAt,
+			anchor: anchorOf(row),
+			visibleToRoles: row.visibleToRoles,
+			visibleToMembers: row.visibleToMembers,
+			closedAt: null,
+			locked: row.locked,
+			bridged: await storedBridged(ctx, row),
+		}),
+	});
+};
 
 const messageExists = async (
 	ctx: AppContext,
@@ -143,6 +198,17 @@ export const registerThreadWriteRoutes = ({ server, ctx, auth }: RouteDeps): voi
 		const view = await threads.view(row, authz, viewer);
 		if (!view) throw forbidden("the requester may not read this thread");
 		return view;
+	};
+
+	const openerCheck = async (
+		row: ThreadRow,
+		authz: ActorAuthz,
+	): Promise<
+		(check: (authz: ActorAuthz, channel: ChannelState, thread: ThreadState) => boolean) => boolean
+	> => {
+		const channel = await ctx.loader.channel(row.channel);
+		const state = toThreadState(row);
+		return (check) => (channel ? check(authz, channel, state) : canManageThread(authz));
 	};
 
 	const requireChannel = async (space: string): Promise<ChannelState> => {
@@ -207,6 +273,8 @@ export const registerThreadWriteRoutes = ({ server, ctx, auth }: RouteDeps): voi
 							: null,
 						visibleToRoles: input.body.visibleToRoles ? [...input.body.visibleToRoles] : [],
 						visibleToMembers: input.body.visibleToMembers ? [...input.body.visibleToMembers] : [],
+						closedAt: null,
+						locked: false,
 					}),
 				});
 
@@ -229,18 +297,17 @@ export const registerThreadWriteRoutes = ({ server, ctx, auth }: RouteDeps): voi
 				const existing = await loadThread(input.body.thread);
 				const authz = await ctx.loader.authz(existing.community, actor);
 
+				const allows = await openerCheck(existing, authz);
+				const { name, closed, locked } = input.body;
 				const changesVisibility =
 					input.body.visibleToRoles !== undefined || input.body.visibleToMembers !== undefined;
-				const permitted = changesVisibility
-					? canManageThread(authz)
-					: canRenameThread(authz, {
-							space: existing.space,
-							skey: existing.skey,
-							channel: existing.channel,
-							createdBy: existing.createdBy,
-							visibleToRoles: existing.visibleToRoles,
-							visibleToMembers: existing.visibleToMembers,
-						});
+				const changesLock = locked !== undefined && locked !== existing.locked;
+				const changesClosed = closed !== undefined && closed !== (existing.closedAt !== null);
+				const permitted =
+					(!changesVisibility || canManageThread(authz)) &&
+					(name === undefined || allows(canRenameThread)) &&
+					(!changesClosed || allows(canCloseThread)) &&
+					(!changesLock || canLockThread(authz));
 				if (!permitted) throw forbidden("you may not change this thread");
 
 				await assertVisibilityHierarchy(
@@ -256,26 +323,34 @@ export const registerThreadWriteRoutes = ({ server, ctx, auth }: RouteDeps): voi
 				const visibleToMembers = input.body.visibleToMembers
 					? [...input.body.visibleToMembers]
 					: existing.visibleToMembers;
+				const closedAt = changesClosed
+					? closed
+						? new Date().toISOString()
+						: null
+					: existing.closedAt;
 
 				await ctx.writer.put(existing.community, {
 					space: existing.space,
 					collection: COLLECTIONS.thread,
 					rkey: SELF,
 					record: threadRecord({
-						name: input.body.name ?? existing.name,
+						name: name ?? existing.name,
 						channel: existing.channel,
 						createdBy: existing.createdBy,
 						createdAt: existing.createdAt,
 						anchor: anchorOf(existing),
 						visibleToRoles,
 						visibleToMembers,
+						closedAt,
+						locked: locked ?? existing.locked,
+						bridged: await storedBridged(ctx, existing),
 					}),
 				});
 
 				const row = await loadThread(existing.space);
 				const thread = await viewOf(row, actor);
 				await announceThread(ctx, threads, row, "update");
-				if (changesVisibility) {
+				if (changesVisibility || changesLock) {
 					ctx.authzChanges.publish({
 						community: existing.community,
 						collection: COLLECTIONS.thread,
@@ -334,6 +409,8 @@ export const registerThreadWriteRoutes = ({ server, ctx, auth }: RouteDeps): voi
 							: anchorOf(existing),
 						visibleToRoles: existing.visibleToRoles,
 						visibleToMembers: existing.visibleToMembers,
+						closedAt: existing.closedAt,
+						locked: existing.locked,
 					}),
 				});
 
@@ -355,7 +432,8 @@ export const registerThreadWriteRoutes = ({ server, ctx, auth }: RouteDeps): voi
 			try {
 				const existing = await loadThread(input.body.thread);
 				const authz = await ctx.loader.authz(existing.community, caller.credentials.did);
-				if (!canManageThread(authz)) throw forbidden("you lack the thread.manage permission");
+				const allows = await openerCheck(existing, authz);
+				if (!allows(canDeleteThread)) throw forbidden("you may not delete this thread");
 
 				const host = await ctx.credentials.connect(existing.community);
 				await ctx.provisioner.deleteThread(host, existing.space);
@@ -512,6 +590,8 @@ const carryThread = async (
 			anchor: anchorOf(row),
 			visibleToRoles: row.visibleToRoles,
 			visibleToMembers: row.visibleToMembers,
+			closedAt: row.closedAt,
+			locked: row.locked,
 		}),
 	});
 
@@ -565,6 +645,7 @@ const requirePostable = async (
 	const states = await ctx.loader.spaceStates(space, spaceType);
 	if (!states.channel) throw new InvalidRequestError(`no space at ${space}`, "SpaceNotFound");
 	if (!canPost(authz, states.channel)) throw forbidden("you may not post in that space");
+	if (states.thread?.locked && !canManageThread(authz)) throw forbidden("that thread is locked");
 };
 
 const movedDestination = async (

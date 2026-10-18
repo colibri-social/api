@@ -51,6 +51,8 @@ export type ThreadState = {
 	createdBy: string;
 	visibleToRoles: string[];
 	visibleToMembers: string[];
+	closedAt: string | null;
+	locked: boolean;
 };
 
 export type ActorAuthz = {
@@ -185,16 +187,46 @@ export const canReadThread = (
 	return holdsAny(authz, thread.visibleToRoles);
 };
 
+export const canManageThread = (authz: ActorAuthz): boolean => has(authz, "thread.manage");
+
 export const canPostInThread = (
 	authz: ActorAuthz,
 	channel: ChannelState,
 	thread: ThreadState,
-): boolean => canReadThread(authz, channel, thread) && canPost(authz, channel);
+): boolean =>
+	canReadThread(authz, channel, thread) &&
+	canPost(authz, channel) &&
+	(!thread.locked || canManageThread(authz));
 
-export const canManageThread = (authz: ActorAuthz): boolean => has(authz, "thread.manage");
+export const isThreadOpener = (
+	authz: ActorAuthz,
+	channel: ChannelState,
+	thread: ThreadState,
+): boolean =>
+	thread.createdBy === authz.actor &&
+	isMember(authz) &&
+	!authz.isBanned &&
+	canReadThread(authz, channel, thread);
 
-export const canRenameThread = (authz: ActorAuthz, thread: ThreadState): boolean =>
-	canManageThread(authz) || thread.createdBy === authz.actor;
+export const canRenameThread = (
+	authz: ActorAuthz,
+	channel: ChannelState,
+	thread: ThreadState,
+): boolean => canManageThread(authz) || isThreadOpener(authz, channel, thread);
+
+export const canDeleteThread = (
+	authz: ActorAuthz,
+	channel: ChannelState,
+	thread: ThreadState,
+): boolean => canManageThread(authz) || isThreadOpener(authz, channel, thread);
+
+export const canCloseThread = (
+	authz: ActorAuthz,
+	channel: ChannelState,
+	thread: ThreadState,
+): boolean => canManageThread(authz) || (!thread.locked && isThreadOpener(authz, channel, thread));
+
+export const canLockThread = (authz: ActorAuthz): boolean => canManageThread(authz);
 
 export const anonymousAuthz = (actor: string, community: string): ActorAuthz => ({
 	actor,

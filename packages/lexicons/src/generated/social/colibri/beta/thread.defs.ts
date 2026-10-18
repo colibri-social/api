@@ -51,6 +51,16 @@ type Main = { $type: "social.colibri.beta.thread";
   "visibleToMembers"?:(l.DidString)[];
 
   /**
+   * When the thread was closed. Absent on an open thread. A closed thread still accepts messages, and the next one reopens it.
+   */
+  "closedAt"?:l.DatetimeString;
+
+  /**
+   * Whether only members who may manage threads can write in this thread. Absent means unlocked.
+   */
+  "locked"?:boolean;
+
+  /**
    * Who opened this thread on another service. Honoured only when the community itself wrote the record.
    */
   "bridged"?:BridgeDefs.Attribution };
@@ -58,7 +68,7 @@ type Main = { $type: "social.colibri.beta.thread";
 export type { Main };
 
 /** A thread's configuration, including the link to the channel it belongs to. Lives at key 'self' in the thread's own space and is written only by the community. */
-const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":128}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"anchor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.SpaceRecordRef>((() => BetaDefs.spaceRecordRef) as any)),"createdBy":/*#__PURE__*/ l.string({"format":"did"}),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"bridged":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BridgeDefs.Attribution>((() => BridgeDefs.attribution) as any))}));
+const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":128}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"anchor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.SpaceRecordRef>((() => BetaDefs.spaceRecordRef) as any)),"createdBy":/*#__PURE__*/ l.string({"format":"did"}),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"closedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"locked":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"bridged":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BridgeDefs.Attribution>((() => BridgeDefs.attribution) as any))}));
 
 export { main };
 

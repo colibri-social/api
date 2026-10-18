@@ -2,9 +2,13 @@ import type { Schema } from "@colibri-social/appview-db";
 import {
 	type ActorAuthz,
 	type ChannelState,
+	canCloseThread,
+	canDeleteThread,
+	canLockThread,
 	canManageThread,
 	canPostInThread,
 	canReadThread,
+	canRenameThread,
 	isPrivateThread,
 	type ThreadState,
 } from "@colibri-social/community";
@@ -40,6 +44,8 @@ export const toThreadState = (row: ThreadRow): ThreadState => ({
 	createdBy: row.createdBy,
 	visibleToRoles: row.visibleToRoles,
 	visibleToMembers: row.visibleToMembers,
+	closedAt: row.closedAt,
+	locked: row.locked,
 });
 
 export const anchorOf = (row: ThreadRow) =>
@@ -236,10 +242,16 @@ export class ThreadViews {
 					private: isPrivateThread(state),
 					visibleToRoles: row.visibleToRoles.map(asRecordKey),
 					visibleToMembers: row.visibleToMembers.map(asDid),
+					closedAt: row.closedAt ? asDatetime(row.closedAt) : undefined,
+					locked: row.locked || undefined,
 					viewer: {
 						canRead: true,
 						canPost: canPostInThread(authz, channel, state),
 						canManage: canManageThread(authz),
+						canEdit: canRenameThread(authz, channel, state),
+						canClose: canCloseThread(authz, channel, state),
+						canDelete: canDeleteThread(authz, channel, state),
+						canLock: canLockThread(authz),
 						following: followed.has(row.space),
 						muted: muted.has(row.space),
 						hasUnread,

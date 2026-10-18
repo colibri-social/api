@@ -64,6 +64,8 @@ const toThread = (row: Schema["threads"]["$inferSelect"]): ThreadState => ({
 	createdBy: row.createdBy,
 	visibleToRoles: row.visibleToRoles,
 	visibleToMembers: row.visibleToMembers,
+	closedAt: row.closedAt,
+	locked: row.locked,
 });
 
 export class CommunityLoader {

@@ -91,6 +91,16 @@ type ThreadView = { $type?: "social.colibri.beta.thread.defs#threadView";
   "visibleToMembers"?:(l.DidString)[];
 
   /**
+   * When the thread was closed. Absent on an open thread.
+   */
+  "closedAt"?:l.DatetimeString;
+
+  /**
+   * Whether only members who may manage threads can write in this thread.
+   */
+  "locked"?:boolean;
+
+  /**
    * The requesting user's relationship to this thread.
    */
   "viewer":ThreadViewerState };
@@ -98,7 +108,7 @@ type ThreadView = { $type?: "social.colibri.beta.thread.defs#threadView";
 export type { ThreadView };
 
 /** A thread as the AppView serves it. The thread's identity is its space. */
-const threadView = /*#__PURE__*/ l.typedObject<ThreadView>($nsid, "threadView", /*#__PURE__*/ l.object({"space":/*#__PURE__*/ l.string({"format":"space-ref"}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"community":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string(),"anchor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.SpaceRecordRef>((() => BetaDefs.spaceRecordRef) as any)),"anchorMessage":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<ChannelDefs.MessageView>((() => ChannelDefs.messageView) as any),/*#__PURE__*/ l.typedRef<ChannelDefs.DeletedMessageView>((() => ChannelDefs.deletedMessageView) as any)], false)),"createdBy":/*#__PURE__*/ l.string({"format":"did"}),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"lastActivityAt":/*#__PURE__*/ l.string({"format":"datetime"}),"messageCount":/*#__PURE__*/ l.integer(),"movedInCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"participants":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"private":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"viewer":/*#__PURE__*/ l.ref<ThreadViewerState>((() => threadViewerState) as any)}));
+const threadView = /*#__PURE__*/ l.typedObject<ThreadView>($nsid, "threadView", /*#__PURE__*/ l.object({"space":/*#__PURE__*/ l.string({"format":"space-ref"}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"community":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string(),"anchor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.SpaceRecordRef>((() => BetaDefs.spaceRecordRef) as any)),"anchorMessage":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<ChannelDefs.MessageView>((() => ChannelDefs.messageView) as any),/*#__PURE__*/ l.typedRef<ChannelDefs.DeletedMessageView>((() => ChannelDefs.deletedMessageView) as any)], false)),"createdBy":/*#__PURE__*/ l.string({"format":"did"}),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"lastActivityAt":/*#__PURE__*/ l.string({"format":"datetime"}),"messageCount":/*#__PURE__*/ l.integer(),"movedInCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"participants":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"private":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"closedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"locked":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"viewer":/*#__PURE__*/ l.ref<ThreadViewerState>((() => threadViewerState) as any)}));
 
 export { threadView };
 
@@ -116,9 +126,29 @@ type ThreadViewerState = { $type?: "social.colibri.beta.thread.defs#threadViewer
   "canPost":boolean;
 
   /**
-   * Whether the user may rename, move or delete this thread.
+   * Whether the user moderates threads in this community, and so may rename, close, lock, move or delete any thread.
    */
   "canManage":boolean;
+
+  /**
+   * Whether the user may rename this thread.
+   */
+  "canEdit":boolean;
+
+  /**
+   * Whether the user may close or reopen this thread.
+   */
+  "canClose":boolean;
+
+  /**
+   * Whether the user may delete this thread.
+   */
+  "canDelete":boolean;
+
+  /**
+   * Whether the user may lock or unlock this thread.
+   */
+  "canLock":boolean;
 
   /**
    * Whether the user follows this thread.
@@ -148,6 +178,6 @@ type ThreadViewerState = { $type?: "social.colibri.beta.thread.defs#threadViewer
 export type { ThreadViewerState };
 
 /** The requesting user's access and unread state for a thread. */
-const threadViewerState = /*#__PURE__*/ l.typedObject<ThreadViewerState>($nsid, "threadViewerState", /*#__PURE__*/ l.object({"canRead":/*#__PURE__*/ l.boolean(),"canPost":/*#__PURE__*/ l.boolean(),"canManage":/*#__PURE__*/ l.boolean(),"following":/*#__PURE__*/ l.boolean(),"muted":/*#__PURE__*/ l.boolean(),"hasUnread":/*#__PURE__*/ l.boolean(),"unreadMentions":/*#__PURE__*/ l.integer(),"cursor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"tid"}))}));
+const threadViewerState = /*#__PURE__*/ l.typedObject<ThreadViewerState>($nsid, "threadViewerState", /*#__PURE__*/ l.object({"canRead":/*#__PURE__*/ l.boolean(),"canPost":/*#__PURE__*/ l.boolean(),"canManage":/*#__PURE__*/ l.boolean(),"canEdit":/*#__PURE__*/ l.boolean(),"canClose":/*#__PURE__*/ l.boolean(),"canDelete":/*#__PURE__*/ l.boolean(),"canLock":/*#__PURE__*/ l.boolean(),"following":/*#__PURE__*/ l.boolean(),"muted":/*#__PURE__*/ l.boolean(),"hasUnread":/*#__PURE__*/ l.boolean(),"unreadMentions":/*#__PURE__*/ l.integer(),"cursor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"tid"}))}));
 
 export { threadViewerState };

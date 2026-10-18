@@ -235,6 +235,11 @@ type ReactionView = { $type?: "social.colibri.beta.channel.defs#reactionView";
   "emoji":string;
 
   /**
+   * The emoji record behind a custom shortcode, from the earliest reaction that named one.
+   */
+  "customEmoji"?:RichtextFacet.CustomEmoji;
+
+  /**
    * How many people reacted, including people reacting through a bridge.
    */
   "count":number;
@@ -257,7 +262,7 @@ type ReactionView = { $type?: "social.colibri.beta.channel.defs#reactionView";
 export type { ReactionView };
 
 /** Reactions to a message with one emoji. */
-const reactionView = /*#__PURE__*/ l.typedObject<ReactionView>($nsid, "reactionView", /*#__PURE__*/ l.object({"emoji":/*#__PURE__*/ l.string(),"count":/*#__PURE__*/ l.integer(),"reactors":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"viewerReacted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"bridgedReactors":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<BridgeDefs.BridgedReactor>((() => BridgeDefs.bridgedReactor) as any), ))}));
+const reactionView = /*#__PURE__*/ l.typedObject<ReactionView>($nsid, "reactionView", /*#__PURE__*/ l.object({"emoji":/*#__PURE__*/ l.string(),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<RichtextFacet.CustomEmoji>((() => RichtextFacet.customEmoji) as any)),"count":/*#__PURE__*/ l.integer(),"reactors":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"viewerReacted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"bridgedReactors":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<BridgeDefs.BridgedReactor>((() => BridgeDefs.bridgedReactor) as any), ))}));
 
 export { reactionView };
 

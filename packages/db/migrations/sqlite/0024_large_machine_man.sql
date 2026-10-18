@@ -1,0 +1,1 @@
+ALTER TABLE `reactions` ADD `custom_emoji` text;

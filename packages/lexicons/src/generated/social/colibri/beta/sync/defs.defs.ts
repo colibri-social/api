@@ -5,6 +5,7 @@
 import { l } from "@atproto/lex";
 import * as ChannelDefs from "../channel/defs.defs.js";
 import * as BetaDefs from "../defs.defs.js";
+import * as RichtextFacet from "../richtext/facet.defs.js";
 import * as BridgeDefs from "../bridge/defs.defs.js";
 import * as CommunityDefs from "../community/defs.defs.js";
 import * as ThreadDefs from "../thread/defs.defs.js";
@@ -274,6 +275,11 @@ type ReactionEvent = { $type?: "social.colibri.beta.sync.defs#reactionEvent";
   "emoji":string;
 
   /**
+   * The emoji record behind a custom shortcode.
+   */
+  "customEmoji"?:RichtextFacet.CustomEmoji;
+
+  /**
    * Who reacted.
    */
   "actor":l.DidString;
@@ -286,7 +292,7 @@ type ReactionEvent = { $type?: "social.colibri.beta.sync.defs#reactionEvent";
 export type { ReactionEvent };
 
 /** A reaction was added or removed in a subscribed channel. */
-const reactionEvent = /*#__PURE__*/ l.typedObject<ReactionEvent>($nsid, "reactionEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["create","delete"]}>(),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"target":/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any),"emoji":/*#__PURE__*/ l.string(),"actor":/*#__PURE__*/ l.string({"format":"did"}),"bridged":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BridgeDefs.BridgedReactor>((() => BridgeDefs.bridgedReactor) as any))}));
+const reactionEvent = /*#__PURE__*/ l.typedObject<ReactionEvent>($nsid, "reactionEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["create","delete"]}>(),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"target":/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any),"emoji":/*#__PURE__*/ l.string(),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<RichtextFacet.CustomEmoji>((() => RichtextFacet.customEmoji) as any)),"actor":/*#__PURE__*/ l.string({"format":"did"}),"bridged":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BridgeDefs.BridgedReactor>((() => BridgeDefs.bridgedReactor) as any))}));
 
 export { reactionEvent };
 

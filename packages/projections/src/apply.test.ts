@@ -508,6 +508,35 @@ describe("bridged attribution", () => {
 			"3lkbridgeaaaa bob-1",
 		]);
 	});
+
+	it("stores the emoji record a custom reaction names", async () => {
+		const customEmoji = {
+			uri: `at://${MEMBER}/social.colibri.beta.emoji/3lkemoji1`,
+			cid: "bafyreie5737gdxlw5i64vzichcalba3z2v5n6icifvx5xytvske7mr3hpm",
+		};
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.reaction", "3lkreact1", {
+				$type: "social.colibri.beta.reaction",
+				emoji: ":party:",
+				target: { did: MEMBER, rkey: "3lkmsg1" },
+				customEmoji,
+			}),
+		);
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.reaction", "3lkreact2", {
+				$type: "social.colibri.beta.reaction",
+				emoji: "👍",
+				target: { did: MEMBER, rkey: "3lkmsg1" },
+			}),
+		);
+
+		const rows = await database.db.select().from(database.tables.reactions);
+		const byRkey = new Map(rows.map((row) => [row.rkey, row.customEmoji]));
+		expect(byRkey.get("3lkreact1")).toEqual(customEmoji);
+		expect(byRkey.get("3lkreact2")).toBeNull();
+	});
 });
 
 describe("member-written collections", () => {

@@ -4,6 +4,7 @@
 
 import { l } from "@atproto/lex";
 import * as BetaDefs from "./defs.defs.js";
+import * as RichtextFacet from "./richtext/facet.defs.js";
 import * as BridgeDefs from "./bridge/defs.defs.js";
 
 const $nsid = "social.colibri.beta.reaction";
@@ -26,6 +27,11 @@ type Main = { $type: "social.colibri.beta.reaction";
   "target":BetaDefs.RecordRef;
 
   /**
+   * The emoji record behind a custom shortcode, so viewers who don't have the emoji can still show it.
+   */
+  "customEmoji"?:RichtextFacet.CustomEmoji;
+
+  /**
    * Who reacted on another service. Honoured only when the community itself wrote the record.
    */
   "bridged"?:BridgeDefs.Attribution };
@@ -33,7 +39,7 @@ type Main = { $type: "social.colibri.beta.reaction";
 export type { Main };
 
 /** A reaction to a message in the same channel space. */
-const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"emoji":/*#__PURE__*/ l.string({"maxLength":64}),"target":/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any),"bridged":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BridgeDefs.Attribution>((() => BridgeDefs.attribution) as any))}));
+const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"emoji":/*#__PURE__*/ l.string({"maxLength":64}),"target":/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<RichtextFacet.CustomEmoji>((() => RichtextFacet.customEmoji) as any)),"bridged":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BridgeDefs.Attribution>((() => BridgeDefs.attribution) as any))}));
 
 export { main };
 

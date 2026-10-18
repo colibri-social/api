@@ -687,6 +687,8 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 							anchor: anchor ? { space: body.channel, ...anchor, cid: null } : null,
 							visibleToRoles: [],
 							visibleToMembers: [],
+							closedAt: null,
+							locked: false,
 							bridged,
 						}),
 					});
@@ -724,6 +726,8 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 							anchor: anchorOf(existing),
 							visibleToRoles: existing.visibleToRoles,
 							visibleToMembers: existing.visibleToMembers,
+							closedAt: existing.closedAt,
+							locked: existing.locked,
 							bridged: record.bridged as Record<string, unknown>,
 						}),
 					}),

@@ -39,6 +39,7 @@ import { linkUrisOf } from "./link-embeds.js";
 import { notificationDeps as buildNotificationDeps } from "./notification-deps.js";
 import { pushDelivery } from "./push-delivery.js";
 import { loadPreferences } from "./routes/actor.js";
+import { reopenThread } from "./routes/thread-write.js";
 import { reportFailure } from "./sentry.js";
 import { ActorViews, type ProfileView } from "./views/actor.js";
 import { ChannelViews } from "./views/channel.js";
@@ -80,8 +81,20 @@ const reactionFrame = (
 	target: value.target ?? { did: change.author, rkey },
 	emoji: value.emoji ?? "",
 	actor: change.author,
+	...customEmojiOf(value),
 	...bridgedReactorOf(change, value),
 });
+
+const customEmojiOf = (value: Record<string, unknown>) => {
+	const ref = value.customEmoji as Record<string, unknown> | undefined;
+	if (typeof ref?.uri !== "string") return {};
+	return {
+		customEmoji: {
+			uri: ref.uri,
+			...(typeof ref.cid === "string" ? { cid: ref.cid } : {}),
+		},
+	};
+};
 
 const bridgedReactorOf = (change: RepoChange, value: Record<string, unknown>) => {
 	const bridged = value.bridged as Record<string, unknown> | undefined;
@@ -371,6 +384,13 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		await events.publishToBridges(community, threadFrameForBridges(ctx, threads, row, event));
 	};
 
+	const reopenOnPost = async (space: string, community: string, postedAt: string) => {
+		const row = await threads.row(space);
+		if (!row?.closedAt || postedAt <= row.closedAt) return;
+		await reopenThread(ctx, row);
+		await publishThread(space, community, "update");
+	};
+
 	const publishThreadActivity = async (space: string, community: string): Promise<void> => {
 		const row = await threads.row(space);
 		if (!row) return;
@@ -469,7 +489,12 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 				await publishMessage(change.space, change.author, put.rkey, imported);
 				publishedMessages += 1;
 				if (imported) continue;
-				if (isThreadSpace(space)) await publishThreadActivity(change.space, space.community);
+				if (isThreadSpace(space)) {
+					if (!put.value.updatedAt) {
+						await reopenOnPost(change.space, space.community, String(put.value.createdAt ?? ""));
+					}
+					await publishThreadActivity(change.space, space.community);
+				}
 
 				const parent = put.value.parent as { did?: string; rkey?: string } | undefined;
 				const community = space.community;

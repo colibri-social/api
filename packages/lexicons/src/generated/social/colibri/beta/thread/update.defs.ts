@@ -15,7 +15,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"thread":/*#__PURE__*/ l.string({"format":"space-ref"}),"name":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"minLength":1,"maxLength":128})),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ))});
+export const $input = /*#__PURE__*/ l.jsonPayload({"thread":/*#__PURE__*/ l.string({"format":"space-ref"}),"name":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"minLength":1,"maxLength":128})),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"closed":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"locked":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;
@@ -25,7 +25,7 @@ export const $output = /*#__PURE__*/ l.jsonPayload({"thread":/*#__PURE__*/ l.ref
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Renames a thread or changes who may read it. An absent field leaves the current value unchanged. */
+/** Renames, closes, reopens or locks a thread, or changes who may read it. An absent field leaves the current value unchanged. */
 const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","Forbidden","ThreadNotFound","RoleHierarchy","InvalidRequest","CredentialsUnavailable"]);
 
 export { main };

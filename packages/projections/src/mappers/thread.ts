@@ -39,6 +39,8 @@ export const thread: Projector<social.colibri.beta.thread.Main> = {
 			createdAt: value.createdAt,
 			visibleToRoles: value.visibleToRoles ? [...value.visibleToRoles] : [],
 			visibleToMembers: value.visibleToMembers ? [...value.visibleToMembers] : [],
+			closedAt: value.closedAt ?? null,
+			locked: value.locked ?? false,
 			lastActivityAt,
 			indexedAt: now,
 		};

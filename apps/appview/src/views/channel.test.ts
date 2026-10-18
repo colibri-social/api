@@ -261,6 +261,39 @@ describe("ChannelViews.messages", () => {
 		expect(tada).toMatchObject({ count: 1, viewerReacted: true, reactors: [AUTHOR_B] });
 	});
 
+	it("reports the earliest emoji record named for a custom reaction", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey);
+		const first = { uri: `at://${AUTHOR_A}/social.colibri.beta.emoji/3lkemoji1` };
+		const later = { uri: `at://${AUTHOR_B}/social.colibri.beta.emoji/3lkemoji2` };
+		const reaction = (author: string, customEmoji?: { uri: string }) => ({
+			space: SPACE,
+			author,
+			rkey: nextTid(),
+			targetAuthor: AUTHOR_A,
+			targetRkey: rkey,
+			emoji: ":party:",
+			customEmoji,
+		});
+		await database.db
+			.insert(database.tables.reactions)
+			.values([reaction(AUTHOR_A, first), reaction(AUTHOR_B, later)]);
+		await database.db.insert(database.tables.reactions).values({
+			space: SPACE,
+			author: AUTHOR_B,
+			rkey: nextTid(),
+			targetAuthor: AUTHOR_A,
+			targetRkey: rkey,
+			emoji: "tada",
+		});
+
+		const page = await views.messages(SPACE, AUTHOR_B, { limit: 10 });
+		const reactions = page.messages[0]?.reactions ?? [];
+
+		expect(reactions.find((entry) => entry.emoji === ":party:")?.customEmoji).toEqual(first);
+		expect(reactions.find((entry) => entry.emoji === "tada")?.customEmoji).toBeUndefined();
+	});
+
 	it("shows a bridged message's remote author in place of the community", async () => {
 		const rkey = nextTid();
 		await putMessage(rkey, {
@@ -851,6 +884,30 @@ describe("ChannelViews.unreadStatus", () => {
 
 		const afterReadingAll = await views.unreadStatus(AUTHOR_B, { community: COMMUNITY });
 		expect(afterReadingAll[0]).toMatchObject({ hasUnread: false, unreadMentions: 0 });
+	});
+
+	it("counts replies as pings and leaves plain message notifications out", async () => {
+		const notify = async (kind: "mention" | "reply" | "message") => {
+			const rkey = nextTid();
+			await putMessage(rkey);
+			await database.db.insert(database.tables.notifications).values({
+				id: nextTid(),
+				recipient: AUTHOR_B,
+				kind,
+				community: COMMUNITY,
+				space: SPACE,
+				author: AUTHOR_A,
+				messageAuthor: AUTHOR_A,
+				messageRkey: rkey,
+				indexedAt: NOW,
+			});
+		};
+		await notify("mention");
+		await notify("reply");
+		await notify("message");
+
+		const status = await views.unreadStatus(AUTHOR_B, { community: COMMUNITY });
+		expect(status[0]).toMatchObject({ hasUnread: true, unreadMentions: 2 });
 	});
 
 	it("does not count the caller's own message as unread", async () => {

@@ -151,6 +151,90 @@ describe("ThreadViews anchor messages", () => {
 	});
 });
 
+describe("ThreadViews close and lock state", () => {
+	const OPENER = "did:plc:7fkdlwjqmzcuvvpjbztkoooo";
+
+	const member = (actor: string): ActorAuthz => ({
+		community: COMMUNITY,
+		actor,
+		member: { did: actor, roles: [], joinedAt: NOW, nickname: null },
+		isOwner: false,
+		isBanned: false,
+		roles: [],
+	});
+
+	const putOpenedThread = async (values: { closedAt?: string; locked?: boolean } = {}) => {
+		await database.db.insert(database.tables.threads).values({
+			space: THREAD,
+			community: COMMUNITY,
+			channel: SPACE,
+			skey: THREAD_SKEY,
+			name: "side conversation",
+			createdBy: OPENER,
+			createdAt: NOW,
+			visibleToRoles: [],
+			visibleToMembers: [],
+			lastActivityAt: NOW,
+			indexedAt: NOW,
+			...values,
+		});
+	};
+
+	it("serves closedAt and locked", async () => {
+		await putOpenedThread({ closedAt: NOW, locked: true });
+
+		const view = await threads.view((await threads.row(THREAD))!, member(OPENER), OPENER);
+
+		expect(view?.closedAt).toBe(NOW);
+		expect(view?.locked).toBe(true);
+	});
+
+	it("leaves closedAt and locked out of an open thread", async () => {
+		await putOpenedThread();
+
+		const view = await threads.view((await threads.row(THREAD))!, member(OPENER), OPENER);
+
+		expect(view?.closedAt).toBeUndefined();
+		expect(view?.locked).toBeUndefined();
+	});
+
+	it("gives the opener edit, close and delete rights", async () => {
+		await putOpenedThread();
+
+		const view = await threads.view((await threads.row(THREAD))!, member(OPENER), OPENER);
+
+		expect(view?.viewer).toMatchObject({
+			canManage: false,
+			canEdit: true,
+			canClose: true,
+			canDelete: true,
+			canLock: false,
+			canPost: true,
+		});
+	});
+
+	it("gives another member no management rights", async () => {
+		await putOpenedThread();
+
+		const view = await threads.view((await threads.row(THREAD))!, member(AUTHOR), AUTHOR);
+
+		expect(view?.viewer).toMatchObject({
+			canEdit: false,
+			canClose: false,
+			canDelete: false,
+			canLock: false,
+		});
+	});
+
+	it("stops the opener posting in or closing a locked thread", async () => {
+		await putOpenedThread({ locked: true });
+
+		const view = await threads.view((await threads.row(THREAD))!, member(OPENER), OPENER);
+
+		expect(view?.viewer).toMatchObject({ canPost: false, canClose: false, canDelete: true });
+	});
+});
+
 describe("ThreadViews members", () => {
 	const POSTER = "did:plc:7fkdlwjqmzcuvvpjbztkbbbb";
 	const PINGED = "did:plc:7fkdlwjqmzcuvvpjbztkcccc";

@@ -4,8 +4,12 @@ import { decideSpaceAccess, type SpaceAccess } from "./access.js";
 import {
 	type ActorAuthz,
 	type ChannelState,
+	canCloseThread,
+	canDeleteThread,
+	canLockThread,
 	canPost,
 	canRead,
+	canRenameThread,
 	effectivePermissions,
 	has,
 	highestPosition,
@@ -269,6 +273,8 @@ describe("space access decisions", () => {
 		createdBy: ACTOR,
 		visibleToRoles: [],
 		visibleToMembers: [],
+		closedAt: null,
+		locked: false,
 		...overrides,
 	});
 
@@ -302,6 +308,35 @@ describe("space access decisions", () => {
 			decide(SPACE_TYPES.channelThread, authz(), {
 				channel: channel(),
 				thread: thread({ visibleToMembers: [ACTOR] }),
+			}).authorized,
+		).toBe(true);
+	});
+
+	it("refuses writes to a locked thread for members who don't manage threads", () => {
+		const locked = { channel: channel(), thread: thread({ locked: true }) };
+		expect(
+			decide(SPACE_TYPES.channelThread, authz(), { ...locked, access: "write" }).authorized,
+		).toBe(false);
+		expect(decide(SPACE_TYPES.channelThread, authz(), locked).authorized).toBe(true);
+	});
+
+	it("lets thread managers write to a locked thread", () => {
+		const moderator = authz({ roles: [role({ permissions: ["thread.manage"] })] });
+		expect(
+			decide(SPACE_TYPES.channelThread, moderator, {
+				channel: channel(),
+				thread: thread({ locked: true }),
+				access: "write",
+			}).authorized,
+		).toBe(true);
+	});
+
+	it("keeps a closed thread writable", () => {
+		expect(
+			decide(SPACE_TYPES.channelThread, authz(), {
+				channel: channel(),
+				thread: thread({ closedAt: "2026-01-02T00:00:00.000Z" }),
+				access: "write",
 			}).authorized,
 		).toBe(true);
 	});
@@ -397,6 +432,8 @@ describe("write access decisions", () => {
 		createdBy: ACTOR,
 		visibleToRoles: [],
 		visibleToMembers: [],
+		closedAt: null,
+		locked: false,
 		...overrides,
 	});
 
@@ -466,5 +503,58 @@ describe("write access decisions", () => {
 				access: "append",
 			}).authorized,
 		).toBe(false);
+	});
+});
+
+describe("thread opener rights", () => {
+	const thread = (overrides: Partial<ThreadState> = {}): ThreadState => ({
+		space: "at://did:plc:community/space/social.colibri.beta.channel.thread/3lkthread",
+		skey: "3lkthread",
+		channel: "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchan",
+		createdBy: ACTOR,
+		visibleToRoles: [],
+		visibleToMembers: [],
+		closedAt: null,
+		locked: false,
+		...overrides,
+	});
+	const moderator = () =>
+		authz({ actor: OTHER, roles: [role({ permissions: ["thread.manage"] })] });
+
+	it("lets the opener rename, close and delete their thread", () => {
+		expect(canRenameThread(authz(), channel(), thread())).toBe(true);
+		expect(canCloseThread(authz(), channel(), thread())).toBe(true);
+		expect(canDeleteThread(authz(), channel(), thread())).toBe(true);
+		expect(canLockThread(authz())).toBe(false);
+	});
+
+	it("gives nothing to a member who didn't open the thread", () => {
+		const other = authz({ actor: OTHER });
+		expect(canRenameThread(other, channel(), thread())).toBe(false);
+		expect(canCloseThread(other, channel(), thread())).toBe(false);
+		expect(canDeleteThread(other, channel(), thread())).toBe(false);
+	});
+
+	it("drops opener rights once the opener leaves, is banned or loses access", () => {
+		expect(canDeleteThread(authz({ member: null }), channel(), thread())).toBe(false);
+		expect(canDeleteThread(authz({ isBanned: true }), channel(), thread())).toBe(false);
+		expect(canDeleteThread(authz(), channel({ visibleToRoles: ["3lkinsiders"] }), thread())).toBe(
+			false,
+		);
+	});
+
+	it("stops the opener closing or reopening a locked thread", () => {
+		const locked = thread({ locked: true });
+		expect(canCloseThread(authz(), channel(), locked)).toBe(false);
+		expect(canRenameThread(authz(), channel(), locked)).toBe(true);
+		expect(canDeleteThread(authz(), channel(), locked)).toBe(true);
+	});
+
+	it("lets thread managers do everything on any thread", () => {
+		const locked = thread({ locked: true });
+		expect(canRenameThread(moderator(), channel(), locked)).toBe(true);
+		expect(canCloseThread(moderator(), channel(), locked)).toBe(true);
+		expect(canDeleteThread(moderator(), channel(), locked)).toBe(true);
+		expect(canLockThread(moderator())).toBe(true);
 	});
 });

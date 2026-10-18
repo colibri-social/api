@@ -39,6 +39,7 @@ export type BridgeLink = {
 	backfill?: BridgeBackfillRequest;
 };
 export type BridgeBackfillState = "running" | "done" | "failed";
+export type ReactionEmojiRef = { uri: string; cid?: string };
 export type BridgedAttribution = {
 	registration: string;
 	platform: string;
@@ -306,6 +307,7 @@ export const reactions = pgTable(
 		emoji: text("emoji").notNull(),
 		bridgedFrom: text("bridged_from").notNull().default(""),
 		bridged: json<BridgedAttribution>("bridged"),
+		customEmoji: json<ReactionEmojiRef>("custom_emoji"),
 	},
 	(t) => [
 		primaryKey({ columns: [t.space, t.author, t.rkey] }),
@@ -365,6 +367,8 @@ export const threads = pgTable(
 		visibleToMembers: json<string[]>("visible_to_members")
 			.notNull()
 			.$defaultFn(() => []),
+		closedAt: timestamp("closed_at"),
+		locked: flag("locked").notNull().default(false),
 		lastActivityAt: timestamp("last_activity_at").notNull(),
 		indexedAt: timestamp("indexed_at").notNull(),
 	},

@@ -73,6 +73,7 @@ let communityDeletes: string[];
 let authzChanges: string[];
 let forgotten: string[];
 let releasePreview: () => void;
+let threadWrites: { community: string; space: string; record: Record<string, unknown> }[];
 
 const framesOfType = (suffix: string) =>
 	published.filter((entry) => entry.frame.$type === `social.colibri.beta.sync.defs#${suffix}`);
@@ -211,6 +212,7 @@ beforeEach(async () => {
 	communityDeletes = [];
 	authzChanges = [];
 	forgotten = [];
+	threadWrites = [];
 
 	const ctx = {
 		database,
@@ -251,6 +253,11 @@ beforeEach(async () => {
 		},
 		authzChanges: {
 			publish: (change: { community: string }) => authzChanges.push(change.community),
+		},
+		writer: {
+			put: async (community: string, write: { space: string; record: Record<string, unknown> }) => {
+				threadWrites.push({ community, space: write.space, record: write.record });
+			},
 		},
 	} as unknown as AppContext;
 
@@ -845,5 +852,80 @@ describe("push updates for deleted and edited messages", () => {
 		expect(pushed.edited[0]).toMatchObject({
 			message: { space: SPACE, author: AUTHOR, rkey: "3lkmsgedited", text: "fixed" },
 		});
+	});
+});
+
+describe("closed threads", () => {
+	const THREAD_SKEY = "3lkthreadclosed";
+	const THREAD = threadSpace(COMMUNITY, THREAD_SKEY);
+	const CLOSED_AT = "2026-08-23T01:00:00.000Z";
+	const LATER = "2026-08-23T02:00:00.000Z";
+
+	beforeEach(async () => {
+		await database.db.insert(database.tables.members).values({
+			community: COMMUNITY,
+			did: AUTHOR,
+			roles: [],
+			joinedAt: NOW,
+			nickname: null,
+		});
+		await database.db.insert(database.tables.threads).values({
+			space: THREAD,
+			community: COMMUNITY,
+			channel: SPACE,
+			skey: THREAD_SKEY,
+			name: "release planning",
+			createdBy: AUTHOR,
+			createdAt: NOW,
+			visibleToRoles: [],
+			visibleToMembers: [],
+			closedAt: CLOSED_AT,
+			locked: true,
+			lastActivityAt: NOW,
+			indexedAt: NOW,
+		});
+	});
+
+	const threadMessage = (createdAt: string, updatedAt?: string): RepoChange => ({
+		space: THREAD,
+		author: AUTHOR,
+		puts: [
+			{
+				collection: COLLECTIONS.message,
+				rkey: nextTid(),
+				cid: "bafyreicthreadmsg",
+				value: {
+					$type: COLLECTIONS.message,
+					text: "back again",
+					createdAt,
+					...(updatedAt ? { updatedAt } : {}),
+				},
+			},
+		],
+		deletes: [],
+	});
+
+	it("reopens a closed thread when someone posts in it and keeps the lock", async () => {
+		emit(threadMessage(LATER));
+		await vi.waitFor(() => expect(threadWrites).toHaveLength(1));
+
+		const [write] = threadWrites;
+		expect(write).toMatchObject({ community: COMMUNITY, space: THREAD });
+		expect(write?.record.closedAt).toBeUndefined();
+		expect(write?.record.locked).toBe(true);
+		expect(write?.record.name).toBe("release planning");
+	});
+
+	it("leaves the thread closed for edits and for messages written before it closed", async () => {
+		const before = threadMessage(NOW);
+		const edit = threadMessage(NOW, LATER);
+		const reopening = threadMessage(LATER);
+		emit(before);
+		emit(edit);
+		emit(reopening);
+		await vi.waitFor(() => expect(threadWrites).toHaveLength(1));
+		await new Promise((resolve) => setTimeout(resolve, 50));
+
+		expect(threadWrites).toHaveLength(1);
 	});
 });

@@ -162,6 +162,20 @@
 			"when": 1792327192931,
 			"tag": "0022_clean_wither",
 			"breakpoints": true
+		},
+		{
+			"idx": 23,
+			"version": "7",
+			"when": 1792332096772,
+			"tag": "0023_pink_madame_masque",
+			"breakpoints": true
+		},
+		{
+			"idx": 24,
+			"version": "7",
+			"when": 1792333628554,
+			"tag": "0024_fancy_cerebro",
+			"breakpoints": true
 		}
 	]
 }
