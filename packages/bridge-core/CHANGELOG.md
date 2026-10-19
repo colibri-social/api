@@ -1,5 +1,12 @@
 # @colibri-social/bridge-core
 
+## 0.2.11
+
+### Patch Changes
+
+- Updated dependencies [daa5699]
+  - @colibri-social/lexicons@2.25.0
+
 ## 0.2.10
 
 ### Patch Changes

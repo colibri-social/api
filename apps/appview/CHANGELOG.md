@@ -1,5 +1,20 @@
 # @colibri-social/appview
 
+## 2.24.0
+
+### Minor Changes
+
+- daa5699: A status can be emoji-only or use a custom emoji. `actor.defs#status` makes `text` optional and gains an optional `customEmoji` ref to a custom emoji record. `actor.setStatus` accepts `customEmoji` and `removeCustomEmoji`. The AppView keeps a status that has only an emoji, stores the custom emoji ref in the new `user_presence.status_custom_emoji` column, and rejects a uri that doesn't name an emoji record.
+
+### Patch Changes
+
+- Updated dependencies [daa5699]
+  - @colibri-social/lexicons@2.25.0
+  - @colibri-social/appview-db@0.16.0
+  - @colibri-social/community@2.11.2
+  - @colibri-social/notifications@1.8.3
+  - @colibri-social/projections@1.12.2
+
 ## 2.23.0
 
 ### Minor Changes
