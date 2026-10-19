@@ -512,6 +512,58 @@ describe("setStatus", () => {
 		expect(body.presence.status).toBeUndefined();
 	});
 
+	const EMOJI_URI = "at://did:plc:emojiaaaaaaaaaaaaaaaaaaaaa/blue.moji.collection.item/3lkemoji";
+
+	it("keeps an emoji-only status", async () => {
+		const body = await handleSetStatus(ctx, CALLER, { text: "", emoji: "🍜" });
+
+		asSetStatusOutput(body);
+		expect(body.presence.status).toMatchObject({ text: "", emoji: "🍜" });
+	});
+
+	it("stores a custom emoji and keeps it across partial updates", async () => {
+		await handleSetStatus(ctx, CALLER, { customEmoji: { uri: EMOJI_URI } });
+		const body = await handleSetStatus(ctx, CALLER, { text: "cooking" });
+
+		asSetStatusOutput(body);
+		expect(body.presence.status).toMatchObject({
+			text: "cooking",
+			customEmoji: { uri: EMOJI_URI },
+		});
+	});
+
+	it("removes the custom emoji with removeCustomEmoji", async () => {
+		await handleSetStatus(ctx, CALLER, { text: "cooking", customEmoji: { uri: EMOJI_URI } });
+		const body = await handleSetStatus(ctx, CALLER, { emoji: "🍳", removeCustomEmoji: true });
+
+		expect(body.presence.status?.customEmoji).toBeUndefined();
+		expect(body.presence.status?.emoji).toBe("🍳");
+	});
+
+	it("clears the whole status when text and both emoji are cleared", async () => {
+		await handleSetStatus(ctx, CALLER, { text: "cooking", customEmoji: { uri: EMOJI_URI } });
+		const body = await handleSetStatus(ctx, CALLER, {
+			text: "",
+			emoji: "",
+			removeCustomEmoji: true,
+		});
+
+		expect(body.presence.status).toBeUndefined();
+	});
+
+	it("rejects a custom emoji that is not an emoji record", async () => {
+		await expect(
+			handleSetStatus(ctx, CALLER, {
+				customEmoji: { uri: "at://did:plc:emojiaaaaaaaaaaaaaaaaaaaaa/app.bsky.feed.post/3lk" },
+			}),
+		).rejects.toThrow(/not an emoji record/);
+		await expect(
+			handleSetStatus(ctx, CALLER, {
+				customEmoji: { uri: "at://did:plc:emojiaaaaaaaaaaaaaaaaaaaaa/blue.moji.collection.item" },
+			}),
+		).rejects.toThrow(/not an emoji record/);
+	});
+
 	it("stores showWhileOffline and keeps it across partial updates", async () => {
 		await handleSetStatus(ctx, CALLER, { text: "travelling", showWhileOffline: true });
 		const kept = await handleSetStatus(ctx, CALLER, { emoji: "✈️" });

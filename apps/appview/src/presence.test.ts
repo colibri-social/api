@@ -137,6 +137,7 @@ describe("presenceOf", () => {
 		requestedState: null,
 		statusText: "lunch",
 		statusEmoji: null,
+		statusCustomEmoji: null,
 		statusExpiresAt: null,
 		statusShowWhileOffline: false,
 	};
@@ -165,6 +166,24 @@ describe("presenceOf", () => {
 		expect(
 			presenceOf(ctx, ACTOR, { ...row, statusExpiresAt: expiresAt }, []).status,
 		).toBeUndefined();
+	});
+
+	it("returns an emoji-only status", () => {
+		expect(
+			presenceOf(ctx, ACTOR, { ...row, statusText: "", statusEmoji: "🍜" }, []).status,
+		).toEqual({ text: "", emoji: "🍜", showWhileOffline: false });
+	});
+
+	it("returns a status that only has a custom emoji", () => {
+		const customEmoji = { uri: "at://did:plc:emoji/blue.moji.collection.item/3lk" };
+		expect(
+			presenceOf(ctx, ACTOR, { ...row, statusText: null, statusCustomEmoji: customEmoji }, [])
+				.status,
+		).toEqual({ text: "", customEmoji, showWhileOffline: false });
+	});
+
+	it("returns no status without text or an emoji", () => {
+		expect(presenceOf(ctx, ACTOR, { ...row, statusText: "" }, []).status).toBeUndefined();
 	});
 
 	it("passes showWhileOffline through for an offline actor", () => {

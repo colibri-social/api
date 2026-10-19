@@ -620,6 +620,7 @@ export const userPresence = sqliteTable("user_presence", {
 	requestedState: text("requested_state").$type<OnlineState>(),
 	statusText: text("status_text"),
 	statusEmoji: text("status_emoji"),
+	statusCustomEmoji: json<ReactionEmojiRef>("status_custom_emoji"),
 	statusExpiresAt: timestamp("status_expires_at"),
 	statusShowWhileOffline: flag("status_show_while_offline").notNull().default(false),
 	voiceChannel: text("voice_channel"),

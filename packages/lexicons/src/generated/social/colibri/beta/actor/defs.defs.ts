@@ -5,6 +5,7 @@
 import { l } from "@atproto/lex";
 import * as ActorProfile from "./profile.defs.js";
 import * as BridgeDefs from "../bridge/defs.defs.js";
+import * as RichtextFacet from "../richtext/facet.defs.js";
 import * as EmbedDefs from "../embed/defs.defs.js";
 
 const $nsid = "social.colibri.beta.actor.defs";
@@ -118,18 +119,23 @@ const presence = /*#__PURE__*/ l.typedObject<Presence>($nsid, "presence", /*#__P
 
 export { presence };
 
-/** A user's status line. */
+/** A user's status line. It carries text, an emoji, or both. */
 type Status = { $type?: "social.colibri.beta.actor.defs#status";
 
   /**
-   * The status text.
+   * The status text. Absent for an emoji-only status.
    */
-  "text":string;
+  "text"?:string;
 
   /**
-   * An emoji shown beside the status.
+   * A Unicode emoji shown beside the status.
    */
   "emoji"?:string;
+
+  /**
+   * A custom emoji shown beside the status. Takes the place of emoji when both are present.
+   */
+  "customEmoji"?:RichtextFacet.CustomEmoji;
 
   /**
    * When the status clears. The AppView stops returning the status once this time passes. Absent means it never expires.
@@ -143,8 +149,8 @@ type Status = { $type?: "social.colibri.beta.actor.defs#status";
 
 export type { Status };
 
-/** A user's status line. */
-const status = /*#__PURE__*/ l.typedObject<Status>($nsid, "status", /*#__PURE__*/ l.object({"text":/*#__PURE__*/ l.string({"maxLength":64}),"emoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"expiresAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"showWhileOffline":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false))}));
+/** A user's status line. It carries text, an emoji, or both. */
+const status = /*#__PURE__*/ l.typedObject<Status>($nsid, "status", /*#__PURE__*/ l.object({"text":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":64})),"emoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<RichtextFacet.CustomEmoji>((() => RichtextFacet.customEmoji) as any)),"expiresAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"showWhileOffline":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false))}));
 
 export { status };
 

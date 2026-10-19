@@ -1,4 +1,4 @@
-import type { OnlineState } from "@colibri-social/appview-db";
+import type { OnlineState, ReactionEmojiRef } from "@colibri-social/appview-db";
 import type { social } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import type { AppContext } from "./context.js";
@@ -24,6 +24,7 @@ export const effectiveOnlineState = (row: PresenceRow): OnlineState =>
 export type PresenceParts = PresenceRow & {
 	statusText: string | null;
 	statusEmoji: string | null;
+	statusCustomEmoji: ReactionEmojiRef | null;
 	statusExpiresAt: string | null;
 	statusShowWhileOffline: boolean;
 };
@@ -32,10 +33,12 @@ export const isStatusExpired = (row: PresenceParts, now: number = Date.now()): b
 	row.statusExpiresAt !== null && new Date(row.statusExpiresAt).getTime() <= now;
 
 const statusOf = (row: PresenceParts): social.colibri.beta.actor.defs.Status | undefined => {
-	if (!row.statusText || isStatusExpired(row)) return undefined;
+	if (isStatusExpired(row)) return undefined;
+	if (!row.statusText && !row.statusEmoji && !row.statusCustomEmoji) return undefined;
 	return {
-		text: row.statusText,
-		emoji: row.statusEmoji ?? undefined,
+		text: row.statusText ?? "",
+		emoji: row.statusEmoji || undefined,
+		customEmoji: row.statusCustomEmoji ?? undefined,
 		expiresAt: row.statusExpiresAt ?? undefined,
 		showWhileOffline: row.statusShowWhileOffline,
 	} as social.colibri.beta.actor.defs.Status;
@@ -144,6 +147,7 @@ export class PresenceTracker {
 			requestedState: requestedState ?? existing?.requestedState ?? null,
 			statusText: existing?.statusText ?? null,
 			statusEmoji: existing?.statusEmoji ?? null,
+			statusCustomEmoji: existing?.statusCustomEmoji ?? null,
 			statusExpiresAt: existing?.statusExpiresAt ?? null,
 			statusShowWhileOffline: existing?.statusShowWhileOffline ?? false,
 			viewingChannel: derivedState === OFFLINE ? null : (existing?.viewingChannel ?? null),

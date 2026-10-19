@@ -1,5 +1,7 @@
+import { AtUri } from "@atproto/syntax";
 import { InvalidRequestError } from "@atproto/xrpc-server";
-import type { NotificationLevel, OnlineState } from "@colibri-social/appview-db";
+import type { NotificationLevel, OnlineState, ReactionEmojiRef } from "@colibri-social/appview-db";
+import { emojiRegistry } from "@colibri-social/emoji";
 import { asDatetime, encodeMuteSubject, social } from "@colibri-social/lexicons";
 import {
 	isNotificationLevel,
@@ -40,6 +42,26 @@ const assertOnlineState = (value: string): OnlineState => {
 		throw new InvalidRequestError(`unknown online state '${value}'`, "InvalidRequest");
 	}
 	return value;
+};
+
+const assertStatusCustomEmoji = (ref: { uri: string; cid?: string }): ReactionEmojiRef => {
+	const collection = collectionOf(ref.uri);
+	if (!collection || emojiRegistry.forCollection(collection)?.kind !== "item") {
+		throw new InvalidRequestError(
+			`status custom emoji '${ref.uri}' is not an emoji record`,
+			"InvalidRequest",
+		);
+	}
+	return ref.cid === undefined ? { uri: ref.uri } : { uri: ref.uri, cid: ref.cid };
+};
+
+const collectionOf = (uri: string): string | undefined => {
+	try {
+		const parsed = new AtUri(uri);
+		return parsed.rkey ? parsed.collection : undefined;
+	} catch {
+		return undefined;
+	}
 };
 
 const announcePreferences = async (ctx: AppContext, did: string): Promise<Preferences> => {
@@ -168,6 +190,8 @@ export const handleSetStatus = async (
 	input: {
 		text?: string;
 		emoji?: string;
+		customEmoji?: { uri: string; cid?: string };
+		removeCustomEmoji?: boolean;
 		expiresAt?: string;
 		removeExpiresAt?: boolean;
 		showWhileOffline?: boolean;
@@ -176,6 +200,8 @@ export const handleSetStatus = async (
 ): Promise<{ presence: Presence }> => {
 	const onlineState =
 		input.onlineState === undefined ? undefined : assertOnlineState(input.onlineState);
+	const customEmoji =
+		input.customEmoji === undefined ? undefined : assertStatusCustomEmoji(input.customEmoji);
 
 	const [existing] = await ctx.database.db
 		.select()
@@ -189,6 +215,8 @@ export const handleSetStatus = async (
 		requestedState: onlineState ?? existing?.requestedState ?? null,
 		statusText: input.text ?? existing?.statusText ?? null,
 		statusEmoji: input.emoji ?? existing?.statusEmoji ?? null,
+		statusCustomEmoji:
+			customEmoji ?? (input.removeCustomEmoji ? null : (existing?.statusCustomEmoji ?? null)),
 		statusExpiresAt:
 			input.expiresAt ?? (input.removeExpiresAt ? null : (existing?.statusExpiresAt ?? null)),
 		statusShowWhileOffline: input.showWhileOffline ?? existing?.statusShowWhileOffline ?? false,

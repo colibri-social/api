@@ -3,6 +3,7 @@
  */
 
 import { l } from "@atproto/lex";
+import * as RichtextFacet from "../richtext/facet.defs.js";
 import * as ActorDefs from "./defs.defs.js";
 
 const $nsid = "social.colibri.beta.actor.setStatus";
@@ -15,7 +16,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"text":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":64})),"emoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"expiresAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"removeExpiresAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"showWhileOffline":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"onlineState":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["online","away","dnd","offline"]}>())});
+export const $input = /*#__PURE__*/ l.jsonPayload({"text":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":64})),"emoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<RichtextFacet.CustomEmoji>((() => RichtextFacet.customEmoji) as any)),"removeCustomEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"expiresAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"removeExpiresAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"showWhileOffline":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"onlineState":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["online","away","dnd","offline"]}>())});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;

@@ -1,0 +1,1 @@
+ALTER TABLE "user_presence" ADD COLUMN "status_custom_emoji" jsonb;

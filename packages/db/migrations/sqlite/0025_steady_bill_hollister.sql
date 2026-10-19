@@ -1,0 +1,1 @@
+ALTER TABLE `user_presence` ADD `status_custom_emoji` text;
