@@ -11,6 +11,7 @@ import {
 	handleGrantSpaceAccess,
 	handlePutMutes,
 	handlePutSettings,
+	handlePutSpaceModeration,
 	handlePutSpaceNotification,
 	handleSetStatus,
 } from "./actor-write.js";
@@ -225,6 +226,7 @@ describe("putSettings client state", () => {
 		expect(result.preferences.clientPreferences).toEqual({});
 		expect(result.preferences.composerState).toEqual({});
 		expect(result.preferences.spaceNotifications).toEqual([]);
+		expect(result.preferences.spaceModerations).toEqual([]);
 		asPreferencesOutput(result);
 	});
 });
@@ -278,6 +280,58 @@ describe("putSpaceNotification", () => {
 
 		expect(await database.db.select().from(database.tables.spaceNotifications)).toEqual([
 			{ did: OTHER, community: COMMUNITY, level: "nothing" },
+		]);
+	});
+});
+
+describe("putSpaceModeration", () => {
+	it("sets, changes and removes a Space option", async () => {
+		await handlePutSpaceModeration(ctx, CALLER, {
+			community: COMMUNITY,
+			hideModeratedMessages: true,
+		});
+		const changed = await handlePutSpaceModeration(ctx, CALLER, {
+			community: COMMUNITY,
+			hideModeratedMessages: false,
+		});
+		expect(changed.preferences.spaceModerations).toEqual([
+			{ community: COMMUNITY, hideModeratedMessages: false },
+		]);
+		asPreferencesOutput(changed);
+
+		const removed = await handlePutSpaceModeration(ctx, CALLER, {
+			community: COMMUNITY,
+			remove: true,
+		});
+		expect(removed.preferences.spaceModerations).toEqual([]);
+	});
+
+	it("prefers hideModeratedMessages over remove", async () => {
+		const result = await handlePutSpaceModeration(ctx, CALLER, {
+			community: COMMUNITY,
+			hideModeratedMessages: true,
+			remove: true,
+		});
+		expect(result.preferences.spaceModerations).toEqual([
+			{ community: COMMUNITY, hideModeratedMessages: true },
+		]);
+	});
+
+	it("rejects a call with neither hideModeratedMessages nor remove", async () => {
+		await expect(
+			handlePutSpaceModeration(ctx, CALLER, { community: COMMUNITY }),
+		).rejects.toMatchObject({ customErrorName: "InvalidRequest" });
+	});
+
+	it("touches only the caller's options", async () => {
+		await database.db
+			.insert(database.tables.spaceModerations)
+			.values({ did: OTHER, community: COMMUNITY, hideModeratedMessages: true });
+
+		await handlePutSpaceModeration(ctx, CALLER, { community: COMMUNITY, remove: true });
+
+		expect(await database.db.select().from(database.tables.spaceModerations)).toEqual([
+			{ did: OTHER, community: COMMUNITY, hideModeratedMessages: true },
 		]);
 	});
 });
@@ -422,6 +476,16 @@ describe("deleteAccount", () => {
 		await handleDeleteAccount(ctx, CALLER);
 
 		expect(await database.db.select().from(database.tables.spaceNotifications)).toEqual([]);
+	});
+
+	it("removes the caller's Space moderation options", async () => {
+		await database.db
+			.insert(database.tables.spaceModerations)
+			.values({ did: CALLER, community: COMMUNITY, hideModeratedMessages: true });
+
+		await handleDeleteAccount(ctx, CALLER);
+
+		expect(await database.db.select().from(database.tables.spaceModerations)).toEqual([]);
 	});
 });
 

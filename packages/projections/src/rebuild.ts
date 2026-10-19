@@ -17,6 +17,7 @@ const PROJECTION_TABLES = [
 	"mutes",
 	"actorSettings",
 	"spaceNotifications",
+	"spaceModerations",
 	"readCursors",
 	"emojiFollows",
 ] as const;

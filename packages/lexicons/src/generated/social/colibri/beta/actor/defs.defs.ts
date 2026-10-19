@@ -288,6 +288,11 @@ type Preferences = { $type?: "social.colibri.beta.actor.defs#preferences";
   "spaceNotifications"?:(SpaceNotification)[];
 
   /**
+   * Moderation view options the user set for single communities. A community without an entry follows clientPreferences.
+   */
+  "spaceModerations"?:(SpaceModeration)[];
+
+  /**
    * Client settings that follow the user across devices.
    */
   "clientPreferences"?:ClientPreferences;
@@ -300,7 +305,7 @@ type Preferences = { $type?: "social.colibri.beta.actor.defs#preferences";
 export type { Preferences };
 
 /** The authenticated user's own settings, as the AppView currently holds them. */
-const preferences = /*#__PURE__*/ l.typedObject<Preferences>($nsid, "preferences", /*#__PURE__*/ l.object({"notificationLevel":/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies","nothing"]}>(),"communityOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"mutes":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Mute>((() => mute) as any), ),"gifFavorites":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), ),"shareActivity":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"spaceNotifications":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<SpaceNotification>((() => spaceNotification) as any), )),"clientPreferences":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ClientPreferences>((() => clientPreferences) as any)),"composerState":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ComposerState>((() => composerState) as any))}));
+const preferences = /*#__PURE__*/ l.typedObject<Preferences>($nsid, "preferences", /*#__PURE__*/ l.object({"notificationLevel":/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies","nothing"]}>(),"communityOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"mutes":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Mute>((() => mute) as any), ),"gifFavorites":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), ),"shareActivity":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"spaceNotifications":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<SpaceNotification>((() => spaceNotification) as any), )),"spaceModerations":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<SpaceModeration>((() => spaceModeration) as any), )),"clientPreferences":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ClientPreferences>((() => clientPreferences) as any)),"composerState":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ComposerState>((() => composerState) as any))}));
 
 export { preferences };
 
@@ -389,6 +394,26 @@ const spaceNotification = /*#__PURE__*/ l.typedObject<SpaceNotification>($nsid, 
 
 export { spaceNotification };
 
+/** Moderation view options for one community. */
+type SpaceModeration = { $type?: "social.colibri.beta.actor.defs#spaceModeration";
+
+  /**
+   * The community.
+   */
+  "community":l.DidString;
+
+  /**
+   * Whether messages a moderator hid stay out of view in this community.
+   */
+  "hideModeratedMessages":boolean };
+
+export type { SpaceModeration };
+
+/** Moderation view options for one community. */
+const spaceModeration = /*#__PURE__*/ l.typedObject<SpaceModeration>($nsid, "spaceModeration", /*#__PURE__*/ l.object({"community":/*#__PURE__*/ l.string({"format":"did"}),"hideModeratedMessages":/*#__PURE__*/ l.boolean()}));
+
+export { spaceModeration };
+
 /** Client settings that follow the user across devices. Every field is optional and a client applies its own default for an absent one. */
 type ClientPreferences = { $type?: "social.colibri.beta.actor.defs#clientPreferences";
 
@@ -438,6 +463,11 @@ type ClientPreferences = { $type?: "social.colibri.beta.actor.defs#clientPrefere
   "developerMode"?:boolean;
 
   /**
+   * Whether messages a moderator hid stay out of view for a user who could otherwise see them. A community can override this with an entry in spaceModerations.
+   */
+  "hideModeratedMessages"?:boolean;
+
+  /**
    * Options for voice channels.
    */
   "voiceView"?:VoiceView;
@@ -450,7 +480,7 @@ type ClientPreferences = { $type?: "social.colibri.beta.actor.defs#clientPrefere
 export type { ClientPreferences };
 
 /** Client settings that follow the user across devices. Every field is optional and a client applies its own default for an absent one. */
-const clientPreferences = /*#__PURE__*/ l.typedObject<ClientPreferences>($nsid, "clientPreferences", /*#__PURE__*/ l.object({"controls":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Controls>((() => controls) as any)),"theme":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["system","dark","light"]}>()),"messagePreviews":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"linkEmbedsByDefault":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"warnOnExternalLinks":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"blueskyClient":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":64,"knownValues":["anisota","blacksky","bluesky","deer","mu","northsky","witchsky","custom"]}>({"maxLength":64})),"customBlueskyClientBase":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":253})),"inboxPresentation":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":32,"knownValues":["popover","modal"]}>({"maxLength":32})),"developerMode":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"voiceView":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<VoiceView>((() => voiceView) as any)),"experiments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"maxLength":64}), {"maxLength":64}))}));
+const clientPreferences = /*#__PURE__*/ l.typedObject<ClientPreferences>($nsid, "clientPreferences", /*#__PURE__*/ l.object({"controls":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Controls>((() => controls) as any)),"theme":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["system","dark","light"]}>()),"messagePreviews":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"linkEmbedsByDefault":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"warnOnExternalLinks":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"blueskyClient":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":64,"knownValues":["anisota","blacksky","bluesky","deer","mu","northsky","witchsky","custom"]}>({"maxLength":64})),"customBlueskyClientBase":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":253})),"inboxPresentation":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":32,"knownValues":["popover","modal"]}>({"maxLength":32})),"developerMode":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"hideModeratedMessages":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"voiceView":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<VoiceView>((() => voiceView) as any)),"experiments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"maxLength":64}), {"maxLength":64}))}));
 
 export { clientPreferences };
 

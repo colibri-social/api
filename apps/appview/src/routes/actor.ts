@@ -52,6 +52,12 @@ export const loadPreferences = async (ctx: AppContext, callerDid: string): Promi
 		.where(eq(ctx.database.tables.spaceNotifications.did, callerDid))
 		.orderBy(asc(ctx.database.tables.spaceNotifications.community));
 
+	const spaceModerationRows = await ctx.database.db
+		.select()
+		.from(ctx.database.tables.spaceModerations)
+		.where(eq(ctx.database.tables.spaceModerations.did, callerDid))
+		.orderBy(asc(ctx.database.tables.spaceModerations.community));
+
 	const composerState = settings?.composerState ?? {};
 
 	return {
@@ -66,6 +72,10 @@ export const loadPreferences = async (ctx: AppContext, callerDid: string): Promi
 		spaceNotifications: spaceNotificationRows.map((row) => ({
 			community: asDid(row.community),
 			level: row.level,
+		})),
+		spaceModerations: spaceModerationRows.map((row) => ({
+			community: asDid(row.community),
+			hideModeratedMessages: row.hideModeratedMessages,
 		})),
 		clientPreferences: settings?.clientPreferences ?? {},
 		composerState: {

@@ -971,6 +971,7 @@ describe("personal spaces", () => {
 				},
 				theme: "light",
 				developerMode: true,
+				hideModeratedMessages: true,
 				inboxPresentation: "modal",
 				experiments: ["light-mode-v1"],
 			}),
@@ -982,6 +983,7 @@ describe("personal spaces", () => {
 			controls: { swipeLeftAction: "reply", doubleTapEnabled: true },
 			theme: "light",
 			developerMode: true,
+			hideModeratedMessages: true,
 			inboxPresentation: "modal",
 			experiments: ["light-mode-v1"],
 		});
@@ -1076,6 +1078,24 @@ describe("personal spaces", () => {
 		);
 
 		expect(await database.db.select().from(database.tables.spaceNotifications)).toEqual([]);
+	});
+
+	it("projects a Space moderation option keyed by the community and removes it on delete", async () => {
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.actor.spaceModeration", COMMUNITY, {
+				$type: "social.colibri.beta.actor.spaceModeration",
+				hideModeratedMessages: true,
+				createdAt: NOW,
+			}),
+		);
+
+		expect(await database.db.select().from(database.tables.spaceModerations)).toEqual([
+			{ did: MEMBER, community: COMMUNITY, hideModeratedMessages: true },
+		]);
+
+		await applyChange(deps, remove("social.colibri.beta.actor.spaceModeration", COMMUNITY));
+		expect(await database.db.select().from(database.tables.spaceModerations)).toEqual([]);
 	});
 });
 

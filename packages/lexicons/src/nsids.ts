@@ -48,6 +48,7 @@ export const COLLECTIONS = {
 	reaction: "social.colibri.beta.reaction",
 	role: "social.colibri.beta.role",
 	settings: "social.colibri.beta.actor.settings",
+	spaceModeration: "social.colibri.beta.actor.spaceModeration",
 	spaceNotification: "social.colibri.beta.actor.spaceNotification",
 	thread: "social.colibri.beta.thread",
 	threadFollow: "social.colibri.beta.thread.follow",

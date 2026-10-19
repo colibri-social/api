@@ -77,6 +77,7 @@ export type ClientPreferences = {
 	blueskyClient?: string;
 	customBlueskyClientBase?: string;
 	developerMode?: boolean;
+	hideModeratedMessages?: boolean;
 	inboxPresentation?: string;
 	voiceView?: StoredVoiceView;
 	experiments?: string[];
@@ -448,6 +449,16 @@ export const spaceNotifications = pgTable(
 	],
 );
 
+export const spaceModerations = pgTable(
+	"space_moderations",
+	{
+		did: text("did").notNull(),
+		community: text("community").notNull(),
+		hideModeratedMessages: flag("hide_moderated_messages").notNull(),
+	},
+	(t) => [primaryKey({ columns: [t.did, t.community] })],
+);
+
 export const readCursors = pgTable(
 	"read_cursors",
 	{
@@ -788,6 +799,7 @@ export const schema = {
 	mutes,
 	actorSettings,
 	spaceNotifications,
+	spaceModerations,
 	readCursors,
 	communityCredentials,
 	notifications,

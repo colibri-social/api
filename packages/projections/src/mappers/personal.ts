@@ -154,6 +154,37 @@ export const spaceNotification: Projector<social.colibri.beta.actor.spaceNotific
 	},
 };
 
+export const spaceModeration: Projector<social.colibri.beta.actor.spaceModeration.Main> = {
+	collection: COLLECTIONS.spaceModeration,
+	writer: "authority",
+	spaceTypes: PERSONAL,
+	schema: social.colibri.beta.actor.spaceModeration,
+	rkey: (ref) => ref.rkey.startsWith("did:"),
+	put: async (deps, ref, value) => {
+		await deps.db
+			.insert(deps.tables.spaceModerations)
+			.values({
+				did: ref.author,
+				community: ref.rkey,
+				hideModeratedMessages: value.hideModeratedMessages,
+			})
+			.onConflictDoUpdate({
+				target: [deps.tables.spaceModerations.did, deps.tables.spaceModerations.community],
+				set: { hideModeratedMessages: value.hideModeratedMessages },
+			});
+	},
+	remove: async (deps, ref) => {
+		await deps.db
+			.delete(deps.tables.spaceModerations)
+			.where(
+				and(
+					eq(deps.tables.spaceModerations.did, ref.author),
+					eq(deps.tables.spaceModerations.community, ref.rkey),
+				),
+			);
+	},
+};
+
 export const readCursors: Projector<social.colibri.beta.channel.read.Main> = {
 	collection: COLLECTIONS.channelRead,
 	writer: "authority",

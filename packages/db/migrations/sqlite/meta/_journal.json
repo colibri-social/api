@@ -183,6 +183,13 @@
 			"when": 1792388111267,
 			"tag": "0025_steady_bill_hollister",
 			"breakpoints": true
+		},
+		{
+			"idx": 26,
+			"version": "6",
+			"when": 1792424460690,
+			"tag": "0026_smart_ultimates",
+			"breakpoints": true
 		}
 	]
 }

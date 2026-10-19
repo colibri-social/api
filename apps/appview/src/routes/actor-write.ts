@@ -147,6 +147,32 @@ export const handlePutSpaceNotification = async (
 	return { preferences: await announcePreferences(ctx, callerDid) };
 };
 
+export const handlePutSpaceModeration = async (
+	ctx: AppContext,
+	callerDid: string,
+	input: { community: string; hideModeratedMessages?: boolean; remove?: boolean },
+): Promise<{ preferences: Preferences }> => {
+	const table = ctx.database.tables.spaceModerations;
+	if (input.hideModeratedMessages !== undefined) {
+		const hideModeratedMessages = input.hideModeratedMessages;
+		await ctx.database.db
+			.insert(table)
+			.values({ did: callerDid, community: input.community, hideModeratedMessages })
+			.onConflictDoUpdate({
+				target: [table.did, table.community],
+				set: { hideModeratedMessages },
+			});
+	} else if (input.remove === true) {
+		await ctx.database.db
+			.delete(table)
+			.where(and(eq(table.did, callerDid), eq(table.community, input.community)));
+	} else {
+		throw new InvalidRequestError("give either hideModeratedMessages or remove", "InvalidRequest");
+	}
+
+	return { preferences: await announcePreferences(ctx, callerDid) };
+};
+
 export const handlePutMutes = async (
 	ctx: AppContext,
 	callerDid: string,
@@ -313,6 +339,7 @@ export const handleDeleteAccount = async (
 		{ table: tables.mutes, column: tables.mutes.did },
 		{ table: tables.actorSettings, column: tables.actorSettings.did },
 		{ table: tables.spaceNotifications, column: tables.spaceNotifications.did },
+		{ table: tables.spaceModerations, column: tables.spaceModerations.did },
 		{ table: tables.readCursors, column: tables.readCursors.did },
 		{ table: tables.emojiFollows, column: tables.emojiFollows.follower },
 		{ table: tables.userPresence, column: tables.userPresence.did },
@@ -354,6 +381,14 @@ export const registerActorWriteRoutes = ({ server, ctx, auth }: RouteDeps): void
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
 			body: await handlePutSpaceNotification(ctx, caller.credentials.did, input.body),
+		}),
+	});
+
+	route(server, social.colibri.beta.actor.putSpaceModeration, {
+		auth: auth.required,
+		handler: async ({ input, auth: caller }) => ({
+			encoding: "application/json" as const,
+			body: await handlePutSpaceModeration(ctx, caller.credentials.did, input.body),
 		}),
 	});
 
