@@ -35,6 +35,11 @@ type Main = { $type: "social.colibri.beta.actor.clientPreferences";
   "linkEmbedsByDefault"?:boolean;
 
   /**
+   * How many times a GIF in chat plays before it pauses. Absent means no limit.
+   */
+  "gifLoopLimit"?:number;
+
+  /**
    * Whether opening a link to another site asks for confirmation first.
    */
   "warnOnExternalLinks"?:boolean;
@@ -77,7 +82,7 @@ type Main = { $type: "social.colibri.beta.actor.clientPreferences";
 export type { Main };
 
 /** Client settings that follow the user across devices. Every field is optional and a client applies its own default for an absent one. */
-const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"controls":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ActorDefs.Controls>((() => ActorDefs.controls) as any)),"theme":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["system","dark","light"]}>()),"messagePreviews":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"linkEmbedsByDefault":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"warnOnExternalLinks":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"blueskyClient":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":64,"knownValues":["anisota","blacksky","bluesky","deer","mu","northsky","witchsky","custom"]}>({"maxLength":64})),"customBlueskyClientBase":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":253})),"inboxPresentation":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":32,"knownValues":["popover","modal"]}>({"maxLength":32})),"developerMode":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"hideModeratedMessages":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"voiceView":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ActorDefs.VoiceView>((() => ActorDefs.voiceView) as any)),"experiments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"maxLength":64}), {"maxLength":64}))}));
+const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"controls":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ActorDefs.Controls>((() => ActorDefs.controls) as any)),"theme":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["system","dark","light"]}>()),"messagePreviews":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"linkEmbedsByDefault":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"gifLoopLimit":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":1,"maximum":5})),"warnOnExternalLinks":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"blueskyClient":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":64,"knownValues":["anisota","blacksky","bluesky","deer","mu","northsky","witchsky","custom"]}>({"maxLength":64})),"customBlueskyClientBase":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":253})),"inboxPresentation":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":32,"knownValues":["popover","modal"]}>({"maxLength":32})),"developerMode":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"hideModeratedMessages":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"voiceView":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ActorDefs.VoiceView>((() => ActorDefs.voiceView) as any)),"experiments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"maxLength":64}), {"maxLength":64}))}));
 
 export { main };
 
