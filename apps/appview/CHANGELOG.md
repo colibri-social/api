@@ -1,5 +1,19 @@
 # @colibri-social/appview
 
+## 2.27.0
+
+### Minor Changes
+
+- 5fd5282: Add `gifLoopLimit` to `social.colibri.beta.actor.defs#clientPreferences`, the number of times a GIF in chat plays before it pauses
+
+### Patch Changes
+
+- Updated dependencies [5fd5282]
+  - @colibri-social/lexicons@2.28.0
+  - @colibri-social/community@2.11.5
+  - @colibri-social/notifications@1.8.6
+  - @colibri-social/projections@1.13.2
+
 ## 2.26.0
 
 ### Minor Changes

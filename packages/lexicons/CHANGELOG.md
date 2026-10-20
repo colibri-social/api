@@ -1,5 +1,11 @@
 # @colibri-social/lexicons
 
+## 2.28.0
+
+### Minor Changes
+
+- 5fd5282: Add `gifLoopLimit` to `social.colibri.beta.actor.defs#clientPreferences`, the number of times a GIF in chat plays before it pauses
+
 ## 2.27.0
 
 ### Minor Changes
