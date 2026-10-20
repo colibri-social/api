@@ -7,6 +7,8 @@ import type { ServerFrame } from "./ws/events.js";
 
 const ACTOR = "did:plc:presenceaaaaaaaaaaaaaaaaaa";
 const COMMUNITY = "did:plc:communityaaaaaaaaaaaaaaaaaa";
+const CHANNEL = "at://did:plc:x/space/social.colibri.beta.channel.text/3lk";
+const OTHER_CHANNEL = "at://did:plc:x/space/social.colibri.beta.channel.text/3lm";
 
 let database: TestDatabase;
 let published: Array<{ did: string; communities: readonly string[]; frame: ServerFrame }>;
@@ -127,6 +129,35 @@ describe("presence tracking", () => {
 		await tracker.closed(ACTOR);
 
 		expect((await stored())?.viewingChannel).toBeNull();
+	});
+
+	it("drops a closed socket's channel while another socket stays connected", async () => {
+		const phone = {};
+		await tracker.opened(ACTOR);
+		await tracker.opened(ACTOR);
+		await tracker.viewing(ACTOR, CHANNEL, phone);
+		expect((await stored())?.viewingChannel).toBe(CHANNEL);
+
+		await tracker.closed(ACTOR, phone);
+
+		expect((await stored())?.viewingChannel).toBeNull();
+		expect((await stored())?.derivedState).toBe("online");
+	});
+
+	it("keeps the channel another socket still views", async () => {
+		const phone = {};
+		const desktop = {};
+		await tracker.opened(ACTOR);
+		await tracker.opened(ACTOR);
+		await tracker.viewing(ACTOR, CHANNEL, desktop);
+		await tracker.viewing(ACTOR, OTHER_CHANNEL, phone);
+		expect((await stored())?.viewingChannel).toBe(OTHER_CHANNEL);
+
+		await tracker.viewing(ACTOR, null, phone);
+		expect((await stored())?.viewingChannel).toBe(CHANNEL);
+
+		await tracker.closed(ACTOR, phone);
+		expect((await stored())?.viewingChannel).toBe(CHANNEL);
 	});
 });
 

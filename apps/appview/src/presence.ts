@@ -71,6 +71,7 @@ export type PresenceDeps = {
  */
 export class PresenceTracker {
 	private readonly sockets = new Map<string, number>();
+	private readonly views = new Map<string, Map<object, string | null>>();
 	private readonly queues = new Map<string, Promise<void>>();
 
 	constructor(private readonly deps: PresenceDeps) {}
@@ -86,33 +87,57 @@ export class PresenceTracker {
 		});
 	}
 
-	async closed(did: string): Promise<void> {
+	async closed(did: string, socket?: object): Promise<void> {
 		return this.enqueue(did, async () => {
 			const remaining = this.connections(did) - 1;
 			if (remaining > 0) {
 				this.sockets.set(did, remaining);
+				if (socket && this.views.get(did)?.delete(socket)) {
+					await this.storeViewing(did, this.viewedChannel(did));
+				}
 				return;
 			}
 			this.sockets.delete(did);
+			this.views.delete(did);
 			await this.settle(did);
 		});
 	}
 
-	async viewing(did: string, channel: string | null): Promise<void> {
+	async viewing(did: string, channel: string | null, socket?: object): Promise<void> {
 		return this.enqueue(did, async () => {
-			const { db, tables } = this.deps.ctx.database;
-			const [existing] = await db
-				.select()
-				.from(tables.userPresence)
-				.where(eq(tables.userPresence.did, did))
-				.limit(1);
-			if (!existing) return;
-
-			await db
-				.update(tables.userPresence)
-				.set({ viewingChannel: channel, updatedAt: new Date().toISOString() })
-				.where(eq(tables.userPresence.did, did));
+			if (!socket) {
+				await this.storeViewing(did, channel);
+				return;
+			}
+			const views = this.views.get(did) ?? new Map<object, string | null>();
+			views.delete(socket);
+			views.set(socket, channel);
+			this.views.set(did, views);
+			await this.storeViewing(did, this.viewedChannel(did));
 		});
+	}
+
+	private viewedChannel(did: string): string | null {
+		let latest: string | null = null;
+		for (const channel of this.views.get(did)?.values() ?? []) {
+			if (channel) latest = channel;
+		}
+		return latest;
+	}
+
+	private async storeViewing(did: string, channel: string | null): Promise<void> {
+		const { db, tables } = this.deps.ctx.database;
+		const [existing] = await db
+			.select()
+			.from(tables.userPresence)
+			.where(eq(tables.userPresence.did, did))
+			.limit(1);
+		if (!existing) return;
+
+		await db
+			.update(tables.userPresence)
+			.set({ viewingChannel: channel, updatedAt: new Date().toISOString() })
+			.where(eq(tables.userPresence.did, did));
 	}
 
 	async requested(did: string, state: OnlineState): Promise<void> {

@@ -177,7 +177,7 @@ export class EventServer {
 		socket.on("close", () => {
 			this.topics.forget(connection);
 			this.connections.delete(connection);
-			void this.trackPresence(did, "closed", () => this.presence.closed(did));
+			void this.trackPresence(did, "closed", () => this.presence.closed(did, connection));
 		});
 		socket.on("error", () => socket.close());
 	}
@@ -331,7 +331,7 @@ export class EventServer {
 		frame: { channel?: string },
 	): Promise<void> {
 		await this.trackPresence(connection.did, "viewing", () =>
-			this.presence.viewing(connection.did, frame.channel ?? null),
+			this.presence.viewing(connection.did, frame.channel ?? null, connection),
 		);
 	}
 
