@@ -450,6 +450,21 @@ const disconnected = /*#__PURE__*/ l.typedObject<Disconnected>($nsid, "disconnec
 
 export { disconnected };
 
+/** A moderator moved this client to another voice channel. The server has already removed it from the previous one. Sent only to the client it applies to. */
+type Moved = { $type?: "social.colibri.beta.voice.defs#moved";
+
+  /**
+   * The voice channel to join.
+   */
+  "channel":l.SpaceRefString };
+
+export type { Moved };
+
+/** A moderator moved this client to another voice channel. The server has already removed it from the previous one. Sent only to the client it applies to. */
+const moved = /*#__PURE__*/ l.typedObject<Moved>($nsid, "moved", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"})}));
+
+export { moved };
+
 /** A peer's mute or deafen state changed, whether they did it themselves or a moderator did it to them. */
 type ModerationChanged = { $type?: "social.colibri.beta.voice.defs#moderationChanged";
 

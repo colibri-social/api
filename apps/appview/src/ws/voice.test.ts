@@ -759,6 +759,36 @@ describe("VoiceServer", () => {
 		ws.close();
 	});
 
+	it("tells a moved peer where to go and removes it from the old channel", async () => {
+		const aliceWs = connect("alice-token");
+		const bobWs = connect("bob-token");
+		await Promise.all([waitForOpen(aliceWs), waitForOpen(bobWs)]);
+
+		send(aliceWs, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrameOfType(aliceWs, "joined");
+		send(bobWs, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrameOfType(bobWs, "joined");
+
+		await voiceServer.move(VOICE_CHANNEL, ALICE, OTHER_VOICE_CHANNEL);
+
+		expect(await nextFrameOfType(aliceWs, "moved")).toEqual({
+			$type: "social.colibri.beta.voice.defs#moved",
+			channel: OTHER_VOICE_CHANNEL,
+		});
+		expect(await nextFrameOfType(bobWs, "peerLeft")).toMatchObject({ did: ALICE });
+		expect(voiceServer.isJoined(VOICE_CHANNEL, ALICE)).toBe(false);
+		expect(sfu.presenceOf(ALICE)).toBeUndefined();
+
+		send(aliceWs, { $type: "social.colibri.beta.voice.defs#join", channel: OTHER_VOICE_CHANNEL });
+		expect(await nextFrameOfType(aliceWs, "joined")).toMatchObject({
+			channel: OTHER_VOICE_CHANNEL,
+		});
+		expect(sfu.presenceOf(ALICE)).toBe(OTHER_VOICE_CHANNEL);
+
+		aliceWs.close();
+		bobWs.close();
+	});
+
 	it("hands a channel over to a second device without telling the room anyone left", async () => {
 		const laptop = connect("alice-token");
 		const phone = connect("alice-token");

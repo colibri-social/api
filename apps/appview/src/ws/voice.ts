@@ -42,6 +42,7 @@ type ClientFrameName = keyof typeof clientFrames;
 export type VoiceRoster = {
 	isJoined: (channel: string, did: string) => boolean;
 	disconnect: (channel: string, did: string) => Promise<void>;
+	move: (channel: string, did: string, destination: string) => Promise<void>;
 };
 
 const frameName = (value: unknown): ClientFrameName | null => {
@@ -97,6 +98,17 @@ export class VoiceServer {
 
 	async disconnect(channel: string, did: string): Promise<void> {
 		for (const connection of this.joined(channel, did)) this.detach(connection, "moderator");
+		await this.ctx.voice?.leave(channel, did);
+	}
+
+	async move(channel: string, did: string, destination: string): Promise<void> {
+		for (const connection of this.joined(channel, did)) {
+			this.send(connection, {
+				$type: "social.colibri.beta.voice.defs#moved",
+				channel: destination,
+			});
+			this.forgetChannel(connection);
+		}
 		await this.ctx.voice?.leave(channel, did);
 	}
 

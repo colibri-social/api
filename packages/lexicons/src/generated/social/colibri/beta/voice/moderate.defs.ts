@@ -14,7 +14,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"subject":/*#__PURE__*/ l.string({"format":"did"}),"muted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"deafened":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"disconnect":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())});
+export const $input = /*#__PURE__*/ l.jsonPayload({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"subject":/*#__PURE__*/ l.string({"format":"did"}),"muted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"deafened":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"disconnect":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"moveTo":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"}))});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;
@@ -25,7 +25,7 @@ export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
 /** Acts on someone in a voice channel. An absent field leaves the current value unchanged. */
-const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","Forbidden","ChannelNotFound","NotInVoice","VoiceUnavailable"]);
+const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","Forbidden","ChannelNotFound","NotInVoice","NotVoiceChannel","DestinationForbidden","VoiceUnavailable"]);
 
 export { main };
 

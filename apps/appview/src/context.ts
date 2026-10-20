@@ -58,6 +58,7 @@ import type { VoiceRoster } from "./ws/voice.js";
 const emptyVoiceRoster: VoiceRoster = {
 	isJoined: () => false,
 	disconnect: async () => {},
+	move: async () => {},
 };
 
 const authorityOf = (space: string): string | null => {
