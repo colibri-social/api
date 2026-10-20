@@ -29,12 +29,14 @@ export type IdentityResolverOptions = {
 	maxSeconds: number;
 	store?: IdentityStore;
 	handleTtlSeconds?: number;
+	negativeHandleTtlSeconds?: number;
 	handleConcurrency?: number;
 };
 
 export type IdentityObserver = (identity: AtprotoIdentity) => void;
 
 const DEFAULT_HANDLE_TTL_SECONDS = 24 * 60 * 60;
+const DEFAULT_NEGATIVE_HANDLE_TTL_SECONDS = 5 * 60;
 const DEFAULT_HANDLE_CONCURRENCY = 12;
 
 type ResolvedHandle = {
@@ -50,6 +52,7 @@ export class IdentityResolver {
 	private readonly observers = new Set<IdentityObserver>();
 	private readonly store: IdentityStore | undefined;
 	private readonly handleTtlMs: number;
+	private readonly negativeHandleTtlMs: number;
 	private readonly handleConcurrency: number;
 
 	constructor(options: IdentityResolverOptions) {
@@ -59,6 +62,8 @@ export class IdentityResolver {
 		});
 		this.store = options.store;
 		this.handleTtlMs = (options.handleTtlSeconds ?? DEFAULT_HANDLE_TTL_SECONDS) * 1000;
+		this.negativeHandleTtlMs =
+			(options.negativeHandleTtlSeconds ?? DEFAULT_NEGATIVE_HANDLE_TTL_SECONDS) * 1000;
 		this.handleConcurrency = options.handleConcurrency ?? DEFAULT_HANDLE_CONCURRENCY;
 	}
 
@@ -106,7 +111,7 @@ export class IdentityResolver {
 
 		for (const did of unique) {
 			const row = cached?.get(did);
-			if (row && row.handleVerified !== null && this.isFresh(row.fetchedAt)) {
+			if (row && row.handleVerified !== null && this.isFresh(row)) {
 				out.set(did, row.handleVerified ? row.handle : null);
 				continue;
 			}
@@ -184,7 +189,8 @@ export class IdentityResolver {
 			.catch(() => undefined);
 	}
 
-	private isFresh(fetchedAt: Date): boolean {
-		return Date.now() - fetchedAt.getTime() < this.handleTtlMs;
+	private isFresh(row: CachedIdentity): boolean {
+		const ttl = row.handleVerified ? this.handleTtlMs : this.negativeHandleTtlMs;
+		return Date.now() - row.fetchedAt.getTime() < ttl;
 	}
 }

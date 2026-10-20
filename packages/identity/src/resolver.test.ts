@@ -37,6 +37,7 @@ const resolver = (identityStore: IdentityStore) =>
 		maxSeconds: 86_400,
 		store: identityStore,
 		handleTtlSeconds: 3600,
+		negativeHandleTtlSeconds: 300,
 	});
 
 describe("resolveVerifiedHandles", () => {
@@ -55,6 +56,25 @@ describe("resolveVerifiedHandles", () => {
 		const resolved = await resolver(impl).resolveVerifiedHandles([DID]);
 
 		expect(resolved.get(DID)).toBeNull();
+		expect(saved).toEqual([]);
+	});
+
+	it("re-resolves a failed verification once it falls outside the negative TTL", async () => {
+		const stale = new Date(Date.now() - 600 * 1000);
+		const { store: impl, saved } = store([cached({ handleVerified: false, fetchedAt: stale })]);
+
+		await resolver(impl).resolveVerifiedHandles([DID]);
+
+		expect(saved).toHaveLength(1);
+	});
+
+	it("keeps a verified handle past the negative TTL", async () => {
+		const older = new Date(Date.now() - 600 * 1000);
+		const { store: impl, saved } = store([cached({ fetchedAt: older })]);
+
+		const resolved = await resolver(impl).resolveVerifiedHandles([DID]);
+
+		expect(resolved.get(DID)).toBe("alice.test");
 		expect(saved).toEqual([]);
 	});
 

@@ -91,6 +91,7 @@ export const createContext = async (config: Config) => {
 		maxSeconds: 24 * 60 * 60,
 		store: drizzleIdentityStore(database),
 		handleTtlSeconds: config.HANDLE_CACHE_TTL_SECONDS,
+		negativeHandleTtlSeconds: config.HANDLE_NEGATIVE_CACHE_TTL_SECONDS,
 		handleConcurrency: config.IDENTITY_CONCURRENCY,
 	});
 

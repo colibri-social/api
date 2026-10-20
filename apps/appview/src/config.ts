@@ -82,6 +82,11 @@ export const configSchema = z.object({
 		.int()
 		.positive()
 		.default(24 * 60 * 60),
+	HANDLE_NEGATIVE_CACHE_TTL_SECONDS: z.coerce
+		.number()
+		.int()
+		.positive()
+		.default(5 * 60),
 	IDENTITY_CONCURRENCY: z.coerce.number().int().positive().default(12),
 	PROFILE_FETCH_CONCURRENCY: z.coerce.number().int().positive().default(8),
 
