@@ -49,6 +49,7 @@ import type { CommunityView } from "../views/community.js";
 import { CommunityViews } from "../views/community.js";
 import { countMembers } from "./community.js";
 import { credentialsUnavailable, membershipErrorToXrpc } from "./failures.js";
+import { seedReadCursorsOnJoin } from "./read-cursors.js";
 import { writeCommunitySettings } from "./settings.js";
 import type { RouteDeps } from "./types.js";
 
@@ -546,6 +547,7 @@ export const handleDeleteCommunity = async (
 };
 
 export const handleJoinCommunity = async (
+	ctx: AppContext,
 	actors: ActorViews,
 	membership: Membership,
 	callerDid: string,
@@ -555,6 +557,8 @@ export const handleJoinCommunity = async (
 	try {
 		const outcome = await membership.join(community, callerDid, invitation);
 		if (outcome.status === "pending") return { status: "pending" };
+
+		await seedReadCursorsOnJoin(ctx, community, callerDid);
 
 		const member: MemberView = {
 			actor: await actors.one(callerDid),
@@ -959,6 +963,7 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			const body = await handleJoinCommunity(
+				ctx,
 				actors,
 				membership,
 				caller.credentials.did,

@@ -35,6 +35,7 @@ import {
 	membershipErrorToXrpc,
 	moderationErrorToXrpc,
 } from "./failures.js";
+import { seedReadCursorsOnJoin } from "./read-cursors.js";
 import type { RouteDeps } from "./types.js";
 
 type BannedActorView = social.colibri.beta.community.defs.BannedActorView;
@@ -256,6 +257,8 @@ export const handleApproveApplication = async (
 		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);
 		throw error;
 	}
+
+	await seedReadCursorsOnJoin(ctx, community, subject);
 
 	const member: MemberView = {
 		actor: await actors.one(subject),
