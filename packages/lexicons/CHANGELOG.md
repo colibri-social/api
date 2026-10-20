@@ -1,5 +1,11 @@
 # @colibri-social/lexicons
 
+## 2.27.0
+
+### Minor Changes
+
+- 572ef3b: Add `moveTo` to `social.colibri.beta.voice.moderate` and the `moved` voice signal frame, so moderators can move members between voice channels
+
 ## 2.26.0
 
 ### Minor Changes
