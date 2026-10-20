@@ -1,5 +1,11 @@
 # @colibri-social/identity
 
+## 0.2.2
+
+### Patch Changes
+
+- 42b0ba6: Retries failed handle verifications after 5 minutes, so new accounts no longer show `handle.invalid` for a day
+
 ## 0.2.1
 
 ### Patch Changes

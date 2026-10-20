@@ -1,5 +1,23 @@
 # @colibri-social/appview
 
+## 2.26.0
+
+### Minor Changes
+
+- 572ef3b: Add `moveTo` to `social.colibri.beta.voice.moderate` and the `moved` voice signal frame, so moderators can move members between voice channels
+
+### Patch Changes
+
+- bfc8ebe: Track presence in channel per-device
+- 42b0ba6: Retries failed handle verifications after 5 minutes, so new accounts no longer show `handle.invalid` for a day
+- Updated dependencies [42b0ba6]
+- Updated dependencies [572ef3b]
+  - @colibri-social/identity@0.2.2
+  - @colibri-social/lexicons@2.27.0
+  - @colibri-social/community@2.11.4
+  - @colibri-social/notifications@1.8.5
+  - @colibri-social/projections@1.13.1
+
 ## 2.25.0
 
 ### Minor Changes
