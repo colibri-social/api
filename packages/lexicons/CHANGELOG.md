@@ -1,5 +1,17 @@
 # @colibri-social/lexicons
 
+## 2.29.0
+
+### Minor Changes
+
+- 817469f: Describe legacy community migration state: `legacyCommunityView` gains `state`, `blockedReason`, `owner`, `picture` and `progress`, `communityView` gains `migration`, `community.migrate` returns the queued legacy community, and `clientPreferences` gains `dismissedLegacyCommunities`
+- 817469f: Serve Space banners as a 2:1 `spaceBanner` image variant so they fill the Space header without being cropped twice
+- dc2a71b: Add `lastMessage` to `social.colibri.beta.thread.defs#threadView`, the latest message in the thread the requesting user may see, in the `channelSummary` shape channel previews use
+
+### Patch Changes
+
+- dc2a71b: Serve attachment images whose stored blob reference is nested, and store blob references in one plain form
+
 ## 2.28.0
 
 ### Minor Changes

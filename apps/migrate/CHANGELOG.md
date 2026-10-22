@@ -1,5 +1,21 @@
 # @colibri-social/migrate
 
+## 1.0.34
+
+### Patch Changes
+
+- Updated dependencies [817469f]
+- Updated dependencies [817469f]
+- Updated dependencies [38045e1]
+- Updated dependencies [dc2a71b]
+- Updated dependencies [4753bda]
+- Updated dependencies [817469f]
+- Updated dependencies [dc2a71b]
+  - @colibri-social/appview@2.28.0
+  - @colibri-social/appview-db@0.18.0
+  - @colibri-social/community@2.12.0
+  - @colibri-social/lexicons@2.29.0
+
 ## 1.0.33
 
 ### Patch Changes

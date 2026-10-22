@@ -1,5 +1,22 @@
 # @colibri-social/community
 
+## 2.12.0
+
+### Minor Changes
+
+- 817469f: Run legacy community migrations as resumable background jobs that copy bans, serve legacy message history read-only in the migrated channels, mark that history as read for every member and retire the legacy community record when done. A community whose account this AppView can't sign in to moves into a newly provisioned account built from its public records, and its legacy record stays as it is
+
+### Patch Changes
+
+- Updated dependencies [817469f]
+- Updated dependencies [817469f]
+- Updated dependencies [dc2a71b]
+- Updated dependencies [817469f]
+- Updated dependencies [dc2a71b]
+  - @colibri-social/appview-db@0.18.0
+  - @colibri-social/lexicons@2.29.0
+  - @colibri-social/projections@1.13.3
+
 ## 2.11.5
 
 ### Patch Changes
