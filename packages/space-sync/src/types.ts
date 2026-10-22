@@ -75,10 +75,6 @@ export type RepoHostResolver = {
 	hostFor(did: string): Promise<string>;
 };
 
-export type SigningKeyResolver = {
-	signingKeyFor(did: string): Promise<string>;
-};
-
 export type SyncLogLevel = "debug" | "warn";
 
 export type SyncLog = (

@@ -1,5 +1,5 @@
 import { Secp256k1Keypair } from "@atproto/crypto";
-import { createSpaceToken, parseSpaceToken, verifySpaceSignature } from "@atproto/space";
+import { createSpaceToken, isP256DidKey, parseSpaceToken } from "@atproto/space";
 import { beforeEach, describe, expect, it } from "vitest";
 import { inMemoryCredentialStorage, SpaceCredentials } from "./credentials.js";
 import { SpaceCredentialError } from "./errors.js";
@@ -20,7 +20,12 @@ type Recorded = {
 	authorization: string | null;
 	signatureInput: string | null;
 	keyId: string;
-	body: { space: string; clientAttestation?: string };
+	body: {
+		space: string;
+		credentialKid: string;
+		delegationToken?: string;
+		clientAttestation?: string;
+	};
 };
 
 const fakeSpaceHost = (authorityKey: Secp256k1Keypair, behaviour: HostBehaviour = {}) => {
@@ -30,7 +35,7 @@ const fakeSpaceHost = (authorityKey: Secp256k1Keypair, behaviour: HostBehaviour 
 		const headers = new Headers(init?.headers);
 		const body = JSON.parse(String(init?.body ?? "{}"));
 
-		if (behaviour.rejectTokensOnce === headers.get("authorization")?.slice("Bearer ".length)) {
+		if (behaviour.rejectTokensOnce === body.delegationToken) {
 			return new Response(JSON.stringify({ error: "InvalidDelegationToken" }), {
 				status: 400,
 				headers: { "content-type": "application/json" },
@@ -44,11 +49,9 @@ const fakeSpaceHost = (authorityKey: Secp256k1Keypair, behaviour: HostBehaviour 
 			});
 		}
 
-		const keyId = await verifySpaceSignature(Object.fromEntries(headers.entries())).catch(
-			() => null,
-		);
-		if (!keyId) {
-			return new Response(JSON.stringify({ error: "BadSpaceSignature" }), { status: 401 });
+		const keyId = body.credentialKid;
+		if (typeof keyId !== "string" || !isP256DidKey(keyId)) {
+			return new Response(JSON.stringify({ error: "InvalidRequest" }), { status: 400 });
 		}
 
 		calls.push({
@@ -106,7 +109,7 @@ describe("space credentials", () => {
 		const credential = await credentialsFor(host.fetchImpl).acquire(SPACE);
 
 		expect(host.calls).toHaveLength(1);
-		expect(host.calls[0]?.authorization).toBe("Bearer delegation-token");
+		expect(host.calls[0]?.body.delegationToken).toBe("delegation-token");
 		expect(host.calls[0]?.keyId).toBe(credential.key.did);
 
 		const parsed = parseSpaceToken("credential", credential.credential);
@@ -114,12 +117,16 @@ describe("space credentials", () => {
 		expect(parsed.payload.cnf?.kid).toBe(credential.key.did);
 	});
 
-	it("signs only the authorization header of the delegation exchange", async () => {
+	it("sends the delegation token in the body without authorization or signature headers", async () => {
 		const host = fakeSpaceHost(authorityKey);
 		const credential = await credentialsFor(host.fetchImpl).acquire(SPACE);
-		expect(host.calls[0]?.signatureInput).toBe(
-			`atproto-space=("authorization");keyid="${credential.key.did}"`,
-		);
+		expect(host.calls[0]?.authorization).toBeNull();
+		expect(host.calls[0]?.signatureInput).toBeNull();
+		expect(host.calls[0]?.body).toEqual({
+			space: SPACE,
+			credentialKid: credential.key.did,
+			delegationToken: "delegation-token",
+		});
 	});
 
 	it("reuses a cached credential rather than minting a second one", async () => {
@@ -189,7 +196,7 @@ describe("space credentials", () => {
 		const credential = await credentials.acquire(SPACE);
 
 		expect(minted).toEqual(["spent-token", "fresh-token"]);
-		expect(host.calls[0]?.authorization).toBe("Bearer fresh-token");
+		expect(host.calls[0]?.body.delegationToken).toBe("fresh-token");
 		expect(parseSpaceToken("credential", credential.credential).payload.sub).toBe(SPACE);
 	});
 

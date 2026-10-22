@@ -1,5 +1,11 @@
-import type { SignedCommit } from "@atproto/space";
-import { type SpaceClient, XrpcError } from "@colibri-social/space";
+import {
+	type KemKeyResolver,
+	type ProvenCommit,
+	type RepoStar,
+	RepoUnverifiedError,
+	type SpaceClient,
+	XrpcError,
+} from "@colibri-social/space";
 import type {
 	CommittedCursor,
 	RecordDelete,
@@ -7,7 +13,6 @@ import type {
 	RepoChange,
 	RepoCursor,
 	RepoHostResolver,
-	SigningKeyResolver,
 	SyncStore,
 } from "./types.js";
 import type { HashOp } from "./verify-jobs.js";
@@ -23,10 +28,10 @@ export type RepoSyncDeps = {
 	client: SpaceClient;
 	store: SyncStore;
 	hosts: RepoHostResolver;
-	keys: SigningKeyResolver;
+	keys: KemKeyResolver;
 	pageLimit?: number;
 	verifier?: Verifier;
-	maxCarBytes?: number;
+	maxRepoBytes?: number;
 };
 
 const OPLOG_UNUSABLE = new Set(["InvalidRequest", "CursorNotFound", "RevNotFound"]);
@@ -38,16 +43,16 @@ const isGone = (error: unknown): boolean =>
 const needsRecovery = (error: unknown): boolean =>
 	error instanceof XrpcError && OPLOG_UNUSABLE.has(error.code);
 
-export const DEFAULT_MAX_CAR_BYTES = 64 * 1024 * 1024;
+export const DEFAULT_MAX_REPO_BYTES = 64 * 1024 * 1024;
 
-export class CarTooLargeError extends Error {
+export class RepoTooLargeError extends Error {
 	constructor(
 		readonly limitBytes: number,
 		readonly space: string,
 		readonly author: string,
 	) {
-		super(`repo car for ${author} in ${space} exceeds ${limitBytes} bytes`);
-		this.name = "CarTooLargeError";
+		super(`repo archive for ${author} in ${space} exceeds ${limitBytes} bytes`);
+		this.name = "RepoTooLargeError";
 	}
 }
 
@@ -61,17 +66,17 @@ export class RepoHostMissingError extends Error {
 	}
 }
 
-const collectCar = async (
-	car: AsyncIterable<Uint8Array>,
+const collectStar = async (
+	star: AsyncIterable<Uint8Array>,
 	limitBytes: number,
 	space: string,
 	author: string,
 ): Promise<Uint8Array> => {
 	const chunks: Uint8Array[] = [];
 	let total = 0;
-	for await (const chunk of car) {
+	for await (const chunk of star) {
 		total += chunk.byteLength;
-		if (total > limitBytes) throw new CarTooLargeError(limitBytes, space, author);
+		if (total > limitBytes) throw new RepoTooLargeError(limitBytes, space, author);
 		chunks.push(chunk);
 	}
 
@@ -92,6 +97,16 @@ export class RepoSync {
 	}
 
 	async sync(space: string, author: string): Promise<RepoSyncOutcome> {
+		try {
+			return await this.attempt(space, author);
+		} catch (error) {
+			if (!(error instanceof RepoUnverifiedError)) throw error;
+			await this.deps.keys.kemKeyFor(author, true);
+			return this.attempt(space, author);
+		}
+	}
+
+	private async attempt(space: string, author: string): Promise<RepoSyncOutcome> {
 		const cursor = (await this.deps.store.loadCursor(space, author)) ?? blankCursor(space, author);
 		let host: string;
 		try {
@@ -131,7 +146,7 @@ export class RepoSync {
 		const deletes: RecordDelete[] = [];
 		const ops: HashOp[] = [];
 		let rev = cursor.appliedRev;
-		let commit: SignedCommit | null = null;
+		let commit: ProvenCommit | null = null;
 		let pageCursor: string | undefined;
 
 		do {
@@ -167,16 +182,15 @@ export class RepoSync {
 		const verified = await this.verifier.advance({
 			space,
 			author,
-			didKey: commit ? await this.deps.keys.signingKeyFor(author) : "",
 			setHashBase64: cursor.setHashBase64,
 			ops,
 			commit,
 		});
 
 		if (commit) {
-			if (!verified.authentic) throw new Error(`commit for ${author} in ${space} did not verify`);
+			if (!verified.authentic) throw new RepoUnverifiedError(space, author);
 			if (!verified.matches) return this.recover(space, author, host);
-			rev = commit.rev;
+			rev = commit.commit.rev;
 		}
 
 		const change: RepoChange = { space, author, puts, deletes };
@@ -191,9 +205,9 @@ export class RepoSync {
 	}
 
 	private async recover(space: string, author: string, host: string): Promise<RepoSyncOutcome> {
-		let car: AsyncIterable<Uint8Array>;
+		let repo: RepoStar;
 		try {
-			car = await this.deps.client.getRepoCar(space, host, author);
+			repo = await this.deps.client.getRepoStar(space, host, author);
 		} catch (error) {
 			if (isGone(error)) {
 				await this.deps.store.dropRepo(space, author);
@@ -205,9 +219,16 @@ export class RepoSync {
 		const verified = await this.verifier.repo({
 			space,
 			author,
-			didKey: await this.deps.keys.signingKeyFor(author),
-			car: await collectCar(car, this.deps.maxCarBytes ?? DEFAULT_MAX_CAR_BYTES, space, author),
+			sharedSecret: repo.sharedSecret,
+			mac: repo.mac,
+			star: await collectStar(
+				repo.star,
+				this.deps.maxRepoBytes ?? DEFAULT_MAX_REPO_BYTES,
+				space,
+				author,
+			),
 		});
+		if (!verified.authentic) throw new RepoUnverifiedError(space, author);
 
 		const puts = verified.records;
 		const cursor: CommittedCursor = {

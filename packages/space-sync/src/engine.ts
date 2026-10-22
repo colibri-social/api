@@ -1,4 +1,4 @@
-import type { SpaceClient, SpaceCredentials } from "@colibri-social/space";
+import type { KemKeyResolver, SpaceClient, SpaceCredentials } from "@colibri-social/space";
 import { SpaceCredentialError, XrpcError } from "@colibri-social/space";
 import { Emitter } from "./emitter.js";
 import { KeyedWorkQueue } from "./queue.js";
@@ -7,7 +7,6 @@ import type {
 	ChangeTiming,
 	RepoCursor,
 	RepoHostResolver,
-	SigningKeyResolver,
 	SyncEvents,
 	SyncLog,
 	SyncStore,
@@ -34,13 +33,13 @@ export type SyncEngineOptions = {
 	credentials: SpaceCredentials;
 	store: SyncStore;
 	hosts: RepoHostResolver;
-	keys: SigningKeyResolver;
+	keys: KemKeyResolver;
 	syncerService: string;
 	concurrency?: number;
 	sweepIntervalMs?: number;
 	maxBackoffMs?: number;
 	pageLimit?: number;
-	maxCarBytes?: number;
+	maxRepoBytes?: number;
 	registrationRenewMarginMs?: number;
 	canRenew?: (space: string) => Promise<boolean>;
 	maxChaseAttempts?: number;
@@ -129,7 +128,7 @@ export class SpaceSyncEngine {
 				keys: options.keys,
 				verifier: this.verifier,
 				...(options.pageLimit === undefined ? {} : { pageLimit: options.pageLimit }),
-				...(options.maxCarBytes === undefined ? {} : { maxCarBytes: options.maxCarBytes }),
+				...(options.maxRepoBytes === undefined ? {} : { maxRepoBytes: options.maxRepoBytes }),
 			});
 		this.queue = new KeyedWorkQueue((key) => this.syncOne(key), {
 			concurrency: options.concurrency ?? 16,

@@ -89,7 +89,7 @@ const engineFor = (
 		credentials: { invalidate: async () => undefined } as never,
 		store: store(options.expected),
 		hosts: { hostFor: async () => "https://pds.test" },
-		keys: { signingKeyFor: async () => "did:key:z" },
+		keys: { kemKeyFor: async () => "did:key:z" },
 		syncerService: SYNCER,
 		concurrency: 4,
 		...(options.now ? { now: options.now } : {}),

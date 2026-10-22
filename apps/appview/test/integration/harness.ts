@@ -223,7 +223,7 @@ export const createHarness = async () => {
 		},
 	});
 
-	const spaceClient = new SpaceClient({ hosts, credentials: spaceCredentials });
+	const spaceClient = new SpaceClient({ hosts, credentials: spaceCredentials, kemKeys: identity });
 	const loader = new CommunityLoader({ db: database.db, tables: database.tables });
 	const writer = new CommunityWriter({ credentials });
 
@@ -284,7 +284,7 @@ export const createHarness = async () => {
 		client: spaceClient,
 		store: integrationStore(database, projections),
 		hosts: { hostFor: async (did) => (await identity.resolveDid(did)).pds ?? pdsUrl },
-		keys: { signingKeyFor: async (did) => (await identity.resolveDid(did)).signingKey },
+		keys: identity,
 	});
 
 	const createUser = async (handlePrefix = unique("user")) => {

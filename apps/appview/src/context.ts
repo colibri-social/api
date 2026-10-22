@@ -130,7 +130,11 @@ export const createContext = async (config: Config) => {
 		renewBeforeSeconds: 120,
 	});
 
-	const spaceClient = new SpaceClient({ hosts, credentials: spaceCredentials });
+	const spaceClient = new SpaceClient({
+		hosts,
+		credentials: spaceCredentials,
+		kemKeys: identity,
+	});
 
 	const loader = new CommunityLoader({
 		db: database.db,
@@ -172,16 +176,14 @@ export const createContext = async (config: Config) => {
 				return resolved.pds ?? config.PDS_URL;
 			},
 		},
-		keys: {
-			signingKeyFor: async (did) => (await identity.resolveDid(did)).signingKey,
-		},
+		keys: identity,
 		syncerService: serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.syncer),
 		canRenew: async (space) => {
 			const authority = authorityOf(space);
 			return authority !== null && (await credentials.load(authority)) !== null;
 		},
 		concurrency: config.SYNC_WORKERS,
-		maxCarBytes: config.SYNC_MAX_CAR_BYTES,
+		maxRepoBytes: config.SYNC_MAX_CAR_BYTES,
 		workerThreads: config.SYNC_WORKER_THREADS,
 		sweepIntervalMs: config.SYNC_SWEEP_SECONDS * 1000,
 		log: (event, detail, level = "warn") => log[level](detail, event),

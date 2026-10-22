@@ -1,6 +1,6 @@
-import { getPds, IdResolver, MemoryCache } from "@atproto/identity";
+import { getDidKeyFromMultibase, getPds, IdResolver, MemoryCache } from "@atproto/identity";
 import { mapWithConcurrency } from "./concurrency.js";
-import { IdentityResolutionError, MissingPdsError } from "./errors.js";
+import { IdentityResolutionError, MissingKemKeyError, MissingPdsError } from "./errors.js";
 
 export type AtprotoIdentity = {
 	did: string;
@@ -143,6 +143,23 @@ export class IdentityResolver {
 		return this.resolver.did.resolveAtprotoKey(did, forceRefresh).catch((cause) => {
 			throw new IdentityResolutionError(did, `could not resolve ${did}`, { cause });
 		});
+	};
+
+	kemKeyFor = async (did: string, forceRefresh = false): Promise<string> => {
+		const document = await this.resolver.did.resolve(did, forceRefresh).catch((cause) => {
+			throw new IdentityResolutionError(did, `could not resolve ${did}`, { cause });
+		});
+		const method = document?.verificationMethod?.find(
+			(entry) => entry.id === "#atproto_kem" || entry.id === `${did}#atproto_kem`,
+		);
+		const key = method?.publicKeyMultibase
+			? getDidKeyFromMultibase({
+					type: method.type,
+					publicKeyMultibase: method.publicKeyMultibase,
+				})
+			: undefined;
+		if (!key) throw new MissingKemKeyError(did);
+		return key;
 	};
 
 	private async resolutionFailure(did: string, cause: unknown): Promise<IdentityResolutionError> {

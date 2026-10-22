@@ -1,5 +1,11 @@
-import type { CommitCtx, SignedCommit } from "@atproto/space";
-import { LtHash, RepoCommit, verifyCommit, verifyRepoCar } from "@atproto/space";
+import type { Commit } from "@atproto/space";
+import {
+	LtHash,
+	RepoCommit,
+	RepoVerificationError,
+	verifyCommit,
+	verifyRepoStar,
+} from "@atproto/space";
 import { recordPath, type SpaceRefString } from "./space-ref.js";
 
 export type VerifiedRecord = {
@@ -10,28 +16,52 @@ export type VerifiedRecord = {
 };
 
 export type VerifiedRepo = {
-	commit: SignedCommit;
+	commit: Commit;
 	records: AsyncGenerator<VerifiedRecord>;
 };
 
-export const commitContext = (space: SpaceRefString, author: string, rev: string): CommitCtx => ({
-	space,
-	author,
-	rev,
-});
+export type MacParams = {
+	space: SpaceRefString;
+	author: string;
+	sharedSecret: Uint8Array;
+	mac: Uint8Array;
+};
 
-export const verifyRepoCommit = (
-	commit: SignedCommit,
-	space: SpaceRefString,
-	author: string,
-	didKey: string,
-): Promise<boolean> => verifyCommit(commit, commitContext(space, author, commit.rev), didKey);
+export class RepoUnverifiedError extends Error {
+	constructor(
+		readonly space: string,
+		readonly author: string,
+		options?: { cause?: unknown },
+	) {
+		super(`the repo of ${author} in ${space} did not verify`, options);
+		this.name = "RepoUnverifiedError";
+	}
+}
 
-export const readVerifiedRepoCar = async (
-	car: AsyncIterable<Uint8Array>,
-	params: { space: SpaceRefString; author: string; didKey: string },
+export const verifyRepoCommit = (commit: Commit, params: MacParams): boolean =>
+	verifyCommit(commit, {
+		space: params.space,
+		repo: params.author,
+		sharedSecret: params.sharedSecret,
+		mac: params.mac,
+	});
+
+export const readVerifiedRepoStar = async (
+	star: AsyncIterable<Uint8Array> | Iterable<Uint8Array>,
+	params: MacParams,
 ): Promise<VerifiedRepo> => {
-	const verified = await verifyRepoCar(car, params);
+	const unverified = (cause: unknown) =>
+		cause instanceof RepoVerificationError
+			? new RepoUnverifiedError(params.space, params.author, { cause })
+			: cause;
+	const verified = await verifyRepoStar(star, {
+		space: params.space,
+		repo: params.author,
+		sharedSecret: params.sharedSecret,
+		mac: params.mac,
+	}).catch((cause: unknown) => {
+		throw unverified(cause);
+	});
 	return {
 		commit: verified.commit,
 		records: (async function* () {
@@ -44,6 +74,8 @@ export const readVerifiedRepoCar = async (
 						value: record.record as Record<string, unknown>,
 					};
 				}
+			} catch (cause) {
+				throw unverified(cause);
 			} finally {
 				await verified[Symbol.asyncDispose]();
 			}
@@ -68,5 +100,5 @@ export const applyRecordToSetHash = (
 	return direction === "add" ? hash.add(element) : hash.remove(element);
 };
 
-export const setHashMatchesCommit = (hash: LtHash, commit: SignedCommit): boolean =>
+export const setHashMatchesCommit = (hash: LtHash, commit: Commit): boolean =>
 	RepoCommit.fromState(hash.state()).matches(commit);

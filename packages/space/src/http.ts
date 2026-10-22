@@ -6,7 +6,6 @@ export type Auth =
 	| { kind: "none" }
 	| { kind: "bearer"; token: string }
 	| { kind: "basic"; user: string; password: string }
-	| { kind: "spaceGrant"; token: string; key: SpaceKey }
 	| { kind: "spaceCredential"; credential: string; key: SpaceKey; audience: DidString };
 
 export type QueryParams = Record<
@@ -112,8 +111,17 @@ export class XrpcClient {
 		params: QueryParams = {},
 		auth: Auth = { kind: "none" },
 	): Promise<T> {
-		const response = await this.send(nsid, "GET", params, undefined, auth);
-		return (await response.json()) as T;
+		return (await this.queryWithHeaders<T>(nsid, params, auth)).body;
+	}
+
+	async queryWithHeaders<T>(
+		nsid: string,
+		params: QueryParams = {},
+		auth: Auth = { kind: "none" },
+		extraHeaders: Record<string, string> = {},
+	): Promise<{ body: T; headers: Headers }> {
+		const response = await this.send(nsid, "GET", params, undefined, auth, extraHeaders);
+		return { body: (await response.json()) as T, headers: response.headers };
 	}
 
 	async procedure<T>(
@@ -131,6 +139,7 @@ export class XrpcClient {
 		nsid: string,
 		params: QueryParams = {},
 		auth: Auth = { kind: "none" },
+		extraHeaders: Record<string, string> = {},
 	): Promise<Response> {
 		const controller = new AbortController();
 		const headersTimer = setTimeout(
@@ -139,7 +148,15 @@ export class XrpcClient {
 		);
 		let response: Response;
 		try {
-			response = await this.send(nsid, "GET", params, undefined, auth, controller.signal);
+			response = await this.send(
+				nsid,
+				"GET",
+				params,
+				undefined,
+				auth,
+				extraHeaders,
+				controller.signal,
+			);
 		} finally {
 			clearTimeout(headersTimer);
 		}
@@ -172,14 +189,11 @@ export class XrpcClient {
 					`Basic ${Buffer.from(`${auth.user}:${auth.password}`).toString("base64")}`,
 				);
 				break;
-			case "spaceGrant":
-				setAll(headers, await auth.key.headers({ authorization: `Bearer ${auth.token}` }));
-				break;
 			case "spaceCredential":
 				setAll(
 					headers,
 					await auth.key.headers({
-						authorization: `Atproto-Space ${auth.credential}`,
+						authorization: `Atproto-Space-Credential ${auth.credential}`,
 						audience: auth.audience,
 					}),
 				);
@@ -194,11 +208,13 @@ export class XrpcClient {
 		params: QueryParams,
 		body: unknown,
 		auth: Auth,
+		extraHeaders: Record<string, string> = {},
 		signal: AbortSignal = AbortSignal.timeout(this.timeoutMs),
 	): Promise<Response> {
 		const url = this.urlFor(nsid, params);
 		const attempt = async (): Promise<Response> => {
 			const headers = await this.headersFor(auth);
+			setAll(headers, extraHeaders);
 			if (body !== undefined) headers.set("content-type", "application/json");
 			return this.fetchImpl(url, {
 				method,

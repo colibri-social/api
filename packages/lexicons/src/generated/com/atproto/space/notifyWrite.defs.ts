@@ -14,7 +14,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"space":/*#__PURE__*/ l.string({"format":"space-ref"}),"repo":/*#__PURE__*/ l.string({"format":"did"}),"repoRev":/*#__PURE__*/ l.string({"format":"tid"}),"hash":/*#__PURE__*/ l.bytes(),"spaceRev":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"tid"})),"prevSpaceRev":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"tid"}))});
+export const $input = /*#__PURE__*/ l.jsonPayload({"space":/*#__PURE__*/ l.string({"format":"space-ref"}),"repo":/*#__PURE__*/ l.string({"format":"did"}),"repoRev":/*#__PURE__*/ l.string({"format":"tid"}),"data":/*#__PURE__*/ l.bytes(),"spaceRev":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"tid"})),"prevSpaceRev":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"tid"}))});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;

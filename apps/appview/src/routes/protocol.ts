@@ -55,7 +55,7 @@ export const registerProtocolRoutes = ({ server, ctx, auth }: RouteDeps): void =
 				rev: input.body.repoRev,
 				spaceRev: input.body.spaceRev,
 				prevSpaceRev: input.body.prevSpaceRev,
-				setHashBase64: Buffer.from(input.body.hash).toString("base64"),
+				setHashBase64: Buffer.from(input.body.data).toString("base64"),
 				trigger: "notify",
 				notifiedAt: Date.now(),
 			});

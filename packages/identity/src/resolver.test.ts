@@ -1,7 +1,8 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { P256Keypair } from "@atproto/crypto";
 import { afterEach, describe, expect, it } from "vitest";
-import { IdentityResolutionError, MissingPdsError } from "./errors.js";
+import { IdentityResolutionError, MissingKemKeyError, MissingPdsError } from "./errors.js";
 import { type CachedIdentity, IdentityResolver, type IdentityStore } from "./resolver.js";
 
 const DID = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
@@ -195,6 +196,47 @@ describe("signingKeyFor", () => {
 	it("refuses a did:key issuer", async () => {
 		await expect(resolver(store([]).store).signingKeyFor(KEY, false)).rejects.toThrow(
 			"not a did:plc or did:web identity",
+		);
+	});
+
+	it("resolves the #atproto_kem key apart from the signing key", async () => {
+		const kem = (await P256Keypair.create()).did();
+		const did = await serveDocument((id) => ({
+			id,
+			verificationMethod: [
+				{
+					id: `${id}#atproto`,
+					type: "Multikey",
+					controller: id,
+					publicKeyMultibase: KEY.replace("did:key:", ""),
+				},
+				{
+					id: `${id}#atproto_kem`,
+					type: "Multikey",
+					controller: id,
+					publicKeyMultibase: kem.replace("did:key:", ""),
+				},
+			],
+		}));
+
+		await expect(resolver(store([]).store).kemKeyFor(did)).resolves.toBe(kem);
+	});
+
+	it("reports an account without a published KEM key", async () => {
+		const did = await serveDocument((id) => ({
+			id,
+			verificationMethod: [
+				{
+					id: `${id}#atproto`,
+					type: "Multikey",
+					controller: id,
+					publicKeyMultibase: KEY.replace("did:key:", ""),
+				},
+			],
+		}));
+
+		await expect(resolver(store([]).store).kemKeyFor(did)).rejects.toBeInstanceOf(
+			MissingKemKeyError,
 		);
 	});
 });

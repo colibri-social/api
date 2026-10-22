@@ -25,7 +25,6 @@ parentPort.on("message", ({ id, job }) => {
 const request = (author: string): AdvanceRequest => ({
 	space: "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchan",
 	author,
-	didKey: "did:key:z",
 	setHashBase64: null,
 	ops: [],
 	commit: null,

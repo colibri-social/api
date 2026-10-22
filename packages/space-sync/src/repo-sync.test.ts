@@ -1,10 +1,15 @@
-import { Secp256k1Keypair } from "@atproto/crypto";
+import { randomBytes } from "node:crypto";
 import type { LexMap } from "@atproto/lex-data";
-import { RepoCommit, type SignedCommit, serializeRecord, serializeRepo } from "@atproto/space";
-import type { NsidString, RecordKeyString } from "@atproto/syntax";
-import { XrpcError } from "@colibri-social/space";
+import { computeCommitMac, RepoCommit, serializeRecord, serializeRepo } from "@atproto/space";
+import type { DidString, NsidString, RecordKeyString } from "@atproto/syntax";
+import {
+	type ProvenCommit,
+	type RepoStar,
+	RepoUnverifiedError,
+	XrpcError,
+} from "@colibri-social/space";
 import { beforeEach, describe, expect, it } from "vitest";
-import { CarTooLargeError, RepoHostMissingError, RepoSync } from "./repo-sync.js";
+import { RepoHostMissingError, RepoSync, RepoTooLargeError } from "./repo-sync.js";
 import type { RepoChange, RepoCursor, SyncStore } from "./types.js";
 
 const SPACE = "at://did:plc:2hnjxkqm6bpuvvpjbztkxxxx/space/social.colibri.beta.channel.text/3lkabc";
@@ -62,31 +67,46 @@ const blank = (author: string): RepoCursor => ({
 	retryAfter: null,
 });
 
-let keypair: Secp256k1Keypair;
+let secret: Uint8Array;
 
 const sign = async (
 	records: StoredRecord[],
 	rev: string,
-): Promise<{ commit: SignedCommit; serialized: Awaited<ReturnType<typeof serializeRecord>>[] }> => {
-	const serialized = await Promise.all(
-		records.map((record) =>
-			serializeRecord(
-				record.collection as NsidString,
-				record.rkey as RecordKeyString,
-				record.value as LexMap,
+	sharedSecret: Uint8Array = secret,
+): Promise<{ commit: ProvenCommit; serialized: Awaited<ReturnType<typeof serializeRecord>>[] }> => {
+	const serialized = (
+		await Promise.all(
+			records.map((record) =>
+				serializeRecord(
+					record.collection as NsidString,
+					record.rkey as RecordKeyString,
+					record.value as LexMap,
+				),
 			),
-		),
-	);
-	const commit = await RepoCommit.fromRecords(serialized).sign(
-		{ space: SPACE, author: AUTHOR, rev },
-		keypair,
-	);
-	return { commit, serialized };
+		)
+	).sort((a, b) => (`${a.collection}/${a.rkey}` < `${b.collection}/${b.rkey}` ? -1 : 1));
+	const commit = RepoCommit.fromRecords(serialized).toCommit({
+		space: SPACE as never,
+		repo: AUTHOR as DidString,
+		rev,
+	});
+	return {
+		commit: { commit, sharedSecret: secret, mac: computeCommitMac(sharedSecret, commit) },
+		serialized,
+	};
 };
 
-const carFor = async (records: StoredRecord[], rev: string): Promise<AsyncIterable<Uint8Array>> => {
-	const { commit, serialized } = await sign(records, rev);
-	return serializeRepo(commit, serialized);
+const starFor = async (
+	records: StoredRecord[],
+	rev: string,
+	macSecret: Uint8Array = secret,
+): Promise<RepoStar> => {
+	const { commit, serialized } = await sign(records, rev, macSecret);
+	return {
+		star: serializeRepo(commit.commit, serialized),
+		sharedSecret: commit.sharedSecret,
+		mac: commit.mac,
+	};
 };
 
 const message = (rkey: string, text: string): StoredRecord => ({
@@ -121,8 +141,8 @@ type FakeBehaviour = {
 		prev: string | null;
 		value?: Record<string, unknown>;
 	}>;
-	commit?: SignedCommit | null;
-	car?: () => Promise<AsyncIterable<Uint8Array>>;
+	commit?: ProvenCommit | null;
+	car?: () => Promise<RepoStar>;
 	opsError?: XrpcError;
 	carError?: XrpcError;
 };
@@ -135,37 +155,49 @@ const fakeClient = (behaviour: FakeBehaviour) => {
 			if (behaviour.opsError) throw behaviour.opsError;
 			return { ops: behaviour.ops ?? [], commit: behaviour.commit ?? null, cursor: null };
 		},
-		getRepoCar: async () => {
+		getRepoStar: async () => {
 			calls.getRepoCar += 1;
 			if (behaviour.carError) throw behaviour.carError;
-			if (!behaviour.car) throw new Error("no car configured");
+			if (!behaviour.car) throw new Error("no archive configured");
 			return behaviour.car();
 		},
 	};
 	return { client, calls };
 };
 
-const syncerFor = (behaviour: FakeBehaviour, store: SyncStore, maxCarBytes?: number) => {
+const kemKeys = () => {
+	const refreshes: string[] = [];
+	return {
+		refreshes,
+		kemKeyFor: async (did: string, forceRefresh?: boolean) => {
+			if (forceRefresh) refreshes.push(did);
+			return "did:key:unused";
+		},
+	};
+};
+
+const syncerFor = (behaviour: FakeBehaviour, store: SyncStore, maxRepoBytes?: number) => {
 	const { client, calls } = fakeClient(behaviour);
+	const keys = kemKeys();
 	const sync = new RepoSync({
 		client: client as never,
 		store,
 		hosts: { hostFor: async () => HOST },
-		keys: { signingKeyFor: async () => keypair.did() },
-		...(maxCarBytes === undefined ? {} : { maxCarBytes }),
+		keys,
+		...(maxRepoBytes === undefined ? {} : { maxRepoBytes }),
 	});
-	return { sync, calls };
+	return { sync, calls, refreshes: keys.refreshes };
 };
 
-beforeEach(async () => {
-	keypair = await Secp256k1Keypair.create({ exportable: true });
+beforeEach(() => {
+	secret = new Uint8Array(randomBytes(32));
 });
 
 describe("first sync", () => {
-	it("recovers the whole repo from a car when there is no cursor", async () => {
+	it("recovers the whole repo from an archive when there is no cursor", async () => {
 		const records = await cidsFor([message("3a", "hello"), message("3b", "world")]);
 		const { store, records: stored, cursors } = memoryStore();
-		const { sync, calls } = syncerFor({ car: () => carFor(records, "3rev1") }, store);
+		const { sync, calls } = syncerFor({ car: () => starFor(records, "3rev1") }, store);
 
 		const outcome = await sync.sync(SPACE, AUTHOR);
 
@@ -177,29 +209,44 @@ describe("first sync", () => {
 		expect(cursors.get(AUTHOR)?.setHashBase64).toBeTruthy();
 	});
 
-	it("refuses a car that exceeds the byte cap instead of buffering it", async () => {
+	it("refuses an archive that exceeds the byte cap instead of buffering it", async () => {
 		const records = await cidsFor([message("3a", "hello"), message("3b", "world")]);
 		const { store, records: stored } = memoryStore();
-		const { sync } = syncerFor({ car: () => carFor(records, "3rev1") }, store, 8);
+		const { sync } = syncerFor({ car: () => starFor(records, "3rev1") }, store, 8);
 
-		await expect(sync.sync(SPACE, AUTHOR)).rejects.toBeInstanceOf(CarTooLargeError);
+		await expect(sync.sync(SPACE, AUTHOR)).rejects.toBeInstanceOf(RepoTooLargeError);
 		expect(stored.size).toBe(0);
 	});
 
-	it("refuses a car signed by the wrong key", async () => {
+	it("refreshes the KEM key once and then refuses an archive whose MAC does not verify", async () => {
 		const records = await cidsFor([message("3a", "hello")]);
-		const car = await carFor(records, "3rev1");
-		const { store } = memoryStore();
-		const impostor = await Secp256k1Keypair.create({ exportable: true });
-		const { client } = fakeClient({ car: async () => car });
-		const sync = new RepoSync({
-			client: client as never,
+		const { store, records: stored } = memoryStore();
+		const other = new Uint8Array(randomBytes(32));
+		const { sync, calls, refreshes } = syncerFor(
+			{ car: () => starFor(records, "3rev1", other) },
 			store,
-			hosts: { hostFor: async () => HOST },
-			keys: { signingKeyFor: async () => impostor.did() },
-		});
+		);
 
-		await expect(sync.sync(SPACE, AUTHOR)).rejects.toThrow();
+		await expect(sync.sync(SPACE, AUTHOR)).rejects.toBeInstanceOf(RepoUnverifiedError);
+		expect(refreshes).toEqual([AUTHOR]);
+		expect(calls.getRepoCar).toBe(2);
+		expect(stored.size).toBe(0);
+	});
+
+	it("succeeds on the retry after a rotated KEM key", async () => {
+		const records = await cidsFor([message("3a", "hello")]);
+		const { store, cursors } = memoryStore();
+		const other = new Uint8Array(randomBytes(32));
+		let attempts = 0;
+		const { sync, refreshes } = syncerFor(
+			{ car: () => starFor(records, "3rev1", attempts++ === 0 ? other : secret) },
+			store,
+		);
+
+		const outcome = await sync.sync(SPACE, AUTHOR);
+		expect(outcome.kind).toBe("recovered");
+		expect(refreshes).toEqual([AUTHOR]);
+		expect(cursors.get(AUTHOR)?.appliedRev).toBe("3rev1");
 	});
 });
 
@@ -207,7 +254,7 @@ describe("incremental sync", () => {
 	const seed = async () => {
 		const records = await cidsFor([message("3a", "hello")]);
 		const { store, records: stored, cursors } = memoryStore();
-		const { sync } = syncerFor({ car: () => carFor(records, "3rev1") }, store);
+		const { sync } = syncerFor({ car: () => starFor(records, "3rev1") }, store);
 		await sync.sync(SPACE, AUTHOR);
 		return { store, stored, cursors, records };
 	};
@@ -318,7 +365,7 @@ describe("incremental sync", () => {
 					},
 				],
 				commit,
-				car: () => carFor(truth, "3rev2"),
+				car: () => starFor(truth, "3rev2"),
 			},
 			store,
 		);
@@ -341,7 +388,7 @@ describe("failures", () => {
 	const seeded = async () => {
 		const records = await cidsFor([message("3a", "hello")]);
 		const { store, cursors } = memoryStore();
-		const { sync } = syncerFor({ car: () => carFor(records, "3rev1") }, store);
+		const { sync } = syncerFor({ car: () => starFor(records, "3rev1") }, store);
 		await sync.sync(SPACE, AUTHOR);
 		return { store, cursors, records };
 	};
@@ -351,7 +398,7 @@ describe("failures", () => {
 		const { sync, calls } = syncerFor(
 			{
 				opsError: new XrpcError(400, "CursorNotFound", "gone", "listRepoOps"),
-				car: () => carFor(records, "3rev9"),
+				car: () => starFor(records, "3rev9"),
 			},
 			store,
 		);
@@ -380,7 +427,7 @@ describe("failures", () => {
 					throw new RepoHostMissingError(did);
 				},
 			},
-			keys: { signingKeyFor: async () => keypair.did() },
+			keys: kemKeys(),
 		});
 
 		expect((await sync.sync(SPACE, AUTHOR)).kind).toBe("gone");
@@ -404,7 +451,7 @@ describe("change reporting", () => {
 	it("reports exactly what was applied so a projection can follow", async () => {
 		const records = await cidsFor([message("3a", "hello")]);
 		const { store } = memoryStore();
-		const { sync } = syncerFor({ car: () => carFor(records, "3rev1") }, store);
+		const { sync } = syncerFor({ car: () => starFor(records, "3rev1") }, store);
 		const outcome = await sync.sync(SPACE, AUTHOR);
 
 		const change = (outcome as { change: RepoChange }).change;

@@ -1,7 +1,6 @@
 import { DidResolver, MemoryCache } from "@atproto/identity";
 import { SpaceCredentialError } from "./errors.js";
 
-export const SPACE_HOST_SERVICE_ID = "#atproto_space_host";
 export const PDS_SERVICE_ID = "#atproto_pds";
 
 export type SpaceHostResolver = {
@@ -40,13 +39,12 @@ export class DidDocumentSpaceHostResolver implements SpaceHostResolver {
 			});
 		});
 		const services = (document?.service ?? []) as DidService[];
-		const endpoint =
-			endpointOf(services, SPACE_HOST_SERVICE_ID) ?? endpointOf(services, PDS_SERVICE_ID);
+		const endpoint = endpointOf(services, PDS_SERVICE_ID);
 		if (!endpoint) {
 			throw new SpaceCredentialError(
 				authority,
 				"hostUnresolvable",
-				`${authority} publishes neither ${SPACE_HOST_SERVICE_ID} nor ${PDS_SERVICE_ID}`,
+				`${authority} publishes no ${PDS_SERVICE_ID} service`,
 			);
 		}
 		return endpoint;

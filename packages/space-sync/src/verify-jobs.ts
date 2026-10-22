@@ -1,7 +1,9 @@
-import type { SignedCommit } from "@atproto/space";
+import type { Commit } from "@atproto/space";
 import {
 	applyRecordToSetHash,
-	readVerifiedRepoCar,
+	type ProvenCommit,
+	RepoUnverifiedError,
+	readVerifiedRepoStar,
 	setHashFromBase64,
 	setHashMatchesCommit,
 	setHashToBase64,
@@ -20,10 +22,9 @@ export type AdvanceJob = {
 	kind: "advance";
 	space: string;
 	author: string;
-	didKey: string;
 	setHashBase64: string | null;
 	ops: HashOp[];
-	commit: SignedCommit | null;
+	commit: ProvenCommit | null;
 };
 
 export type AdvanceResult = {
@@ -36,15 +37,19 @@ export type RepoJob = {
 	kind: "repo";
 	space: string;
 	author: string;
-	didKey: string;
-	car: Uint8Array;
+	sharedSecret: Uint8Array;
+	mac: Uint8Array;
+	star: Uint8Array;
 };
 
-export type RepoResult = {
-	commit: SignedCommit;
-	records: RecordWrite[];
-	setHashBase64: string;
-};
+export type RepoResult =
+	| { authentic: false }
+	| {
+			authentic: true;
+			commit: Commit;
+			records: RecordWrite[];
+			setHashBase64: string;
+	  };
 
 export type VerifyJob = AdvanceJob | RepoJob;
 export type VerifyResult = AdvanceResult | RepoResult;
@@ -72,38 +77,52 @@ export const runAdvance = async (job: AdvanceJob): Promise<AdvanceResult> => {
 		return { setHashBase64: setHashToBase64(hash), authentic: true, matches: true };
 	}
 
-	const authentic = await verifyRepoCommit(job.commit, job.space, job.author, job.didKey);
+	const { commit, sharedSecret, mac } = job.commit;
+	const authentic = verifyRepoCommit(commit, {
+		space: job.space,
+		author: job.author,
+		sharedSecret,
+		mac,
+	});
 	return {
 		setHashBase64: setHashToBase64(hash),
 		authentic,
-		matches: setHashMatchesCommit(hash, job.commit),
+		matches: setHashMatchesCommit(hash, commit),
 	};
 };
 
 export const runRepo = async (job: RepoJob): Promise<RepoResult> => {
-	const carStream = (async function* () {
-		yield job.car;
-	})();
-	const verified = await readVerifiedRepoCar(carStream, {
-		space: job.space,
-		author: job.author,
-		didKey: job.didKey,
-	});
+	try {
+		const verified = await readVerifiedRepoStar([job.star], {
+			space: job.space,
+			author: job.author,
+			sharedSecret: job.sharedSecret,
+			mac: job.mac,
+		});
 
-	const records: RecordWrite[] = [];
-	let hash = setHashFromBase64(null);
-	for await (const record of verified.records) {
-		const write = {
-			collection: record.collection,
-			rkey: record.rkey,
-			cid: record.cid,
-			value: record.value,
+		const records: RecordWrite[] = [];
+		let hash = setHashFromBase64(null);
+		for await (const record of verified.records) {
+			const write = {
+				collection: record.collection,
+				rkey: record.rkey,
+				cid: record.cid,
+				value: record.value,
+			};
+			records.push(write);
+			hash = applyRecordToSetHash(hash, write, "add");
+		}
+
+		return {
+			authentic: true,
+			commit: verified.commit,
+			records,
+			setHashBase64: setHashToBase64(hash),
 		};
-		records.push(write);
-		hash = applyRecordToSetHash(hash, write, "add");
+	} catch (error) {
+		if (error instanceof RepoUnverifiedError) return { authentic: false };
+		throw error;
 	}
-
-	return { commit: verified.commit, records, setHashBase64: setHashToBase64(hash) };
 };
 
 export const runVerifyJob = (job: VerifyJob): Promise<VerifyResult> =>

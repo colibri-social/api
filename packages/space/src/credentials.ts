@@ -134,11 +134,12 @@ export class SpaceCredentials {
 		const clientAttestation = await this.options.clientAttestation?.(space);
 
 		const response = await client
-			.procedure<{ credential: string }>(
-				GET_SPACE_CREDENTIAL,
-				clientAttestation ? { space, clientAttestation } : { space },
-				{ kind: "spaceGrant", token, key },
-			)
+			.procedure<{ credential: string }>(GET_SPACE_CREDENTIAL, {
+				space,
+				credentialKid: key.did,
+				delegationToken: token,
+				...(clientAttestation ? { clientAttestation } : {}),
+			})
 			.catch((cause: unknown) => {
 				throw toCredentialError(space, cause);
 			});

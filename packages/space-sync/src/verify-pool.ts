@@ -64,7 +64,7 @@ export class VerifierPool implements Verifier {
 
 	repo(request: RepoRequest): Promise<RepoResult> {
 		return this.dispatch({ ...request, kind: "repo" }, [
-			request.car.buffer as ArrayBuffer,
+			request.star.buffer as ArrayBuffer,
 		]) as Promise<RepoResult>;
 	}
 

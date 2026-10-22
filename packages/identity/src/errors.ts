@@ -35,3 +35,10 @@ export class MissingPdsError extends IdentityResolutionError {
 		this.name = "MissingPdsError";
 	}
 }
+
+export class MissingKemKeyError extends IdentityResolutionError {
+	constructor(subject: string) {
+		super(subject, `${subject} publishes no #atproto_kem key`);
+		this.name = "MissingKemKeyError";
+	}
+}

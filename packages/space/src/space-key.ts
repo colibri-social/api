@@ -4,7 +4,7 @@ import type { DidString } from "@atproto/syntax";
 
 export type SpaceSignatureRequest = {
 	authorization: string;
-	audience?: DidString;
+	audience: DidString;
 };
 
 export class SpaceKey {
