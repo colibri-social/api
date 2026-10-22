@@ -17,6 +17,7 @@ import {
 	asSpaceRef,
 	asTid,
 	asUri,
+	blobCid,
 	CHANNEL_SPACE_TYPES,
 	COLLECTIONS,
 	type social,
@@ -61,7 +62,7 @@ type Placed = { row: MessageRow; key: string };
 const placementRefKey = (row: MessageRow): string => `${row.space} ${row.author} ${row.rkey}`;
 
 type RawAttachment = {
-	blob?: { ref?: { $link?: string }; mimeType?: string; size?: number };
+	blob?: { ref?: unknown; mimeType?: string; size?: number };
 	name?: string;
 	width?: number;
 	height?: number;
@@ -83,7 +84,7 @@ type RawForward = {
 const SUMMARY_SCAN_BATCH = 25;
 
 const hasBlob = (item: RawAttachment): boolean =>
-	Boolean(item.blob?.ref?.$link && item.blob?.mimeType);
+	Boolean(blobCid(item.blob) && item.blob?.mimeType);
 
 const isForward = (raw: RawForward | null): boolean =>
 	Boolean(raw?.source?.space && raw.source.did && raw.source.rkey);
@@ -171,7 +172,7 @@ export class ChannelViews {
 	): AttachmentView[] {
 		const out: AttachmentView[] = [];
 		for (const item of raw ?? []) {
-			const cid = item.blob?.ref?.$link;
+			const cid = blobCid(item.blob);
 			const mimeType = item.blob?.mimeType;
 			if (!cid || !mimeType) continue;
 			out.push({
@@ -426,31 +427,39 @@ export class ChannelViews {
 			.from(table)
 			.where(and(eq(table.community, community), inArray(table.spaceType, CHANNEL_SPACE_TYPES)))
 			.orderBy(asc(table.position));
-		const [audiences, communityRow] = await Promise.all([
-			this.ctx.loader.categoryAudiences(community),
-			this.ctx.loader.community(community),
-		]);
-		const emojiPolicy = customEmojiPolicy(communityRow?.customEmoji);
+		const audiences = await this.ctx.loader.categoryAudiences(community);
 		const readable = rows.filter((row) =>
 			canRead(authz, toChannelState(row, row.category ? audiences.get(row.category) : null)),
 		);
+		const latest = await this.latestSummaries(
+			readable.map((row) => row.space),
+			community,
+			viewer,
+		);
+		return readable.flatMap((row) => latest.get(row.space) ?? []);
+	}
+
+	async latestSummaries(
+		spaces: readonly string[],
+		community: string,
+		viewer: string,
+	): Promise<Map<string, ChannelSummary>> {
+		if (spaces.length === 0) return new Map();
+		const communityRow = await this.ctx.loader.community(community);
+		const emojiPolicy = customEmojiPolicy(communityRow?.customEmoji);
 		const latest = await Promise.all(
-			readable.map(async (row) => {
-				const message = await this.latestVisible(row.space, viewer);
-				return message
-					? toSummary(
-							row.space,
-							message,
-							filterCustomEmojiFacets(
-								(message.facets as social.colibri.beta.richtext.facet.Main[] | null) ?? undefined,
-								emojiPolicy,
-								community,
-							),
-						)
-					: undefined;
+			spaces.map(async (space) => {
+				const message = await this.latestVisible(space, viewer);
+				if (!message) return undefined;
+				const facets = filterCustomEmojiFacets(
+					(message.facets as social.colibri.beta.richtext.facet.Main[] | null) ?? undefined,
+					emojiPolicy,
+					community,
+				);
+				return [space, toSummary(space, message, facets)] as const;
 			}),
 		);
-		return latest.filter((summary): summary is ChannelSummary => summary !== undefined);
+		return new Map(latest.filter((entry) => entry !== undefined));
 	}
 
 	private async latestVisible(space: string, viewer: string): Promise<MessageRow | undefined> {

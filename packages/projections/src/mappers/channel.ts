@@ -1,4 +1,10 @@
-import { COLLECTIONS, SPACE_TYPES, social, toJsonForm } from "@colibri-social/lexicons";
+import {
+	COLLECTIONS,
+	SPACE_TYPES,
+	social,
+	toJsonForm,
+	withJsonBlobRef,
+} from "@colibri-social/lexicons";
 import { and, eq, lt } from "drizzle-orm";
 import type { RecordRef } from "../context.js";
 import { communityOf, type Projector } from "../projector.js";
@@ -7,6 +13,13 @@ type Attribution = social.colibri.beta.bridge.defs.Attribution;
 
 const honouredAttribution = (ref: RecordRef, bridged: Attribution | undefined) =>
 	bridged && ref.author === ref.space.authority ? toJsonForm({ ...bridged }) : null;
+
+const jsonForward = (forward: NonNullable<social.colibri.beta.message.Main["forward"]>) => {
+	const json = toJsonForm({ ...forward });
+	return json.attachments
+		? { ...json, attachments: [...json.attachments].map(withJsonBlobRef) }
+		: json;
+};
 
 export const bridgedFromKey = (attribution: { registration: string; remoteId: string } | null) =>
 	attribution ? `${attribution.registration} ${attribution.remoteId}` : "";
@@ -29,8 +42,10 @@ export const message: Projector<social.colibri.beta.message.Main> = {
 			updatedAt: value.updatedAt ?? null,
 			parentAuthor: value.parent?.did ?? null,
 			parentRkey: value.parent?.rkey ?? null,
-			attachments: value.attachments ? toJsonForm([...value.attachments]) : null,
-			forward: value.forward ? toJsonForm({ ...value.forward }) : null,
+			attachments: value.attachments
+				? toJsonForm([...value.attachments]).map(withJsonBlobRef)
+				: null,
+			forward: value.forward ? jsonForward(value.forward) : null,
 			suppressedEmbeds: value.suppressedEmbeds ? [...value.suppressedEmbeds] : null,
 			bridged: honouredAttribution(ref, value.bridged),
 			fromLegacyRepo: false,

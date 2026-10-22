@@ -71,6 +71,11 @@ type ThreadView = { $type?: "social.colibri.beta.thread.defs#threadView";
   "movedInCount"?:number;
 
   /**
+   * The latest message in the thread the requesting user may see, reduced to what a thread list preview shows. Its channel is the thread's space. Absent when the thread holds no message the user may see.
+   */
+  "lastMessage"?:ChannelDefs.ChannelSummary;
+
+  /**
    * Who has posted, most recently active first, capped at a handful.
    */
   "participants":(l.DidString)[];
@@ -108,7 +113,7 @@ type ThreadView = { $type?: "social.colibri.beta.thread.defs#threadView";
 export type { ThreadView };
 
 /** A thread as the AppView serves it. The thread's identity is its space. */
-const threadView = /*#__PURE__*/ l.typedObject<ThreadView>($nsid, "threadView", /*#__PURE__*/ l.object({"space":/*#__PURE__*/ l.string({"format":"space-ref"}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"community":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string(),"anchor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.SpaceRecordRef>((() => BetaDefs.spaceRecordRef) as any)),"anchorMessage":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<ChannelDefs.MessageView>((() => ChannelDefs.messageView) as any),/*#__PURE__*/ l.typedRef<ChannelDefs.DeletedMessageView>((() => ChannelDefs.deletedMessageView) as any)], false)),"createdBy":/*#__PURE__*/ l.string({"format":"did"}),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"lastActivityAt":/*#__PURE__*/ l.string({"format":"datetime"}),"messageCount":/*#__PURE__*/ l.integer(),"movedInCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"participants":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"private":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"closedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"locked":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"viewer":/*#__PURE__*/ l.ref<ThreadViewerState>((() => threadViewerState) as any)}));
+const threadView = /*#__PURE__*/ l.typedObject<ThreadView>($nsid, "threadView", /*#__PURE__*/ l.object({"space":/*#__PURE__*/ l.string({"format":"space-ref"}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"community":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string(),"anchor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.SpaceRecordRef>((() => BetaDefs.spaceRecordRef) as any)),"anchorMessage":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<ChannelDefs.MessageView>((() => ChannelDefs.messageView) as any),/*#__PURE__*/ l.typedRef<ChannelDefs.DeletedMessageView>((() => ChannelDefs.deletedMessageView) as any)], false)),"createdBy":/*#__PURE__*/ l.string({"format":"did"}),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"lastActivityAt":/*#__PURE__*/ l.string({"format":"datetime"}),"messageCount":/*#__PURE__*/ l.integer(),"movedInCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"lastMessage":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ChannelDefs.ChannelSummary>((() => ChannelDefs.channelSummary) as any)),"participants":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"private":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"closedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"locked":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"viewer":/*#__PURE__*/ l.ref<ThreadViewerState>((() => threadViewerState) as any)}));
 
 export { threadView };
 

@@ -192,7 +192,7 @@ export class ThreadViews {
 
 		const spaces = readable.map((row) => row.space);
 		const sources = await this.channels.labelSources(authz.community);
-		const [counts, followed, muted, cursors] = await Promise.all([
+		const [counts, followed, muted, cursors, lastMessages] = await Promise.all([
 			this.messageCounts(spaces),
 			this.follows(spaces, viewer),
 			this.mutes(spaces, viewer),
@@ -200,6 +200,7 @@ export class ThreadViews {
 				readable.map((row) => row.skey),
 				viewer,
 			),
+			this.channels.latestSummaries(spaces, authz.community, viewer),
 		]);
 
 		return Promise.all(
@@ -238,6 +239,7 @@ export class ThreadViews {
 					lastActivityAt: asDatetime(row.lastActivityAt),
 					messageCount: (counts.get(row.space) ?? 0) + movedIn.length,
 					movedInCount: movedIn.length,
+					lastMessage: lastMessages.get(row.space),
 					participants: participants.map(asDid),
 					private: isPrivateThread(state),
 					visibleToRoles: row.visibleToRoles.map(asRecordKey),

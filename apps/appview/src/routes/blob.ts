@@ -7,6 +7,7 @@ import {
 	type Variant,
 } from "@colibri-social/blobs";
 import { decideSpaceAccess } from "@colibri-social/community";
+import { blobCid } from "@colibri-social/lexicons";
 import { movedInto } from "@colibri-social/projections";
 import { tryParseSpaceRef } from "@colibri-social/space";
 import { and, eq, inArray } from "drizzle-orm";
@@ -30,11 +31,11 @@ const bearerToken = (value: string | string[] | undefined): string | null => {
 	return value.startsWith("Bearer ") ? value.slice("Bearer ".length) : null;
 };
 
-type RawAttachment = { blob?: { ref?: { $link?: string } } };
+type RawAttachment = { blob?: unknown };
 
 const carriesBlob = (attachments: unknown, cid: string): boolean =>
 	((attachments as RawAttachment[] | null) ?? []).some(
-		(attachment) => attachment.blob?.ref?.$link === cid,
+		(attachment) => blobCid(attachment.blob) === cid,
 	);
 
 const movedSourceFor = async (

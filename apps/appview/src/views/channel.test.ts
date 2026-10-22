@@ -735,6 +735,27 @@ describe("ChannelViews attachments", () => {
 		expect(attachment?.url).toContain(`space=${encodeURIComponent(SPACE)}`);
 	});
 
+	it.each([
+		["a nested link", { $link: { $link: ATTACHMENT_CID } }],
+		["an ipld link", { $link: { "/": ATTACHMENT_CID } }],
+		["a bare ipld link", { "/": ATTACHMENT_CID }],
+	])("builds a blob url from a ref stored as %s", async (_, ref) => {
+		const rkey = nextTid();
+		await putMessage(rkey, {
+			attachments: [
+				{
+					name: "shot.png",
+					blob: { $type: "blob", ref, mimeType: "image/png", size: 1234 },
+				},
+			],
+		});
+
+		const { messages } = await views.messages(SPACE, null, { limit: 1 });
+		const [attachment] = messages[0]?.attachments ?? [];
+		expect(attachment?.url).toContain(`cid=${ATTACHMENT_CID}`);
+		expect(attachment?.url).not.toContain("object");
+	});
+
 	it("passes the spoiler flag through and omits it when unset", async () => {
 		const rkey = nextTid();
 		const blob = {

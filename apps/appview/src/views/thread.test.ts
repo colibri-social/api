@@ -1,7 +1,14 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { type ActorAuthz, CommunityLoader } from "@colibri-social/community";
-import { channelSpace, SPACE_TYPES, threadSpace } from "@colibri-social/lexicons";
+import {
+	COLLECTIONS,
+	channelSpace,
+	SPACE_TYPES,
+	social,
+	threadSpace,
+} from "@colibri-social/lexicons";
 import { nextTid } from "@colibri-social/space";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AppContext } from "../context.js";
 import { ActorViews } from "./actor.js";
@@ -337,5 +344,134 @@ describe("ThreadViews members", () => {
 		const members = await threads.members((await threads.row(THREAD))!);
 
 		expect(members).toEqual([POSTER]);
+	});
+});
+
+describe("ThreadViews last message", () => {
+	const READER = "did:plc:7fkdlwjqmzcuvvpjbztkrrrr";
+	const LABELER = "did:plc:7fkdlwjqmzcuvvpjbztkllll";
+
+	const reader = (): ActorAuthz => ({
+		community: COMMUNITY,
+		actor: READER,
+		member: { did: READER, roles: [], joinedAt: NOW, nickname: null },
+		isOwner: false,
+		isBanned: false,
+		roles: [],
+	});
+
+	const postInThread = async (
+		rkey: string,
+		values: { text?: string; facets?: unknown[]; createdAt?: string } = {},
+	) => {
+		await database.db.insert(database.tables.messages).values({
+			space: THREAD,
+			author: AUTHOR,
+			rkey,
+			community: COMMUNITY,
+			text: values.text ?? "in the thread",
+			facets: values.facets,
+			createdAt: values.createdAt ?? NOW,
+			fromLegacyRepo: false,
+			indexedAt: NOW,
+		});
+	};
+
+	beforeEach(async () => {
+		await database.db.insert(database.tables.members).values({
+			community: COMMUNITY,
+			did: READER,
+			roles: [],
+			joinedAt: NOW,
+		});
+	});
+
+	const asThreadView = (body: unknown): void => {
+		const result = social.colibri.beta.thread.defs.threadView.safeValidate(body);
+		if (!result.success) throw new Error(result.reason.message);
+	};
+
+	const lastMessage = async () =>
+		(await threads.view((await threads.row(THREAD))!, reader(), READER))?.lastMessage;
+
+	it("summarizes the latest message in the thread", async () => {
+		await putThread();
+		await postInThread(nextTid(), { text: "older" });
+		const latest = nextTid();
+		await postInThread(latest, { text: "newest", createdAt: "2026-08-24T00:00:00.000Z" });
+
+		const view = await threads.view((await threads.row(THREAD))!, reader(), READER);
+
+		asThreadView(view);
+		expect(view?.lastMessage).toEqual({
+			channel: THREAD,
+			rkey: latest,
+			author: AUTHOR,
+			text: "newest",
+			attachmentCount: 0,
+			forward: false,
+			createdAt: "2026-08-24T00:00:00.000Z",
+		});
+	});
+
+	it("leaves lastMessage out of a thread with no messages", async () => {
+		await putThread();
+
+		const view = await threads.view((await threads.row(THREAD))!, reader(), READER);
+
+		expect(view).not.toBeNull();
+		expect(view?.lastMessage).toBeUndefined();
+	});
+
+	it("skips a withheld message", async () => {
+		await putThread();
+		await database.db
+			.update(database.tables.communities)
+			.set({ labelers: [LABELER] })
+			.where(eq(database.tables.communities.did, COMMUNITY));
+		const visible = nextTid();
+		const hidden = nextTid();
+		await postInThread(visible);
+		await postInThread(hidden);
+		await database.db.insert(database.tables.labels).values({
+			space: THREAD,
+			src: LABELER,
+			rkey: nextTid(),
+			subjectDid: AUTHOR,
+			subjectCollection: COLLECTIONS.message,
+			subjectRkey: hidden,
+			val: "hidden",
+			negated: false,
+			createdAt: NOW,
+		});
+
+		expect((await lastMessage())?.rkey).toBe(visible);
+	});
+
+	it("drops custom emoji the community's policy disallows", async () => {
+		await putThread();
+		await database.db
+			.update(database.tables.communities)
+			.set({ customEmoji: "none" })
+			.where(eq(database.tables.communities.did, COMMUNITY));
+		await postInThread(nextTid(), {
+			text: ":kek:",
+			facets: [
+				{
+					index: { byteStart: 0, byteEnd: 5 },
+					features: [
+						{
+							$type: "social.colibri.beta.richtext.facet#customEmoji",
+							uri: `at://${COMMUNITY}/blue.moji.collection.item/kek`,
+						},
+					],
+				},
+			],
+		});
+
+		const summary = await lastMessage();
+
+		expect(summary?.text).toBe(":kek:");
+		expect(summary).not.toHaveProperty("facets");
 	});
 });
