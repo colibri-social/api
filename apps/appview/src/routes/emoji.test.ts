@@ -17,6 +17,7 @@ import {
 	handleDeleteEmoji,
 	handleDeletePack,
 	handleGetCatalog,
+	handleGetEmojis,
 	handleRenameEmoji,
 	handleUpdatePack,
 	handleUploadEmoji,
@@ -442,5 +443,78 @@ describe("the catalog", () => {
 			[BLUEMOJI.provider, "wave"],
 			[ITEM_ONLY, "x"],
 		]);
+	});
+});
+
+describe("batch lookup", () => {
+	it("returns emoji from several repos in request order and skips unknown URIs", async () => {
+		const USER = "did:plc:user";
+		const client = {
+			listPublicRecords: async (_repo: string, collection: string) =>
+				collection === BLUEMOJI.item
+					? {
+							records: [
+								{
+									uri: `at://${USER}/${BLUEMOJI.item}/badger`,
+									cid: "cid-badger",
+									value: {
+										name: ":badger:",
+										createdAt: NOW,
+										formats: {
+											png_128: { ref: { $link: BLOB }, mimeType: "image/png", size: 1 },
+										},
+									},
+								},
+							],
+						}
+					: { records: [] },
+		} as unknown as PdsClient;
+		await backfillEmoji(ctx, USER, registry, client);
+		const { emoji: wave } = await upload("wave");
+		const { emoji: other } = await upload("other", { provider: ITEM_ONLY });
+		const badger = `at://${USER}/${BLUEMOJI.item}/badger`;
+
+		const result = await handleGetEmojis(
+			ctx,
+			[
+				badger,
+				`at://${COMMUNITY}/${BLUEMOJI.item}/missing`,
+				wave.uri,
+				`at://${COMMUNITY}/${BLUEMOJI.pack}/wave`,
+				"not a uri",
+				other.uri,
+				badger,
+			],
+			registry,
+		);
+
+		expect(result.emojis.map((entry) => entry.uri)).toEqual([badger, wave.uri, other.uri]);
+		expect(result.emojis[0]).toMatchObject({ owner: USER, name: "badger", cid: "cid-badger" });
+		expect(result.unreachable).toBeUndefined();
+	});
+
+	it("reports owners whose repo cannot be read and still returns the rest", async () => {
+		const warnings: unknown[] = [];
+		ctx = {
+			...ctx,
+			log: { warn: (detail: unknown) => warnings.push(detail) },
+			identity: {
+				resolveDid: async () => {
+					throw new Error("plc unavailable");
+				},
+			},
+		} as unknown as AppContext;
+		const { emoji: wave } = await upload("wave");
+		const STRANGER = "did:plc:stranger";
+
+		const result = await handleGetEmojis(
+			ctx,
+			[`at://${STRANGER}/${BLUEMOJI.item}/hello`, wave.uri],
+			registry,
+		);
+
+		expect(result.emojis.map((entry) => entry.uri)).toEqual([wave.uri]);
+		expect(result.unreachable).toEqual([STRANGER]);
+		expect(warnings).toEqual([expect.objectContaining({ owner: STRANGER })]);
 	});
 });

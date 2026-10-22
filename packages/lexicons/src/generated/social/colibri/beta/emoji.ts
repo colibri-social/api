@@ -8,6 +8,7 @@ export * as "delete" from "./emoji/delete.js";
 export * as deletePack from "./emoji/deletePack.js";
 export * as follow from "./emoji/follow.js";
 export * as getCatalog from "./emoji/getCatalog.js";
+export * as getEmojis from "./emoji/getEmojis.js";
 export * as getLibrary from "./emoji/getLibrary.js";
 export * as putFollow from "./emoji/putFollow.js";
 export * as rename from "./emoji/rename.js";

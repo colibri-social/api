@@ -21,6 +21,7 @@ import {
 	emojiUri,
 	ensureEmojiTracked,
 	loadCatalog,
+	loadEmojis,
 	parseEmojiUri,
 } from "../emoji.js";
 import {
@@ -38,6 +39,8 @@ import type { RouteDeps } from "./types.js";
 const EMOJI_PERMISSION = "community.manage";
 
 type EmojiView = CatalogView["emojis"][number];
+type EmojiBatch = social.colibri.beta.emoji.getEmojis.$OutputBody;
+type Owner = NonNullable<EmojiBatch["unreachable"]>[number];
 type PackView = CatalogView["packs"][number];
 
 const fail = (code: string, message: string) => new InvalidRequestError(message, code);
@@ -237,6 +240,58 @@ export const handleGetCatalog = async (
 ): Promise<{ catalog: CatalogView }> => {
 	await tracked(ctx, owner, registry);
 	return { catalog: await loadCatalog(ctx, owner, registry) };
+};
+
+const BACKFILL_CONCURRENCY = 8;
+
+type EmojiKey = { collection: string; rkey: string };
+
+const keysByOwner = (uris: Iterable<string>, registry: EmojiRegistry) => {
+	const byOwner = new Map<string, EmojiKey[]>();
+	for (const uri of uris) {
+		const parsed = parseEmojiUri(uri);
+		if (!parsed?.owner.startsWith("did:")) continue;
+		if (registry.forCollection(parsed.collection)?.kind !== "item") continue;
+		const keys = byOwner.get(parsed.owner) ?? [];
+		keys.push({ collection: parsed.collection, rkey: parsed.rkey });
+		byOwner.set(parsed.owner, keys);
+	}
+	return byOwner;
+};
+
+export const handleGetEmojis = async (
+	ctx: AppContext,
+	uris: readonly string[],
+	registry: EmojiRegistry = emojiRegistry,
+): Promise<EmojiBatch> => {
+	const requested = [...new Set(uris)];
+	const owners = [...keysByOwner(requested, registry)];
+	const found = new Map<string, EmojiView>();
+	const unreachable: Owner[] = [];
+	let next = 0;
+	const work = async () => {
+		while (next < owners.length) {
+			const entry = owners[next++];
+			if (!entry) return;
+			const [owner, keys] = entry;
+			try {
+				await ensureEmojiTracked(ctx, owner, registry);
+			} catch (error) {
+				unreachable.push(owner as Owner);
+				ctx.log.warn({ code: "UpstreamFailure", owner, error }, "emoji.ownerUnreachable");
+				continue;
+			}
+			for (const emoji of await loadEmojis(ctx, owner, keys, registry)) {
+				found.set(emoji.uri, emoji);
+			}
+		}
+	};
+	await Promise.all(Array.from({ length: Math.min(BACKFILL_CONCURRENCY, owners.length) }, work));
+	const emojis = requested.flatMap((uri) => {
+		const emoji = found.get(uri);
+		return emoji ? [emoji] : [];
+	});
+	return unreachable.length > 0 ? { emojis, unreachable: unreachable.sort() } : { emojis };
 };
 
 export const handleUploadEmoji = async (
@@ -609,6 +664,10 @@ export const registerEmojiRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 
 	publicRoute(server, social.colibri.beta.emoji.getCatalog, {
 		handler: async ({ params }) => json(await handleGetCatalog(ctx, params.owner)),
+	});
+
+	publicRoute(server, social.colibri.beta.emoji.getEmojis, {
+		handler: async ({ params }) => json(await handleGetEmojis(ctx, params.uris)),
 	});
 
 	route(server, social.colibri.beta.emoji.getLibrary, {

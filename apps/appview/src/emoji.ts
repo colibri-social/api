@@ -1,7 +1,7 @@
 import { type EmojiRegistry, emojiRegistry } from "@colibri-social/emoji";
 import type { social } from "@colibri-social/lexicons";
 import { PdsClient } from "@colibri-social/space";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { AppContext } from "./context.js";
 
 type EmojiView = social.colibri.beta.emoji.defs.EmojiView;
@@ -208,6 +208,51 @@ export const ensureEmojiTracked = async (
 	await backfillEmoji(ctx, owner, registry);
 };
 
+type ItemRow = {
+	uri: string;
+	cid: string | null;
+	provider: string;
+	owner: string;
+	value: Record<string, unknown>;
+};
+
+const emojiViewOf = (row: ItemRow, registry: EmojiRegistry): EmojiView[] => {
+	const parsed = registry.get(row.provider)?.parseItem(row.value);
+	if (!parsed) return [];
+	return [
+		{
+			uri: row.uri,
+			...(row.cid ? { cid: row.cid } : {}),
+			provider: row.provider,
+			owner: row.owner,
+			...parsed,
+		} as EmojiView,
+	];
+};
+
+export const loadEmojis = async (
+	ctx: AppContext,
+	owner: string,
+	keys: readonly { collection: string; rkey: string }[],
+	registry: EmojiRegistry = emojiRegistry,
+): Promise<EmojiView[]> => {
+	if (keys.length === 0) return [];
+	const { db, tables } = ctx.database;
+	const rows = await db
+		.select()
+		.from(tables.emojiItems)
+		.where(
+			and(
+				eq(tables.emojiItems.owner, owner),
+				inArray(tables.emojiItems.rkey, [...new Set(keys.map((key) => key.rkey))]),
+			),
+		);
+	const wanted = new Set(keys.map((key) => `${key.collection}/${key.rkey}`));
+	return rows
+		.filter((row) => wanted.has(`${row.collection}/${row.rkey}`))
+		.flatMap((row) => emojiViewOf(row, registry));
+};
+
 export const loadCatalog = async (
 	ctx: AppContext,
 	owner: string,
@@ -221,19 +266,7 @@ export const loadCatalog = async (
 	]);
 
 	const emojis = itemRows
-		.flatMap((row): EmojiView[] => {
-			const parsed = registry.get(row.provider)?.parseItem(row.value);
-			if (!parsed) return [];
-			return [
-				{
-					uri: row.uri,
-					...(row.cid ? { cid: row.cid } : {}),
-					provider: row.provider,
-					owner: row.owner,
-					...parsed,
-				} as EmojiView,
-			];
-		})
+		.flatMap((row) => emojiViewOf(row, registry))
 		.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.name.localeCompare(b.name));
 
 	const known = new Set<string>(emojis.map((emoji) => emoji.uri));
