@@ -1,5 +1,26 @@
 # @colibri-social/appview
 
+## 2.29.0
+
+### Minor Changes
+
+- 0b325da: Update Spaces support to the October 22 alpha (`0.0.0-spaces-alpha-20261022141228`). Space credentials are requested with a JSON body and presented with the `Atproto-Space-Credential` scheme. Space hosts resolve through `#atproto_pds`. Commits and records are verified with MACs keyed against each author's `#atproto_kem` key, and full repos arrive as STAR archives. Accounts that haven't published a KEM key can't be synced until their PDS publishes one.
+
+### Patch Changes
+
+- aea592c: Keep the list of legacy communities a user removed from their sidebar when storing and serving client preferences
+- Updated dependencies [aea592c]
+- Updated dependencies [0b325da]
+  - @colibri-social/lexicons@2.30.0
+  - @colibri-social/projections@1.13.4
+  - @colibri-social/appview-db@0.18.1
+  - @colibri-social/space@0.8.0
+  - @colibri-social/space-sync@0.6.0
+  - @colibri-social/identity@0.3.0
+  - @colibri-social/community@2.12.1
+  - @colibri-social/notifications@1.8.8
+  - @colibri-social/blobs@0.2.1
+
 ## 2.28.0
 
 ### Minor Changes

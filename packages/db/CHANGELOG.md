@@ -1,5 +1,11 @@
 # @colibri-social/appview-db
 
+## 0.18.1
+
+### Patch Changes
+
+- aea592c: Keep the list of legacy communities a user removed from their sidebar when storing and serving client preferences
+
 ## 0.18.0
 
 ### Minor Changes

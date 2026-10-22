@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/identity",
-	"version": "0.2.2",
+	"version": "0.3.0",
 	"description": "atproto service auth, DID document publication and handle resolution for the Colibri AppView",
 	"type": "module",
 	"private": true,
