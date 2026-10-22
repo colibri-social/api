@@ -421,6 +421,32 @@ describe("connectPipeline", () => {
 		).toBe(true);
 	});
 
+	it("sends the full message with its signed attachments in the notification", async () => {
+		const mentioned = "did:plc:mentionedmentionedment";
+		await database.db.insert(database.tables.members).values([
+			{ community: COMMUNITY, did: AUTHOR, roles: [], joinedAt: NOW },
+			{ community: COMMUNITY, did: mentioned, roles: [], joinedAt: NOW },
+		]);
+		const rkey = nextTid();
+		await putAttachedMessageRow(rkey);
+		const change = messageChange(rkey);
+		const put = change.puts[0] as { value: Record<string, unknown> };
+		put.value.facets = [mentionFacet(mentioned)];
+
+		emit(change);
+		await vi.waitFor(() => expect(framesOfType("notificationEvent")).toHaveLength(1));
+
+		const [entry] = framesOfType("notificationEvent");
+		const notification = entry?.frame.notification as {
+			message: { rkey: string; attachments: { url: string }[] };
+		};
+		expect(entry?.space).toBe(mentioned);
+		expect(notification.message.rkey).toBe(rkey);
+		expect(notification.message.attachments).toHaveLength(1);
+		const url = new URL(notification.message.attachments[0]?.url as string);
+		expect(url.searchParams.get("viewer")).toBe(mentioned);
+	});
+
 	it("never notifies a mention that only appears inside a forwarded snapshot", async () => {
 		const mentioned = "did:plc:mentionedmentionedment";
 		await database.db.insert(database.tables.members).values([

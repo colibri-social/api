@@ -1,4 +1,5 @@
 import type { Database, Queryable } from "@colibri-social/appview-db";
+import type { LinkEmbed } from "@colibri-social/embeds";
 import {
 	type CachedIdentity,
 	type IdentityStore,
@@ -9,6 +10,7 @@ import { applyChange, type ProjectionDeps } from "@colibri-social/projections";
 import type { CredentialStorage } from "@colibri-social/space";
 import type { RepoChange, RepoCursor, SyncStore } from "@colibri-social/space-sync";
 import { and, eq, inArray } from "drizzle-orm";
+import { STORED_PREVIEW_TTL_MS, type StoredPreviews } from "./link-embeds.js";
 
 const IDENTITY_WRITE_CONCURRENCY = 8;
 
@@ -48,6 +50,36 @@ export const drizzleIdentityStore = ({ db, tables }: Database): IdentityStore =>
 				.values(row)
 				.onConflictDoUpdate({ target: tables.identityCache.did, set: row });
 		});
+	},
+});
+
+export const drizzleStoredPreviews = (
+	{ db, tables }: Database,
+	now: () => number = Date.now,
+): StoredPreviews => ({
+	load: async (keys) => {
+		const out = new Map<string, LinkEmbed>();
+		if (keys.length === 0) return out;
+		const rows = await db
+			.select()
+			.from(tables.linkPreviews)
+			.where(inArray(tables.linkPreviews.url, [...keys]));
+		for (const row of rows) {
+			if (now() - new Date(row.fetchedAt).getTime() > STORED_PREVIEW_TTL_MS) continue;
+			out.set(row.url, row.embed as LinkEmbed);
+		}
+		return out;
+	},
+	save: async (key, embed) => {
+		const row = {
+			url: key,
+			embed: embed as unknown as Record<string, unknown>,
+			fetchedAt: new Date(now()).toISOString(),
+		};
+		await db
+			.insert(tables.linkPreviews)
+			.values(row)
+			.onConflictDoUpdate({ target: tables.linkPreviews.url, set: row });
 	},
 });
 

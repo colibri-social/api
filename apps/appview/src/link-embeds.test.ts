@@ -1,7 +1,9 @@
+import { openTestDatabase } from "@colibri-social/appview-db";
 import { createTtlCache, type LinkEmbed } from "@colibri-social/embeds";
 import { describe, expect, it } from "vitest";
 import { createLinkEmbedResolver, linkUrisOf, MAX_EMBEDS_PER_MESSAGE } from "./link-embeds.js";
 import type { Logger } from "./logger.js";
+import { drizzleStoredPreviews } from "./stores.js";
 
 const log = { debug: () => {} } as unknown as Logger;
 
@@ -87,6 +89,52 @@ describe("createLinkEmbedResolver", () => {
 		await resolver.settle([tenor]);
 
 		expect(resolver.peek(tenor)?.title).toBe("Touhou Fumo GIF");
+	});
+
+	it("keeps a preview across a new resolver on the same database", async () => {
+		const database = await openTestDatabase();
+		try {
+			let calls = 0;
+			const fetchPreview = async (uri: string) => {
+				calls += 1;
+				return { uri, siteName: "Tenor" };
+			};
+			const first = createLinkEmbedResolver({
+				cache: createTtlCache<LinkEmbed>(),
+				log,
+				stored: drizzleStoredPreviews(database),
+				fetchPreview,
+			});
+			await first.resolve([tenor], 1_000);
+
+			const second = createLinkEmbedResolver({
+				cache: createTtlCache<LinkEmbed>(),
+				log,
+				stored: drizzleStoredPreviews(database),
+				fetchPreview,
+			});
+			const found = await second.resolve([tenor], 0);
+
+			expect(found.get(tenor)).toEqual({ uri: tenor, siteName: "Tenor" });
+			expect(calls).toBe(1);
+		} finally {
+			await database.destroy();
+		}
+	});
+
+	it("fetches again once a stored preview is a week old", async () => {
+		const database = await openTestDatabase();
+		try {
+			let now = Date.parse("2026-10-01T00:00:00.000Z");
+			await drizzleStoredPreviews(database, () => now).save(tenor, { uri: tenor, title: "old" });
+			now += 8 * 24 * 60 * 60 * 1000;
+
+			const loaded = await drizzleStoredPreviews(database, () => now).load([tenor]);
+
+			expect(loaded.size).toBe(0);
+		} finally {
+			await database.destroy();
+		}
 	});
 
 	it("does not refetch a failed link until the miss expires", async () => {

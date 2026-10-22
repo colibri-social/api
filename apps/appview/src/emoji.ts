@@ -1,6 +1,6 @@
 import { type EmojiRegistry, emojiRegistry } from "@colibri-social/emoji";
 import type { social } from "@colibri-social/lexicons";
-import { PdsClient } from "@colibri-social/space";
+import { PdsClient, XrpcError } from "@colibri-social/space";
 import { and, eq, inArray } from "drizzle-orm";
 import type { AppContext } from "./context.js";
 
@@ -18,6 +18,8 @@ export type EmojiRecordChange = {
 
 const BACKFILL_PAGE = 100;
 const BACKFILL_PAGES_MAX = 20;
+const ABSENT_TTL_MS = 60_000;
+const BACKFILL_STALE_MS = 60 * 60 * 1000;
 
 export const emojiUri = (owner: string, collection: string, rkey: string) =>
 	`at://${owner}/${collection}/${rkey}`;
@@ -193,10 +195,70 @@ export const backfillEmoji = async (
 		.onConflictDoUpdate({ target: ctx.database.tables.emojiBackfills.owner, set: row });
 };
 
-const pdsClientFor = async (ctx: AppContext, did: string): Promise<PdsClient> => {
+export const pdsClientFor = async (ctx: AppContext, did: string): Promise<PdsClient> => {
 	const service = (await ctx.identity.resolveDid(did)).pds;
 	if (!service) throw new Error(`${did} has no PDS in its DID document`);
 	return new PdsClient({ service });
+};
+
+export const isEmojiBackfillStale = async (
+	ctx: AppContext,
+	owner: string,
+	now: number = Date.now(),
+): Promise<boolean> => {
+	const [row] = await ctx.database.db
+		.select({ completedAt: ctx.database.tables.emojiBackfills.completedAt })
+		.from(ctx.database.tables.emojiBackfills)
+		.where(eq(ctx.database.tables.emojiBackfills.owner, owner))
+		.limit(1);
+	if (!row) return false;
+	return now - new Date(row.completedAt).getTime() > BACKFILL_STALE_MS;
+};
+
+export type EmojiClientFor = (owner: string) => Promise<Pick<PdsClient, "getPublicRecord">>;
+
+const absentUntil = new Map<string, number>();
+
+export const forgetAbsentEmoji = () => absentUntil.clear();
+
+export const fetchMissingEmojis = async (
+	ctx: AppContext,
+	owner: string,
+	keys: readonly { collection: string; rkey: string }[],
+	clientFor: EmojiClientFor,
+	registry: EmojiRegistry = emojiRegistry,
+	now: number = Date.now(),
+): Promise<EmojiView[]> => {
+	const wanted = keys.filter((key) => {
+		const until = absentUntil.get(emojiUri(owner, key.collection, key.rkey));
+		return until === undefined || until <= now;
+	});
+	if (wanted.length === 0) return [];
+	const client = await clientFor(owner);
+	const fetched: { collection: string; rkey: string }[] = [];
+	for (const key of wanted) {
+		const uri = emojiUri(owner, key.collection, key.rkey);
+		let record: { cid?: string; value: Record<string, unknown> };
+		try {
+			record = await client.getPublicRecord<{ cid?: string; value: Record<string, unknown> }>(
+				owner,
+				key.collection,
+				key.rkey,
+			);
+		} catch (error) {
+			if (!(error instanceof XrpcError && error.isNotFound)) throw error;
+			absentUntil.set(uri, now + ABSENT_TTL_MS);
+			continue;
+		}
+		absentUntil.delete(uri);
+		await applyEmojiChange(
+			ctx,
+			{ owner, ...key, cid: record.cid ?? null, value: record.value },
+			registry,
+		);
+		fetched.push(key);
+	}
+	return loadEmojis(ctx, owner, fetched, registry);
 };
 
 export const ensureEmojiTracked = async (

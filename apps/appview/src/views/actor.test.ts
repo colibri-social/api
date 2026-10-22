@@ -41,6 +41,7 @@ beforeEach(async () => {
 	database = await openTestDatabase();
 	const ctx = {
 		database,
+		log: { warn: () => {} },
 		config: { PUBLIC_URL: "https://appview.test", PROFILE_FETCH_CONCURRENCY: 4 },
 		identity: {
 			resolveDid: async () => ({ pds: PDS }),
@@ -66,6 +67,11 @@ afterEach(async () => {
 	await database.destroy();
 });
 
+const forgetCachedRow = () =>
+	database.db
+		.delete(database.tables.profileCache)
+		.where(eq(database.tables.profileCache.did, ACTOR));
+
 describe("ActorViews.hydrate", () => {
 	it("keeps the cached profile when the PDS fetch fails", async () => {
 		respondWith(() => json(429, { error: "RateLimitExceeded", message: "slow down" }));
@@ -74,10 +80,39 @@ describe("ActorViews.hydrate", () => {
 
 		expect(profile.displayName).toBe("Alice");
 		expect(profile.avatar).toContain(AVATAR_CID);
+		await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
 		expect((await cachedRow())?.fetchedAt).toBe(STALE);
 	});
 
+	it("serves a stale profile at once and refreshes it in the background", async () => {
+		let release: () => void = () => {};
+		const held = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: string | URL | Request) => {
+				await held;
+				const url = new URL(input instanceof Request ? input.url : input.toString());
+				return url.searchParams.get("collection") === COLLECTIONS.profile
+					? json(200, { value: { displayName: "Alice Updated", syncBluesky: false } })
+					: json(400, { error: "RecordNotFound", message: "not found" });
+			}),
+		);
+
+		const first = await views.one(ACTOR);
+		const second = await views.one(ACTOR);
+
+		expect(first.displayName).toBe("Alice");
+		expect(second.displayName).toBe("Alice");
+		release();
+		await vi.waitFor(async () => expect((await cachedRow())?.fetchedAt).not.toBe(STALE));
+		expect(fetch).toHaveBeenCalledTimes(2);
+		expect((await views.one(ACTOR)).displayName).toBe("Alice Updated");
+	});
+
 	it("treats a missing record as an empty profile and caches it", async () => {
+		await forgetCachedRow();
 		respondWith((collection) =>
 			collection === COLLECTIONS.profile
 				? json(200, { value: { displayName: "Alice Updated", syncBluesky: false } })
@@ -125,6 +160,7 @@ describe("ActorViews.hydrate", () => {
 			expected: "he/him",
 		},
 	])("$name", async ({ colibri, bsky, expected }) => {
+		await forgetCachedRow();
 		respondWith((collection) => {
 			const value = collection === COLLECTIONS.profile ? colibri : bsky;
 			return value

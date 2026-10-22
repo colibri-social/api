@@ -690,6 +690,12 @@ export const profileCache = pgTable("profile_cache", {
 	fetchedAt: timestamp("fetched_at").notNull(),
 });
 
+export const linkPreviews = pgTable("link_previews", {
+	url: text("url").primaryKey(),
+	embed: json<Record<string, unknown>>("embed").notNull(),
+	fetchedAt: timestamp("fetched_at").notNull(),
+});
+
 export const serviceState = pgTable("service_state", {
 	key: text("key").primaryKey(),
 	value: text("value").notNull(),
@@ -841,6 +847,7 @@ export const schema = {
 	actorActivity,
 	identityCache,
 	profileCache,
+	linkPreviews,
 	serviceState,
 	legacyRecords,
 	communityMigrations,

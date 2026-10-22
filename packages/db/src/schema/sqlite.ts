@@ -684,6 +684,12 @@ export const profileCache = sqliteTable("profile_cache", {
 	fetchedAt: timestamp("fetched_at").notNull(),
 });
 
+export const linkPreviews = sqliteTable("link_previews", {
+	url: text("url").primaryKey(),
+	embed: json<Record<string, unknown>>("embed").notNull(),
+	fetchedAt: timestamp("fetched_at").notNull(),
+});
+
 export const serviceState = sqliteTable("service_state", {
 	key: text("key").primaryKey(),
 	value: text("value").notNull(),
@@ -835,6 +841,7 @@ export const schema = {
 	actorActivity,
 	identityCache,
 	profileCache,
+	linkPreviews,
 	serviceState,
 	legacyRecords,
 	communityMigrations,

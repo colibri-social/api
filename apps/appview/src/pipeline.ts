@@ -32,9 +32,9 @@ import {
 	threadFrameForBridges,
 } from "./announce.js";
 import type { AppContext } from "./context.js";
+import { republishWhenPreviewsSettle } from "./embed-republish.js";
 import { ensureEmojiTracked } from "./emoji.js";
 import { announceLibrary } from "./emoji-library.js";
-import { fireAndForget } from "./fire-and-forget.js";
 import { linkUrisOf } from "./link-embeds.js";
 import { notificationDeps as buildNotificationDeps } from "./notification-deps.js";
 import { pushDelivery } from "./push-delivery.js";
@@ -42,7 +42,7 @@ import { loadPreferences } from "./routes/actor.js";
 import { reopenThread } from "./routes/thread-write.js";
 import { reportFailure } from "./sentry.js";
 import { ActorViews, type ProfileView } from "./views/actor.js";
-import { ChannelViews } from "./views/channel.js";
+import { ChannelViews, type MessageView } from "./views/channel.js";
 import { CommunityViews } from "./views/community.js";
 import { ThreadViews } from "./views/thread.js";
 import type { EventServer, ServerFrame } from "./ws/events.js";
@@ -201,9 +201,22 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		return String(forward?.text ?? "");
 	};
 
+	const withFullMessage = <View extends { message?: MessageView }>(
+		view: View,
+		message: MessageView | undefined,
+		recipient: string,
+	): View =>
+		view.message && message
+			? {
+					...view,
+					message: { ...channels.forViewer(message, recipient), author: view.message.author },
+				}
+			: view;
+
 	const publishNotifications = async (
 		rows: IndexedNotificationRow[],
 		text: string,
+		message?: MessageView,
 	): Promise<void> => {
 		if (rows.length === 0) return;
 		const views = await hydrateNotifications(notifications, rows, notificationAuthors);
@@ -212,7 +225,10 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		for (const view of views) {
 			const row = byId.get(view.id);
 			if (!row) continue;
-			events.publishToUser(row.recipient, notificationEvent(view));
+			events.publishToUser(
+				row.recipient,
+				notificationEvent(withFullMessage(view, message, row.recipient)),
+			);
 			servable.push({
 				row,
 				routing: {
@@ -346,10 +362,10 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		author: string,
 		rkey: string,
 		imported = false,
-	): Promise<void> => {
+	): Promise<MessageView | undefined> => {
 		const key = { author, rkey };
 		const message = await channels.message(space, null, key, space, { embedWaitMs: 0 });
-		if (!message) return;
+		if (!message) return undefined;
 		events.publishToChannel(space, (viewer) => ({
 			$type: "social.colibri.beta.sync.defs#messageEvent",
 			event: message.updatedAt ? "update" : "create",
@@ -358,27 +374,16 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			...(imported ? { imported: true } : {}),
 		}));
 
-		const unresolved = linkUrisOf(message.facets, message.suppressedEmbeds).filter(
-			(uri) => !ctx.linkEmbeds.peek(uri),
+		republishWhenPreviewsSettle(
+			ctx,
+			channels,
+			(target, frame) => events.publishToChannel(target, frame),
+			{ space, readingSpace: space, author, rkey },
+			linkUrisOf(message.facets, message.suppressedEmbeds).filter(
+				(uri) => !ctx.linkEmbeds.peek(uri),
+			),
 		);
-		if (unresolved.length === 0) return;
-		fireAndForget(
-			ctx.log,
-			"sync.embedRepublishFailed",
-			async () => {
-				await ctx.linkEmbeds.settle(unresolved);
-				if (!unresolved.some((uri) => ctx.linkEmbeds.peek(uri))) return;
-				const enriched = await channels.message(space, null, key, space, { embedWaitMs: 0 });
-				if (!enriched) return;
-				events.publishToChannel(space, (viewer) => ({
-					$type: "social.colibri.beta.sync.defs#messageEvent",
-					event: "update",
-					channel: space,
-					message: channels.forViewer(enriched, viewer),
-				}));
-			},
-			{ space, author, rkey },
-		);
+		return message;
 	};
 
 	const publishThread = async (
@@ -498,7 +503,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			if (put.collection === COLLECTIONS.message && space.community) {
 				const imported =
 					(put.value.bridged as { imported?: unknown } | undefined)?.imported === true;
-				await publishMessage(change.space, change.author, put.rkey, imported);
+				const published = await publishMessage(change.space, change.author, put.rkey, imported);
 				publishedMessages += 1;
 				if (imported) continue;
 				if (isThreadSpace(space)) {
@@ -528,7 +533,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 							parentRkey: parent?.rkey ?? null,
 						}),
 					)
-					.then((rows) => publishNotifications(rows, text))
+					.then((rows) => publishNotifications(rows, text, published))
 					.catch((error) => ctx.log.warn({ error }, "notifications.indexFailed"));
 			}
 

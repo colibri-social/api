@@ -710,6 +710,49 @@ describe("ChannelViews.messages", () => {
 	});
 });
 
+describe("ChannelViews late previews", () => {
+	it("returns a page without waiting and names each message whose preview is still loading", async () => {
+		const uri = "https://example.test/article";
+		const waits: number[] = [];
+		ctx.linkEmbeds = {
+			peek: () => undefined,
+			resolve: async (_uris, waitMs) => {
+				waits.push(waitMs);
+				return new Map();
+			},
+			settle: async () => {},
+		};
+		const rkey = nextTid();
+		await putMessage(rkey, {
+			text: uri,
+			facets: [
+				{
+					index: { byteStart: 0, byteEnd: uri.length },
+					features: [{ $type: "social.colibri.beta.richtext.facet#link", uri }],
+				},
+			],
+		});
+		await putMessage(nextTid());
+		const late: unknown[] = [];
+
+		const page = await views.messages(
+			SPACE,
+			null,
+			{ limit: 10 },
+			{ embedWaitMs: 0, onLatePreviews: (target, unresolved) => late.push({ target, unresolved }) },
+		);
+
+		expect(page.messages).toHaveLength(2);
+		expect(waits).toEqual([0]);
+		expect(late).toEqual([
+			{
+				target: { space: SPACE, readingSpace: SPACE, author: AUTHOR_A, rkey },
+				unresolved: [uri],
+			},
+		]);
+	});
+});
+
 describe("ChannelViews attachments", () => {
 	it("builds a blob url from an attachment stored in json form", async () => {
 		const rkey = nextTid();

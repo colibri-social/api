@@ -51,7 +51,12 @@ import {
 	PREVIEW_CACHE_TTL_MS,
 } from "./link-embeds.js";
 import { createLogger, type Logger } from "./logger.js";
-import { drizzleCredentialStorage, drizzleIdentityStore, drizzleSyncStore } from "./stores.js";
+import {
+	drizzleCredentialStorage,
+	drizzleIdentityStore,
+	drizzleStoredPreviews,
+	drizzleSyncStore,
+} from "./stores.js";
 import { createVideoArtworkClient } from "./video-artwork.js";
 import type { VoiceRoster } from "./ws/voice.js";
 
@@ -223,7 +228,11 @@ export const createContext = async (config: Config) => {
 		maxEntries: PREVIEW_CACHE_MAX_ENTRIES,
 		ttlMs: PREVIEW_CACHE_TTL_MS,
 	});
-	const linkEmbeds = createLinkEmbedResolver({ cache: previews, log });
+	const linkEmbeds = createLinkEmbedResolver({
+		cache: previews,
+		log,
+		stored: drizzleStoredPreviews(database),
+	});
 	const artwork = createTtlCache<ArtworkEntry>({
 		maxEntries: ARTWORK_CACHE_MAX_ENTRIES,
 		ttlMs: ARTWORK_CACHE_TTL_MS,

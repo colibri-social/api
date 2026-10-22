@@ -7,11 +7,11 @@ import {
 	type EmojiProvider,
 } from "@colibri-social/emoji";
 import { communitySpaces } from "@colibri-social/lexicons";
-import type { PdsClient } from "@colibri-social/space";
+import { type PdsClient, XrpcError } from "@colibri-social/space";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { silentAnnouncer } from "../announce.js";
 import type { AppContext } from "../context.js";
-import { backfillEmoji, loadCatalog } from "../emoji.js";
+import { backfillEmoji, type EmojiClientFor, forgetAbsentEmoji, loadCatalog } from "../emoji.js";
 import {
 	handleCreatePack,
 	handleDeleteEmoji,
@@ -115,7 +115,31 @@ const addCommunity = () => {
 const upload = (name: string, extra: { pack?: string; provider?: string } = {}) =>
 	handleUploadEmoji(ctx, writer, OWNER, { community: COMMUNITY, name, ...extra }, PNG, registry);
 
+const notFound = () =>
+	new XrpcError(400, "RecordNotFound", "Could not locate record", "com.atproto.repo.getRecord");
+
+const pdsWith = (records: Record<string, Record<string, unknown>>) => {
+	const reads: string[] = [];
+	const clientFor: EmojiClientFor = async () => ({
+		getPublicRecord: async <T>(repo: string, collection: string, rkey: string) => {
+			const uri = `at://${repo}/${collection}/${rkey}`;
+			reads.push(uri);
+			const value = records[uri];
+			if (!value) throw notFound();
+			return { cid: `cid-${rkey}`, value } as T;
+		},
+	});
+	return { reads, clientFor };
+};
+
+const badgerRecord = {
+	name: ":badger:",
+	createdAt: NOW,
+	formats: { png_128: { ref: { $link: BLOB }, mimeType: "image/png", size: 1 } },
+};
+
 beforeEach(async () => {
+	forgetAbsentEmoji();
 	database = await openTestDatabase();
 	puts = [];
 	removals = [];
@@ -486,6 +510,7 @@ describe("batch lookup", () => {
 				badger,
 			],
 			registry,
+			pdsWith({}).clientFor,
 		);
 
 		expect(result.emojis.map((entry) => entry.uri)).toEqual([badger, wave.uri, other.uri]);
@@ -516,5 +541,71 @@ describe("batch lookup", () => {
 		expect(result.emojis.map((entry) => entry.uri)).toEqual([wave.uri]);
 		expect(result.unreachable).toEqual([STRANGER]);
 		expect(warnings).toEqual([expect.objectContaining({ owner: STRANGER })]);
+	});
+
+	it("reads a record the index missed from its owner's PDS and indexes it", async () => {
+		const badger = `at://${COMMUNITY}/${BLUEMOJI.item}/badger`;
+		const pds = pdsWith({ [badger]: badgerRecord });
+
+		const first = await handleGetEmojis(ctx, [badger], registry, pds.clientFor);
+		const second = await handleGetEmojis(ctx, [badger], registry, pds.clientFor);
+
+		expect(first.emojis).toEqual([
+			expect.objectContaining({ uri: badger, name: "badger", cid: "cid-badger" }),
+		]);
+		expect(second.emojis.map((entry) => entry.uri)).toEqual([badger]);
+		expect(pds.reads).toEqual([badger]);
+		const catalog = await loadCatalog(ctx, COMMUNITY, registry);
+		expect(catalog.emojis.map((entry) => entry.uri)).toEqual([badger]);
+	});
+
+	it("asks the PDS about an absent record once per minute", async () => {
+		const gone = `at://${COMMUNITY}/${BLUEMOJI.item}/gone`;
+		const pds = pdsWith({});
+
+		await handleGetEmojis(ctx, [gone], registry, pds.clientFor);
+		const result = await handleGetEmojis(ctx, [gone], registry, pds.clientFor);
+
+		expect(result).toEqual({ emojis: [] });
+		expect(pds.reads).toEqual([gone]);
+	});
+
+	it("reports the owner as unreachable when its PDS fails", async () => {
+		const warnings: unknown[] = [];
+		ctx = {
+			...ctx,
+			log: { warn: (detail: unknown) => warnings.push(detail) },
+		} as unknown as AppContext;
+		const badger = `at://${COMMUNITY}/${BLUEMOJI.item}/badger`;
+		const clientFor: EmojiClientFor = async () => ({
+			getPublicRecord: async () => {
+				throw new Error("connect ECONNREFUSED");
+			},
+		});
+
+		const result = await handleGetEmojis(ctx, [badger], registry, clientFor);
+
+		expect(result).toEqual({ emojis: [], unreachable: [COMMUNITY] });
+		expect(warnings).toEqual([expect.objectContaining({ owner: COMMUNITY })]);
+	});
+});
+
+describe("catalog refresh", () => {
+	it("backfills an owner again once its last backfill is an hour old", async () => {
+		const logged: unknown[] = [];
+		ctx = {
+			...ctx,
+			log: { error: (detail: unknown) => logged.push(detail) },
+			identity: {
+				resolveDid: async () => {
+					throw new Error("plc unavailable");
+				},
+			},
+		} as unknown as AppContext;
+
+		await handleGetCatalog(ctx, COMMUNITY, registry);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(logged).toEqual([expect.objectContaining({ owner: COMMUNITY })]);
 	});
 });

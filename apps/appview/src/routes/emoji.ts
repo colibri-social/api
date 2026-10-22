@@ -17,12 +17,17 @@ import { and, eq } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import {
 	applyEmojiChange,
+	backfillEmoji,
 	type CatalogView,
+	type EmojiClientFor,
 	emojiUri,
 	ensureEmojiTracked,
+	fetchMissingEmojis,
+	isEmojiBackfillStale,
 	loadCatalog,
 	loadEmojis,
 	parseEmojiUri,
+	pdsClientFor,
 } from "../emoji.js";
 import {
 	announceEmoji,
@@ -33,6 +38,7 @@ import {
 	loadLibrary,
 } from "../emoji-library.js";
 import { toXrpcError } from "../errors.js";
+import { fireAndForget } from "../fire-and-forget.js";
 import { publicRoute, route } from "../route.js";
 import type { RouteDeps } from "./types.js";
 
@@ -239,6 +245,11 @@ export const handleGetCatalog = async (
 	registry: EmojiRegistry = emojiRegistry,
 ): Promise<{ catalog: CatalogView }> => {
 	await tracked(ctx, owner, registry);
+	if (await isEmojiBackfillStale(ctx, owner)) {
+		fireAndForget(ctx.log, "emoji.refreshFailed", () => backfillEmoji(ctx, owner, registry), {
+			owner,
+		});
+	}
 	return { catalog: await loadCatalog(ctx, owner, registry) };
 };
 
@@ -263,6 +274,7 @@ export const handleGetEmojis = async (
 	ctx: AppContext,
 	uris: readonly string[],
 	registry: EmojiRegistry = emojiRegistry,
+	clientFor: EmojiClientFor = (owner) => pdsClientFor(ctx, owner),
 ): Promise<EmojiBatch> => {
 	const requested = [...new Set(uris)];
 	const owners = [...keysByOwner(requested, registry)];
@@ -283,6 +295,16 @@ export const handleGetEmojis = async (
 			}
 			for (const emoji of await loadEmojis(ctx, owner, keys, registry)) {
 				found.set(emoji.uri, emoji);
+			}
+			const missing = keys.filter((key) => !found.has(emojiUri(owner, key.collection, key.rkey)));
+			if (missing.length === 0) continue;
+			try {
+				for (const emoji of await fetchMissingEmojis(ctx, owner, missing, clientFor, registry)) {
+					found.set(emoji.uri, emoji);
+				}
+			} catch (error) {
+				unreachable.push(owner as Owner);
+				ctx.log.warn({ code: "UpstreamFailure", owner, error }, "emoji.recordUnreachable");
 			}
 		}
 	};

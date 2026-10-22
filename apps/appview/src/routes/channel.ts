@@ -3,9 +3,10 @@ import { canRead, decideSpaceAccess, isMember } from "@colibri-social/community"
 import { social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import type { AppContext } from "../context.js";
+import { republishWhenPreviewsSettle } from "../embed-republish.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
-import { ChannelViews } from "../views/channel.js";
+import { ChannelViews, type LatePreviewTarget } from "../views/channel.js";
 import { CommunityViews } from "../views/community.js";
 import { ThreadViews } from "../views/thread.js";
 import { handlePutReadCursors } from "./read-cursors.js";
@@ -30,10 +31,20 @@ export const handleListSummaries = async (
 	return { summaries: await channels.summaries(community, callerDid, authz) };
 };
 
+const SLOW_PAGE_MS = 1_000;
+
 export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 	const actors = new ActorViews(ctx);
 	const communities = new CommunityViews(ctx, actors);
 	const channels = new ChannelViews(ctx, actors);
+	const republishLate = (target: LatePreviewTarget, unresolved: string[]) =>
+		republishWhenPreviewsSettle(
+			ctx,
+			channels,
+			(space, frame) => ctx.announce.toChannel(space, frame),
+			target,
+			unresolved,
+		);
 	const threads = new ThreadViews(ctx, channels);
 
 	const requireReadableChannel = async (space: string, viewer: string) => {
@@ -82,19 +93,28 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 	route(server, social.colibri.beta.channel.listMessages, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => {
+			const startedAt = Date.now();
 			const viewer = caller.credentials.did;
 			const { authz } = await requireReadableChannel(params.channel, viewer);
-			const result = await channels.messages(params.channel, viewer, {
-				limit: params.limit,
-				cursor: params.cursor,
-				reverse: params.reverse,
-				around: params.around,
-			});
+			const result = await channels.messages(
+				params.channel,
+				viewer,
+				{
+					limit: params.limit,
+					cursor: params.cursor,
+					reverse: params.reverse,
+					around: params.around,
+				},
+				{ embedWaitMs: 0, onLatePreviews: republishLate },
+			);
 			const anchored = await threads.anchoredIn(
 				params.channel,
 				result.messages.map((message) => ({ author: message.author.did, rkey: message.rkey })),
 			);
 			const views = await threads.views(anchored, authz, viewer);
+			const timing = { ms: Date.now() - startedAt, messages: result.messages.length };
+			if (timing.ms > SLOW_PAGE_MS) ctx.log.warn(timing, "channel.listMessagesSlow");
+			else ctx.log.debug(timing, "channel.listMessages");
 			return {
 				encoding: "application/json" as const,
 				body: { ...result, ...(views.length > 0 ? { threads: views } : {}) },

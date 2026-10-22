@@ -54,6 +54,7 @@ export class IdentityResolver {
 	private readonly handleTtlMs: number;
 	private readonly negativeHandleTtlMs: number;
 	private readonly handleConcurrency: number;
+	private readonly revalidating = new Set<string>();
 
 	constructor(options: IdentityResolverOptions) {
 		this.resolver = new IdResolver({
@@ -108,16 +109,19 @@ export class IdentityResolver {
 
 		const cached = this.store ? await this.store.load(unique).catch(() => null) : null;
 		const misses: string[] = [];
+		const stale: string[] = [];
 
 		for (const did of unique) {
 			const row = cached?.get(did);
-			if (row && row.handleVerified !== null && this.isFresh(row)) {
+			if (row && row.handleVerified !== null) {
 				out.set(did, row.handleVerified ? row.handle : null);
+				if (!this.isFresh(row)) stale.push(did);
 				continue;
 			}
 			misses.push(did);
 		}
 
+		this.revalidate(stale);
 		if (misses.length === 0) return out;
 
 		const resolved = await mapWithConcurrency(misses, this.handleConcurrency, (did) =>
@@ -187,6 +191,18 @@ export class IdentityResolver {
 			pds: identity.pds,
 			signingKey: identity.signingKey,
 		};
+	}
+
+	private revalidate(dids: readonly string[]): void {
+		const due = dids.filter((did) => !this.revalidating.has(did));
+		if (due.length === 0) return;
+		for (const did of due) this.revalidating.add(did);
+		void mapWithConcurrency(due, this.handleConcurrency, (did) => this.verifyHandle(did))
+			.then((resolved) => this.remember(resolved))
+			.catch(() => undefined)
+			.finally(() => {
+				for (const did of due) this.revalidating.delete(did);
+			});
 	}
 
 	private async remember(entries: readonly ResolvedHandle[]): Promise<void> {

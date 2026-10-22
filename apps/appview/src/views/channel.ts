@@ -53,7 +53,17 @@ type ReactionRow = Schema["reactions"]["$inferSelect"];
 
 type MessageKey = { author: string; rkey: string };
 
-export type HydrateOptions = { embedWaitMs?: number };
+export type LatePreviewTarget = {
+	space: string;
+	readingSpace: string;
+	author: string;
+	rkey: string;
+};
+
+export type HydrateOptions = {
+	embedWaitMs?: number;
+	onLatePreviews?: (target: LatePreviewTarget, unresolved: string[]) => void;
+};
 
 const DEFAULT_EMBED_WAIT_MS = 2_000;
 
@@ -333,11 +343,12 @@ export class ChannelViews {
 		space: string,
 		viewer: string | null,
 		options: { limit: number; cursor?: string; reverse?: boolean; around?: string },
+		hydration: HydrateOptions = {},
 	): Promise<{ messages: MessageView[]; cursor?: string; forwardCursor?: string }> {
 		if (options.around !== undefined) {
-			return this.messagesAround(space, viewer, options.around, options.limit);
+			return this.messagesAround(space, viewer, options.around, options.limit, hydration);
 		}
-		return this.page(space, viewer, options);
+		return this.page(space, viewer, options, hydration);
 	}
 
 	private async messagesAround(
@@ -345,11 +356,22 @@ export class ChannelViews {
 		viewer: string | null,
 		around: string,
 		limit: number,
+		hydration: HydrateOptions,
 	): Promise<{ messages: MessageView[]; cursor?: string; forwardCursor?: string }> {
 		const newerLimit = Math.floor(limit / 2);
 		const [older, newer] = await Promise.all([
-			this.page(space, viewer, { limit: limit - newerLimit, cursor: around, inclusive: true }),
-			this.page(space, viewer, { limit: Math.max(newerLimit, 1), cursor: around, reverse: true }),
+			this.page(
+				space,
+				viewer,
+				{ limit: limit - newerLimit, cursor: around, inclusive: true },
+				hydration,
+			),
+			this.page(
+				space,
+				viewer,
+				{ limit: Math.max(newerLimit, 1), cursor: around, reverse: true },
+				hydration,
+			),
 		]);
 		const newerMessages = newerLimit > 0 ? newer.messages : [];
 		const forwardCursor =
@@ -365,6 +387,7 @@ export class ChannelViews {
 		space: string,
 		viewer: string | null,
 		options: { limit: number; cursor?: string; reverse?: boolean; inclusive?: boolean },
+		hydration: HydrateOptions = {},
 	): Promise<{ messages: MessageView[]; cursor?: string }> {
 		const limit = options.limit;
 		const reverse = options.reverse ?? false;
@@ -421,6 +444,7 @@ export class ChannelViews {
 			viewer,
 			page.map((entry) => entry.row),
 			space,
+			hydration,
 		);
 		const messages: MessageView[] = [];
 		for (const entry of page) {
@@ -543,6 +567,7 @@ export class ChannelViews {
 		viewer: string | null,
 		rows: MessageRow[],
 		readingSpace: string,
+		options: HydrateOptions = {},
 	): Promise<Map<string, MessageView>> {
 		const bySpace = new Map<string, MessageRow[]>();
 		for (const row of rows) {
@@ -553,7 +578,7 @@ export class ChannelViews {
 
 		const views = new Map<string, MessageView>();
 		for (const [space, group] of bySpace) {
-			for (const view of await this.hydrate(space, viewer, group, readingSpace)) {
+			for (const view of await this.hydrate(space, viewer, group, readingSpace, options)) {
 				views.set(`${space} ${view.author.did} ${view.rkey}`, view);
 			}
 		}
@@ -648,6 +673,16 @@ export class ChannelViews {
 			return embeds.length > 0 ? embeds : undefined;
 		};
 		const hidden = hiddenFrom(labels);
+		if (options.onLatePreviews) {
+			for (const [row, uris] of linksByRow) {
+				const unresolved = uris.filter((uri) => !previews.get(uri));
+				if (unresolved.length === 0) continue;
+				options.onLatePreviews(
+					{ space, readingSpace, author: row.author, rkey: row.rkey },
+					unresolved,
+				);
+			}
+		}
 		const emojiPolicy = customEmojiPolicy(communityRow?.customEmoji);
 		const facetsFor = (facets: unknown) =>
 			filterCustomEmojiFacets(

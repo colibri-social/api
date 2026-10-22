@@ -19,6 +19,8 @@ export const PREVIEW_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 const MISS_TTL_MS = 5 * 60 * 1000;
 
+export const STORED_PREVIEW_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 const DIRECT_IMAGE = /\.(gif|webp|png|jpe?g|avif)$/i;
 
 type RawFeature = { $type?: unknown; uri?: unknown };
@@ -45,9 +47,15 @@ export type LinkEmbedResolver = {
 	settle(uris: readonly string[]): Promise<void>;
 };
 
+export type StoredPreviews = {
+	load(keys: readonly string[]): Promise<Map<string, LinkEmbed>>;
+	save(key: string, embed: LinkEmbed): Promise<void>;
+};
+
 export type LinkEmbedResolverOptions = {
 	cache: TtlCache<LinkEmbed>;
 	log: Logger;
+	stored?: StoredPreviews;
 	fetchPreview?: (uri: string, measureImage: ImageMeasurer) => Promise<LinkEmbed>;
 	now?: () => number;
 };
@@ -105,6 +113,9 @@ export const createLinkEmbedResolver = (options: LinkEmbedResolverOptions): Link
 				const embed =
 					(await directMediaEmbed(uri, measureImage)) ?? (await fetchPreview(uri, measureImage));
 				cache.set(key, embed);
+				await options.stored
+					?.save(key, embed)
+					.catch((error: unknown) => log.warn({ err: error }, "embed.storeFailed"));
 			} catch (error) {
 				missedUntil.set(key, now() + MISS_TTL_MS);
 				const code = isEmbedError(error) ? error.code : "UnfurlFailed";
@@ -117,9 +128,25 @@ export const createLinkEmbedResolver = (options: LinkEmbedResolverOptions): Link
 		return loading;
 	};
 
+	const recall = async (uris: readonly string[]) => {
+		const stored = options.stored;
+		if (!stored) return;
+		const keys = uris
+			.filter((uri) => !peek(uri))
+			.map(normalizeUrlCacheKey)
+			.filter((key) => !inflight.has(key));
+		if (keys.length === 0) return;
+		try {
+			for (const [key, embed] of await stored.load(keys)) cache.set(key, embed);
+		} catch (error) {
+			log.warn({ err: error }, "embed.recallFailed");
+		}
+	};
+
 	const resolve = async (uris: readonly string[], waitMs: number) => {
 		const found = new Map<string, LinkEmbed>();
 		const waiting: Promise<void>[] = [];
+		await recall([...new Set(uris)]);
 		for (const uri of new Set(uris)) {
 			const hit = peek(uri);
 			if (hit) {

@@ -33,6 +33,8 @@ type BlueskyProfile = {
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
+const refreshing = new Map<string, Promise<unknown>>();
+
 export type HydrateOptions = { refresh?: ReadonlySet<string> };
 
 export type AuthoredMessage = {
@@ -185,15 +187,20 @@ export class ActorViews {
 		if (unique.length === 0) return new Map();
 
 		const cached = await this.cachedProfiles(unique);
+		const blocking = unique.filter((did) => options.refresh?.has(did) || !cached.get(did));
 		const stale = unique.filter((did) => {
-			if (options.refresh?.has(did)) return true;
 			const row = cached.get(did);
-			return !row || Date.now() - new Date(row.fetchedAt).getTime() > CACHE_TTL_MS;
+			return (
+				!!row &&
+				!options.refresh?.has(did) &&
+				Date.now() - new Date(row.fetchedAt).getTime() > CACHE_TTL_MS
+			);
 		});
+		this.refreshInBackground(stale);
 
 		const [fetchedEntries, activities, handles, presenceRows] = await Promise.all([
 			mapWithConcurrency(
-				stale,
+				blocking,
 				this.ctx.config.PROFILE_FETCH_CONCURRENCY,
 				async (did) => [did, await this.fetchProfile(did)] as const,
 			),
@@ -235,6 +242,16 @@ export class ActorViews {
 			});
 		}
 		return out;
+	}
+
+	private refreshInBackground(dids: readonly string[]): void {
+		for (const did of dids) {
+			if (refreshing.has(did)) continue;
+			const running = this.fetchProfile(did)
+				.catch((error: unknown) => this.ctx.log.warn({ did, err: error }, "profile.refreshFailed"))
+				.finally(() => refreshing.delete(did));
+			refreshing.set(did, running);
+		}
 	}
 
 	async one(did: string, options: HydrateOptions = {}): Promise<ProfileView> {

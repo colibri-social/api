@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { P256Keypair } from "@atproto/crypto";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { IdentityResolutionError, MissingKemKeyError, MissingPdsError } from "./errors.js";
 import { type CachedIdentity, IdentityResolver, type IdentityStore } from "./resolver.js";
 
@@ -60,13 +60,14 @@ describe("resolveVerifiedHandles", () => {
 		expect(saved).toEqual([]);
 	});
 
-	it("re-resolves a failed verification once it falls outside the negative TTL", async () => {
+	it("re-resolves a failed verification in the background once it falls outside the negative TTL", async () => {
 		const stale = new Date(Date.now() - 600 * 1000);
 		const { store: impl, saved } = store([cached({ handleVerified: false, fetchedAt: stale })]);
 
-		await resolver(impl).resolveVerifiedHandles([DID]);
+		const resolved = await resolver(impl).resolveVerifiedHandles([DID]);
 
-		expect(saved).toHaveLength(1);
+		expect(resolved.get(DID)).toBeNull();
+		await vi.waitFor(() => expect(saved).toHaveLength(1));
 	});
 
 	it("keeps a verified handle past the negative TTL", async () => {
@@ -79,15 +80,19 @@ describe("resolveVerifiedHandles", () => {
 		expect(saved).toEqual([]);
 	});
 
-	it("re-resolves and writes back once the entry falls outside the TTL", async () => {
+	it("serves a stale handle at once and writes the re-resolved entry back", async () => {
 		const stale = new Date(Date.now() - 7200 * 1000);
 		const { store: impl, saved } = store([cached({ fetchedAt: stale })]);
+		const identities = resolver(impl);
 
-		const resolved = await resolver(impl).resolveVerifiedHandles([DID]);
+		const first = await identities.resolveVerifiedHandles([DID]);
+		const second = await identities.resolveVerifiedHandles([DID]);
 
-		expect(resolved.get(DID)).toBeNull();
-		expect(saved).toHaveLength(1);
-		expect(saved[0]?.[0]?.did).toBe(DID);
+		expect(first.get(DID)).toBe("alice.test");
+		expect(second.get(DID)).toBe("alice.test");
+		await vi.waitFor(() => expect(saved).toHaveLength(1));
+		expect(saved[0]?.[0]).toMatchObject({ did: DID, handleVerified: false });
+		expect((await identities.resolveVerifiedHandles([DID])).get(DID)).toBeNull();
 	});
 
 	it("treats an entry that was never verified as a miss", async () => {
