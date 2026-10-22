@@ -1,5 +1,16 @@
 # @colibri-social/projections
 
+## 1.13.4
+
+### Patch Changes
+
+- aea592c: Keep the list of legacy communities a user removed from their sidebar when storing and serving client preferences
+- Updated dependencies [aea592c]
+- Updated dependencies [0b325da]
+  - @colibri-social/lexicons@2.30.0
+  - @colibri-social/appview-db@0.18.1
+  - @colibri-social/space@0.8.0
+
 ## 1.13.3
 
 ### Patch Changes
