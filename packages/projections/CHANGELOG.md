@@ -1,5 +1,12 @@
 # @colibri-social/projections
 
+## 1.13.5
+
+### Patch Changes
+
+- Updated dependencies [dd7a07e]
+  - @colibri-social/lexicons@2.31.0
+
 ## 1.13.4
 
 ### Patch Changes

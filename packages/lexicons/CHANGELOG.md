@@ -1,5 +1,11 @@
 # @colibri-social/lexicons
 
+## 2.31.0
+
+### Minor Changes
+
+- dd7a07e: Add `social.colibri.beta.emoji.getEmojis`, which returns up to 100 custom emoji by record URI across any number of repos in one request. Owners whose repo can't be read come back in `unreachable`. The method joins the `permissionCommunity` permission set next to `getCatalog`.
+
 ## 2.30.0
 
 ### Minor Changes
