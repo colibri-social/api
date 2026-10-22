@@ -59,6 +59,9 @@ export const toStoredClientPreferences = (value: ClientPreferencesIn): ClientPre
 				showOwnCamera: value.voiceView.showOwnCamera,
 			}),
 		experiments: value.experiments && [...value.experiments],
+		dismissedLegacyCommunities: value.dismissedLegacyCommunities && [
+			...value.dismissedLegacyCommunities,
+		],
 	});
 
 export const toStoredComposerState = (value: ComposerStateIn): ComposerState =>

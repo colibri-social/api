@@ -82,6 +82,7 @@ export type ClientPreferences = {
 	inboxPresentation?: string;
 	voiceView?: StoredVoiceView;
 	experiments?: string[];
+	dismissedLegacyCommunities?: string[];
 };
 export type EmojiUse = { emoji: string; count: number; lastUsed: string };
 export type ComposerState = {

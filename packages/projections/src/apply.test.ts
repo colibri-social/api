@@ -974,6 +974,7 @@ describe("personal spaces", () => {
 				hideModeratedMessages: true,
 				inboxPresentation: "modal",
 				experiments: ["light-mode-v1"],
+				dismissedLegacyCommunities: ["did:plc:legacyxxxxxxxxxxxxxxxxxxx"],
 			}),
 		);
 
@@ -986,6 +987,7 @@ describe("personal spaces", () => {
 			hideModeratedMessages: true,
 			inboxPresentation: "modal",
 			experiments: ["light-mode-v1"],
+			dismissedLegacyCommunities: ["did:plc:legacyxxxxxxxxxxxxxxxxxxx"],
 		});
 	});
 

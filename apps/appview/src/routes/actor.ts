@@ -1,4 +1,5 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
+import type { ClientPreferences } from "@colibri-social/appview-db";
 import { asDatetime, asDid, decodeMuteSubject, social } from "@colibri-social/lexicons";
 import { and, asc, count, eq, inArray, ne, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
@@ -77,7 +78,7 @@ export const loadPreferences = async (ctx: AppContext, callerDid: string): Promi
 			community: asDid(row.community),
 			hideModeratedMessages: row.hideModeratedMessages,
 		})),
-		clientPreferences: settings?.clientPreferences ?? {},
+		clientPreferences: clientPreferencesView(settings?.clientPreferences),
 		composerState: {
 			...(composerState.emojiUsage === undefined
 				? {}
@@ -102,6 +103,18 @@ export const handleGetPreferences = async (
 ): Promise<{ preferences: Preferences }> => ({
 	preferences: await loadPreferences(ctx, callerDid),
 });
+
+const clientPreferencesView = (
+	stored: ClientPreferences | undefined,
+): social.colibri.beta.actor.defs.ClientPreferences => {
+	const { dismissedLegacyCommunities, ...rest } = stored ?? {};
+	return {
+		...rest,
+		...(dismissedLegacyCommunities
+			? { dismissedLegacyCommunities: dismissedLegacyCommunities.map(asDid) }
+			: {}),
+	};
+};
 
 export const handleListCommunities = async (
 	ctx: AppContext,
