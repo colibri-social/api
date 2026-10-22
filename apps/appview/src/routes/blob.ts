@@ -56,7 +56,12 @@ const movedSourceFor = async (
 
 	const table = ctx.database.tables.messages;
 	const rows = await ctx.database.db
-		.select({ space: table.space, rkey: table.rkey, attachments: table.attachments })
+		.select({
+			space: table.space,
+			rkey: table.rkey,
+			attachments: table.attachments,
+			forward: table.forward,
+		})
 		.from(table)
 		.where(
 			and(
@@ -68,7 +73,10 @@ const movedSourceFor = async (
 
 	const wanted = new Set(moved.map((entry) => `${entry.source} ${entry.rkey}`));
 	const holder = rows.find(
-		(row) => wanted.has(`${row.space} ${row.rkey}`) && carriesBlob(row.attachments, cid),
+		(row) =>
+			wanted.has(`${row.space} ${row.rkey}`) &&
+			(carriesBlob(row.attachments, cid) ||
+				carriesBlob((row.forward as { attachments?: unknown } | null)?.attachments, cid)),
 	);
 	return holder?.space;
 };

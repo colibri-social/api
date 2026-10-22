@@ -107,7 +107,11 @@ const signedFor = (viewer: string, space: string = SPACE) => {
 	return { viewer, exp: String(expiresAt), sig: signature };
 };
 
-const putMovedMessage = async (destination: string, cid: string) => {
+const putMovedMessage = async (
+	destination: string,
+	cid: string,
+	placement: "attachments" | "forward" = "attachments",
+) => {
 	const rkey = nextTid();
 	await database.db.insert(database.tables.threads).values({
 		space: THREAD,
@@ -131,7 +135,15 @@ const putMovedMessage = async (destination: string, cid: string) => {
 		createdAt: NOW,
 		fromLegacyRepo: false,
 		indexedAt: NOW,
-		attachments: [{ name: "shot.png", blob: { $type: "blob", ref: { $link: cid } } }],
+		...(placement === "attachments"
+			? { attachments: [{ name: "shot.png", blob: { $type: "blob", ref: { $link: cid } } }] }
+			: {
+					forward: {
+						createdAt: NOW,
+						text: "forwarded",
+						attachments: [{ name: "shot.png", blob: { $type: "blob", ref: { $link: cid } } }],
+					},
+				}),
 	});
 	await database.db.insert(database.tables.labels).values({
 		space: SPACE,
@@ -317,6 +329,21 @@ describe("blob.get authorization", () => {
 
 	it("serves a moved message's attachment from the space it came from", async () => {
 		await putMovedMessage(THREAD, CID);
+		missingIn.add(THREAD);
+
+		const captured = await get({
+			did: AUTHOR,
+			cid: CID,
+			space: THREAD,
+			...signedFor(MEMBER, THREAD),
+		});
+
+		expect(captured.status).toBe(200);
+		expect(fetchedFrom).toEqual([THREAD, SPACE]);
+	});
+
+	it("serves a moved forward's attachment from the space it came from", async () => {
+		await putMovedMessage(THREAD, CID, "forward");
 		missingIn.add(THREAD);
 
 		const captured = await get({
