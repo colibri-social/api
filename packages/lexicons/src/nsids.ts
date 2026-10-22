@@ -65,6 +65,7 @@ export const LEGACY_COLLECTIONS = {
 	member: "social.colibri.member",
 	membership: "social.colibri.membership",
 	message: "social.colibri.message",
+	moderation: "social.colibri.moderation",
 	read: "social.colibri.channel.read",
 	role: "social.colibri.role",
 } as const;
@@ -74,8 +75,6 @@ export type LegacyCollection = (typeof LEGACY_COLLECTIONS)[keyof typeof LEGACY_C
 export const LEGACY_CHANNEL_TYPES = {
 	text: "social.colibri.channel.text",
 	voice: "social.colibri.channel.voice",
-	forum: "social.colibri.channel.forum",
-	link: "social.colibri.channel.link",
 } as const;
 
 export const SELF = "self";

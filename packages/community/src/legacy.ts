@@ -11,9 +11,13 @@ export type LegacyCommunity = {
 	did: string;
 	name: string;
 	description?: string;
+	picture?: unknown;
 	memberCount: number;
 	channelCount: number;
 	viewerIsAdmin: boolean;
+	hasAdmin: boolean;
+	owner?: string;
+	ownerRepo?: boolean;
 	migratedTo?: string;
 };
 
@@ -99,6 +103,14 @@ export const legacyCandidates = async (deps: LegacyDeps, actor: string): Promise
 		dids.push(did);
 	};
 
+	const ownCommunities = await listCapped<unknown>(repo, actor, LEGACY_COLLECTIONS.community, 1)
+		.then((page) => page.records.some((record) => !record.uri.endsWith(`/${SELF}`)))
+		.catch(() => false);
+	if (ownCommunities) {
+		seen.add(actor);
+		dids.push(actor);
+	}
+
 	for (const did of ordered) add(did.startsWith("did:") ? did : null);
 	for (const record of joined) add(communityDidOf(record.value.community));
 	for (const record of read) add(communityDidOf(record.value.channel));
@@ -132,13 +144,17 @@ export const readLegacyCommunity = async (
 
 	const profile = await repo
 		.getPublicRecord<{
-			value: { name?: string; description?: string; migratedTo?: string };
+			value: { name?: string; description?: string; picture?: unknown; migratedTo?: string };
 		}>(community, LEGACY_COLLECTIONS.community, SELF)
 		.catch(() => null);
-	if (!profile) return null;
+	if (!profile) return readOwnerRepoCommunity(repo, community);
 
 	const [members, channels, roles] = await Promise.all([
-		listAll<{ subject?: string; roles?: string[] }>(repo, community, LEGACY_COLLECTIONS.member),
+		listAll<{ subject?: string; roles?: string[]; joinedAt?: string }>(
+			repo,
+			community,
+			LEGACY_COLLECTIONS.member,
+		),
 		listAll<unknown>(repo, community, LEGACY_COLLECTIONS.channel),
 		listAll<{ protected?: boolean }>(repo, community, LEGACY_COLLECTIONS.role),
 	]);
@@ -151,15 +167,48 @@ export const readLegacyCommunity = async (
 	const membership = members.find((member) => member.value.subject === actor);
 	const viewerIsAdmin =
 		actor === community || (membership?.value.roles ?? []).some((role) => protectedRoles.has(role));
+	const admins = members
+		.filter((member) => (member.value.roles ?? []).some((role) => protectedRoles.has(role)))
+		.filter((member) => member.value.subject)
+		.sort((a, b) => (a.value.joinedAt ?? "").localeCompare(b.value.joinedAt ?? ""));
+	const owner = admins[0]?.value.subject;
 
 	return {
 		did: community,
 		name: profile.value.name ?? community,
 		...(profile.value.description ? { description: profile.value.description } : {}),
+		...(profile.value.picture ? { picture: profile.value.picture } : {}),
 		memberCount: members.length,
 		channelCount: channels.length,
 		viewerIsAdmin,
+		hasAdmin: admins.length > 0,
+		...(owner ? { owner } : {}),
 		...(profile.value.migratedTo ? { migratedTo: profile.value.migratedTo } : {}),
+	};
+};
+
+const readOwnerRepoCommunity = async (
+	repo: PdsClient,
+	owner: string,
+): Promise<LegacyCommunity | null> => {
+	const { records } = await listCapped<{ name?: string; description?: string; picture?: unknown }>(
+		repo,
+		owner,
+		LEGACY_COLLECTIONS.community,
+		1,
+	).catch(() => ({ records: [] }));
+	const record = records.find((entry) => !entry.uri.endsWith(`/${SELF}`));
+	if (!record) return null;
+	return {
+		did: owner,
+		name: record.value.name ?? owner,
+		...(record.value.description ? { description: record.value.description } : {}),
+		memberCount: 0,
+		channelCount: 0,
+		viewerIsAdmin: false,
+		hasAdmin: true,
+		owner,
+		ownerRepo: true,
 	};
 };
 
@@ -169,5 +218,5 @@ export const legacyAdmin = async (
 	actor: string,
 ): Promise<boolean> => {
 	const legacy = await readLegacyCommunity(deps, community, actor);
-	return legacy?.viewerIsAdmin ?? false;
+	return !legacy?.ownerRepo && (legacy?.viewerIsAdmin ?? false);
 };

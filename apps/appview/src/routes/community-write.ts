@@ -10,22 +10,18 @@ import {
 	has,
 	isAdmin,
 	isCredentialRejection,
-	legacyAdmin,
 	Membership,
 	MembershipError,
-	migrateCommunity,
 	type ProvisionedCommunity,
 	ProvisioningRefused,
 	purgeCommunity,
 } from "@colibri-social/community";
-import { SERVICE_FRAGMENTS, serviceId } from "@colibri-social/identity";
 import {
 	asDatetime,
 	asDid,
 	asRecordKey,
 	COLLECTIONS,
 	communitySpaces,
-	LEGACY_COLLECTIONS,
 	PERMISSIONS,
 	type Permission,
 	SELF,
@@ -49,6 +45,7 @@ import type { CommunityView } from "../views/community.js";
 import { CommunityViews } from "../views/community.js";
 import { countMembers } from "./community.js";
 import { credentialsUnavailable, membershipErrorToXrpc } from "./failures.js";
+import { handleMigrateCommunity } from "./legacy.js";
 import { seedReadCursorsOnJoin } from "./read-cursors.js";
 import { writeCommunitySettings } from "./settings.js";
 import type { RouteDeps } from "./types.js";
@@ -803,104 +800,6 @@ export const handleRegisterCredentials = async (
 	void backfillDefaultRole(ctx, input.community);
 };
 
-const legacyUri = (community: string) =>
-	`at://${community}/${LEGACY_COLLECTIONS.community}/${SELF}`;
-
-export const legacyDeps = (ctx: AppContext) => ({
-	hostFor: (did: string) => ctx.hosts.hostFor(did),
-	clientFor: (endpoint: string) => ctx.credentials.clientFor(endpoint),
-});
-
-export const handleMigrateCommunity = async (
-	ctx: AppContext,
-	communities: CommunityViews,
-	callerDid: string,
-	identifier: string,
-): Promise<{ community: CommunityView }> => {
-	const legacyDid = await ctx.identity
-		.resolveAtIdentifier(identifier)
-		.then((identity) => identity.did)
-		.catch(() => null);
-	if (!legacyDid) throw communityNotFound();
-
-	const already = await ctx.database.db
-		.select({ did: ctx.database.tables.communities.did })
-		.from(ctx.database.tables.communities)
-		.where(eq(ctx.database.tables.communities.did, legacyDid))
-		.limit(1);
-	if (already.length > 0) {
-		throw new InvalidRequestError(
-			"this legacy community has already been migrated",
-			"AlreadyExists",
-		);
-	}
-
-	const legacyRepo = ctx.credentials.clientFor(await ctx.hosts.hostFor(legacyDid));
-	const legacyRecord = await legacyRepo
-		.getPublicRecord<{ value: { name?: string; description?: string } }>(
-			legacyDid,
-			LEGACY_COLLECTIONS.community,
-			SELF,
-		)
-		.catch(() => null);
-	if (!legacyRecord) throw communityNotFound();
-
-	if (!(await legacyAdmin(legacyDeps(ctx), legacyDid, callerDid))) {
-		throw new InvalidRequestError(
-			"only an administrator of the legacy community may migrate it",
-			"Forbidden",
-		);
-	}
-
-	let report: Awaited<ReturnType<typeof migrateCommunity>>;
-	try {
-		report = await migrateCommunity(
-			{
-				database: ctx.database,
-				hostFor: (did) => ctx.hosts.hostFor(did),
-				credentials: ctx.credentials,
-				writer: ctx.writer,
-				spaces: ctx.spaces,
-				appviewService: serviceId(ctx.config.APPVIEW_DID, SERVICE_FRAGMENTS.appview),
-				log: (message, detail) => ctx.log.info(detail ?? {}, message),
-				onProgress: (progress) => ctx.announce.toUser(callerDid, communityProgressEvent(progress)),
-				dryRun: false,
-			},
-			legacyDid,
-		);
-	} catch (error) {
-		if (error instanceof CommunityCredentialError) throw credentialsUnavailable(error);
-		if (error instanceof XrpcError) throw new InvalidRequestError(error.message, "UpstreamFailure");
-		throw error;
-	}
-
-	const spaces = communitySpaces(legacyDid);
-	const row = {
-		did: legacyDid,
-		handle: null,
-		name: legacyRecord.value.name ?? "Migrated community",
-		description: legacyRecord.value.description ?? null,
-		managingApp: ctx.config.APPVIEW_DID,
-		pictureCid: null,
-		bannerCid: null,
-		requiresApproval: false,
-		linkEmbeds: true,
-		overrideUserNameColors: false,
-		customEmoji: "all",
-		labelers: [] as string[],
-		migratedFrom: legacyUri(legacyDid),
-		profileSpace: spaces.profile,
-		configSpace: spaces.configuration,
-		membersSpace: spaces.members,
-		moderationSpace: spaces.moderation,
-		indexedAt: new Date().toISOString(),
-	};
-
-	await backfillDefaultRole(ctx, legacyDid);
-	const authz = await ctx.loader.authz(legacyDid, callerDid);
-	return { community: await communities.community(row, authz, report.members) };
-};
-
 export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 	const actors = new ActorViews(ctx);
 	const communities = new CommunityViews(ctx, actors);
@@ -1065,12 +964,7 @@ export const registerCommunityWriteRoutes = ({ server, ctx, auth }: RouteDeps): 
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
-			body: await handleMigrateCommunity(
-				ctx,
-				communities,
-				caller.credentials.did,
-				input.body.community,
-			),
+			body: await handleMigrateCommunity(ctx, caller.credentials.did, input.body.community),
 		}),
 	});
 };

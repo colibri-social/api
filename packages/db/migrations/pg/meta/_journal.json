@@ -190,6 +190,13 @@
 			"when": 1792424461183,
 			"tag": "0026_shiny_colonel_america",
 			"breakpoints": true
+		},
+		{
+			"idx": 27,
+			"version": "7",
+			"when": 1792676391104,
+			"tag": "0027_gigantic_sugar_man",
+			"breakpoints": true
 		}
 	]
 }

@@ -5,6 +5,7 @@ import { createContext } from "./context.js";
 import { healOwnerRolePermissions } from "./heal.js";
 import { Jetstream } from "./jetstream.js";
 import { createLogger } from "./logger.js";
+import { migrationJobs } from "./migrations.js";
 import { connectPipeline } from "./pipeline.js";
 import { resolveVersion } from "./routes/server.js";
 import { installFatalHandlers, startErrorReporting, stopErrorReporting } from "./sentry.js";
@@ -48,6 +49,9 @@ const main = async (): Promise<void> => {
 	void healOwnerRolePermissions(ctx).catch((error: unknown) =>
 		ctx.log.warn({ err: error }, "heal.ownerPermissionsSweepFailed"),
 	);
+	void migrationJobs(ctx)
+		.resume()
+		.catch((error: unknown) => ctx.log.warn({ err: error }, "migration.resumeFailed"));
 
 	let shuttingDown = false;
 

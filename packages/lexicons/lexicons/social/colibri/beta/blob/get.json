@@ -27,7 +27,7 @@
 					"variant": {
 						"type": "string",
 						"description": "A rendition of a resizable image.",
-						"knownValues": ["thumbnail", "avatar", "banner", "full"]
+						"knownValues": ["thumbnail", "avatar", "banner", "spaceBanner", "full"]
 					},
 					"filename": {
 						"type": "string",

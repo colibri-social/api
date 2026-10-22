@@ -80,6 +80,11 @@ type CommunityView = { $type?: "social.colibri.beta.community.defs#communityView
   "migratedFrom"?:l.AtUriString;
 
   /**
+   * When and by whom this community moved from its repo-backed predecessor. Set on migrated communities.
+   */
+  "migration"?:MigrationInfo;
+
+  /**
    * Number of admitted members.
    */
   "memberCount"?:number;
@@ -92,7 +97,7 @@ type CommunityView = { $type?: "social.colibri.beta.community.defs#communityView
 export type { CommunityView };
 
 /** A community as the AppView serves it. */
-const communityView = /*#__PURE__*/ l.typedObject<CommunityView>($nsid, "communityView", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"handle":/*#__PURE__*/ l.string({"format":"handle"}),"managingApp":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string(),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"picture":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"banner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"requiresApprovalToJoin":/*#__PURE__*/ l.boolean(),"linkEmbeds":/*#__PURE__*/ l.boolean(),"overrideUserNameColors":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["all","local","none"]}>()),"labelers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"migratedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"viewer":/*#__PURE__*/ l.ref<ViewerState>((() => viewerState) as any)}));
+const communityView = /*#__PURE__*/ l.typedObject<CommunityView>($nsid, "communityView", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"handle":/*#__PURE__*/ l.string({"format":"handle"}),"managingApp":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string(),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"picture":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"banner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"requiresApprovalToJoin":/*#__PURE__*/ l.boolean(),"linkEmbeds":/*#__PURE__*/ l.boolean(),"overrideUserNameColors":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["all","local","none"]}>()),"labelers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"migratedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"migration":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<MigrationInfo>((() => migrationInfo) as any)),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"viewer":/*#__PURE__*/ l.ref<ViewerState>((() => viewerState) as any)}));
 
 export { communityView };
 
@@ -667,11 +672,106 @@ type LegacyCommunityView = { $type?: "social.colibri.beta.community.defs#legacyC
   /**
    * Whether the requesting user may migrate this community. Only an administrator of the legacy community can.
    */
-  "viewerIsAdmin"?:boolean };
+  "viewerIsAdmin"?:boolean;
+
+  /**
+   * URL of the legacy community's icon, served by this AppView's blob proxy.
+   */
+  "picture"?:l.UriString;
+
+  /**
+   * The member who owns the legacy community, for members to ask about the move.
+   */
+  "owner"?:LegacyOwner;
+
+  /**
+   * Where the community stands. migratable waits for an administrator, migrating is moving now, blocked cannot move. Absent means migratable.
+   */
+  "state"?:"migratable" | "migrating" | "blocked" | l.UnknownString;
+
+  /**
+   * Why a blocked community cannot move. ownerRepo lives inside its owner's repo, unreadable has a repo that did not respond, noAdmin has nobody left who may migrate it.
+   */
+  "blockedReason"?:"ownerRepo" | "unreadable" | "noAdmin" | l.UnknownString;
+
+  /**
+   * How far a running migration has come. Set while state is migrating.
+   */
+  "progress"?:MigrationProgress };
 
 export type { LegacyCommunityView };
 
 /** A repo-backed community that has not been migrated onto spaces yet, as read live from its own public repo. This is not an indexed view: the AppView holds nothing about a community until it is migrated. */
-const legacyCommunityView = /*#__PURE__*/ l.typedObject<LegacyCommunityView>($nsid, "legacyCommunityView", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"handle":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"handle"})),"name":/*#__PURE__*/ l.string(),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"channelCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"viewerIsAdmin":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
+const legacyCommunityView = /*#__PURE__*/ l.typedObject<LegacyCommunityView>($nsid, "legacyCommunityView", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"handle":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"handle"})),"name":/*#__PURE__*/ l.string(),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"channelCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"viewerIsAdmin":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"picture":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"owner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<LegacyOwner>((() => legacyOwner) as any)),"state":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["migratable","migrating","blocked"]}>()),"blockedReason":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["ownerRepo","unreadable","noAdmin"]}>()),"progress":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<MigrationProgress>((() => migrationProgress) as any))}));
 
 export { legacyCommunityView };
+
+/** The owner of a legacy community. */
+type LegacyOwner = { $type?: "social.colibri.beta.community.defs#legacyOwner";
+
+  /**
+   * The owner's DID.
+   */
+  "did":l.DidString;
+
+  /**
+   * The owner's handle, when it resolves.
+   */
+  "handle"?:l.HandleString };
+
+export type { LegacyOwner };
+
+/** The owner of a legacy community. */
+const legacyOwner = /*#__PURE__*/ l.typedObject<LegacyOwner>($nsid, "legacyOwner", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"handle":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"handle"}))}));
+
+export { legacyOwner };
+
+/** How far a migration has come. */
+type MigrationProgress = { $type?: "social.colibri.beta.community.defs#migrationProgress";
+
+  /**
+   * The step running now. Same values as social.colibri.beta.sync.defs#communityProgressEvent.
+   */
+  "step":string;
+
+  /**
+   * Steps finished.
+   */
+  "completed":number;
+
+  /**
+   * Steps in total.
+   */
+  "total":number;
+
+  /**
+   * Whether the last attempt failed. Starting the migration again resumes it from the last finished step.
+   */
+  "failed"?:boolean };
+
+export type { MigrationProgress };
+
+/** How far a migration has come. */
+const migrationProgress = /*#__PURE__*/ l.typedObject<MigrationProgress>($nsid, "migrationProgress", /*#__PURE__*/ l.object({"step":/*#__PURE__*/ l.string(),"completed":/*#__PURE__*/ l.integer(),"total":/*#__PURE__*/ l.integer(),"failed":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
+
+export { migrationProgress };
+
+/** When and by whom a community moved onto spaces. */
+type MigrationInfo = { $type?: "social.colibri.beta.community.defs#migrationInfo";
+
+  /**
+   * When the migration finished.
+   */
+  "at":l.DatetimeString;
+
+  /**
+   * The administrator who started it.
+   */
+  "by":l.DidString };
+
+export type { MigrationInfo };
+
+/** When and by whom a community moved onto spaces. */
+const migrationInfo = /*#__PURE__*/ l.typedObject<MigrationInfo>($nsid, "migrationInfo", /*#__PURE__*/ l.object({"at":/*#__PURE__*/ l.string({"format":"datetime"}),"by":/*#__PURE__*/ l.string({"format":"did"})}));
+
+export { migrationInfo };

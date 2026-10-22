@@ -20,13 +20,13 @@ export const $input = /*#__PURE__*/ l.jsonPayload({"community":/*#__PURE__*/ l.s
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;
 
-export const $output = /*#__PURE__*/ l.jsonPayload({"community":/*#__PURE__*/ l.ref<CommunityDefs.CommunityView>((() => CommunityDefs.communityView) as any)});
+export const $output = /*#__PURE__*/ l.jsonPayload({"community":/*#__PURE__*/ l.ref<CommunityDefs.LegacyCommunityView>((() => CommunityDefs.legacyCommunityView) as any)});
 
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Migrates a repo-backed community onto spaces. Structure is recreated in new spaces and stamped with migratedFrom. Message history stays in the legacy public repos and is served alongside, because messages live in their authors' repos and only their authors can move them. */
-const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","Forbidden","CommunityNotFound","AlreadyExists","CredentialsUnavailable","UpstreamFailure"]);
+/** Starts moving a repo-backed community onto spaces and returns once the move is queued. Structure, roles, members and bans are recreated in spaces stamped with migratedFrom. Message history of current members is copied from their public repos and served alongside as read-only legacy messages. The move runs in the background and reports progress through social.colibri.beta.sync.defs#communityProgressEvent. Calling it again while it runs returns the current state, and calling it after a failed attempt resumes from the last finished step. */
+const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","Forbidden","CommunityNotFound","AlreadyExists","NotMigratable","CredentialsUnavailable","UpstreamFailure"]);
 
 export { main };
 

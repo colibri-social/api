@@ -108,6 +108,12 @@ describe("legacyCandidates", () => {
 		expect(await legacyCandidates(deps, ACTOR)).toEqual([OWNED]);
 	});
 
+	it("lists the actor's own repo when it holds an owner-repo community", async () => {
+		seed(ACTOR, LEGACY_COLLECTIONS.community, "3lkcommunity1", { name: "Old flock" });
+
+		expect(await legacyCandidates(deps, ACTOR)).toEqual([ACTOR]);
+	});
+
 	it("returns nothing rather than throwing when the actor has no legacy records", async () => {
 		expect(await legacyCandidates(deps, ACTOR)).toEqual([]);
 	});
@@ -169,7 +175,29 @@ describe("readLegacyCommunity", () => {
 			memberCount: 1,
 			channelCount: 3,
 			viewerIsAdmin: true,
+			hasAdmin: true,
+			owner: ACTOR,
 		});
+	});
+
+	it("reports a community nobody can migrate", async () => {
+		seedLegacyCommunity(JOINED);
+
+		expect(await readLegacyCommunity(deps, JOINED, ACTOR)).toMatchObject({
+			hasAdmin: false,
+			viewerIsAdmin: false,
+		});
+	});
+
+	it("recognises a community that lives inside its owner's repo", async () => {
+		seed(OWNED, LEGACY_COLLECTIONS.community, "3lkcommunity1", { name: "Old flock" });
+
+		expect(await readLegacyCommunity(deps, OWNED, ACTOR)).toMatchObject({
+			name: "Old flock",
+			ownerRepo: true,
+			owner: OWNED,
+		});
+		expect(await legacyAdmin(deps, OWNED, OWNED)).toBe(false);
 	});
 
 	it("reports a member with no protected role as unable to migrate", async () => {

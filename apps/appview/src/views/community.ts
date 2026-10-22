@@ -14,6 +14,7 @@ import {
 	toChannelState,
 } from "@colibri-social/community";
 import {
+	asAtUri,
 	asDatetime,
 	asDid,
 	asHandle,
@@ -23,7 +24,7 @@ import {
 	communitySpaces,
 	type social,
 } from "@colibri-social/lexicons";
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { signBlobUrl } from "../media-token.js";
 import type { ActorViews } from "./actor.js";
@@ -53,7 +54,7 @@ export class CommunityViews {
 	private blobUrl(
 		did: string,
 		cid: string | null,
-		variant: "avatar" | "banner",
+		variant: "avatar" | "spaceBanner",
 		viewer: string,
 		space: string = communitySpaces(did).profile,
 	): string | undefined {
@@ -77,11 +78,23 @@ export class CommunityViews {
 		return identity?.handle ?? INVALID_HANDLE;
 	}
 
+	private async migrationInfo(community: string): Promise<{ at: string; by: string } | undefined> {
+		const table = this.ctx.database.tables.communityMigrations;
+		const [row] = await this.ctx.database.db
+			.select({ by: table.requestedBy, at: table.finishedAt, state: table.state })
+			.from(table)
+			.where(or(eq(table.target, community), eq(table.community, community)))
+			.limit(1);
+		if (row?.state !== "done" || !row.at) return undefined;
+		return { at: asDatetime(row.at), by: asDid(row.by) };
+	}
+
 	async community(
 		row: CommunityRow,
 		authz: ActorAuthz,
 		memberCount?: number,
 	): Promise<CommunityView> {
+		const migration = row.migratedFrom ? await this.migrationInfo(row.did) : undefined;
 		return {
 			did: asDid(row.did),
 			handle: asHandle(await this.handleFor(row)),
@@ -89,12 +102,14 @@ export class CommunityViews {
 			name: row.name,
 			description: row.description ?? undefined,
 			picture: asUriOrUndefined(this.blobUrl(row.did, row.pictureCid, "avatar", authz.actor)),
-			banner: asUriOrUndefined(this.blobUrl(row.did, row.bannerCid, "banner", authz.actor)),
+			banner: asUriOrUndefined(this.blobUrl(row.did, row.bannerCid, "spaceBanner", authz.actor)),
 			requiresApprovalToJoin: row.requiresApproval,
 			linkEmbeds: row.linkEmbeds,
 			overrideUserNameColors: row.overrideUserNameColors,
 			...(row.customEmoji && row.customEmoji !== "all" ? { customEmoji: row.customEmoji } : {}),
 			labelers: row.labelers.map(asDid),
+			...(row.migratedFrom ? { migratedFrom: asAtUri(row.migratedFrom) } : {}),
+			...(migration ? { migration } : {}),
 			memberCount,
 			viewer: {
 				isMember: isMember(authz),

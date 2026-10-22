@@ -124,6 +124,13 @@ export class ChannelViews {
 		return this.actors.spaceBlobUrl(did, cid, space, viewer);
 	}
 
+	private repoBlobUrl(did: string, cid: string): string {
+		const url = new URL("/xrpc/social.colibri.beta.blob.get", this.ctx.config.PUBLIC_URL);
+		url.searchParams.set("did", did);
+		url.searchParams.set("cid", cid);
+		return url.toString();
+	}
+
 	private signFor(url: string, viewer: string): string {
 		return this.actors.signForViewer(url, viewer);
 	}
@@ -169,6 +176,7 @@ export class ChannelViews {
 		author: string,
 		raw: RawAttachment[] | null,
 		viewer: string | null,
+		fromRepo = false,
 	): AttachmentView[] {
 		const out: AttachmentView[] = [];
 		for (const item of raw ?? []) {
@@ -176,7 +184,9 @@ export class ChannelViews {
 			const mimeType = item.blob?.mimeType;
 			if (!cid || !mimeType) continue;
 			out.push({
-				url: asUri(this.blobUrl(author, cid, space, viewer)),
+				url: asUri(
+					fromRepo ? this.repoBlobUrl(author, cid) : this.blobUrl(author, cid, space, viewer),
+				),
 				name: item.name,
 				mimeType,
 				size: item.blob?.size,
@@ -196,6 +206,7 @@ export class ChannelViews {
 			row.author,
 			row.attachments as RawAttachment[] | null,
 			viewer,
+			row.fromLegacyRepo,
 		);
 	}
 

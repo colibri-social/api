@@ -79,6 +79,14 @@ describe("renderVariant", () => {
 		expect(metadata.height).toBe(500);
 	});
 
+	it("crops a Space banner to 1500x750", async () => {
+		const bytes = await stillImage(1920, 1080);
+		const rendered = await renderVariant(bytes, "image/png", "spaceBanner");
+		const metadata = await sharp(rendered.bytes).metadata();
+		expect(metadata.width).toBe(1500);
+		expect(metadata.height).toBe(750);
+	});
+
 	it("re-encodes a still raster source to WebP", async () => {
 		const bytes = await stillImage(200, 200);
 		const rendered = await renderVariant(bytes, "image/png", "avatar");

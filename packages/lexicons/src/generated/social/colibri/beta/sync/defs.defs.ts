@@ -786,13 +786,13 @@ const voiceEvent = /*#__PURE__*/ l.typedObject<VoiceEvent>($nsid, "voiceEvent", 
 
 export { voiceEvent };
 
-/** Progress while a community is being created, which takes several PDS round-trips. */
+/** Progress while a community is being created or migrated, which takes several PDS round-trips. */
 type CommunityProgressEvent = { $type?: "social.colibri.beta.sync.defs#communityProgressEvent";
 
   /**
    * What the AppView is doing now.
    */
-  "step":"creatingAccount" | "creatingSpaces" | "writingProfile" | "creatingOwnerRole" | "creatingStarterChannels" | "done" | "failed" | l.UnknownString;
+  "step":"creatingAccount" | "creatingSpaces" | "writingProfile" | "creatingOwnerRole" | "creatingStarterChannels" | "readingLegacyRepo" | "writingSettings" | "migratingRoles" | "migratingMembers" | "migratingBans" | "migratingChannels" | "migratingCategories" | "mirroringMessages" | "retiringLegacyCommunity" | "done" | "failed" | l.UnknownString;
 
   /**
    * Steps finished.
@@ -816,8 +816,8 @@ type CommunityProgressEvent = { $type?: "social.colibri.beta.sync.defs#community
 
 export type { CommunityProgressEvent };
 
-/** Progress while a community is being created, which takes several PDS round-trips. */
-const communityProgressEvent = /*#__PURE__*/ l.typedObject<CommunityProgressEvent>($nsid, "communityProgressEvent", /*#__PURE__*/ l.object({"step":/*#__PURE__*/ l.string<{"knownValues":["creatingAccount","creatingSpaces","writingProfile","creatingOwnerRole","creatingStarterChannels","done","failed"]}>(),"completed":/*#__PURE__*/ l.integer(),"total":/*#__PURE__*/ l.integer(),"community":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"did"})),"message":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())}));
+/** Progress while a community is being created or migrated, which takes several PDS round-trips. */
+const communityProgressEvent = /*#__PURE__*/ l.typedObject<CommunityProgressEvent>($nsid, "communityProgressEvent", /*#__PURE__*/ l.object({"step":/*#__PURE__*/ l.string<{"knownValues":["creatingAccount","creatingSpaces","writingProfile","creatingOwnerRole","creatingStarterChannels","readingLegacyRepo","writingSettings","migratingRoles","migratingMembers","migratingBans","migratingChannels","migratingCategories","mirroringMessages","retiringLegacyCommunity","done","failed"]}>(),"completed":/*#__PURE__*/ l.integer(),"total":/*#__PURE__*/ l.integer(),"community":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"did"})),"message":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())}));
 
 export { communityProgressEvent };
 

@@ -15,12 +15,12 @@ export const $params = /*#__PURE__*/ l.params({"includeUnadministered":/*#__PURE
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $output = /*#__PURE__*/ l.jsonPayload({"communities":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<CommunityDefs.LegacyCommunityView>((() => CommunityDefs.legacyCommunityView) as any), ),"unreadable":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ))});
+export const $output = /*#__PURE__*/ l.jsonPayload({"communities":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<CommunityDefs.LegacyCommunityView>((() => CommunityDefs.legacyCommunityView) as any), )});
 
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Lists the repo-backed communities the requesting user belongs to that have not been migrated onto spaces yet, so a client can offer them as a choice rather than asking for a handle. The AppView reads this live from the user's own public repo and each candidate's public repo, because nothing about an unmigrated community is indexed. Only a community that holds its own DID is listed: an older community that lived in its owner's repo cannot be migrated. */
+/** Lists the repo-backed communities the requesting user belongs to that have not finished moving onto spaces. The AppView reads this live from the user's own public repo and each candidate's public repo. A community that cannot move, such as one inside its owner's repo or one whose repo did not respond, is listed in state blocked with a reason. */
 const main = /*#__PURE__*/ l.query($nsid, $params, $output, ["AuthRequired","UpstreamFailure"]);
 
 export { main };

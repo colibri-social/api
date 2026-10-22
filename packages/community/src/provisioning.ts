@@ -146,9 +146,31 @@ export class CommunityProvisioner {
 		const report = (step: ProvisionStep, completed: number, community?: string) =>
 			onProgress?.({ step, completed, total: TOTAL_STEPS, ...(community ? { community } : {}) });
 
-		const password = generatePassword();
-
 		report("creatingAccount", 0);
+		const { did, handle, password } = await this.createStoredAccount(admin);
+
+		const session = await this.deps.pds.login({ identifier: handle, password });
+		const seeded = await this.seed({ pds: this.deps.pds, session }, did, request, report, 1);
+
+		return { did, handle, ...seeded };
+	}
+
+	async createBareAccount(): Promise<{ did: string; handle: string }> {
+		const admin = this.deps.admin;
+		if (!admin) {
+			throw new ProvisioningRefused(
+				"adminUnavailable",
+				"no PDS admin password is configured, so accounts cannot be provisioned here",
+			);
+		}
+		const { did, handle } = await this.createStoredAccount(admin);
+		return { did, handle };
+	}
+
+	private async createStoredAccount(
+		admin: PdsAdmin,
+	): Promise<{ did: string; handle: string; password: string }> {
+		const password = generatePassword();
 		const inviteCode = this.deps.requiresInviteCode
 			? (await admin.createInviteCode(1)).code
 			: undefined;
@@ -163,16 +185,7 @@ export class CommunityProvisioner {
 			source: "provisioned",
 		});
 
-		const session = await this.deps.pds.login({ identifier: handle, password });
-		const seeded = await this.seed(
-			{ pds: this.deps.pds, session },
-			account.did,
-			request,
-			report,
-			1,
-		);
-
-		return { did: account.did, handle, ...seeded };
+		return { did: account.did, handle, password };
 	}
 
 	async adopt(

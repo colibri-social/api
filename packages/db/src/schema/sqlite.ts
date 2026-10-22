@@ -704,6 +704,29 @@ export const legacyRecords = sqliteTable(
 	],
 );
 
+export const communityMigrations = sqliteTable(
+	"community_migrations",
+	{
+		community: text("community").primaryKey(),
+		target: text("target"),
+		requestedBy: text("requested_by").notNull(),
+		state: text("state").notNull(),
+		step: text("step").notNull(),
+		completedSteps: json<string[]>("completed_steps")
+			.notNull()
+			.$defaultFn(() => []),
+		report: json<Record<string, unknown>>("report"),
+		error: text("error"),
+		startedAt: timestamp("started_at").notNull(),
+		updatedAt: timestamp("updated_at").notNull(),
+		finishedAt: timestamp("finished_at"),
+	},
+	(t) => [
+		index("community_migrations_state_idx").on(t.state),
+		index("community_migrations_target_idx").on(t.target),
+	],
+);
+
 export const bridgeRegistrations = sqliteTable(
 	"bridge_registrations",
 	{
@@ -813,6 +836,7 @@ export const schema = {
 	profileCache,
 	serviceState,
 	legacyRecords,
+	communityMigrations,
 	bridgeRegistrations,
 	bridgePairings,
 	bridgeRemoteRooms,

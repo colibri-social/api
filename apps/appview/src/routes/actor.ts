@@ -1,6 +1,6 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
 import { asDatetime, asDid, decodeMuteSubject, social } from "@colibri-social/lexicons";
-import { and, asc, count, eq, ne } from "drizzle-orm";
+import { and, asc, count, eq, inArray, ne, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
@@ -131,14 +131,39 @@ export const handleListCommunities = async (
 		.sort((a, b) => a.joinedAt.localeCompare(b.joinedAt))
 		.map((row) => row.community);
 
+	const candidates = [...ordered, ...remaining];
+	const migrating = new Set(
+		candidates.length === 0
+			? []
+			: (
+					await ctx.database.db
+						.select({
+							community: ctx.database.tables.communityMigrations.community,
+							target: ctx.database.tables.communityMigrations.target,
+						})
+						.from(ctx.database.tables.communityMigrations)
+						.where(
+							and(
+								or(
+									inArray(ctx.database.tables.communityMigrations.community, candidates),
+									inArray(ctx.database.tables.communityMigrations.target, candidates),
+								),
+								ne(ctx.database.tables.communityMigrations.state, "done"),
+							),
+						)
+				).flatMap((row) => (row.target ? [row.community, row.target] : [row.community])),
+	);
+
 	const views = await Promise.all(
-		[...ordered, ...remaining].map(async (did) => {
-			const row = await ctx.loader.community(did);
-			if (!row) return null;
-			const authz = await ctx.loader.authz(did, callerDid);
-			const total = await countMembers(ctx, did);
-			return await communities.community(row, authz, total);
-		}),
+		candidates
+			.filter((did) => !migrating.has(did))
+			.map(async (did) => {
+				const row = await ctx.loader.community(did);
+				if (!row) return null;
+				const authz = await ctx.loader.authz(did, callerDid);
+				const total = await countMembers(ctx, did);
+				return await communities.community(row, authz, total);
+			}),
 	);
 
 	return { communities: views.filter((view): view is CommunityView => view !== null) };

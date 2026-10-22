@@ -16,7 +16,7 @@ import type { AppContext } from "../context.js";
 import { verifyMediaGrant } from "../media-token.js";
 import { asyncHandler } from "./async-handler.js";
 
-const VARIANTS: readonly Variant[] = ["thumbnail", "avatar", "banner", "full"];
+const VARIANTS: readonly Variant[] = ["thumbnail", "avatar", "banner", "spaceBanner", "full"];
 
 const asString = (value: unknown): string | undefined =>
 	typeof value === "string" && value.length > 0 ? value : undefined;
