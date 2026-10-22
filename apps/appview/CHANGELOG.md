@@ -1,5 +1,30 @@
 # @colibri-social/appview
 
+## 2.28.0
+
+### Minor Changes
+
+- 817469f: Run legacy community migrations as resumable background jobs that copy bans, serve legacy message history read-only in the migrated channels, mark that history as read for every member and retire the legacy community record when done. A community whose account this AppView can't sign in to moves into a newly provisioned account built from its public records, and its legacy record stays as it is
+- dc2a71b: Add `lastMessage` to `social.colibri.beta.thread.defs#threadView`, the latest message in the thread the requesting user may see, in the `channelSummary` shape channel previews use
+
+### Patch Changes
+
+- 38045e1: Serve images inside a forwarded message after it moves to another channel or thread
+- dc2a71b: Serve attachment images whose stored blob reference is nested, and store blob references in one plain form
+- 4753bda: Mark every channel a new member can read as read when they join a community or their application is approved
+- 817469f: Serve Space banners as a 2:1 `spaceBanner` image variant so they fill the Space header without being cropped twice
+- Updated dependencies [817469f]
+- Updated dependencies [817469f]
+- Updated dependencies [dc2a71b]
+- Updated dependencies [817469f]
+- Updated dependencies [dc2a71b]
+  - @colibri-social/appview-db@0.18.0
+  - @colibri-social/community@2.12.0
+  - @colibri-social/lexicons@2.29.0
+  - @colibri-social/projections@1.13.3
+  - @colibri-social/blobs@0.2.0
+  - @colibri-social/notifications@1.8.7
+
 ## 2.27.0
 
 ### Minor Changes

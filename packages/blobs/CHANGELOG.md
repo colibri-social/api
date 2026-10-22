@@ -1,5 +1,11 @@
 # @colibri-social/blobs
 
+## 0.2.0
+
+### Minor Changes
+
+- 817469f: Serve Space banners as a 2:1 `spaceBanner` image variant so they fill the Space header without being cropped twice
+
 ## 0.1.0
 
 ### Minor Changes

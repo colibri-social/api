@@ -1,5 +1,18 @@
 # @colibri-social/projections
 
+## 1.13.3
+
+### Patch Changes
+
+- dc2a71b: Serve attachment images whose stored blob reference is nested, and store blob references in one plain form
+- Updated dependencies [817469f]
+- Updated dependencies [817469f]
+- Updated dependencies [dc2a71b]
+- Updated dependencies [817469f]
+- Updated dependencies [dc2a71b]
+  - @colibri-social/appview-db@0.18.0
+  - @colibri-social/lexicons@2.29.0
+
 ## 1.13.2
 
 ### Patch Changes
