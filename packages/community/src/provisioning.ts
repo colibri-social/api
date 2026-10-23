@@ -63,6 +63,8 @@ export type AdoptRequest = {
 	requiresApprovalToJoin?: boolean;
 };
 
+export type AuthorizedAdoptRequest = Omit<AdoptRequest, "pdsEndpoint" | "identifier" | "password">;
+
 export type ProvisionedCommunity = {
 	did: string;
 	handle: string;
@@ -192,25 +194,64 @@ export class CommunityProvisioner {
 		request: AdoptRequest,
 		onProgress?: (progress: ProvisionProgress) => void,
 	): Promise<ProvisionedCommunity> {
-		const report = (step: ProvisionStep, completed: number, community?: string) =>
-			onProgress?.({ step, completed, total: TOTAL_STEPS, ...(community ? { community } : {}) });
-
-		report("verifyingCredentials", 0);
 		const pds = this.deps.credentials.clientFor(request.pdsEndpoint);
 		const session = await pds.login({
 			identifier: request.identifier,
 			password: request.password,
 		});
+		return this.adoptWith(
+			{ pds, session },
+			request,
+			() =>
+				this.deps.credentials.store({
+					community: request.did,
+					pdsEndpoint: request.pdsEndpoint,
+					identifier: request.identifier,
+					password: request.password,
+					source: "registered",
+				}),
+			onProgress,
+		);
+	}
 
-		if (session.did !== request.did) {
+	async adoptAuthorized(
+		host: CommunityHost,
+		request: AuthorizedAdoptRequest,
+		onProgress?: (progress: ProvisionProgress) => void,
+	): Promise<ProvisionedCommunity> {
+		return this.adoptWith(
+			host,
+			request,
+			() =>
+				this.deps.credentials.storeOAuth({
+					community: request.did,
+					pdsEndpoint: host.pds.service,
+					identifier: host.session.handle,
+					connectedBy: request.creator,
+				}),
+			onProgress,
+		);
+	}
+
+	private async adoptWith(
+		host: CommunityHost,
+		request: Omit<AdoptRequest, "pdsEndpoint" | "identifier" | "password">,
+		remember: () => Promise<void>,
+		onProgress?: (progress: ProvisionProgress) => void,
+	): Promise<ProvisionedCommunity> {
+		const report = (step: ProvisionStep, completed: number, community?: string) =>
+			onProgress?.({ step, completed, total: TOTAL_STEPS, ...(community ? { community } : {}) });
+
+		report("verifyingCredentials", 0);
+		if (host.session.did !== request.did) {
 			throw new ProvisioningRefused(
 				"identityMismatch",
-				`those credentials authenticate ${session.did}, not ${request.did}`,
+				`those credentials authenticate ${host.session.did}, not ${request.did}`,
 			);
 		}
 
 		const spaces = communitySpaces(request.did);
-		const { spaces: existing } = await pds.listSpaces(session);
+		const { spaces: existing } = await host.pds.listSpaces(host.session);
 		const taken = new Set(existing.map((space) => space.uri));
 		if (Object.values(spaces).some((space) => taken.has(space))) {
 			throw new ProvisioningRefused(
@@ -219,16 +260,10 @@ export class CommunityProvisioner {
 			);
 		}
 
-		await this.deps.credentials.store({
-			community: request.did,
-			pdsEndpoint: request.pdsEndpoint,
-			identifier: request.identifier,
-			password: request.password,
-			source: "registered",
-		});
+		await remember();
 
-		const seeded = await this.seed({ pds, session }, request.did, request, report, 1);
-		return { did: request.did, handle: session.handle, ...seeded };
+		const seeded = await this.seed(host, request.did, request, report, 1);
+		return { did: request.did, handle: host.session.handle, ...seeded };
 	}
 
 	private async seed(

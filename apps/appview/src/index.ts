@@ -2,6 +2,7 @@ import { ActivitySweeper } from "./activity.js";
 import { eventAnnouncer } from "./announce.js";
 import { describeConfig, loadConfig } from "./config.js";
 import { createContext } from "./context.js";
+import { HandOverSweeper, hostIdentityChanged } from "./hand-overs.js";
 import { healOwnerRolePermissions } from "./heal.js";
 import { Jetstream } from "./jetstream.js";
 import { createLogger } from "./logger.js";
@@ -33,8 +34,15 @@ const main = async (): Promise<void> => {
 	ctx.voiceRoster = voice;
 	const disconnectPipeline = connectPipeline({ ctx, events });
 
-	const jetstream = new Jetstream(ctx);
+	const jetstream = new Jetstream(ctx, {
+		onIdentity: (did) => {
+			void hostIdentityChanged(ctx, did).catch((error: unknown) =>
+				ctx.log.warn({ did, err: error }, "community.hostCheckFailed"),
+			);
+		},
+	});
 	const activities = new ActivitySweeper(ctx);
+	const handOvers = new HandOverSweeper(ctx);
 
 	const http = server.listen(config.PORT, () => {
 		ctx.log.info({ port: config.PORT, host: config.HOST }, "listening");
@@ -45,6 +53,7 @@ const main = async (): Promise<void> => {
 	await ctx.sync.start();
 	await jetstream.start();
 	activities.start();
+	handOvers.start();
 
 	void healOwnerRolePermissions(ctx).catch((error: unknown) =>
 		ctx.log.warn({ err: error }, "heal.ownerPermissionsSweepFailed"),
@@ -87,6 +96,7 @@ const main = async (): Promise<void> => {
 		await step("error-reporting", () => stopErrorReporting());
 		await step("jetstream", () => jetstream.stop());
 		await step("activities", () => activities.stop());
+		await step("hand-overs", () => handOvers.stop());
 		await step("events", () => events.close());
 		await step("voice", () => voice.close());
 		await step("http", () => http.close());

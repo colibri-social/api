@@ -24,7 +24,14 @@ export type ActivityKind = "listening" | "playing" | "streaming";
 export type PushProvider = "webpush" | "fcm" | "apns";
 export type PushPlatform = "web" | "ios" | "android" | "macos";
 export type PushEnvironment = "sandbox" | "production";
-export type CredentialSource = "provisioned" | "registered";
+export type CredentialSource = "provisioned" | "registered" | "oauth";
+export type HostAuthorizationIntent = "adopt" | "reconnect";
+export type HostAuthorizationStatus = "pending" | "done" | "failed";
+export type HostAuthorizationInput = {
+	name?: string;
+	description?: string;
+	requiresApprovalToJoin?: boolean;
+};
 export type BridgeBackfillRequest = { since?: string; requestedAt: string };
 export type BridgeLink = {
 	channel: string;
@@ -480,11 +487,47 @@ export const communityCredentials = sqliteTable("community_credentials", {
 	community: text("community").primaryKey(),
 	pdsEndpoint: text("pds_endpoint").notNull(),
 	identifier: text("identifier").notNull(),
-	passwordCiphertextBase64: text("password_ciphertext_base64").notNull(),
-	passwordNonceBase64: text("password_nonce_base64").notNull(),
+	passwordCiphertextBase64: text("password_ciphertext_base64"),
+	passwordNonceBase64: text("password_nonce_base64"),
 	source: text("source").notNull().$type<CredentialSource>(),
+	connectedBy: text("connected_by"),
+	needsReauthAt: timestamp("needs_reauth_at"),
+	handedOverBy: text("handed_over_by"),
+	handOverExpiresAt: timestamp("hand_over_expires_at"),
 	createdAt: timestamp("created_at").notNull(),
 });
+
+export const hostOauthSessions = sqliteTable("host_oauth_sessions", {
+	sub: text("sub").primaryKey(),
+	ciphertextBase64: text("ciphertext_base64").notNull(),
+	nonceBase64: text("nonce_base64").notNull(),
+	updatedAt: timestamp("updated_at").notNull(),
+});
+
+export const hostOauthStates = sqliteTable("host_oauth_states", {
+	key: text("key").primaryKey(),
+	ciphertextBase64: text("ciphertext_base64").notNull(),
+	nonceBase64: text("nonce_base64").notNull(),
+	createdAt: timestamp("created_at").notNull(),
+});
+
+export const hostAuthorizations = sqliteTable(
+	"host_authorizations",
+	{
+		id: text("id").primaryKey(),
+		actor: text("actor").notNull(),
+		intent: text("intent").notNull().$type<HostAuthorizationIntent>(),
+		identifier: text("identifier").notNull(),
+		community: text("community"),
+		input: json<HostAuthorizationInput>("input"),
+		status: text("status").notNull().$type<HostAuthorizationStatus>(),
+		failure: text("failure"),
+		result: text("result"),
+		createdAt: timestamp("created_at").notNull(),
+		updatedAt: timestamp("updated_at").notNull(),
+	},
+	(t) => [index("host_authorizations_actor_idx").on(t.actor)],
+);
 
 export const notifications = sqliteTable(
 	"notifications",
@@ -856,6 +899,9 @@ export const schema = {
 	serviceState,
 	legacyRecords,
 	communityMigrations,
+	hostOauthSessions,
+	hostOauthStates,
+	hostAuthorizations,
 	bridgeRegistrations,
 	bridgePairings,
 	bridgeRemoteRooms,

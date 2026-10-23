@@ -48,6 +48,12 @@ export const configSchema = z.object({
 	DATABASE_MAX_CONNECTIONS: z.coerce.number().int().positive().default(20),
 
 	PDS_URL: z.url(),
+	HOST_OAUTH_PRIVATE_KEY: optionalString,
+	HOST_OAUTH_KEY_ID: z.string().trim().min(1).default("host-oauth-1"),
+	HOST_OAUTH_RETURN_URL: z
+		.url()
+		.optional()
+		.or(z.literal("").transform(() => undefined)),
 	PDS_ADMIN_PASSWORD: optionalString,
 	PDS_REQUIRES_INVITE: boolish(false),
 	COMMUNITY_HANDLE_DOMAIN: z.string(),
@@ -212,6 +218,7 @@ export const describeConfig = (config: Config): Record<string, string> => ({
 	push: config.pushProviders.length ? config.pushProviders.join(" and ") : "disabled",
 	pushActions: config.PUSH_ACTION_SECRET ? "enabled" : "disabled, no PUSH_ACTION_SECRET",
 	gifs: config.gifsEnabled ? "enabled" : "disabled",
+	hostSignIn: config.HOST_OAUTH_PRIVATE_KEY ? "enabled" : "disabled, no HOST_OAUTH_PRIVATE_KEY",
 	voice: config.VOICE_ENABLED ? "enabled" : "disabled",
 	cors: config.corsOrigins.length ? config.corsOrigins.join(" ") : "no browser origin allowed",
 	jetstream: config.JETSTREAM_ENABLED

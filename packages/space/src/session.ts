@@ -13,7 +13,13 @@ export type SessionCredentials = {
 	password: string;
 };
 
-export class PdsSession {
+export type HostSession = {
+	readonly did: string;
+	readonly handle: string;
+	run<T>(call: (auth: Auth) => Promise<T>): Promise<T>;
+};
+
+export class PdsSession implements HostSession {
 	private tokens: SessionTokens;
 	private refreshing: Promise<void> | null = null;
 

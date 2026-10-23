@@ -45,6 +45,7 @@ import { GAME_CACHE_MAX_ENTRIES, GAME_CACHE_TTL_MS, type GameEntry } from "./act
 import { type Announcer, silentAnnouncer } from "./announce.js";
 import { type AuthzChanges, createAuthzChanges } from "./authz-changes.js";
 import type { Config } from "./config.js";
+import { HostOAuth } from "./host-oauth.js";
 import {
 	createLinkEmbedResolver,
 	PREVIEW_CACHE_MAX_ENTRIES,
@@ -117,16 +118,47 @@ export const createContext = async (config: Config) => {
 		? new PdsAdmin(pds.xrpc, { password: config.PDS_ADMIN_PASSWORD })
 		: null;
 
+	const hosts = new DidDocumentSpaceHostResolver({ plcUrl: config.PLC_URL });
+
+	let hostOAuth: HostOAuth | null = null;
+
 	const credentials = new CommunityCredentials({
 		db: database.db,
 		tables: database.tables,
 		secrets,
 		pds,
 		admin,
+		oauth: {
+			open: async (community) => {
+				if (!hostOAuth) throw new Error("host sign-in is not configured");
+				return hostOAuth.open(community);
+			},
+			revoke: async (community) => {
+				await hostOAuth?.revoke(community);
+			},
+		},
+		currentHost: (community) => hosts.refresh(community),
 		log: (event, detail) => log.warn(detail, event),
 	});
 
-	const hosts = new DidDocumentSpaceHostResolver({ plcUrl: config.PLC_URL });
+	hostOAuth = config.HOST_OAUTH_PRIVATE_KEY
+		? await HostOAuth.create({
+				database,
+				secrets,
+				publicUrl: config.PUBLIC_URL,
+				appviewDid: config.APPVIEW_DID,
+				privateKey: config.HOST_OAUTH_PRIVATE_KEY,
+				keyId: config.HOST_OAUTH_KEY_ID,
+				plcUrl: config.PLC_URL,
+				allowHttp: config.NODE_ENV !== "production",
+				handleOf: async (did) => (await identity.resolveDid(did)).handle ?? did,
+				onLost: (community) => {
+					void credentials
+						.markNeedsReauth(community)
+						.catch((error: unknown) => log.warn({ community, err: error }, "hostOAuth.markFailed"));
+				},
+			})
+		: null;
 
 	const spaceCredentials = new SpaceCredentials({
 		hosts,
@@ -185,7 +217,7 @@ export const createContext = async (config: Config) => {
 		syncerService: serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.syncer),
 		canRenew: async (space) => {
 			const authority = authorityOf(space);
-			return authority !== null && (await credentials.load(authority)) !== null;
+			return authority !== null && (await credentials.has(authority));
 		},
 		concurrency: config.SYNC_WORKERS,
 		maxRepoBytes: config.SYNC_MAX_CAR_BYTES,
@@ -257,8 +289,7 @@ export const createContext = async (config: Config) => {
 	async function delegationFor(space: string): Promise<string | null> {
 		const authority = authorityOf(space);
 		if (!authority) return null;
-		const stored = await credentials.load(authority);
-		if (!stored) return null;
+		if (!(await credentials.has(authority))) return null;
 		const host = await credentials.connect(authority);
 		return host.pds.getDelegationToken(host.session, space);
 	}
@@ -276,6 +307,7 @@ export const createContext = async (config: Config) => {
 		pds,
 		admin,
 		credentials,
+		hostOAuth,
 		hosts,
 		spaceCredentials,
 		spaceClient,

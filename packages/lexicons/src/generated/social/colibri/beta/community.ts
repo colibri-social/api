@@ -5,6 +5,7 @@
 export * as adopt from "./community/adopt.js";
 export * as applyLabel from "./community/applyLabel.js";
 export * as approveApplication from "./community/approveApplication.js";
+export * as authorizeHost from "./community/authorizeHost.js";
 export * as ban from "./community/ban.js";
 export * as configuration from "./community/configuration.js";
 export * as create from "./community/create.js";
@@ -15,7 +16,10 @@ export * as deleteImage from "./community/deleteImage.js";
 export * as deleteInvitation from "./community/deleteInvitation.js";
 export * as dismissApplication from "./community/dismissApplication.js";
 export * as getCommunity from "./community/getCommunity.js";
+export * as getHostAuthorization from "./community/getHostAuthorization.js";
+export * as getHosting from "./community/getHosting.js";
 export * as getInvitation from "./community/getInvitation.js";
+export * as handOverHost from "./community/handOverHost.js";
 export * as join from "./community/join.js";
 export * as kick from "./community/kick.js";
 export * as leave from "./community/leave.js";

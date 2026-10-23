@@ -1,5 +1,5 @@
 import { type Auth, XrpcClient } from "./http.js";
-import { PdsSession, type SessionCredentials } from "./session.js";
+import { type HostSession, PdsSession, type SessionCredentials } from "./session.js";
 import type { SpaceRefString } from "./space-ref.js";
 
 export type SpacePolicy =
@@ -91,7 +91,7 @@ export class PdsClient {
 		return PdsSession.login(this.xrpc, credentials);
 	}
 
-	getDelegationToken(session: PdsSession, space: SpaceRefString): Promise<string> {
+	getDelegationToken(session: HostSession, space: SpaceRefString): Promise<string> {
 		return session
 			.run((auth) =>
 				this.xrpc.query<{ token: string }>("com.atproto.space.getDelegationToken", { space }, auth),
@@ -99,7 +99,7 @@ export class PdsClient {
 			.then((response) => response.token);
 	}
 
-	createRecord(session: PdsSession, write: RecordWrite): Promise<WriteResult> {
+	createRecord(session: HostSession, write: RecordWrite): Promise<WriteResult> {
 		return session.run((auth) =>
 			this.xrpc.procedure<WriteResult>(
 				"com.atproto.space.createRecord",
@@ -109,7 +109,7 @@ export class PdsClient {
 		);
 	}
 
-	putRecord(session: PdsSession, write: RecordWrite & { rkey: string }): Promise<WriteResult> {
+	putRecord(session: HostSession, write: RecordWrite & { rkey: string }): Promise<WriteResult> {
 		return session.run((auth) =>
 			this.xrpc.procedure<WriteResult>(
 				"com.atproto.space.putRecord",
@@ -120,7 +120,7 @@ export class PdsClient {
 	}
 
 	deleteRecord(
-		session: PdsSession,
+		session: HostSession,
 		params: { space: SpaceRefString; collection: string; rkey: string },
 	): Promise<void> {
 		return session.run(async (auth) => {
@@ -133,7 +133,7 @@ export class PdsClient {
 	}
 
 	putRepoRecord(
-		session: PdsSession,
+		session: HostSession,
 		write: { collection: string; rkey: string; record: Record<string, unknown> },
 	): Promise<WriteResult> {
 		return session.run((auth) =>
@@ -146,7 +146,7 @@ export class PdsClient {
 	}
 
 	deleteRepoRecord(
-		session: PdsSession,
+		session: HostSession,
 		params: { collection: string; rkey: string },
 	): Promise<void> {
 		return session.run(async (auth) => {
@@ -159,7 +159,7 @@ export class PdsClient {
 	}
 
 	applyWrites(
-		session: PdsSession,
+		session: HostSession,
 		params: { space: SpaceRefString; writes: unknown[] },
 	): Promise<void> {
 		return session.run(async (auth) => {
@@ -171,14 +171,14 @@ export class PdsClient {
 		});
 	}
 
-	listSpaces(session: PdsSession): Promise<{ spaces: Array<{ uri: string }> }> {
+	listSpaces(session: HostSession): Promise<{ spaces: Array<{ uri: string }> }> {
 		return session.run((auth) =>
 			this.xrpc.query<{ spaces: Array<{ uri: string }> }>("com.atproto.space.listSpaces", {}, auth),
 		);
 	}
 
 	createSpace(
-		session: PdsSession,
+		session: HostSession,
 		params: {
 			spaceType: string;
 			skey?: string;
@@ -197,7 +197,7 @@ export class PdsClient {
 	}
 
 	updateSpace(
-		session: PdsSession,
+		session: HostSession,
 		params: {
 			space: SpaceRefString;
 			readPolicy?: SpacePolicy;
@@ -210,20 +210,20 @@ export class PdsClient {
 		});
 	}
 
-	deleteSpace(session: PdsSession, space: SpaceRefString): Promise<void> {
+	deleteSpace(session: HostSession, space: SpaceRefString): Promise<void> {
 		return session.run(async (auth) => {
 			await this.xrpc.procedure("com.atproto.simplespace.deleteSpace", { space }, auth);
 		});
 	}
 
-	getSpace(session: PdsSession, space: SpaceRefString): Promise<SpaceConfiguration> {
+	getSpace(session: HostSession, space: SpaceRefString): Promise<SpaceConfiguration> {
 		return session.run((auth) =>
 			this.xrpc.query<SpaceConfiguration>("com.atproto.simplespace.getSpace", { space }, auth),
 		);
 	}
 
 	putMember(
-		session: PdsSession,
+		session: HostSession,
 		space: SpaceRefString,
 		did: string,
 		access: SpaceMemberAccess,
@@ -238,7 +238,7 @@ export class PdsClient {
 	}
 
 	listMembers(
-		session: PdsSession,
+		session: HostSession,
 		space: SpaceRefString,
 		options: { limit?: number; cursor?: string } = {},
 	): Promise<{ members: SpaceMember[]; cursor?: string }> {
@@ -251,7 +251,7 @@ export class PdsClient {
 		);
 	}
 
-	removeMember(session: PdsSession, space: SpaceRefString, did: string): Promise<void> {
+	removeMember(session: HostSession, space: SpaceRefString, did: string): Promise<void> {
 		return session.run(async (auth) => {
 			await this.xrpc.procedure("com.atproto.simplespace.removeMember", { space, did }, auth);
 		});
@@ -273,7 +273,11 @@ export class PdsClient {
 		return this.xrpc.query<{ did: string }>("com.atproto.identity.resolveHandle", { handle });
 	}
 
-	uploadBlob(session: PdsSession, bytes: Uint8Array, mimeType: string): Promise<{ blob: unknown }> {
+	uploadBlob(
+		session: HostSession,
+		bytes: Uint8Array,
+		mimeType: string,
+	): Promise<{ blob: unknown }> {
 		return session.run(async (auth) => {
 			const headers = new Headers({ "content-type": mimeType });
 			if (auth.kind === "bearer") headers.set("authorization", `Bearer ${auth.token}`);
@@ -320,6 +324,12 @@ export class PdsAdmin {
 	updateAccountPassword(did: string, password: string): Promise<void> {
 		return this.xrpc
 			.procedure("com.atproto.admin.updateAccountPassword", { did, password }, this.auth)
+			.then(() => undefined);
+	}
+
+	updateAccountEmail(did: string, email: string): Promise<void> {
+		return this.xrpc
+			.procedure("com.atproto.admin.updateAccountEmail", { account: did, email }, this.auth)
 			.then(() => undefined);
 	}
 

@@ -759,8 +759,7 @@ export const handleRegisterCredentials = async (
 	callerDid: string,
 	input: { community: string; identifier: string; password: string },
 ): Promise<void> => {
-	const existing = await ctx.credentials.load(input.community);
-	if (existing) {
+	if (await ctx.credentials.has(input.community)) {
 		const authz = await ctx.loader.authz(input.community, callerDid);
 		if (!isAdmin(authz)) {
 			throw new InvalidRequestError(

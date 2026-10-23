@@ -32,8 +32,12 @@ export class DidDocumentSpaceHostResolver implements SpaceHostResolver {
 			});
 	}
 
-	async hostFor(authority: string): Promise<string> {
-		const document = await this.resolver.resolve(authority).catch((cause) => {
+	async refresh(authority: string): Promise<string> {
+		return this.hostFor(authority, true);
+	}
+
+	async hostFor(authority: string, forceRefresh = false): Promise<string> {
+		const document = await this.resolver.resolve(authority, forceRefresh).catch((cause) => {
 			throw new SpaceCredentialError(authority, "hostUnresolvable", `cannot resolve ${authority}`, {
 				cause,
 			});

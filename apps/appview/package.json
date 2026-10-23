@@ -39,6 +39,7 @@
 	"dependencies": {
 		"@atproto/crypto": "catalog:",
 		"@atproto/lex-schema": "catalog:",
+		"@atproto/oauth-client-node": "catalog:",
 		"@atproto/syntax": "catalog:",
 		"@atproto/xrpc-server": "catalog:",
 		"@colibri-social/appview-db": "workspace:*",

@@ -131,15 +131,25 @@ publicly readable, so the record can be read before joining.
 
 `social.colibri.beta.community.create` provisions an account on this AppView's
 PDS and needs `PDS_ADMIN_PASSWORD`.
-`social.colibri.beta.community.adopt` takes a DID that already exists, along with
-its password, and builds the community's spaces on whichever PDS already hosts
-it. The account keeps its DID, handle and PDS, and needs no admin password here.
-Its PDS does have to implement `com.atproto.simplespace`.
+`social.colibri.beta.community.authorizeHost` hosts a community on an account
+that already exists. The owner signs in as that account on its own server, and
+the AppView adopts it as a new community, keeping its DID, handle and PDS. The
+same sign-in reconnects a community after its access lapsed or its account moved
+to another server. The PDS has to implement `com.atproto.simplespace`, and the
+AppView needs `HOST_OAUTH_PRIVATE_KEY`, an ES256 key it signs its client
+assertions with. The client metadata lives at `/oauth/host/client-metadata.json`.
+OAuth sessions and passwords are stored AES-256-GCM encrypted under
+`CREDENTIAL_ENCRYPTION_KEY`.
 
-A password, not an app password: `com.atproto.space.getDelegationToken` requires
-full access. Passwords are stored AES-256-GCM encrypted under
-`CREDENTIAL_ENCRYPTION_KEY`. For a community hosted elsewhere there is no
-recovery path yet, because resetting the password needs that PDS's admin API.
+`social.colibri.beta.community.adopt` does the same with the account's password.
+It has to be the full password, because `com.atproto.space.getDelegationToken`
+refuses app passwords.
+
+`social.colibri.beta.community.handOverHost` lets an administrator move an account
+this AppView hosts to another server, for example with PDS MOOver. It sets their
+email on the account and returns a new password, which works for 60 minutes. If
+the account still lives here after that, the AppView sets a new password nobody
+sees.
 
 ## Releasing
 

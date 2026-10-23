@@ -17,6 +17,7 @@ import { registerCommunityWriteRoutes } from "./routes/community-write.js";
 import { registerEmbedRoutes } from "./routes/embed.js";
 import { mountEmbedMediaRoutes } from "./routes/embed-media.js";
 import { registerEmojiRoutes } from "./routes/emoji.js";
+import { mountHostOAuthRoutes, registerHostingRoutes } from "./routes/hosting.js";
 import { mountIdentityRoutes } from "./routes/identity.js";
 import { registerModerationRoutes } from "./routes/moderation.js";
 import { registerNotificationRoutes } from "./routes/notification.js";
@@ -62,6 +63,7 @@ export const createAppServer = (ctx: AppContext): Server => {
 	registerActorWriteRoutes(deps);
 	registerCommunityRoutes(deps);
 	registerCommunityWriteRoutes(deps);
+	registerHostingRoutes(deps);
 	registerBridgeRoutes(deps);
 	registerModerationRoutes(deps);
 	registerCategoryRoutes(deps);
@@ -102,6 +104,7 @@ export const createAppServer = (ctx: AppContext): Server => {
 	mountBlobRoutes(ctx, app);
 	mountEmbedMediaRoutes(ctx, app);
 	mountIdentityRoutes(ctx, app);
+	mountHostOAuthRoutes(ctx, app);
 
 	app.use(respondWithError(ctx.log));
 

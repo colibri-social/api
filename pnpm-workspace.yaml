@@ -14,6 +14,7 @@ catalog:
   "@atproto/lex-cbor": 0.0.0-spaces-alpha-20261022141228
   "@atproto/lex-data": 0.0.0-spaces-alpha-20261022141228
   "@atproto/lex-schema": 0.0.0-spaces-alpha-20261022141228
+  "@atproto/oauth-client-node": 0.0.0-spaces-alpha-20261022141228
   "@atproto/oauth-scopes": 0.0.0-spaces-alpha-20261022141228
   "@atproto/space": 0.0.0-spaces-alpha-20261022141228
   "@atproto/syntax": 0.0.0-spaces-alpha-20261022141228
@@ -72,11 +73,17 @@ allowBuilds:
 
 # Semver ranks `0.0.0` above `0.0.0-spaces-alpha-*` because of course it does
 overrides:
+  "@atproto-labs/did-resolver": 0.0.0-spaces-alpha-20261022141228
+  "@atproto-labs/fetch-node": 0.0.0-spaces-alpha-20261022141228
+  "@atproto-labs/handle-resolver": 0.0.0-spaces-alpha-20261022141228
+  "@atproto-labs/handle-resolver-node": 0.0.0-spaces-alpha-20261022141228
+  "@atproto-labs/identity-resolver": 0.0.0-spaces-alpha-20261022141228
   "@atproto/api": 0.0.0-spaces-alpha-20261022141228
   "@atproto/car": 0.0.0-spaces-alpha-20261022141228
   "@atproto/common": 0.0.0-spaces-alpha-20261022141228
   "@atproto/common-web": 0.0.0-spaces-alpha-20261022141228
   "@atproto/crypto": 0.0.0-spaces-alpha-20261022141228
+  "@atproto/did": 0.0.0-spaces-alpha-20261022141228
   "@atproto/identity": 0.0.0-spaces-alpha-20261022141228
   "@atproto/lex": 0.0.0-spaces-alpha-20261022141228
   "@atproto/lex-builder": 0.0.0-spaces-alpha-20261022141228
@@ -90,7 +97,10 @@ overrides:
   "@atproto/lex-resolver": 0.0.0-spaces-alpha-20261022141228
   "@atproto/lex-schema": 0.0.0-spaces-alpha-20261022141228
   "@atproto/lexicon": 0.0.0-spaces-alpha-20261022141228
+  "@atproto/oauth-client": 0.0.0-spaces-alpha-20261022141228
+  "@atproto/oauth-client-node": 0.0.0-spaces-alpha-20261022141228
   "@atproto/oauth-scopes": 0.0.0-spaces-alpha-20261022141228
+  "@atproto/oauth-types": 0.0.0-spaces-alpha-20261022141228
   "@atproto/repo": 0.0.0-spaces-alpha-20261022141228
   "@atproto/space": 0.0.0-spaces-alpha-20261022141228
   "@atproto/sync": 0.0.0-spaces-alpha-20261022141228

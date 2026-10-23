@@ -6,6 +6,7 @@ export type Auth =
 	| { kind: "none" }
 	| { kind: "bearer"; token: string }
 	| { kind: "basic"; user: string; password: string }
+	| { kind: "fetch"; fetch: typeof globalThis.fetch }
 	| { kind: "spaceCredential"; credential: string; key: SpaceKey; audience: DidString };
 
 export type QueryParams = Record<
@@ -179,6 +180,7 @@ export class XrpcClient {
 
 		switch (auth.kind) {
 			case "none":
+			case "fetch":
 				break;
 			case "bearer":
 				headers.set("authorization", `Bearer ${auth.token}`);
@@ -216,7 +218,8 @@ export class XrpcClient {
 			const headers = await this.headersFor(auth);
 			setAll(headers, extraHeaders);
 			if (body !== undefined) headers.set("content-type", "application/json");
-			return this.fetchImpl(url, {
+			const fetchImpl = auth.kind === "fetch" ? auth.fetch : this.fetchImpl;
+			return fetchImpl(url, {
 				method,
 				headers,
 				body: body === undefined ? undefined : JSON.stringify(body),
