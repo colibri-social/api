@@ -1,5 +1,19 @@
 # @colibri-social/projections
 
+## 1.13.6
+
+### Patch Changes
+
+- a3a2f09: Load only the reactions and labels a message page shows, and look up the community and the reader's permissions once per page.
+- 7097dbf: Refuse a message whose record key isn't a TID, or whose record key or `createdAt` is more than 15 minutes ahead of the server clock. Refuse a newly created message whose record key is more than 24 hours older than the commit that created it, except for history a bridge imported. A thread's last activity never moves past the server clock. Add `pnpm --filter @colibri-social/appview purge-future-messages`, which lists projected messages dated more than 15 minutes ahead and the thread activity it would rewind, and deletes them with `--apply`.
+- Updated dependencies [3116a04]
+- Updated dependencies [7097dbf]
+- Updated dependencies [7097dbf]
+- Updated dependencies [73d1143]
+  - @colibri-social/appview-db@0.19.0
+  - @colibri-social/lexicons@2.32.0
+  - @colibri-social/space@0.9.0
+
 ## 1.13.5
 
 ### Patch Changes

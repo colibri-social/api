@@ -1,5 +1,13 @@
 # @colibri-social/blobs
 
+## 0.2.2
+
+### Patch Changes
+
+- Updated dependencies [7097dbf]
+- Updated dependencies [73d1143]
+  - @colibri-social/space@0.9.0
+
 ## 0.2.1
 
 ### Patch Changes
