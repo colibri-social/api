@@ -1,5 +1,20 @@
 # @colibri-social/notifications
 
+## 1.8.10
+
+### Patch Changes
+
+- 7097dbf: Let `social.colibri.beta.actor.putMutes` carry an optional `leftThreads` list next to `mutes`, which is now optional too. Each list a request carries replaces the stored copy, and a list it leaves out stays as it is. `getPreferences` returns the list as `leftThreads`. A user who left a thread gets no plain message notifications for it and drops out of its member list unless they follow it. A mention or a reply in the thread brings them back and removes the entry. The new `left_threads` table holds the list.
+- Updated dependencies [3116a04]
+- Updated dependencies [a3a2f09]
+- Updated dependencies [7097dbf]
+- Updated dependencies [7097dbf]
+- Updated dependencies [73d1143]
+  - @colibri-social/appview-db@0.19.0
+  - @colibri-social/projections@1.13.6
+  - @colibri-social/lexicons@2.32.0
+  - @colibri-social/space@0.9.0
+
 ## 1.8.9
 
 ### Patch Changes

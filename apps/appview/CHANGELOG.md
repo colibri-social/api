@@ -1,5 +1,32 @@
 # @colibri-social/appview
 
+## 2.31.0
+
+### Minor Changes
+
+- 7097dbf: Let `social.colibri.beta.actor.putMutes` carry an optional `leftThreads` list next to `mutes`, which is now optional too. Each list a request carries replaces the stored copy, and a list it leaves out stays as it is. `getPreferences` returns the list as `leftThreads`. A user who left a thread gets no plain message notifications for it and drops out of its member list unless they follow it. A mention or a reply in the thread brings them back and removes the entry. The new `left_threads` table holds the list.
+- 73d1143: Let owners host a community on an account of their own through OAuth, and move a community account off this AppView's PDS. `social.colibri.beta.community.authorizeHost` starts a sign-in as the community account, which adopts it as a new community or reconnects an existing one, and `getHostAuthorization` reports the outcome. `getHosting` tells administrators where the account lives and whether the AppView needs a new sign-in. `handOverHost` sets the owner's email on an account this AppView hosts and returns a new password that works for 60 minutes, after which the AppView replaces it unless the account moved. A community whose account moved to another server asks for a sign-in again, and its password is no longer reset on this AppView's PDS. Host sign-in needs `HOST_OAUTH_PRIVATE_KEY`, and `HOST_OAUTH_RETURN_URL` sets where the browser lands afterwards. The permission set for managing communities includes the four new methods.
+
+### Patch Changes
+
+- 3116a04: Read a custom emoji the index hasn't seen yet straight from its owner's PDS and refresh an owner's emoji catalog once it's an hour old. Send the full message, attachments and reply included, with each notification. Answer `listMessages` without waiting for link previews, profiles, or handle checks, and send late link previews as message updates. Keep link previews in the new `link_previews` table so they survive restarts.
+- a3a2f09: Load only the reactions and labels a message page shows, and look up the community and the reader's permissions once per page.
+- 7097dbf: Refuse a message whose record key isn't a TID, or whose record key or `createdAt` is more than 15 minutes ahead of the server clock. Refuse a newly created message whose record key is more than 24 hours older than the commit that created it, except for history a bridge imported. A thread's last activity never moves past the server clock. Add `pnpm --filter @colibri-social/appview purge-future-messages`, which lists projected messages dated more than 15 minutes ahead and the thread activity it would rewind, and deletes them with `--apply`.
+- Updated dependencies [3116a04]
+- Updated dependencies [a3a2f09]
+- Updated dependencies [7097dbf]
+- Updated dependencies [7097dbf]
+- Updated dependencies [73d1143]
+  - @colibri-social/appview-db@0.19.0
+  - @colibri-social/identity@0.3.1
+  - @colibri-social/projections@1.13.6
+  - @colibri-social/lexicons@2.32.0
+  - @colibri-social/notifications@1.8.10
+  - @colibri-social/space-sync@0.6.1
+  - @colibri-social/space@0.9.0
+  - @colibri-social/community@2.13.0
+  - @colibri-social/blobs@0.2.2
+
 ## 2.30.0
 
 ### Minor Changes

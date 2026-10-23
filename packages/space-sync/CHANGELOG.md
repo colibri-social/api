@@ -1,5 +1,14 @@
 # @colibri-social/space-sync
 
+## 0.6.1
+
+### Patch Changes
+
+- 7097dbf: Refuse a message whose record key isn't a TID, or whose record key or `createdAt` is more than 15 minutes ahead of the server clock. Refuse a newly created message whose record key is more than 24 hours older than the commit that created it, except for history a bridge imported. A thread's last activity never moves past the server clock. Add `pnpm --filter @colibri-social/appview purge-future-messages`, which lists projected messages dated more than 15 minutes ahead and the thread activity it would rewind, and deletes them with `--apply`.
+- Updated dependencies [7097dbf]
+- Updated dependencies [73d1143]
+  - @colibri-social/space@0.9.0
+
 ## 0.6.0
 
 ### Minor Changes

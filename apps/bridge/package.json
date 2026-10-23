@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/bridge",
-	"version": "0.1.20",
+	"version": "0.1.21",
 	"description": "Runs a Colibri bridge to Discord.",
 	"type": "module",
 	"private": true,
