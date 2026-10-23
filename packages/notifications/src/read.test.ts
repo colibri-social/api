@@ -193,6 +193,16 @@ describe("hidden messages", () => {
 		);
 	});
 
+	it("keeps a notification when only another message by the same author is hidden", async () => {
+		await insertMessage("3lkmsg1");
+		await insertMessage("3lkmsg2");
+		await insertNotification({ kind: "mention", messageRkey: "3lkmsg1" });
+		await insertLabel("3lkmsg2", "hidden");
+
+		expect(await unreadCount(deps, RECIPIENT)).toBe(1);
+		expect((await listNotifications(deps, RECIPIENT)).notifications).toHaveLength(1);
+	});
+
 	it("brings the notification back when the hidden label is retracted", async () => {
 		await insertMessage("3lkmsg1");
 		await insertNotification({ kind: "mention", messageRkey: "3lkmsg1" });

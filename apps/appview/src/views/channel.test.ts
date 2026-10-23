@@ -261,6 +261,48 @@ describe("ChannelViews.messages", () => {
 		expect(tada).toMatchObject({ count: 1, viewerReacted: true, reactors: [AUTHOR_B] });
 	});
 
+	it("leaves out reactions on other messages by the same authors", async () => {
+		const older = nextTid();
+		const shown = nextTid();
+		const other = nextTid();
+		await putMessage(older);
+		await putMessage(shown);
+		await putMessage(other, { author: AUTHOR_B });
+
+		await database.db.insert(database.tables.reactions).values([
+			{
+				space: SPACE,
+				author: AUTHOR_B,
+				rkey: nextTid(),
+				targetAuthor: AUTHOR_A,
+				targetRkey: older,
+				emoji: "thumbsup",
+			},
+			{
+				space: SPACE,
+				author: AUTHOR_A,
+				rkey: nextTid(),
+				targetAuthor: AUTHOR_B,
+				targetRkey: shown,
+				emoji: "tada",
+			},
+			{
+				space: SPACE,
+				author: AUTHOR_B,
+				rkey: nextTid(),
+				targetAuthor: AUTHOR_A,
+				targetRkey: shown,
+				emoji: "eyes",
+			},
+		]);
+
+		const page = await views.messages(SPACE, AUTHOR_B, { limit: 2 });
+		const byRkey = new Map(page.messages.map((message) => [message.rkey, message]));
+		expect([...byRkey.keys()]).toEqual([other, shown]);
+		expect(byRkey.get(shown)?.reactions.map((reaction) => reaction.emoji)).toEqual(["eyes"]);
+		expect(byRkey.get(other)?.reactions).toEqual([]);
+	});
+
 	it("reports the earliest emoji record named for a custom reaction", async () => {
 		const rkey = nextTid();
 		await putMessage(rkey);
@@ -496,6 +538,55 @@ describe("ChannelViews.messages", () => {
 
 		const page = await views.messages(SPACE, AUTHOR_B, { limit: 10 });
 		expect(page.messages.map((message) => message.rkey)).toEqual([visible]);
+	});
+
+	it("keeps a message whose author has a hidden label on another message", async () => {
+		const older = nextTid();
+		const shown = nextTid();
+		const other = nextTid();
+		await putMessage(older);
+		await putMessage(shown);
+		await putMessage(other, { author: AUTHOR_B });
+		await putLabel(older, "hidden");
+		await putLabel(shown, "hidden", { subjectDid: AUTHOR_B });
+
+		const page = await views.messages(SPACE, AUTHOR_B, { limit: 2 });
+		expect(page.messages.map((message) => message.rkey)).toEqual([other, shown]);
+		expect(page.messages.every((message) => message.labels.length === 0)).toBe(true);
+	});
+
+	it("applies labels and reactions to both halves of a page around a message", async () => {
+		const older = nextTid();
+		const hidden = nextTid();
+		const anchor = nextTid();
+		const newer = nextTid();
+		for (const rkey of [older, hidden, anchor, newer]) await putMessage(rkey);
+		await putLabel(hidden, "hidden");
+		await database.db.insert(database.tables.reactions).values([
+			{
+				space: SPACE,
+				author: AUTHOR_B,
+				rkey: nextTid(),
+				targetAuthor: AUTHOR_A,
+				targetRkey: older,
+				emoji: "thumbsup",
+			},
+			{
+				space: SPACE,
+				author: AUTHOR_B,
+				rkey: nextTid(),
+				targetAuthor: AUTHOR_A,
+				targetRkey: newer,
+				emoji: "tada",
+			},
+		]);
+
+		const page = await views.messages(SPACE, AUTHOR_B, { limit: 6, around: anchor });
+		const byRkey = new Map(page.messages.map((message) => [message.rkey, message]));
+		expect([...byRkey.keys()]).toEqual([newer, anchor, older]);
+		expect(byRkey.get(older)?.reactions.map((reaction) => reaction.emoji)).toEqual(["thumbsup"]);
+		expect(byRkey.get(newer)?.reactions.map((reaction) => reaction.emoji)).toEqual(["tada"]);
+		expect(byRkey.get(anchor)?.reactions).toEqual([]);
 	});
 
 	it("ignores a hidden label from a labeler the community does not name", async () => {

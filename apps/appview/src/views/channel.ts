@@ -48,6 +48,7 @@ export type ChannelSummary = social.colibri.beta.channel.defs.ChannelSummary;
 type LabelView = social.colibri.beta.community.defs.LabelView;
 
 type ChannelRow = Schema["channels"]["$inferSelect"];
+type CommunityRow = Schema["communities"]["$inferSelect"];
 type MessageRow = Schema["messages"]["$inferSelect"];
 type ReactionRow = Schema["reactions"]["$inferSelect"];
 
@@ -60,9 +61,16 @@ export type LatePreviewTarget = {
 	rkey: string;
 };
 
+export type ReadPolicy = {
+	community: CommunityRow | null;
+	sources: string[];
+	seesHidden: boolean;
+};
+
 export type HydrateOptions = {
 	embedWaitMs?: number;
 	onLatePreviews?: (target: LatePreviewTarget, unresolved: string[]) => void;
+	policy?: ReadPolicy;
 };
 
 const DEFAULT_EMBED_WAIT_MS = 2_000;
@@ -267,15 +275,29 @@ export class ChannelViews {
 		return [...new Set([...(row?.labelers ?? []), community])];
 	}
 
+	private async readPolicy(
+		space: string,
+		viewer: string | null,
+		authz?: ActorAuthz,
+	): Promise<ReadPolicy> {
+		const community = parseSpaceRef(space).authority;
+		const [row, viewerAuthz] = await Promise.all([
+			this.ctx.loader.community(community),
+			viewer ? (authz ?? this.ctx.loader.authz(community, viewer)) : undefined,
+		]);
+		return {
+			community: row,
+			sources: [...new Set([...(row?.labelers ?? []), community])],
+			seesHidden: viewerAuthz ? has(viewerAuthz, "label.apply", parseSpaceRef(space).skey) : false,
+		};
+	}
+
 	private async labelPolicy(
 		space: string,
-		community: string,
 		viewer: string | null,
 	): Promise<{ sources: string[]; seesHidden: boolean }> {
-		const sources = await this.labelSources(community);
-		if (!viewer) return { sources, seesHidden: false };
-		const authz = await this.ctx.loader.authz(community, viewer);
-		return { sources, seesHidden: has(authz, "label.apply", parseSpaceRef(space).skey) };
+		const { sources, seesHidden } = await this.readPolicy(space, viewer);
+		return { sources, seesHidden };
 	}
 
 	private deletedView(space: string, key: MessageKey): DeletedMessageView {
@@ -325,30 +347,53 @@ export class ChannelViews {
 	private async fetchReactionsByTargets(
 		space: string,
 		targets: MessageKey[],
-	): Promise<ReactionRow[]> {
+	): Promise<Map<string, ReactionRow[]>> {
+		const byTarget = new Map<string, ReactionRow[]>();
 		const authors = [...new Set(targets.map((target) => target.author))];
-		if (authors.length === 0) return [];
+		if (authors.length === 0) return byTarget;
+		const rkeys = [...new Set(targets.map((target) => target.rkey))];
 
 		const table = this.ctx.database.tables.reactions;
 		const rows = await this.ctx.database.db
 			.select()
 			.from(table)
-			.where(and(eq(table.space, space), inArray(table.targetAuthor, authors)));
+			.where(
+				and(
+					eq(table.space, space),
+					inArray(table.targetAuthor, authors),
+					inArray(table.targetRkey, rkeys),
+				),
+			);
 
 		const wanted = new Set(targets.map((target) => messageRefKey(target.author, target.rkey)));
-		return rows.filter((row) => wanted.has(messageRefKey(row.targetAuthor, row.targetRkey)));
+		for (const row of rows) {
+			const key = messageRefKey(row.targetAuthor, row.targetRkey);
+			if (!wanted.has(key)) continue;
+			const group = byTarget.get(key) ?? [];
+			group.push(row);
+			byTarget.set(key, group);
+		}
+		return byTarget;
 	}
 
 	async messages(
 		space: string,
 		viewer: string | null,
-		options: { limit: number; cursor?: string; reverse?: boolean; around?: string },
+		options: {
+			limit: number;
+			cursor?: string;
+			reverse?: boolean;
+			around?: string;
+			authz?: ActorAuthz;
+		},
 		hydration: HydrateOptions = {},
 	): Promise<{ messages: MessageView[]; cursor?: string; forwardCursor?: string }> {
+		const policy = hydration.policy ?? (await this.readPolicy(space, viewer, options.authz));
+		const withPolicy = { ...hydration, policy };
 		if (options.around !== undefined) {
-			return this.messagesAround(space, viewer, options.around, options.limit, hydration);
+			return this.messagesAround(space, viewer, options.around, options.limit, withPolicy);
 		}
-		return this.page(space, viewer, options, hydration);
+		return this.page(space, viewer, options, withPolicy);
 	}
 
 	private async messagesAround(
@@ -392,13 +437,8 @@ export class ChannelViews {
 		const limit = options.limit;
 		const reverse = options.reverse ?? false;
 		const inclusive = options.inclusive ?? false;
-		const community = parseSpaceRef(space).authority;
-		const sources = await this.labelSources(community);
-
-		const [gone, arrived] = await Promise.all([
-			movedOutOf(this.ctx.database, space, sources),
-			movedInto(this.ctx.database, space, sources),
-		]);
+		const sources =
+			hydration.policy?.sources ?? (await this.labelSources(parseSpaceRef(space).authority));
 
 		const table = this.ctx.database.tables.messages;
 		const order = reverse ? asc(table.rkey) : desc(table.rkey);
@@ -411,12 +451,16 @@ export class ChannelViews {
 				: before(table.rkey, from)
 			: undefined;
 
-		const native = await this.ctx.database.db
-			.select()
-			.from(table)
-			.where(boundary ? and(eq(table.space, space), boundary) : eq(table.space, space))
-			.orderBy(order)
-			.limit(limit + 1);
+		const [gone, arrived, native] = await Promise.all([
+			movedOutOf(this.ctx.database, space, sources),
+			movedInto(this.ctx.database, space, sources),
+			this.ctx.database.db
+				.select()
+				.from(table)
+				.where(boundary ? and(eq(table.space, space), boundary) : eq(table.space, space))
+				.orderBy(order)
+				.limit(limit + 1),
+		]);
 
 		const placed: Placed[] = native
 			.filter((row) => !gone.has(messageRefKey(row.author, row.rkey)))
@@ -498,8 +542,7 @@ export class ChannelViews {
 	}
 
 	private async latestVisible(space: string, viewer: string): Promise<MessageRow | undefined> {
-		const community = parseSpaceRef(space).authority;
-		const { sources, seesHidden } = await this.labelPolicy(space, community, viewer);
+		const { sources, seesHidden } = await this.labelPolicy(space, viewer);
 		const [gone, arrived] = await Promise.all([
 			movedOutOf(this.ctx.database, space, sources),
 			movedInto(this.ctx.database, space, sources),
@@ -628,7 +671,11 @@ export class ChannelViews {
 		if (page.length === 0) return [];
 
 		const community = parseSpaceRef(space).authority;
-		const { sources, seesHidden } = await this.labelPolicy(space, community, viewer);
+		const policy =
+			options.policy && space === readingSpace
+				? options.policy
+				: await this.readPolicy(space, viewer);
+		const { sources, seesHidden } = policy;
 
 		const parentKeys: MessageKey[] = [];
 		for (const row of page) {
@@ -651,19 +698,17 @@ export class ChannelViews {
 		const linksByRow = new Map(
 			page.map((row) => [row, linkUrisOf(row.facets, row.suppressedEmbeds)] as const),
 		);
-		const [profiles, labels, reactionRows, sourceNames, communityRow, previews] = await Promise.all(
-			[
-				this.actors.hydrate(authors),
-				messageLabels(this.ctx.database, space, sources, subjects),
-				this.fetchReactionsByTargets(space, subjects),
-				this.spaceNames(forwardSpaces),
-				this.ctx.loader.community(community),
-				this.ctx.linkEmbeds.resolve(
-					[...linksByRow.values()].flat(),
-					options.embedWaitMs ?? DEFAULT_EMBED_WAIT_MS,
-				),
-			],
-		);
+		const [profiles, labels, reactionsByTarget, sourceNames, previews] = await Promise.all([
+			this.actors.hydrate(authors),
+			messageLabels(this.ctx.database, space, sources, subjects),
+			this.fetchReactionsByTargets(space, subjects),
+			this.spaceNames(forwardSpaces),
+			this.ctx.linkEmbeds.resolve(
+				[...linksByRow.values()].flat(),
+				options.embedWaitMs ?? DEFAULT_EMBED_WAIT_MS,
+			),
+		]);
+		const communityRow = policy.community;
 		const embedsFor = (row: MessageRow): LinkEmbedView[] | undefined => {
 			const embeds: LinkEmbedView[] = [];
 			for (const uri of linksByRow.get(row) ?? []) {
@@ -766,9 +811,7 @@ export class ChannelViews {
 				attachments: this.attachments(readingSpace, row, viewer),
 				embeds: includeParent ? embedsFor(row) : undefined,
 				reactions: this.aggregateReactions(
-					reactionRows.filter(
-						(reaction) => reaction.targetAuthor === row.author && reaction.targetRkey === row.rkey,
-					),
+					reactionsByTarget.get(messageRefKey(row.author, row.rkey)) ?? [],
 					viewer,
 				),
 				labels: this.toLabelViews(labels.get(messageRefKey(row.author, row.rkey)) ?? []),
@@ -801,8 +844,7 @@ export class ChannelViews {
 			.limit(1);
 		if (!message) return null;
 
-		const community = parseSpaceRef(space).authority;
-		const { sources, seesHidden } = await this.labelPolicy(space, community, viewer);
+		const { sources, seesHidden } = await this.labelPolicy(space, viewer);
 		if (!seesHidden && messageAuthor !== viewer) {
 			const hidden = hiddenFrom(
 				await messageLabels(this.ctx.database, space, sources, [

@@ -104,6 +104,7 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 					cursor: params.cursor,
 					reverse: params.reverse,
 					around: params.around,
+					authz,
 				},
 				{ embedWaitMs: 0, onLatePreviews: republishLate },
 			);

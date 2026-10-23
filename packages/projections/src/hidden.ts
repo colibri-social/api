@@ -44,6 +44,7 @@ export const messageLabels = async (
 	if (subjects.length === 0 || sources.length === 0) return bySubject;
 
 	const dids = [...new Set(subjects.map((subject) => subject.author))];
+	const rkeys = [...new Set(subjects.map((subject) => subject.rkey))];
 	const table = deps.tables.labels;
 
 	const rows = await deps.db
@@ -54,6 +55,7 @@ export const messageLabels = async (
 				eq(table.space, space),
 				eq(table.subjectCollection, COLLECTIONS.message),
 				inArray(table.subjectDid, dids),
+				inArray(table.subjectRkey, rkeys),
 				inArray(table.src, [...sources]),
 			),
 		)
