@@ -268,6 +268,81 @@ describe("indexMessage", () => {
 			expect(rows).toHaveLength(1);
 			expect(rows[0]?.kind).toBe("mention");
 		});
+
+		describe("after a poster left it", () => {
+			const leaver = "did:plc:leaver00000000000000000";
+
+			const leave = async (did: string) => {
+				await database.db
+					.insert(database.tables.leftThreads)
+					.values({ did, space: THREAD, leftAt: NOW });
+			};
+
+			const leftRows = () =>
+				database.db
+					.select()
+					.from(database.tables.leftThreads)
+					.where(eq(database.tables.leftThreads.did, leaver));
+
+			beforeEach(async () => {
+				await member(leaver);
+				await posted(leaver, "3lkleftmsg01");
+				await leave(leaver);
+			});
+
+			it("drops them from plain message notifications", async () => {
+				await sendInThread("3lkleftmsg02");
+
+				expect(await rowsFor(leaver)).toHaveLength(0);
+				expect(await leftRows()).toHaveLength(1);
+			});
+
+			it("keeps notifying them while they follow it", async () => {
+				await database.db
+					.insert(database.tables.threadFollows)
+					.values({ space: THREAD, did: leaver, createdAt: NOW });
+
+				await sendInThread("3lkleftmsg03");
+
+				expect(await rowsFor(leaver)).toHaveLength(1);
+			});
+
+			it("notifies them for a mention and brings them back", async () => {
+				await sendInThread("3lkleftmsg04", [mentionFacet(leaver)]);
+
+				const rows = await rowsFor(leaver);
+				expect(rows).toHaveLength(1);
+				expect(rows[0]?.kind).toBe("mention");
+				expect(await leftRows()).toHaveLength(0);
+
+				await sendInThread("3lkleftmsg05");
+				expect(await rowsFor(leaver)).toHaveLength(2);
+			});
+
+			it("brings them back for a reply to their message", async () => {
+				await indexMessage(deps, {
+					space: THREAD,
+					community: COMMUNITY,
+					author: AUTHOR,
+					rkey: "3lkleftmsg06",
+					facets: null,
+					parentAuthor: leaver,
+					parentRkey: "3lkleftmsg01",
+				});
+
+				expect((await rowsFor(leaver))[0]?.kind).toBe("reply");
+				expect(await leftRows()).toHaveLength(0);
+			});
+
+			it("keeps them out when a message that already pinged them is indexed again", async () => {
+				await sendInThread("3lkleftmsg07", [mentionFacet(leaver)]);
+				await leave(leaver);
+
+				await sendInThread("3lkleftmsg07", [mentionFacet(leaver)]);
+
+				expect(await leftRows()).toHaveLength(1);
+			});
+		});
 	});
 
 	it("prefers a mention over a plain message and inserts only one row", async () => {

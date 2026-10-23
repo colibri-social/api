@@ -316,6 +316,23 @@ describe("ThreadViews members", () => {
 		expect(members).toEqual([AUTHOR, POSTER, PINGED, ROLE_HOLDER, FOLLOWER]);
 	});
 
+	it("leaves out members who left the thread unless they follow it", async () => {
+		await putThread();
+		await postInThread(POSTER, [mention(PINGED)]);
+		await database.db
+			.insert(database.tables.threadFollows)
+			.values({ space: THREAD, did: FOLLOWER, createdAt: NOW });
+		await database.db.insert(database.tables.leftThreads).values([
+			{ did: POSTER, space: THREAD, leftAt: NOW },
+			{ did: PINGED, space: THREAD, leftAt: NOW },
+			{ did: FOLLOWER, space: THREAD, leftAt: NOW },
+		]);
+
+		const members = await threads.members((await threads.row(THREAD))!);
+
+		expect(members).toEqual([FOLLOWER]);
+	});
+
 	it("skips a mention of the default role even when it claims to be mentionable", async () => {
 		await putRole(true, true);
 		await putThread();

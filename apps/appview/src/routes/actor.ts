@@ -1,6 +1,6 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
 import type { ClientPreferences } from "@colibri-social/appview-db";
-import { asDatetime, asDid, decodeMuteSubject, social } from "@colibri-social/lexicons";
+import { asDatetime, asDid, asSpaceRef, decodeMuteSubject, social } from "@colibri-social/lexicons";
 import { and, asc, count, eq, inArray, ne, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
@@ -59,6 +59,12 @@ export const loadPreferences = async (ctx: AppContext, callerDid: string): Promi
 		.where(eq(ctx.database.tables.spaceModerations.did, callerDid))
 		.orderBy(asc(ctx.database.tables.spaceModerations.community));
 
+	const leftThreadRows = await ctx.database.db
+		.select()
+		.from(ctx.database.tables.leftThreads)
+		.where(eq(ctx.database.tables.leftThreads.did, callerDid))
+		.orderBy(asc(ctx.database.tables.leftThreads.leftAt));
+
 	const composerState = settings?.composerState ?? {};
 
 	return {
@@ -77,6 +83,10 @@ export const loadPreferences = async (ctx: AppContext, callerDid: string): Promi
 		spaceModerations: spaceModerationRows.map((row) => ({
 			community: asDid(row.community),
 			hideModeratedMessages: row.hideModeratedMessages,
+		})),
+		leftThreads: leftThreadRows.map((row) => ({
+			thread: asSpaceRef(row.space),
+			leftAt: asDatetime(row.leftAt),
 		})),
 		clientPreferences: clientPreferencesView(settings?.clientPreferences),
 		composerState: {

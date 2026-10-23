@@ -86,10 +86,10 @@ afterEach(async () => {
 
 describe("commit", () => {
 	it("stores records, projections and the cursor together", async () => {
-		await store.commit(change([message("3lkmsg1", "hello")]), cursor("rev1"));
+		await store.commit(change([message("3mry5ybrkzc22", "hello")]), cursor("rev1"));
 
 		expect(await storedRecords()).toHaveLength(1);
-		expect((await storedMessages())[0]).toMatchObject({ rkey: "3lkmsg1", text: "hello" });
+		expect((await storedMessages())[0]).toMatchObject({ rkey: "3mry5ybrkzc22", text: "hello" });
 		expect(await store.loadCursor(SPACE, AUTHOR)).toMatchObject({
 			appliedRev: "rev1",
 			setHashBase64: "aGFzaA==",
@@ -99,11 +99,11 @@ describe("commit", () => {
 
 	it("applies deletes to both the record store and the projection", async () => {
 		await store.commit(
-			change([message("3lkmsg1", "hello"), message("3lkmsg2", "world")]),
+			change([message("3mry5ybrkzc22", "hello"), message("3mry5ybrlyk22", "world")]),
 			cursor("rev1"),
 		);
 		await store.commit(
-			change([], [{ collection: COLLECTIONS.message, rkey: "3lkmsg1" }]),
+			change([], [{ collection: COLLECTIONS.message, rkey: "3mry5ybrkzc22" }]),
 			cursor("rev2"),
 		);
 
@@ -119,7 +119,7 @@ describe("commit", () => {
 			retryAfter: new Date(NOW),
 		});
 
-		await store.commit(change([message("3lkmsg1", "hello")]), cursor("rev2"));
+		await store.commit(change([message("3mry5ybrkzc22", "hello")]), cursor("rev2"));
 
 		expect(await store.loadCursor(SPACE, AUTHOR)).toMatchObject({
 			state: "active",
@@ -129,7 +129,7 @@ describe("commit", () => {
 	});
 
 	it("leaves neither records nor the cursor behind when projection fails", async () => {
-		await store.commit(change([message("3lkmsg1", "hello")]), cursor("rev1"));
+		await store.commit(change([message("3mry5ybrkzc22", "hello")]), cursor("rev1"));
 
 		const broken = drizzleSyncStore(
 			database,
@@ -143,7 +143,7 @@ describe("commit", () => {
 		);
 
 		await expect(
-			broken.commit(change([message("3lkmsg2", "world")]), cursor("rev2")),
+			broken.commit(change([message("3mry5ybrlyk22", "world")]), cursor("rev2")),
 		).rejects.toThrow("projection exploded");
 
 		expect(await storedRecords()).toHaveLength(1);
@@ -155,26 +155,26 @@ describe("commit", () => {
 describe("replace", () => {
 	it("rebuilds a repo from scratch and drops what is no longer there", async () => {
 		await store.commit(
-			change([message("3lkmsg1", "hello"), message("3lkmsg2", "world")]),
+			change([message("3mry5ybrkzc22", "hello"), message("3mry5ybrlyk22", "world")]),
 			cursor("rev1"),
 		);
 
 		await store.replace(
-			{ space: SPACE, author: AUTHOR, puts: [message("3lkmsg3", "rebuilt")] },
+			{ space: SPACE, author: AUTHOR, puts: [message("3mry5ybrmxs22", "rebuilt")] },
 			cursor("rev9"),
 		);
 
 		expect(await storedRecords()).toHaveLength(1);
 		const messages = await storedMessages();
 		expect(messages).toHaveLength(1);
-		expect(messages[0]).toMatchObject({ rkey: "3lkmsg3", text: "rebuilt" });
+		expect(messages[0]).toMatchObject({ rkey: "3mry5ybrmxs22", text: "rebuilt" });
 		expect((await store.loadCursor(SPACE, AUTHOR))?.appliedRev).toBe("rev9");
 	});
 });
 
 describe("dropRepo", () => {
 	it("removes the repo's records, projections and cursor", async () => {
-		await store.commit(change([message("3lkmsg1", "hello")]), cursor("rev1"));
+		await store.commit(change([message("3mry5ybrkzc22", "hello")]), cursor("rev1"));
 
 		await store.dropRepo(SPACE, AUTHOR);
 
@@ -207,7 +207,7 @@ describe("dropSpace", () => {
 			service: "did:web:appview.test#atproto_space_syncer",
 			expiresAt: NOW,
 		});
-		await store.commit(change([message("3lkmsg1", "hello")]), cursor("rev1"));
+		await store.commit(change([message("3mry5ybrkzc22", "hello")]), cursor("rev1"));
 
 		await store.dropSpace(SPACE);
 

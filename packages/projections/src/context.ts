@@ -16,6 +16,7 @@ export type RecordRef = {
 	collection: string;
 	rkey: string;
 	cid: string;
+	rev?: string;
 };
 
 export type AuthzChange = {

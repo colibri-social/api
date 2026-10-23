@@ -2,14 +2,20 @@ import { AtUri } from "@atproto/syntax";
 import { InvalidRequestError } from "@atproto/xrpc-server";
 import type { NotificationLevel, OnlineState, ReactionEmojiRef } from "@colibri-social/appview-db";
 import { emojiRegistry } from "@colibri-social/emoji";
-import { asDatetime, encodeMuteSubject, social } from "@colibri-social/lexicons";
+import {
+	asDatetime,
+	encodeMuteSubject,
+	isThreadSpaceType,
+	social,
+	spaceTypeOf,
+} from "@colibri-social/lexicons";
 import {
 	isNotificationLevel,
 	toStoredClientPreferences,
 	toStoredComposerState,
 } from "@colibri-social/projections";
 import { nextTid, parseSpaceRef, SpaceCredentialError } from "@colibri-social/space";
-import { and, eq, notInArray } from "drizzle-orm";
+import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { setActivitySharing } from "../activity.js";
 import { announceToCommunities, preferencesEvent, presenceEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
@@ -23,6 +29,7 @@ import type { RouteDeps } from "./types.js";
 type Preferences = social.colibri.beta.actor.defs.Preferences;
 type Presence = social.colibri.beta.actor.defs.Presence;
 type Mute = social.colibri.beta.actor.defs.Mute;
+type LeftThread = social.colibri.beta.actor.defs.LeftThread;
 
 const soleOwnerOfCommunity = () =>
 	new InvalidRequestError(
@@ -173,38 +180,132 @@ export const handlePutSpaceModeration = async (
 	return { preferences: await announcePreferences(ctx, callerDid) };
 };
 
-export const handlePutMutes = async (
+const latestPerThread = (entries: readonly LeftThread[]): Map<string, string> => {
+	const latest = new Map<string, string>();
+	for (const entry of entries) {
+		if (!isThreadSpaceType(spaceTypeOf(entry.thread) ?? "")) {
+			throw new InvalidRequestError(`'${entry.thread}' is not a thread`, "InvalidRequest");
+		}
+		const known = latest.get(entry.thread);
+		if (known === undefined || Date.parse(entry.leftAt) > Date.parse(known)) {
+			latest.set(entry.thread, entry.leftAt);
+		}
+	}
+	return latest;
+};
+
+const pingedSince = async (
+	ctx: AppContext,
+	callerDid: string,
+	latest: ReadonlyMap<string, string>,
+): Promise<Set<string>> => {
+	if (latest.size === 0) return new Set();
+	const table = ctx.database.tables.notifications;
+	const rows = await ctx.database.db
+		.select({ space: table.space, indexedAt: table.indexedAt })
+		.from(table)
+		.where(
+			and(
+				eq(table.recipient, callerDid),
+				inArray(table.space, [...latest.keys()]),
+				inArray(table.kind, ["mention", "reply"]),
+			),
+		);
+	const pinged = new Set<string>();
+	for (const row of rows) {
+		const leftAt = latest.get(row.space);
+		if (leftAt !== undefined && Date.parse(row.indexedAt) > Date.parse(leftAt)) {
+			pinged.add(row.space);
+		}
+	}
+	return pinged;
+};
+
+type Transaction = Parameters<Parameters<AppContext["database"]["db"]["transaction"]>[0]>[0];
+
+const replaceMutes = async (
+	tx: Transaction,
 	ctx: AppContext,
 	callerDid: string,
 	mutes: readonly Mute[],
-): Promise<{ preferences: Preferences }> => {
+) => {
 	const rows = mutes.map((mute) => ({
 		did: callerDid,
 		rkey: nextTid(),
 		subject: encodeMuteSubject(mute.subject),
 		createdAt: mute.createdAt,
 	}));
+	const table = ctx.database.tables.mutes;
+	const keep = rows.map((row) => row.subject);
+	await tx
+		.delete(table)
+		.where(
+			keep.length === 0
+				? eq(table.did, callerDid)
+				: and(eq(table.did, callerDid), notInArray(table.subject, keep)),
+		);
+	for (const row of rows) {
+		await tx
+			.insert(table)
+			.values(row)
+			.onConflictDoUpdate({
+				target: [table.did, table.subject],
+				set: { createdAt: row.createdAt },
+			});
+	}
+};
+
+const leftThreadRows = async (
+	ctx: AppContext,
+	callerDid: string,
+	leftThreads: readonly LeftThread[],
+) => {
+	const latest = latestPerThread(leftThreads);
+	const pinged = await pingedSince(ctx, callerDid, latest);
+	return [...latest]
+		.filter(([space]) => !pinged.has(space))
+		.map(([space, leftAt]) => ({ did: callerDid, space, leftAt }));
+};
+
+const replaceLeftThreads = async (
+	tx: Transaction,
+	ctx: AppContext,
+	callerDid: string,
+	rows: ReadonlyArray<{ did: string; space: string; leftAt: string }>,
+) => {
+	const table = ctx.database.tables.leftThreads;
+	const keep = rows.map((row) => row.space);
+	await tx
+		.delete(table)
+		.where(
+			keep.length === 0
+				? eq(table.did, callerDid)
+				: and(eq(table.did, callerDid), notInArray(table.space, keep)),
+		);
+	for (const row of rows) {
+		await tx
+			.insert(table)
+			.values(row)
+			.onConflictDoUpdate({
+				target: [table.did, table.space],
+				set: { leftAt: row.leftAt },
+			});
+	}
+};
+
+export const handlePutMutes = async (
+	ctx: AppContext,
+	callerDid: string,
+	input: { mutes?: readonly Mute[]; leftThreads?: readonly LeftThread[] },
+): Promise<{ preferences: Preferences }> => {
+	const leftRows =
+		input.leftThreads === undefined
+			? undefined
+			: await leftThreadRows(ctx, callerDid, input.leftThreads);
 
 	await ctx.database.db.transaction(async (tx) => {
-		const table = ctx.database.tables.mutes;
-		const keep = rows.map((row) => row.subject);
-		await tx
-			.delete(table)
-			.where(
-				keep.length === 0
-					? eq(table.did, callerDid)
-					: and(eq(table.did, callerDid), notInArray(table.subject, keep)),
-			);
-		if (rows.length === 0) return;
-		for (const row of rows) {
-			await tx
-				.insert(table)
-				.values(row)
-				.onConflictDoUpdate({
-					target: [table.did, table.subject],
-					set: { createdAt: row.createdAt },
-				});
-		}
+		if (input.mutes !== undefined) await replaceMutes(tx, ctx, callerDid, input.mutes);
+		if (leftRows !== undefined) await replaceLeftThreads(tx, ctx, callerDid, leftRows);
 	});
 
 	return { preferences: await announcePreferences(ctx, callerDid) };
@@ -337,6 +438,7 @@ export const handleDeleteAccount = async (
 		{ table: tables.notificationClears, column: tables.notificationClears.did },
 		{ table: tables.pushSubscriptions, column: tables.pushSubscriptions.actor },
 		{ table: tables.mutes, column: tables.mutes.did },
+		{ table: tables.leftThreads, column: tables.leftThreads.did },
 		{ table: tables.actorSettings, column: tables.actorSettings.did },
 		{ table: tables.spaceNotifications, column: tables.spaceNotifications.did },
 		{ table: tables.spaceModerations, column: tables.spaceModerations.did },
@@ -372,7 +474,7 @@ export const registerActorWriteRoutes = ({ server, ctx, auth }: RouteDeps): void
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
-			body: await handlePutMutes(ctx, caller.credentials.did, input.body.mutes),
+			body: await handlePutMutes(ctx, caller.credentials.did, input.body),
 		}),
 	});
 

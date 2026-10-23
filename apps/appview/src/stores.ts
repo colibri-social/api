@@ -181,6 +181,7 @@ export const drizzleSyncStore = (
 					rkey: put.rkey,
 					cid: put.cid,
 					value: put.value,
+					...(put.rev ? { rev: put.rev } : {}),
 				})),
 				deletes: change.deletes,
 			},

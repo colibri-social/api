@@ -33,6 +33,7 @@
 		"build": "tsc --build",
 		"clean": "tsc --build --clean",
 		"dev": "tsx watch --conditions=colibri-source --env-file-if-exists=../../.env src/index.ts",
+		"purge-future-messages": "tsx --conditions=colibri-source --env-file-if-exists=../../.env scripts/purge-future-messages.ts",
 		"start": "node dist/index.js"
 	},
 	"dependencies": {

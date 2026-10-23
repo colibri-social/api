@@ -271,8 +271,9 @@ export class ThreadViews {
 
 		const messageTable = this.ctx.database.tables.messages;
 		const followTable = this.ctx.database.tables.threadFollows;
+		const leftTable = this.ctx.database.tables.leftThreads;
 		const sources = await this.channels.labelSources(row.community);
-		const [messageRows, movedIn, followRows, roles] = await Promise.all([
+		const [messageRows, movedIn, followRows, leftRows, roles] = await Promise.all([
 			this.ctx.database.db
 				.select({ author: messageTable.author, facets: messageTable.facets })
 				.from(messageTable)
@@ -283,6 +284,10 @@ export class ThreadViews {
 				.select({ did: followTable.did })
 				.from(followTable)
 				.where(eq(followTable.space, row.space)),
+			this.ctx.database.db
+				.select({ did: leftTable.did })
+				.from(leftTable)
+				.where(eq(leftTable.space, row.space)),
 			this.ctx.loader.roles(row.community),
 		]);
 
@@ -328,12 +333,15 @@ export class ThreadViews {
 			...followRows.map((follow) => follow.did),
 		];
 
+		const followers = new Set(followRows.map((follow) => follow.did));
+		const left = new Set(leftRows.map((entry) => entry.did));
 		const state = toThreadState(row);
 		const out: string[] = [];
 		const seen = new Set<string>();
 		for (const did of candidates) {
 			if (seen.has(did)) continue;
 			seen.add(did);
+			if (left.has(did) && !followers.has(did)) continue;
 			const member = membersByDid.get(did);
 			if (!member) continue;
 			const authz: ActorAuthz = {

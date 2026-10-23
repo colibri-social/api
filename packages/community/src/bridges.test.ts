@@ -8,7 +8,7 @@ import {
 	threadSpace,
 } from "@colibri-social/lexicons";
 import { applyChange, type ProjectionDeps } from "@colibri-social/projections";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { admitCommunityWrites } from "./admission.js";
 import { type BridgeFailure, type BridgeRegistration, Bridges } from "./bridges.js";
 import type { CommunityCredentials } from "./credentials.js";
@@ -87,6 +87,8 @@ const reactions = () => database.db.select().from(database.tables.reactions);
 beforeEach(async () => {
 	database = await openTestDatabase();
 	clock = new Date("2026-09-24T12:00:00.000Z");
+	vi.useFakeTimers({ toFake: ["Date"] });
+	vi.setSystemTime(clock);
 	const projections: ProjectionDeps = {
 		db: database.db,
 		tables: database.tables,
@@ -139,6 +141,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	vi.useRealTimers();
 	await database.destroy();
 });
 

@@ -143,8 +143,11 @@ const allMemberDids = async (deps: NotificationDeps, community: string): Promise
 	return rows.map((row) => row.did);
 };
 
+const isThreadMessage = (message: IndexMessageInput) =>
+	isThreadSpaceType(spaceTypeOf(message.space) ?? "");
+
 const threadAudienceDids = async (deps: NotificationDeps, space: string): Promise<string[]> => {
-	const [followRows, posterRows] = await Promise.all([
+	const [followRows, posterRows, leftRows] = await Promise.all([
 		deps.db
 			.select({ did: deps.tables.threadFollows.did })
 			.from(deps.tables.threadFollows)
@@ -153,14 +156,49 @@ const threadAudienceDids = async (deps: NotificationDeps, space: string): Promis
 			.selectDistinct({ did: deps.tables.messages.author })
 			.from(deps.tables.messages)
 			.where(eq(deps.tables.messages.space, space)),
+		deps.db
+			.select({ did: deps.tables.leftThreads.did })
+			.from(deps.tables.leftThreads)
+			.where(eq(deps.tables.leftThreads.space, space)),
 	]);
-	return [...new Set([...followRows, ...posterRows].map((row) => row.did))];
+	const left = new Set(leftRows.map((row) => row.did));
+	const stayingPosters = posterRows.filter((row) => !left.has(row.did));
+	return [...new Set([...followRows, ...stayingPosters].map((row) => row.did))];
 };
 
 const plainMessageAudience = (deps: NotificationDeps, message: IndexMessageInput) =>
-	isThreadSpaceType(spaceTypeOf(message.space) ?? "")
+	isThreadMessage(message)
 		? threadAudienceDids(deps, message.space)
 		: allMemberDids(deps, message.community);
+
+const rejoinPingedThread = async (
+	deps: NotificationDeps,
+	message: IndexMessageInput,
+	pinged: readonly string[],
+): Promise<void> => {
+	if (pinged.length === 0 || !isThreadMessage(message)) return;
+	const notifiedRows = await deps.db
+		.select({ recipient: deps.tables.notifications.recipient })
+		.from(deps.tables.notifications)
+		.where(
+			and(
+				eq(deps.tables.notifications.space, message.space),
+				eq(deps.tables.notifications.messageAuthor, message.author),
+				eq(deps.tables.notifications.messageRkey, message.rkey),
+			),
+		);
+	const notified = new Set(notifiedRows.map((row) => row.recipient));
+	const fresh = pinged.filter((did) => !notified.has(did));
+	if (fresh.length === 0) return;
+	await deps.db
+		.delete(deps.tables.leftThreads)
+		.where(
+			and(
+				eq(deps.tables.leftThreads.space, message.space),
+				inArray(deps.tables.leftThreads.did, fresh),
+			),
+		);
+};
 
 const filterRecipients = async (
 	deps: NotificationDeps,
@@ -288,6 +326,12 @@ export const indexMessage = async (
 			mentionRole: null,
 		});
 	}
+
+	await rejoinPingedThread(
+		deps,
+		message,
+		[...recipients.values()].map((recipient) => recipient.did),
+	);
 
 	for (const did of await plainMessageAudience(deps, message)) {
 		if (did === message.author || recipients.has(did)) continue;

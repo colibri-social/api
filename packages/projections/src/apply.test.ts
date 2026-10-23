@@ -7,6 +7,7 @@ import {
 	threadSpace,
 	toLexForm,
 } from "@colibri-social/lexicons";
+import { tidAt } from "@colibri-social/space";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { applyChange, type SpaceChange } from "./apply.js";
@@ -459,7 +460,7 @@ describe("bridged attribution", () => {
 	it("keeps attribution on a message the community wrote", async () => {
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.message", "3lkmsg1", {
+			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.message", "3mry5ybrkzc22", {
 				$type: "social.colibri.beta.message",
 				text: "relayed",
 				createdAt: NOW,
@@ -474,7 +475,7 @@ describe("bridged attribution", () => {
 	it("drops attribution a member put on their own message", async () => {
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3lkmsg1", {
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3mry5ybrkzc22", {
 				$type: "social.colibri.beta.message",
 				text: "pretending",
 				createdAt: NOW,
@@ -496,7 +497,7 @@ describe("bridged attribution", () => {
 				put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.reaction", rkey, {
 					$type: "social.colibri.beta.reaction",
 					emoji: "👍",
-					target: { did: MEMBER, rkey: "3lkmsg1" },
+					target: { did: MEMBER, rkey: "3mry5ybrkzc22" },
 					bridged: { ...attribution, remoteId },
 				}),
 			);
@@ -519,7 +520,7 @@ describe("bridged attribution", () => {
 			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.reaction", "3lkreact1", {
 				$type: "social.colibri.beta.reaction",
 				emoji: ":party:",
-				target: { did: MEMBER, rkey: "3lkmsg1" },
+				target: { did: MEMBER, rkey: "3mry5ybrkzc22" },
 				customEmoji,
 			}),
 		);
@@ -528,7 +529,7 @@ describe("bridged attribution", () => {
 			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.reaction", "3lkreact2", {
 				$type: "social.colibri.beta.reaction",
 				emoji: "👍",
-				target: { did: MEMBER, rkey: "3lkmsg1" },
+				target: { did: MEMBER, rkey: "3mry5ybrkzc22" },
 			}),
 		);
 
@@ -539,11 +540,189 @@ describe("bridged attribution", () => {
 	});
 });
 
+describe("message time window", () => {
+	const hoursFromNow = (hours: number) =>
+		new Date(Date.parse(NOW) + hours * 60 * 60 * 1000).toISOString();
+
+	const live = (
+		author: string,
+		rkey: string,
+		rev: string,
+		value: Record<string, unknown> = {},
+	): SpaceChange => ({
+		space: TEXT_CHANNEL,
+		author,
+		puts: [
+			{
+				collection: "social.colibri.beta.message",
+				rkey,
+				cid: "bafytest",
+				rev,
+				value: { $type: "social.colibri.beta.message", text: "hi", createdAt: NOW, ...value },
+			},
+		],
+		deletes: [],
+	});
+
+	const messageRows = () => database.db.select().from(database.tables.messages);
+
+	it("refuses a message whose record key is not a TID", async () => {
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "notatid", {
+				$type: "social.colibri.beta.message",
+				text: "hi",
+				createdAt: NOW,
+			}),
+		);
+
+		expect(await messageRows()).toHaveLength(0);
+		expect(skipped[0]?.reason).toBe("message record key is not a TID");
+	});
+
+	it("refuses a message whose record key is more than 15 minutes ahead", async () => {
+		await applyChange(
+			deps,
+			put(
+				TEXT_CHANNEL,
+				MEMBER,
+				"social.colibri.beta.message",
+				tidAt("2028-01-01T00:00:00.000Z", "a"),
+				{
+					$type: "social.colibri.beta.message",
+					text: "from the future",
+					createdAt: NOW,
+				},
+			),
+		);
+
+		expect(await messageRows()).toHaveLength(0);
+		expect(skipped[0]?.reason).toBe("message record key is dated in the future");
+	});
+
+	it("accepts a record key a few minutes ahead of the server clock", async () => {
+		const ahead = new Date(Date.parse(NOW) + 10 * 60 * 1000).toISOString();
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", tidAt(ahead, "a"), {
+				$type: "social.colibri.beta.message",
+				text: "slightly fast clock",
+				createdAt: ahead,
+			}),
+		);
+
+		expect(skipped).toEqual([]);
+		expect(await messageRows()).toHaveLength(1);
+	});
+
+	it("refuses a message whose createdAt is more than 15 minutes ahead", async () => {
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", tidAt(NOW, "a"), {
+				$type: "social.colibri.beta.message",
+				text: "dated 2028",
+				createdAt: "2028-01-01T00:00:00.000Z",
+			}),
+		);
+
+		expect(await messageRows()).toHaveLength(0);
+		expect(skipped[0]?.reason).toBe("message createdAt is in the future");
+	});
+
+	it("refuses a live create whose record key is 25 hours older than its commit", async () => {
+		await applyChange(deps, live(MEMBER, tidAt(hoursFromNow(-25), "a"), tidAt(NOW, "rev")));
+
+		expect(await messageRows()).toHaveLength(0);
+		expect(skipped[0]?.reason).toBe("message record key is more than a day older than its commit");
+	});
+
+	it("accepts a live create whose record key is 23 hours older than its commit", async () => {
+		await applyChange(deps, live(MEMBER, tidAt(hoursFromNow(-23), "a"), tidAt(NOW, "rev")));
+
+		expect(skipped).toEqual([]);
+		expect(await messageRows()).toHaveLength(1);
+	});
+
+	it("accepts an old record key from a recovery snapshot that carries no rev", async () => {
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", tidAt(hoursFromNow(-24 * 30), "a"), {
+				$type: "social.colibri.beta.message",
+				text: "from last month",
+				createdAt: hoursFromNow(-24 * 30),
+			}),
+		);
+
+		expect(skipped).toEqual([]);
+		expect(await messageRows()).toHaveLength(1);
+	});
+
+	it("accepts an old bridge import the community wrote", async () => {
+		const sent = hoursFromNow(-24 * 365);
+		await applyChange(
+			deps,
+			live(COMMUNITY, tidAt(sent, "import"), tidAt(NOW, "rev"), {
+				createdAt: sent,
+				bridged: {
+					registration: "3lkbridgeaaaa",
+					platform: "chat",
+					remoteId: "alice-1",
+					name: "Alice",
+					imported: true,
+				},
+			}),
+		);
+
+		expect(skipped).toEqual([]);
+		expect(await messageRows()).toHaveLength(1);
+	});
+
+	it("applies the past bound to an import marker a member wrote themselves", async () => {
+		const sent = hoursFromNow(-24 * 365);
+		await applyChange(
+			deps,
+			live(MEMBER, tidAt(sent, "import"), tidAt(NOW, "rev"), {
+				createdAt: sent,
+				bridged: {
+					registration: "3lkbridgeaaaa",
+					platform: "chat",
+					remoteId: "alice-1",
+					name: "Alice",
+					imported: true,
+				},
+			}),
+		);
+
+		expect(await messageRows()).toHaveLength(0);
+		expect(skipped[0]?.reason).toBe("message record key is more than a day older than its commit");
+	});
+
+	it("refuses a future bridge import", async () => {
+		const sent = "2028-01-01T00:00:00.000Z";
+		await applyChange(
+			deps,
+			live(COMMUNITY, tidAt(sent, "import"), tidAt(NOW, "rev"), {
+				createdAt: sent,
+				bridged: {
+					registration: "3lkbridgeaaaa",
+					platform: "chat",
+					remoteId: "alice-1",
+					name: "Alice",
+					imported: true,
+				},
+			}),
+		);
+
+		expect(await messageRows()).toHaveLength(0);
+		expect(skipped[0]?.reason).toBe("message record key is dated in the future");
+	});
+});
+
 describe("member-written collections", () => {
 	it("accepts a message from any member of the channel space", async () => {
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3lkmsg1", {
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3mry5ybrkzc22", {
 				$type: "social.colibri.beta.message",
 				text: "hello",
 				createdAt: NOW,
@@ -559,7 +738,7 @@ describe("member-written collections", () => {
 	it("stores a message attachment as a json blob the views can read", async () => {
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3lkmsgblob", {
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3mry5ybrowc22", {
 				$type: "social.colibri.beta.message",
 				text: "with a picture",
 				createdAt: NOW,
@@ -576,13 +755,13 @@ describe("member-written collections", () => {
 		const source = {
 			space: channelSpace(COMMUNITY, "social.colibri.beta.channel.text", "3lkchannel2"),
 			did: OUTSIDER,
-			rkey: "3lkmsgsource",
+			rkey: "3mry5ybrqus22",
 			cid: PICTURE_CID,
 		};
 
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3lkmsgfwd", {
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3mry5ybrpvk22", {
 				$type: "social.colibri.beta.message",
 				text: "worth reading",
 				createdAt: NOW,
@@ -609,23 +788,23 @@ describe("member-written collections", () => {
 	it("keeps a reply pointing at both the author and the key of its parent", async () => {
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3lkmsg2", {
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3mry5ybrlyk22", {
 				$type: "social.colibri.beta.message",
 				text: "replying",
 				createdAt: NOW,
-				parent: { did: OUTSIDER, rkey: "3lkmsg1" },
+				parent: { did: OUTSIDER, rkey: "3mry5ybrkzc22" },
 			}),
 		);
 
 		const [row] = await database.db.select().from(database.tables.messages);
 		expect(row?.parentAuthor).toBe(OUTSIDER);
-		expect(row?.parentRkey).toBe("3lkmsg1");
+		expect(row?.parentRkey).toBe("3mry5ybrkzc22");
 	});
 
 	it("refuses a message that does not match its lexicon", async () => {
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3lkmsg3", {
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3mry5ybrmxs22", {
 				$type: "social.colibri.beta.message",
 				createdAt: NOW,
 			}),
@@ -638,7 +817,7 @@ describe("member-written collections", () => {
 		const voice = channelSpace(COMMUNITY, "social.colibri.beta.channel.voice", "3lkvoice1");
 		await applyChange(
 			deps,
-			put(voice, MEMBER, "social.colibri.beta.message", "3lkmsg4", {
+			put(voice, MEMBER, "social.colibri.beta.message", "3mry5ybrnx222", {
 				$type: "social.colibri.beta.message",
 				text: "can you hear me",
 				createdAt: NOW,
@@ -655,12 +834,17 @@ describe("member-written collections", () => {
 			deps,
 			put(voice, MEMBER, "social.colibri.beta.reaction", "3lkreact4", {
 				$type: "social.colibri.beta.reaction",
-				target: { did: MEMBER, rkey: "3lkmsg4" },
+				target: { did: MEMBER, rkey: "3mry5ybrnx222" },
 				emoji: "👍",
 			}),
 		);
 		const [row] = await database.db.select().from(database.tables.reactions);
-		expect(row).toMatchObject({ space: voice, author: MEMBER, targetRkey: "3lkmsg4", emoji: "👍" });
+		expect(row).toMatchObject({
+			space: voice,
+			author: MEMBER,
+			targetRkey: "3mry5ybrnx222",
+			emoji: "👍",
+		});
 		expect(skipped).toEqual([]);
 	});
 
@@ -679,7 +863,7 @@ describe("member-written collections", () => {
 	it("removes a message on delete", async () => {
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3lkmsg1", {
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3mry5ybrkzc22", {
 				$type: "social.colibri.beta.message",
 				text: "hello",
 				createdAt: NOW,
@@ -689,7 +873,7 @@ describe("member-written collections", () => {
 			space: TEXT_CHANNEL,
 			author: MEMBER,
 			puts: [],
-			deletes: [{ collection: "social.colibri.beta.message", rkey: "3lkmsg1" }],
+			deletes: [{ collection: "social.colibri.beta.message", rkey: "3mry5ybrkzc22" }],
 		});
 		expect(await database.db.select().from(database.tables.messages)).toEqual([]);
 	});
@@ -701,7 +885,7 @@ describe("labels", () => {
 			deps,
 			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.label", "3lklabel1", {
 				$type: "social.colibri.beta.label",
-				subject: { did: MEMBER, collection: "social.colibri.beta.message", rkey: "3lkmsg1" },
+				subject: { did: MEMBER, collection: "social.colibri.beta.message", rkey: "3mry5ybrkzc22" },
 				val: "hidden",
 				createdAt: NOW,
 			}),
@@ -710,7 +894,7 @@ describe("labels", () => {
 		const [row] = await database.db.select().from(database.tables.labels);
 		expect(row?.src).toBe(COMMUNITY);
 		expect(row?.val).toBe("hidden");
-		expect(row?.subjectRkey).toBe("3lkmsg1");
+		expect(row?.subjectRkey).toBe("3mry5ybrkzc22");
 	});
 
 	it("accepts a label from a third-party labeler, leaving trust to the reader", async () => {
@@ -718,7 +902,7 @@ describe("labels", () => {
 			deps,
 			put(TEXT_CHANNEL, OUTSIDER, "social.colibri.beta.label", "3lklabel2", {
 				$type: "social.colibri.beta.label",
-				subject: { did: MEMBER, collection: "social.colibri.beta.message", rkey: "3lkmsg1" },
+				subject: { did: MEMBER, collection: "social.colibri.beta.message", rkey: "3mry5ybrkzc22" },
 				val: "spoiler",
 				createdAt: NOW,
 			}),
@@ -1201,7 +1385,7 @@ describe("authz changes", () => {
 	it("stays quiet for a record no authorization decision reads", async () => {
 		await applyChange(
 			deps,
-			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3lkmsg1", {
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3mry5ybrkzc22", {
 				$type: "social.colibri.beta.message",
 				text: "hello",
 				createdAt: NOW,
@@ -1279,11 +1463,27 @@ describe("thread projection", () => {
 		const later = "2026-08-24T00:00:00.000Z";
 		await applyChange(deps, put(THREAD, COMMUNITY, "social.colibri.beta.thread", SELF, record()));
 		await applyChange(
-			deps,
-			put(THREAD, MEMBER, "social.colibri.beta.message", "3lkmessage1", {
+			{ ...deps, now: () => later },
+			put(THREAD, MEMBER, "social.colibri.beta.message", "3mry5ybrk2222", {
 				$type: "social.colibri.beta.message",
 				text: "over here",
 				createdAt: later,
+			}),
+		);
+
+		const [row] = await threadRows();
+		expect(row?.lastActivityAt).toBe(later);
+	});
+
+	it("keeps a thread's last activity at the server clock for a message a few minutes ahead", async () => {
+		const later = "2026-08-24T00:00:00.000Z";
+		await applyChange(deps, put(THREAD, COMMUNITY, "social.colibri.beta.thread", SELF, record()));
+		await applyChange(
+			{ ...deps, now: () => later },
+			put(THREAD, MEMBER, "social.colibri.beta.message", tidAt(later, "a"), {
+				$type: "social.colibri.beta.message",
+				text: "fast clock",
+				createdAt: new Date(Date.parse(later) + 10 * 60 * 1000).toISOString(),
 			}),
 		);
 

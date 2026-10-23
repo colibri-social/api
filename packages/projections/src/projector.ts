@@ -22,6 +22,7 @@ export type Projector<T> = {
 	spaceTypes?: readonly string[];
 	schema: RecordSchema<T>;
 	rkey?: (ref: RecordRef) => boolean;
+	refuse?: (deps: ProjectionDeps, ref: RecordRef, value: T) => string | null;
 	put: (deps: ProjectionDeps, ref: RecordRef, value: T) => Promise<void>;
 	remove: (deps: ProjectionDeps, ref: RecordRef) => Promise<void>;
 };
@@ -50,6 +51,8 @@ export const erase = <T>(projector: Projector<T>): ErasedProjector => ({
 		if (!parsed.success) {
 			return { applied: false, reason: parsed.message ?? "record does not match its lexicon" };
 		}
+		const refusal = projector.refuse?.(deps, ref, parsed.value);
+		if (refusal) return { applied: false, reason: refusal };
 		await projector.put(deps, ref, parsed.value);
 		return { applied: true };
 	},

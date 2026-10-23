@@ -6,6 +6,7 @@ import {
 	type RecordRef,
 	type SpaceChange,
 } from "@colibri-social/projections";
+import { tidAt } from "@colibri-social/space";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { admitCommunityWrites } from "./admission.js";
 
@@ -83,7 +84,7 @@ const message = (author: string, rkey: string, text = "hello") =>
 const reaction = (author: string, rkey: string) =>
 	put(CHANNEL, author, "social.colibri.beta.reaction", rkey, {
 		emoji: "👍",
-		target: { did: MEMBER, rkey: "3lkmsg001" },
+		target: { did: MEMBER, rkey: "3mry5ybrkzc22" },
 	});
 
 const messageAuthors = async () =>
@@ -110,7 +111,7 @@ describe("admitCommunityWrites", () => {
 	it("admits a message from a member who may post", async () => {
 		await synced(channelRecord());
 		await synced(memberRecord(MEMBER));
-		await synced(message(MEMBER, "3lkmsg001"));
+		await synced(message(MEMBER, "3mry5ybrkzc22"));
 
 		expect(await messageAuthors()).toEqual([MEMBER]);
 		expect(skipped).toEqual([]);
@@ -118,7 +119,7 @@ describe("admitCommunityWrites", () => {
 
 	it("refuses a message from someone who is not a member", async () => {
 		await synced(channelRecord());
-		await synced(message(OUTSIDER, "3lkmsg001"));
+		await synced(message(OUTSIDER, "3mry5ybrkzc22"));
 
 		expect(await messageAuthors()).toEqual([]);
 		expect(skipped.map((entry) => entry.ref.author)).toEqual([OUTSIDER]);
@@ -128,7 +129,7 @@ describe("admitCommunityWrites", () => {
 		await synced(channelRecord());
 		await synced(memberRecord(MEMBER));
 		await synced(moderationRecord("3lkmod001", "ban", MEMBER));
-		await synced(message(MEMBER, "3lkmsg001"));
+		await synced(message(MEMBER, "3mry5ybrkzc22"));
 
 		expect(await messageAuthors()).toEqual([]);
 	});
@@ -143,20 +144,20 @@ describe("admitCommunityWrites", () => {
 	it("refuses a message from a member outside a channel's allowed roles", async () => {
 		await synced(channelRecord({ allowedRoles: ["3lkrole001"] }));
 		await synced(memberRecord(MEMBER));
-		await synced(message(MEMBER, "3lkmsg001"));
+		await synced(message(MEMBER, "3mry5ybrkzc22"));
 
 		expect(await messageAuthors()).toEqual([]);
 	});
 
 	it("admits the community's own message before the channel record arrives", async () => {
-		await synced(message(COMMUNITY, "3lkmsg001"));
+		await synced(message(COMMUNITY, "3mry5ybrkzc22"));
 
 		expect(await messageAuthors()).toEqual([COMMUNITY]);
 	});
 
 	it("projects a refused message once its author's member record arrives", async () => {
 		await synced(channelRecord());
-		await synced(message(MEMBER, "3lkmsg001"));
+		await synced(message(MEMBER, "3mry5ybrkzc22"));
 		expect(await messageAuthors()).toEqual([]);
 
 		await synced(memberRecord(MEMBER));
@@ -164,9 +165,30 @@ describe("admitCommunityWrites", () => {
 		expect(await messageAuthors()).toEqual([MEMBER]);
 	});
 
+	it("checks a refused future message against the current time on every replay", async () => {
+		const future = "2026-09-25T00:00:00.000Z";
+		const rkey = tidAt(future, "future");
+		await synced(channelRecord());
+		await synced(memberRecord(MEMBER));
+		await synced(message(MEMBER, rkey));
+		expect(await messageAuthors()).toEqual([]);
+
+		await applyChange(deps, memberRecord(MEMBER));
+		expect(await messageAuthors()).toEqual([]);
+		expect(skipped.map((entry) => entry.reason)).toEqual([
+			"message record key is dated in the future",
+			"message record key is dated in the future",
+		]);
+
+		deps = { ...deps, now: () => future };
+		await applyChange(deps, memberRecord(MEMBER));
+
+		expect(await messageAuthors()).toEqual([MEMBER]);
+	});
+
 	it("projects a refused message once its channel record arrives", async () => {
 		await synced(memberRecord(MEMBER));
-		await synced(message(MEMBER, "3lkmsg001"));
+		await synced(message(MEMBER, "3mry5ybrkzc22"));
 		expect(await messageAuthors()).toEqual([]);
 
 		await synced(channelRecord());
@@ -178,7 +200,7 @@ describe("admitCommunityWrites", () => {
 		await synced(channelRecord());
 		await synced(memberRecord(MEMBER));
 		await synced(moderationRecord("3lkmod001", "ban", MEMBER));
-		await synced(message(MEMBER, "3lkmsg001"));
+		await synced(message(MEMBER, "3mry5ybrkzc22"));
 		expect(await messageAuthors()).toEqual([]);
 
 		await synced(moderationRecord("3lkmod002", "unban", MEMBER));
@@ -188,7 +210,7 @@ describe("admitCommunityWrites", () => {
 
 	it("leaves an outsider's message refused when someone else joins", async () => {
 		await synced(channelRecord());
-		await synced(message(OUTSIDER, "3lkmsg001"));
+		await synced(message(OUTSIDER, "3mry5ybrkzc22"));
 		await synced(memberRecord(MEMBER));
 
 		expect(await messageAuthors()).toEqual([]);

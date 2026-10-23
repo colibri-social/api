@@ -5,8 +5,9 @@ import {
 	toJsonForm,
 	withJsonBlobRef,
 } from "@colibri-social/lexicons";
+import { tidTime } from "@colibri-social/space";
 import { and, eq, lt } from "drizzle-orm";
-import type { RecordRef } from "../context.js";
+import type { ProjectionDeps, RecordRef } from "../context.js";
 import { communityOf, type Projector } from "../projector.js";
 
 type Attribution = social.colibri.beta.bridge.defs.Attribution;
@@ -24,13 +25,42 @@ const jsonForward = (forward: NonNullable<social.colibri.beta.message.Main["forw
 export const bridgedFromKey = (attribution: { registration: string; remoteId: string } | null) =>
 	attribution ? `${attribution.registration} ${attribution.remoteId}` : "";
 
+export const MESSAGE_FUTURE_SLACK_MS = 15 * 60 * 1000;
+const STALE_CREATE_MS = 24 * 60 * 60 * 1000;
+
+const isBridgeImport = (ref: RecordRef, value: social.colibri.beta.message.Main) =>
+	value.bridged?.imported === true && ref.author === ref.space.authority;
+
+export const messageTimeRefusal = (
+	deps: ProjectionDeps,
+	ref: RecordRef,
+	value: social.colibri.beta.message.Main,
+): string | null => {
+	const keyTime = tidTime(ref.rkey);
+	if (keyTime === null) return "message record key is not a TID";
+	const latest = Date.parse(deps.now()) + MESSAGE_FUTURE_SLACK_MS;
+	if (keyTime > latest) return "message record key is dated in the future";
+	if (Date.parse(value.createdAt) > latest) return "message createdAt is in the future";
+	if (!ref.rev || isBridgeImport(ref, value)) return null;
+	const revTime = tidTime(ref.rev);
+	if (revTime !== null && keyTime < revTime - STALE_CREATE_MS) {
+		return "message record key is more than a day older than its commit";
+	}
+	return null;
+};
+
+const earlierOf = (first: string, second: string) =>
+	Date.parse(first) <= Date.parse(second) ? first : second;
+
 export const message: Projector<social.colibri.beta.message.Main> = {
 	collection: COLLECTIONS.message,
 	writer: "any",
 	admission: { rows: "messages" },
 	spaceTypes: [SPACE_TYPES.channelText, SPACE_TYPES.channelVoice, SPACE_TYPES.channelThread],
 	schema: social.colibri.beta.message,
+	refuse: messageTimeRefusal,
 	put: async (deps, ref, value) => {
+		const now = deps.now();
 		const row = {
 			space: ref.space.uri,
 			author: ref.author,
@@ -49,7 +79,7 @@ export const message: Projector<social.colibri.beta.message.Main> = {
 			suppressedEmbeds: value.suppressedEmbeds ? [...value.suppressedEmbeds] : null,
 			bridged: honouredAttribution(ref, value.bridged),
 			fromLegacyRepo: false,
-			indexedAt: deps.now(),
+			indexedAt: now,
 		};
 		await deps.db
 			.insert(deps.tables.messages)
@@ -64,13 +94,14 @@ export const message: Projector<social.colibri.beta.message.Main> = {
 			});
 
 		if (ref.space.spaceType !== SPACE_TYPES.channelThread) return;
+		const activity = earlierOf(value.createdAt, now);
 		await deps.db
 			.update(deps.tables.threads)
-			.set({ lastActivityAt: value.createdAt })
+			.set({ lastActivityAt: activity })
 			.where(
 				and(
 					eq(deps.tables.threads.space, ref.space.uri),
-					lt(deps.tables.threads.lastActivityAt, value.createdAt),
+					lt(deps.tables.threads.lastActivityAt, activity),
 				),
 			);
 	},

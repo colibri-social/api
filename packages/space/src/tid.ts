@@ -11,3 +11,8 @@ export const tidAt = (createdAt: string, seed: string): string => {
 	const clockid = digest.readUInt16BE(2) % 1024;
 	return TID.fromTime(Date.parse(createdAt) * 1000 + micros, clockid).toString();
 };
+
+export const tidTime = (value: string): number | null =>
+	isTid(value) ? Math.floor(TID.fromStr(value).timestamp() / 1000) : null;
+
+export const firstTidAt = (millis: number): string => TID.fromTime(millis * 1000, 0).toString();

@@ -20,6 +20,7 @@ export type RecordWrite = {
 	rkey: string;
 	cid: string;
 	value: Record<string, unknown>;
+	rev?: string;
 };
 
 export type RecordDelete = {

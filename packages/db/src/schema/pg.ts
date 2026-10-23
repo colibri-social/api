@@ -424,6 +424,16 @@ export const mutes = pgTable(
 	],
 );
 
+export const leftThreads = pgTable(
+	"left_threads",
+	{
+		did: text("did").notNull(),
+		space: text("space").notNull(),
+		leftAt: timestamp("left_at").notNull(),
+	},
+	(t) => [primaryKey({ columns: [t.did, t.space] }), index("left_threads_space_idx").on(t.space)],
+);
+
 export const actorSettings = pgTable("actor_settings", {
 	did: text("did").primaryKey(),
 	notificationLevel: text("notification_level").notNull().$type<NotificationLevel>().default("all"),
@@ -828,6 +838,7 @@ export const schema = {
 	labels,
 	moderationLog,
 	mutes,
+	leftThreads,
 	actorSettings,
 	spaceNotifications,
 	spaceModerations,

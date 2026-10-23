@@ -166,6 +166,7 @@ export class RepoSync {
 						rkey: op.rkey,
 						cid: op.cid,
 						value: op.value,
+						...(op.prev === null ? { rev: op.rev } : {}),
 					});
 				}
 				rev = op.rev;

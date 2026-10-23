@@ -24,6 +24,10 @@ const COMMUNITY = "did:plc:communityxxxxxxxxxxxxxxxxxxx";
 const CHANNEL = `at://${COMMUNITY}/space/social.colibri.beta.channel.text/3lkchannel001` as const;
 const MUTED_ACTOR = "social.colibri.beta.actor.defs#mutedActor" as const;
 const MUTED_CHANNEL = "social.colibri.beta.actor.defs#mutedChannel" as const;
+const THREAD = `at://${COMMUNITY}/space/social.colibri.beta.channel.thread/3lkthread0001` as const;
+const OTHER_THREAD =
+	`at://${COMMUNITY}/space/social.colibri.beta.channel.thread/3lkthread0002` as const;
+const LATER = "2026-08-23T01:00:00.000Z";
 
 let database: TestDatabase;
 let ctx: AppContext;
@@ -345,9 +349,9 @@ describe("putMutes", () => {
 			createdAt: NOW,
 		});
 
-		const result = await handlePutMutes(ctx, CALLER, [
-			{ subject: { $type: MUTED_ACTOR, did: COMMUNITY }, createdAt: NOW },
-		]);
+		const result = await handlePutMutes(ctx, CALLER, {
+			mutes: [{ subject: { $type: MUTED_ACTOR, did: COMMUNITY }, createdAt: NOW }],
+		});
 
 		expect(result.preferences.mutes).toHaveLength(1);
 		expect(result.preferences.mutes[0]?.subject).toEqual({ $type: MUTED_ACTOR, did: COMMUNITY });
@@ -358,10 +362,12 @@ describe("putMutes", () => {
 	});
 
 	it("stores a channel mute as its space reference and reads it back as one", async () => {
-		const result = await handlePutMutes(ctx, CALLER, [
-			{ subject: { $type: MUTED_CHANNEL, channel: CHANNEL }, createdAt: NOW },
-			{ subject: { $type: MUTED_ACTOR, did: COMMUNITY }, createdAt: NOW },
-		]);
+		const result = await handlePutMutes(ctx, CALLER, {
+			mutes: [
+				{ subject: { $type: MUTED_CHANNEL, channel: CHANNEL }, createdAt: NOW },
+				{ subject: { $type: MUTED_ACTOR, did: COMMUNITY }, createdAt: NOW },
+			],
+		});
 
 		expect(result.preferences.mutes.map((mute) => mute.subject)).toEqual([
 			{ $type: MUTED_CHANNEL, channel: CHANNEL },
@@ -380,10 +386,12 @@ describe("putMutes", () => {
 			createdAt: NOW,
 		});
 
-		await handlePutMutes(ctx, CALLER, [
-			{ subject: { $type: MUTED_ACTOR, did: COMMUNITY }, createdAt: NOW },
-			{ subject: { $type: MUTED_CHANNEL, channel: CHANNEL }, createdAt: NOW },
-		]);
+		await handlePutMutes(ctx, CALLER, {
+			mutes: [
+				{ subject: { $type: MUTED_ACTOR, did: COMMUNITY }, createdAt: NOW },
+				{ subject: { $type: MUTED_CHANNEL, channel: CHANNEL }, createdAt: NOW },
+			],
+		});
 
 		const rows = await database.db
 			.select()
@@ -394,14 +402,16 @@ describe("putMutes", () => {
 	});
 
 	it("drops subjects the caller no longer mutes", async () => {
-		await handlePutMutes(ctx, CALLER, [
-			{ subject: { $type: MUTED_ACTOR, did: COMMUNITY }, createdAt: NOW },
-			{ subject: { $type: MUTED_CHANNEL, channel: CHANNEL }, createdAt: NOW },
-		]);
+		await handlePutMutes(ctx, CALLER, {
+			mutes: [
+				{ subject: { $type: MUTED_ACTOR, did: COMMUNITY }, createdAt: NOW },
+				{ subject: { $type: MUTED_CHANNEL, channel: CHANNEL }, createdAt: NOW },
+			],
+		});
 
-		const result = await handlePutMutes(ctx, CALLER, [
-			{ subject: { $type: MUTED_CHANNEL, channel: CHANNEL }, createdAt: NOW },
-		]);
+		const result = await handlePutMutes(ctx, CALLER, {
+			mutes: [{ subject: { $type: MUTED_CHANNEL, channel: CHANNEL }, createdAt: NOW }],
+		});
 
 		expect(result.preferences.mutes.map((mute) => mute.subject)).toEqual([
 			{ $type: MUTED_CHANNEL, channel: CHANNEL },
@@ -412,6 +422,109 @@ describe("putMutes", () => {
 			.from(database.tables.mutes)
 			.where(eq(database.tables.mutes.did, CALLER));
 		expect(rows.map((row) => row.subject)).toEqual([CHANNEL]);
+	});
+});
+
+describe("putMutes left threads", () => {
+	const pingCaller = (space: string, indexedAt: string, kind: "mention" | "reply" | "message") =>
+		database.db.insert(database.tables.notifications).values({
+			id: `${kind}-${indexedAt}`,
+			recipient: CALLER,
+			kind,
+			community: COMMUNITY,
+			space,
+			author: OTHER,
+			messageAuthor: OTHER,
+			messageRkey: "3lkmessage001",
+			mentionRole: null,
+			indexedAt,
+			seenAt: null,
+		});
+
+	it("stores the caller's left threads and answers with them", async () => {
+		const result = await handlePutMutes(ctx, CALLER, {
+			leftThreads: [{ thread: THREAD, leftAt: NOW }],
+		});
+
+		expect(result.preferences.leftThreads).toEqual([{ thread: THREAD, leftAt: NOW }]);
+		asPreferencesOutput(result);
+	});
+
+	it("replaces the whole list and leaves other users alone", async () => {
+		await database.db
+			.insert(database.tables.leftThreads)
+			.values({ did: OTHER, space: THREAD, leftAt: NOW });
+		await handlePutMutes(ctx, CALLER, {
+			leftThreads: [
+				{ thread: THREAD, leftAt: NOW },
+				{ thread: OTHER_THREAD, leftAt: NOW },
+			],
+		});
+
+		const result = await handlePutMutes(ctx, CALLER, {
+			leftThreads: [{ thread: OTHER_THREAD, leftAt: LATER }],
+		});
+
+		expect(result.preferences.leftThreads).toEqual([{ thread: OTHER_THREAD, leftAt: LATER }]);
+		const rows = await database.db.select().from(database.tables.leftThreads);
+		expect(rows.filter((row) => row.did === OTHER)).toHaveLength(1);
+	});
+
+	it("drops a thread where someone pinged the caller after they left", async () => {
+		await pingCaller(THREAD, LATER, "mention");
+		await pingCaller(OTHER_THREAD, LATER, "message");
+
+		const result = await handlePutMutes(ctx, CALLER, {
+			leftThreads: [
+				{ thread: THREAD, leftAt: NOW },
+				{ thread: OTHER_THREAD, leftAt: NOW },
+			],
+		});
+
+		expect(result.preferences.leftThreads).toEqual([{ thread: OTHER_THREAD, leftAt: NOW }]);
+	});
+
+	it("keeps a thread whose pings all came before the caller left", async () => {
+		await pingCaller(THREAD, NOW, "reply");
+
+		const result = await handlePutMutes(ctx, CALLER, {
+			leftThreads: [{ thread: THREAD, leftAt: LATER }],
+		});
+
+		expect(result.preferences.leftThreads).toEqual([{ thread: THREAD, leftAt: LATER }]);
+	});
+
+	it("keeps the left threads when a push carries only mutes, and the mutes when it carries only left threads", async () => {
+		await handlePutMutes(ctx, CALLER, {
+			mutes: [{ subject: { $type: MUTED_ACTOR, did: COMMUNITY }, createdAt: NOW }],
+			leftThreads: [{ thread: THREAD, leftAt: NOW }],
+		});
+
+		const afterMutes = await handlePutMutes(ctx, CALLER, { mutes: [] });
+		expect(afterMutes.preferences.leftThreads).toEqual([{ thread: THREAD, leftAt: NOW }]);
+
+		await handlePutMutes(ctx, CALLER, {
+			mutes: [{ subject: { $type: MUTED_ACTOR, did: COMMUNITY }, createdAt: NOW }],
+		});
+		const afterLeft = await handlePutMutes(ctx, CALLER, { leftThreads: [] });
+		expect(afterLeft.preferences.leftThreads).toEqual([]);
+		expect(afterLeft.preferences.mutes).toHaveLength(1);
+	});
+
+	it("writes nothing when a left thread is not a thread", async () => {
+		await expect(
+			handlePutMutes(ctx, CALLER, {
+				mutes: [{ subject: { $type: MUTED_ACTOR, did: COMMUNITY }, createdAt: NOW }],
+				leftThreads: [{ thread: CHANNEL, leftAt: NOW }],
+			}),
+		).rejects.toMatchObject({ customErrorName: "InvalidRequest" });
+		expect(await database.db.select().from(database.tables.mutes)).toEqual([]);
+	});
+
+	it("rejects a space that is not a thread", async () => {
+		await expect(
+			handlePutMutes(ctx, CALLER, { leftThreads: [{ thread: CHANNEL, leftAt: NOW }] }),
+		).rejects.toMatchObject({ customErrorName: "InvalidRequest" });
 	});
 });
 
@@ -476,6 +589,16 @@ describe("deleteAccount", () => {
 		await handleDeleteAccount(ctx, CALLER);
 
 		expect(await database.db.select().from(database.tables.spaceNotifications)).toEqual([]);
+	});
+
+	it("removes the caller's left threads", async () => {
+		await database.db
+			.insert(database.tables.leftThreads)
+			.values({ did: CALLER, space: THREAD, leftAt: NOW });
+
+		await handleDeleteAccount(ctx, CALLER);
+
+		expect(await database.db.select().from(database.tables.leftThreads)).toEqual([]);
 	});
 
 	it("removes the caller's Space moderation options", async () => {

@@ -15,7 +15,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"mutes":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ActorDefs.Mute>((() => ActorDefs.mute) as any), )});
+export const $input = /*#__PURE__*/ l.jsonPayload({"mutes":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ActorDefs.Mute>((() => ActorDefs.mute) as any), )),"leftThreads":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ActorDefs.LeftThread>((() => ActorDefs.leftThread) as any), ))});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;
@@ -25,7 +25,7 @@ export const $output = /*#__PURE__*/ l.jsonPayload({"preferences":/*#__PURE__*/ 
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Pushes the requesting user's mute list to the AppView, so it takes effect immediately instead of waiting for a sync notification. The client writes the underlying records to its own personal space first, then calls this. This replaces the AppView's whole copy of the user's mute list. */
+/** Pushes the requesting user's mute list and list of left threads to the AppView, so they take effect immediately instead of waiting for a sync notification. The client writes the underlying mute records to its own personal space first, then calls this. Each list the request carries replaces the AppView's whole copy of that list. */
 const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired"]);
 
 export { main };

@@ -293,6 +293,11 @@ type Preferences = { $type?: "social.colibri.beta.actor.defs#preferences";
   "spaceModerations"?:(SpaceModeration)[];
 
   /**
+   * Threads the user left. A ping in a thread after leftAt brings the user back and removes its entry.
+   */
+  "leftThreads"?:(LeftThread)[];
+
+  /**
    * Client settings that follow the user across devices.
    */
   "clientPreferences"?:ClientPreferences;
@@ -305,7 +310,7 @@ type Preferences = { $type?: "social.colibri.beta.actor.defs#preferences";
 export type { Preferences };
 
 /** The authenticated user's own settings, as the AppView currently holds them. */
-const preferences = /*#__PURE__*/ l.typedObject<Preferences>($nsid, "preferences", /*#__PURE__*/ l.object({"notificationLevel":/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies","nothing"]}>(),"communityOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"mutes":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Mute>((() => mute) as any), ),"gifFavorites":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), ),"shareActivity":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"spaceNotifications":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<SpaceNotification>((() => spaceNotification) as any), )),"spaceModerations":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<SpaceModeration>((() => spaceModeration) as any), )),"clientPreferences":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ClientPreferences>((() => clientPreferences) as any)),"composerState":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ComposerState>((() => composerState) as any))}));
+const preferences = /*#__PURE__*/ l.typedObject<Preferences>($nsid, "preferences", /*#__PURE__*/ l.object({"notificationLevel":/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies","nothing"]}>(),"communityOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"mutes":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Mute>((() => mute) as any), ),"gifFavorites":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), ),"shareActivity":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"spaceNotifications":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<SpaceNotification>((() => spaceNotification) as any), )),"spaceModerations":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<SpaceModeration>((() => spaceModeration) as any), )),"leftThreads":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<LeftThread>((() => leftThread) as any), )),"clientPreferences":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ClientPreferences>((() => clientPreferences) as any)),"composerState":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ComposerState>((() => composerState) as any))}));
 
 export { preferences };
 
@@ -373,6 +378,26 @@ export type { MutedThread };
 const mutedThread = /*#__PURE__*/ l.typedObject<MutedThread>($nsid, "mutedThread", /*#__PURE__*/ l.object({"thread":/*#__PURE__*/ l.string({"format":"space-ref"})}));
 
 export { mutedThread };
+
+/** A thread the user left. The user stays out of the thread's audience until someone pings them in it, they follow it again or they post in it. */
+type LeftThread = { $type?: "social.colibri.beta.actor.defs#leftThread";
+
+  /**
+   * The left thread's space.
+   */
+  "thread":l.SpaceRefString;
+
+  /**
+   * When the user left the thread.
+   */
+  "leftAt":l.DatetimeString };
+
+export type { LeftThread };
+
+/** A thread the user left. The user stays out of the thread's audience until someone pings them in it, they follow it again or they post in it. */
+const leftThread = /*#__PURE__*/ l.typedObject<LeftThread>($nsid, "leftThread", /*#__PURE__*/ l.object({"thread":/*#__PURE__*/ l.string({"format":"space-ref"}),"leftAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
+
+export { leftThread };
 
 /** A notification level for one community. */
 type SpaceNotification = { $type?: "social.colibri.beta.actor.defs#spaceNotification";

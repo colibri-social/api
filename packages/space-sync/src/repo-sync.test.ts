@@ -285,6 +285,9 @@ describe("incremental sync", () => {
 		expect(calls.getRepoCar).toBe(0);
 		expect([...stored.keys()].sort()).toEqual([`${MESSAGE}/3a`, `${MESSAGE}/3b`]);
 		expect(cursors.get(AUTHOR)?.appliedRev).toBe("3rev2");
+		expect(outcome.kind === "advanced" && outcome.change.puts.map((put) => put.rev)).toEqual([
+			"3rev2",
+		]);
 	});
 
 	it("applies a delete and removes its element from the set hash", async () => {
@@ -343,6 +346,7 @@ describe("incremental sync", () => {
 		expect(outcome.kind).toBe("advanced");
 		expect(calls.getRepoCar).toBe(0);
 		expect(stored.get(`${MESSAGE}/3a`)?.value.text).toBe("edited");
+		expect(outcome.kind === "advanced" && outcome.change.puts[0]?.rev).toBeUndefined();
 	});
 
 	it("falls back to a full recovery when the set hash disagrees with the commit", async () => {

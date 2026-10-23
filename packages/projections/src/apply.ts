@@ -58,7 +58,13 @@ export const projectedCollections = (): string[] => [...BY_COLLECTION.keys()];
 export type SpaceChange = {
 	space: string;
 	author: string;
-	puts: Array<{ collection: string; rkey: string; cid: string; value: Record<string, unknown> }>;
+	puts: Array<{
+		collection: string;
+		rkey: string;
+		cid: string;
+		value: Record<string, unknown>;
+		rev?: string;
+	}>;
 	deletes: Array<{ collection: string; rkey: string }>;
 };
 
@@ -89,7 +95,14 @@ export const applyChange = async (deps: ProjectionDeps, change: SpaceChange): Pr
 	for (const entry of change.puts) {
 		const projector = BY_COLLECTION.get(entry.collection);
 		if (!projector) continue;
-		const ref: RecordRef = { space, author: change.author, ...entry };
+		const ref: RecordRef = {
+			space,
+			author: change.author,
+			collection: entry.collection,
+			rkey: entry.rkey,
+			cid: entry.cid,
+			...(entry.rev ? { rev: entry.rev } : {}),
+		};
 		const refusal = refusalFor(projector, ref) ?? (await admissionRefusal(projector, ref));
 		if (refusal) {
 			deps.onSkipped?.(ref, refusal);
