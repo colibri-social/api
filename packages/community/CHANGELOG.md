@@ -1,5 +1,20 @@
 # @colibri-social/community
 
+## 2.13.1
+
+### Patch Changes
+
+- ea8de44: Leave legacy messages dated more than 15 minutes ahead of the import out of a migrated Space's history.
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+  - @colibri-social/projections@1.14.0
+  - @colibri-social/appview-db@0.20.0
+  - @colibri-social/lexicons@2.33.0
+
 ## 2.13.0
 
 ### Minor Changes

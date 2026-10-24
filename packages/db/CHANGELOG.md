@@ -1,5 +1,12 @@
 # @colibri-social/appview-db
 
+## 0.20.0
+
+### Minor Changes
+
+- ea8de44: Add the `hide_owner_badge` column to `communities`.
+- ea8de44: Add the `emoji` and `customEmoji` kinds to the `RoleBadge` type stored in the roles `badge` column.
+
 ## 0.19.0
 
 ### Minor Changes

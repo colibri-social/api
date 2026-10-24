@@ -1,5 +1,28 @@
 # @colibri-social/appview
 
+## 2.32.0
+
+### Minor Changes
+
+- ea8de44: Accept emoji role badges on `role.create` and `role.update`, and return them in role views. A custom emoji badge carries its name and image URL when the emoji index knows it.
+
+### Patch Changes
+
+- ea8de44: Send the first image of a message with its push, skip notifications, thread reopening and live updates for messages the time guard refuses, and store and return the `hideOwnerBadge` Space setting.
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+  - @colibri-social/projections@1.14.0
+  - @colibri-social/appview-db@0.20.0
+  - @colibri-social/lexicons@2.33.0
+  - @colibri-social/community@2.13.1
+  - @colibri-social/notifications@1.8.11
+
 ## 2.31.0
 
 ### Minor Changes
