@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { NotificationDeps } from "./deps.js";
 import { nextId } from "./id.js";
 import {
+	attachmentFallbackBody,
 	buildDeletePayload,
 	buildPayload,
 	buildReadPayload,
@@ -247,6 +248,58 @@ describe("buildPayload", () => {
 		expect(payload.data.type).toBe("edit");
 		expect(payload.data.body).toBe("fixed");
 		expect(payload.tag).toBe(`${notification.author}/${notification.messageRkey}`);
+	});
+});
+
+describe("attachment pushes", () => {
+	const image = (url: string) => ({ mimeType: "image/png", url });
+	const file = { mimeType: "application/pdf", url: "https://appview.example/file" };
+
+	it("names what was sent when a message has attachments but no text", () => {
+		expect(attachmentFallbackBody([])).toBeUndefined();
+		expect(attachmentFallbackBody([image("a")])).toBe("Sent a photo");
+		expect(attachmentFallbackBody([image("a"), image("b")])).toBe("Sent 2 photos");
+		expect(attachmentFallbackBody([file])).toBe("Sent an attachment");
+		expect(attachmentFallbackBody([image("a"), file])).toBe("Sent 2 attachments");
+	});
+
+	it("uses the fallback body and the first image URL for an attachment-only message", () => {
+		const payload = buildPayload(notification, {
+			text: "",
+			attachments: [
+				file,
+				image("https://appview.example/one"),
+				image("https://appview.example/two"),
+			],
+		});
+
+		expect(payload.body).toBe("Sent 3 attachments");
+		expect(payload.data.body).toBe("Sent 3 attachments");
+		expect(payload.data.imageUrl).toBe("https://appview.example/one");
+		expect(fcmMessage("token-1", payload).data.imageUrl).toBe("https://appview.example/one");
+	});
+
+	it("keeps the message text and skips spoilered images", () => {
+		const payload = buildPayload(notification, {
+			text: "look",
+			attachments: [
+				{ ...image("https://appview.example/hidden"), spoiler: true },
+				image("https://appview.example/shown"),
+			],
+		});
+
+		expect(payload.data.body).toBe("look");
+		expect(payload.data.imageUrl).toBe("https://appview.example/shown");
+	});
+
+	it("leaves the image URL off when no image can be shown", () => {
+		const payload = buildPayload(notification, {
+			text: "",
+			attachments: [{ ...image("https://appview.example/hidden"), spoiler: true }, file],
+		});
+
+		expect(payload.data.imageUrl).toBeUndefined();
+		expect(payload.data.body).toBe("Sent 2 attachments");
 	});
 });
 
@@ -557,6 +610,29 @@ describe("delivery with place, badge and read action", () => {
 				channelUri: CHANNEL,
 				threadUri: THREAD,
 				subtitle: "Mentioned you · Protocol Nerds › Launch plans",
+			},
+		});
+	});
+
+	it("carries the recipient's attachments on an edit", async () => {
+		await insertNotification({ space: THREAD });
+
+		await deliverMessageEdited(
+			deps,
+			senders(),
+			{ space: THREAD, author: notification.author, rkey: "3lkmsg1", text: "" },
+			{ name: "Alice" },
+			{
+				attachmentsFor: (recipient) => [
+					{ mimeType: "image/jpeg", url: `https://appview.example/blob?viewer=${recipient}` },
+				],
+			},
+		);
+
+		expect(sent[0]?.payload).toMatchObject({
+			data: {
+				body: "Sent a photo",
+				imageUrl: `https://appview.example/blob?viewer=${ACTOR}`,
 			},
 		});
 	});

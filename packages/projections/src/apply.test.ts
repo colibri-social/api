@@ -305,6 +305,62 @@ describe("role badges", () => {
 				COMMUNITY,
 				"social.colibri.beta.role",
 				"3lkrole1",
+				roleWithBadge({ $type: "social.colibri.beta.role#stickerBadge", sticker: "x" }),
+			),
+		);
+
+		const [row] = await database.db.select().from(database.tables.roles);
+		expect(row?.name).toBe("Moderator");
+		expect(row?.badge).toBeNull();
+	});
+
+	it("projects a Unicode emoji badge and a custom emoji badge", async () => {
+		const uri = `at://${COMMUNITY}/blue.moji.collection.item/parrot`;
+		await applyChange(
+			deps,
+			put(
+				SPACES.members,
+				COMMUNITY,
+				"social.colibri.beta.role",
+				"3lkrole1",
+				roleWithBadge({ $type: "social.colibri.beta.role#emojiBadge", emoji: "🦜" }),
+			),
+		);
+		await applyChange(
+			deps,
+			put(
+				SPACES.members,
+				COMMUNITY,
+				"social.colibri.beta.role",
+				"3lkrole2",
+				roleWithBadge({
+					$type: "social.colibri.beta.role#emojiBadge",
+					customEmoji: { uri, cid: PICTURE_CID },
+				}),
+			),
+		);
+
+		expect(skipped).toEqual([]);
+		const rows = await database.db.select().from(database.tables.roles);
+		expect(rows.find((row) => row.rkey === "3lkrole1")?.badge).toEqual({
+			kind: "emoji",
+			emoji: "🦜",
+		});
+		expect(rows.find((row) => row.rkey === "3lkrole2")?.badge).toEqual({
+			kind: "customEmoji",
+			uri,
+			cid: PICTURE_CID,
+		});
+	});
+
+	it("drops an emoji badge that holds no emoji", async () => {
+		await applyChange(
+			deps,
+			put(
+				SPACES.members,
+				COMMUNITY,
+				"social.colibri.beta.role",
+				"3lkrole1",
 				roleWithBadge({ $type: "social.colibri.beta.role#emojiBadge", emoji: "x" }),
 			),
 		);
@@ -389,6 +445,44 @@ describe("name colour override", () => {
 		);
 		const [row] = await database.db.select().from(database.tables.communities);
 		expect(row?.overrideUserNameColors).toBe(false);
+	});
+});
+
+describe("owner badge setting", () => {
+	it("projects hideOwnerBadge from the settings record and resets it when the record goes", async () => {
+		await applyChange(
+			deps,
+			put(SPACES.configuration, COMMUNITY, "social.colibri.beta.community.settings", SELF, {
+				$type: "social.colibri.beta.community.settings",
+				categoryOrder: [],
+				requiresApprovalToJoin: false,
+				hideOwnerBadge: true,
+			}),
+		);
+		const [on] = await database.db.select().from(database.tables.communities);
+		expect(on?.hideOwnerBadge).toBe(true);
+
+		await applyChange(deps, {
+			space: SPACES.configuration,
+			author: COMMUNITY,
+			puts: [],
+			deletes: [{ collection: "social.colibri.beta.community.settings", rkey: SELF }],
+		});
+		const [off] = await database.db.select().from(database.tables.communities);
+		expect(off?.hideOwnerBadge).toBe(false);
+	});
+
+	it("defaults hideOwnerBadge to false", async () => {
+		await applyChange(
+			deps,
+			put(SPACES.configuration, COMMUNITY, "social.colibri.beta.community.settings", SELF, {
+				$type: "social.colibri.beta.community.settings",
+				categoryOrder: [],
+				requiresApprovalToJoin: false,
+			}),
+		);
+		const [row] = await database.db.select().from(database.tables.communities);
+		expect(row?.hideOwnerBadge).toBe(false);
 	});
 });
 
@@ -1489,6 +1583,22 @@ describe("thread projection", () => {
 
 		const [row] = await threadRows();
 		expect(row?.lastActivityAt).toBe(later);
+	});
+
+	it("keeps a thread's last activity at the server clock for a thread record dated ahead", async () => {
+		await applyChange(
+			deps,
+			put(
+				THREAD,
+				COMMUNITY,
+				"social.colibri.beta.thread",
+				SELF,
+				record({ createdAt: "2030-01-01T00:00:00.000Z" }),
+			),
+		);
+
+		const [row] = await threadRows();
+		expect(row?.lastActivityAt).toBe(NOW);
 	});
 
 	it("records a follow written by the follower and forgets it on delete", async () => {

@@ -28,19 +28,36 @@ export const bridgedFromKey = (attribution: { registration: string; remoteId: st
 export const MESSAGE_FUTURE_SLACK_MS = 15 * 60 * 1000;
 const STALE_CREATE_MS = 24 * 60 * 60 * 1000;
 
-const isBridgeImport = (ref: RecordRef, value: social.colibri.beta.message.Main) =>
+export type MessageTimeRef = Pick<RecordRef, "author" | "rkey" | "rev"> & {
+	space: Pick<RecordRef["space"], "authority">;
+};
+
+export type MessageTimeValue = { createdAt: string; bridged?: { imported?: boolean } };
+
+const isBridgeImport = (ref: MessageTimeRef, value: MessageTimeValue) =>
 	value.bridged?.imported === true && ref.author === ref.space.authority;
 
+export const messageFutureRefusal = (
+	now: string,
+	rkey: string,
+	createdAt: string,
+): string | null => {
+	const keyTime = tidTime(rkey);
+	const latest = Date.parse(now) + MESSAGE_FUTURE_SLACK_MS;
+	if (keyTime !== null && keyTime > latest) return "message record key is dated in the future";
+	if (Date.parse(createdAt) > latest) return "message createdAt is in the future";
+	return null;
+};
+
 export const messageTimeRefusal = (
-	deps: ProjectionDeps,
-	ref: RecordRef,
-	value: social.colibri.beta.message.Main,
+	deps: Pick<ProjectionDeps, "now">,
+	ref: MessageTimeRef,
+	value: MessageTimeValue,
 ): string | null => {
 	const keyTime = tidTime(ref.rkey);
 	if (keyTime === null) return "message record key is not a TID";
-	const latest = Date.parse(deps.now()) + MESSAGE_FUTURE_SLACK_MS;
-	if (keyTime > latest) return "message record key is dated in the future";
-	if (Date.parse(value.createdAt) > latest) return "message createdAt is in the future";
+	const futureRefusal = messageFutureRefusal(deps.now(), ref.rkey, value.createdAt);
+	if (futureRefusal) return futureRefusal;
 	if (!ref.rev || isBridgeImport(ref, value)) return null;
 	const revTime = tidTime(ref.rev);
 	if (revTime !== null && keyTime < revTime - STALE_CREATE_MS) {

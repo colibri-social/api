@@ -20,12 +20,14 @@ import {
 	asHandle,
 	asRecordKey,
 	asSpaceRef,
+	asUri,
 	asUriOrUndefined,
 	communitySpaces,
 	type social,
 } from "@colibri-social/lexicons";
 import { and, asc, eq, gt, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
+import { loadEmojis, parseEmojiUri } from "../emoji.js";
 import { signBlobUrl } from "../media-token.js";
 import type { ActorViews } from "./actor.js";
 
@@ -39,6 +41,9 @@ type CommunityRow = Schema["communities"]["$inferSelect"];
 type MemberRow = Schema["members"]["$inferSelect"];
 type ChannelRow = Schema["channels"]["$inferSelect"];
 type RoleRow = Schema["roles"]["$inferSelect"];
+type RoleBadgeEmoji = { name: string; image?: string };
+
+const EMOJI_BADGE_VIEW = "social.colibri.beta.community.defs#roleEmojiBadgeView";
 
 const INVALID_HANDLE = "handle.invalid";
 
@@ -106,6 +111,7 @@ export class CommunityViews {
 			requiresApprovalToJoin: row.requiresApproval,
 			linkEmbeds: row.linkEmbeds,
 			overrideUserNameColors: row.overrideUserNameColors,
+			hideOwnerBadge: row.hideOwnerBadge,
 			...(row.customEmoji && row.customEmoji !== "all" ? { customEmoji: row.customEmoji } : {}),
 			labelers: row.labelers.map(asDid),
 			...(row.migratedFrom ? { migratedFrom: asAtUri(row.migratedFrom) } : {}),
@@ -144,7 +150,11 @@ export class CommunityViews {
 		} as ChannelView;
 	}
 
-	private roleBadge(row: RoleRow, viewer: string): RoleView["badge"] {
+	private roleBadge(
+		row: RoleRow,
+		viewer: string,
+		emojis?: ReadonlyMap<string, RoleBadgeEmoji>,
+	): RoleView["badge"] {
 		const badge = row.badge;
 		if (!badge) return undefined;
 		if (badge.kind === "icon") {
@@ -153,6 +163,21 @@ export class CommunityViews {
 				icon: badge.icon,
 				...(badge.color ? { color: badge.color } : {}),
 			};
+		}
+		if (badge.kind === "emoji") {
+			return { $type: EMOJI_BADGE_VIEW, emoji: badge.emoji };
+		}
+		if (badge.kind === "customEmoji") {
+			const resolved = emojis?.get(badge.uri);
+			return {
+				$type: EMOJI_BADGE_VIEW,
+				customEmoji: {
+					uri: asAtUri(badge.uri),
+					...(badge.cid ? { cid: badge.cid } : {}),
+				},
+				...(resolved ? { name: resolved.name } : {}),
+				...(resolved?.image ? { image: asUri(resolved.image) } : {}),
+			} as RoleView["badge"];
 		}
 		const image = asUriOrUndefined(
 			this.blobUrl(
@@ -167,12 +192,58 @@ export class CommunityViews {
 		return { $type: "social.colibri.beta.community.defs#roleImageBadgeView", image };
 	}
 
-	role(row: RoleRow, viewer: string, memberCount?: number): RoleView {
+	async roleEmojis(rows: readonly RoleRow[]): Promise<Map<string, RoleBadgeEmoji>> {
+		const keys = new Map<string, { collection: string; rkey: string }[]>();
+		for (const row of rows) {
+			if (row.badge?.kind !== "customEmoji") continue;
+			const parsed = parseEmojiUri(row.badge.uri);
+			if (!parsed) continue;
+			keys.set(parsed.owner, [
+				...(keys.get(parsed.owner) ?? []),
+				{ collection: parsed.collection, rkey: parsed.rkey },
+			]);
+		}
+		const out = new Map<string, RoleBadgeEmoji>();
+		const owners = await Promise.all(
+			[...keys].map(([owner, ownerKeys]) =>
+				loadEmojis(this.ctx, owner, ownerKeys).catch((error: unknown) => {
+					this.ctx.log.warn({ code: "EmojiLookupFailed", owner, error }, "role.badgeEmojiFailed");
+					return [];
+				}),
+			),
+		);
+		for (const emoji of owners.flat()) {
+			const image = emoji.images.find((entry) => entry.format !== "lottie");
+			out.set(emoji.uri, {
+				name: emoji.name,
+				image: image ? this.publicBlobUrl(emoji.owner, image.cid) : undefined,
+			});
+		}
+		return out;
+	}
+
+	private publicBlobUrl(did: string, cid: string): string {
+		const url = new URL("/xrpc/social.colibri.beta.blob.get", this.ctx.config.PUBLIC_URL);
+		url.searchParams.set("did", did);
+		url.searchParams.set("cid", cid);
+		return url.toString();
+	}
+
+	async resolvedRole(row: RoleRow, viewer: string): Promise<RoleView> {
+		return this.role(row, viewer, undefined, await this.roleEmojis([row]));
+	}
+
+	role(
+		row: RoleRow,
+		viewer: string,
+		memberCount?: number,
+		emojis?: ReadonlyMap<string, RoleBadgeEmoji>,
+	): RoleView {
 		return {
 			rkey: asRecordKey(row.rkey),
 			name: row.name,
 			color: row.color ?? undefined,
-			badge: this.roleBadge(row, viewer),
+			badge: this.roleBadge(row, viewer, emojis),
 			permissions: row.permissions,
 			position: row.position,
 			hoisted: row.hoisted,
@@ -316,7 +387,8 @@ export class CommunityViews {
 			.from(this.ctx.database.tables.roles)
 			.where(eq(this.ctx.database.tables.roles.community, community))
 			.orderBy(asc(this.ctx.database.tables.roles.position));
-		return rows.map((row) => this.role(row, viewer));
+		const emojis = await this.roleEmojis(rows);
+		return rows.map((row) => this.role(row, viewer, undefined, emojis));
 	}
 
 	categoryAudienceView(

@@ -218,6 +218,13 @@
 			"when": 1792745919691,
 			"tag": "0030_calm_spencer_smythe",
 			"breakpoints": true
+		},
+		{
+			"idx": 31,
+			"version": "7",
+			"when": 1792834975215,
+			"tag": "0031_legal_yellowjacket",
+			"breakpoints": true
 		}
 	]
 }

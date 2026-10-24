@@ -19,6 +19,7 @@ const pushed = vi.hoisted(() => ({
 	edited: [] as unknown[],
 	readMoved: [] as unknown[][],
 	notified: [] as string[],
+	notifiedMessages: [] as unknown[],
 }));
 
 vi.mock("@colibri-social/notifications", async (importOriginal) => {
@@ -31,8 +32,14 @@ vi.mock("@colibri-social/notifications", async (importOriginal) => {
 			pushed.deleted.push(message);
 			return 0;
 		},
-		deliverNotification: async (_deps: unknown, _senders: unknown, row: { recipient: string }) => {
+		deliverNotification: async (
+			_deps: unknown,
+			_senders: unknown,
+			row: { recipient: string },
+			message: unknown,
+		) => {
 			pushed.notified.push(row.recipient);
+			pushed.notifiedMessages.push(message);
 		},
 		deliverMessageEdited: async (
 			_deps: unknown,
@@ -220,6 +227,7 @@ beforeEach(async () => {
 	forgotten = [];
 	threadWrites = [];
 	pushed.notified = [];
+	pushed.notifiedMessages = [];
 	voicePresence = new Map();
 
 	const ctx = {
@@ -263,6 +271,7 @@ beforeEach(async () => {
 			publish: (change: { community: string }) => authzChanges.push(change.community),
 		},
 		voice: { presenceOf: (did: string) => voicePresence.get(did) },
+		projections: { now: () => new Date().toISOString() },
 		writer: {
 			put: async (community: string, write: { space: string; record: Record<string, unknown> }) => {
 				threadWrites.push({ community, space: write.space, record: write.record });
@@ -445,6 +454,41 @@ describe("connectPipeline", () => {
 		expect(notification.message.attachments).toHaveLength(1);
 		const url = new URL(notification.message.attachments[0]?.url as string);
 		expect(url.searchParams.get("viewer")).toBe(mentioned);
+
+		await vi.waitFor(() => expect(pushed.notifiedMessages).toHaveLength(1));
+		const [pushedMessage] = pushed.notifiedMessages as {
+			attachments: { mimeType: string; url: string }[];
+		}[];
+		expect(pushedMessage?.attachments).toEqual([
+			{ mimeType: "image/png", url: notification.message.attachments[0]?.url },
+		]);
+	});
+
+	it("never notifies or publishes a message the time guard refuses", async () => {
+		const mentioned = "did:plc:mentionedmentionedment";
+		await database.db.insert(database.tables.members).values([
+			{ community: COMMUNITY, did: AUTHOR, roles: [], joinedAt: NOW },
+			{ community: COMMUNITY, did: mentioned, roles: [], joinedAt: NOW },
+		]);
+		const refused = messageChange(nextTid());
+		const refusedPut = refused.puts[0] as { value: Record<string, unknown> };
+		refusedPut.value.createdAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+		refusedPut.value.facets = [mentionFacet(mentioned)];
+		const accepted = nextTid();
+		const change = messageChange(accepted);
+		(change.puts[0] as { value: Record<string, unknown> }).value.facets = [mentionFacet(mentioned)];
+		await putMessageRow(accepted, "hello");
+
+		emit(refused);
+		emit(change);
+		await vi.waitFor(() => expect(framesOfType("notificationEvent")).toHaveLength(1));
+		await new Promise((resolve) => setTimeout(resolve, 50));
+
+		const [entry, ...rest] = framesOfType("notificationEvent");
+		expect(rest).toHaveLength(0);
+		const notification = entry?.frame.notification as { message: { rkey: string } } | undefined;
+		expect(notification?.message.rkey).toBe(accepted);
+		expect(pushed.notified).toEqual([mentioned]);
 	});
 
 	it("never notifies a mention that only appears inside a forwarded snapshot", async () => {
@@ -866,16 +910,18 @@ describe("push updates for deleted and edited messages", () => {
 	});
 
 	it("pushes an edit with the new text for an updated message, and nothing for a new one", async () => {
-		await putMessageRow("3lkmsgedited", "fixed");
-		await putMessageRow("3lkmsgfresh", "new");
-		emit(messageChange("3lkmsgfresh"));
+		const edited = nextTid();
+		const fresh = nextTid();
+		await putMessageRow(edited, "fixed");
+		await putMessageRow(fresh, "new");
+		emit(messageChange(fresh));
 		emit({
 			space: SPACE,
 			author: AUTHOR,
 			puts: [
 				{
 					collection: COLLECTIONS.message,
-					rkey: "3lkmsgedited",
+					rkey: edited,
 					cid: "bafyreictestedit",
 					value: { $type: COLLECTIONS.message, text: "fixed", createdAt: NOW, updatedAt: NOW },
 				},
@@ -885,7 +931,7 @@ describe("push updates for deleted and edited messages", () => {
 
 		await vi.waitFor(() => expect(pushed.edited).toHaveLength(1));
 		expect(pushed.edited[0]).toMatchObject({
-			message: { space: SPACE, author: AUTHOR, rkey: "3lkmsgedited", text: "fixed" },
+			message: { space: SPACE, author: AUTHOR, rkey: edited, text: "fixed" },
 		});
 	});
 });
@@ -963,6 +1009,15 @@ describe("closed threads", () => {
 
 		expect(threadWrites).toHaveLength(1);
 	});
+	it("leaves the thread closed for a message dated in the future", async () => {
+		const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+		emit(threadMessage(future));
+		emit(threadMessage(LATER));
+		await vi.waitFor(() => expect(threadWrites).toHaveLength(1));
+		await new Promise((resolve) => setTimeout(resolve, 50));
+
+		expect(threadWrites).toHaveLength(1);
+	});
 });
 
 describe("voice channel pushes", () => {
@@ -1027,11 +1082,12 @@ describe("voice channel pushes", () => {
 	});
 
 	it("pushes a voice channel edit only to people connected to that channel", async () => {
+		const edited = nextTid();
 		voicePresence.set(LISTENER, VOICE);
 		await database.db.insert(database.tables.messages).values({
 			space: VOICE,
 			author: AUTHOR,
-			rkey: "3lkvoiceedited",
+			rkey: edited,
 			community: COMMUNITY,
 			text: "before",
 			createdAt: NOW,
@@ -1044,7 +1100,7 @@ describe("voice channel pushes", () => {
 			puts: [
 				{
 					collection: COLLECTIONS.message,
-					rkey: "3lkvoiceedited",
+					rkey: edited,
 					cid: "bafyreicvoiceedit",
 					value: { $type: COLLECTIONS.message, text: "after", createdAt: NOW, updatedAt: NOW },
 				},

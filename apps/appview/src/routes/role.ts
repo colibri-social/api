@@ -8,11 +8,13 @@ import {
 	has,
 	outranksPosition,
 } from "@colibri-social/community";
+import { emojiRegistry } from "@colibri-social/emoji";
 import { COLLECTIONS, social } from "@colibri-social/lexicons";
 import { nextTid } from "@colibri-social/space";
 import { and, eq } from "drizzle-orm";
 import { roleEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
+import { parseEmojiUri } from "../emoji.js";
 import { toXrpcError } from "../errors.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
@@ -21,9 +23,13 @@ import type { RouteDeps } from "./types.js";
 
 type RoleChannelOverrideInput = { channel: string; allow?: string[]; deny?: string[] };
 type IconBadgeInput = { icon: string; color?: string };
+type EmojiBadgeInput = { emoji?: string; customEmoji?: { uri: string; cid?: string } };
 
 const ICON_BADGE = "social.colibri.beta.role#iconBadge";
 const IMAGE_BADGE = "social.colibri.beta.role#imageBadge";
+const EMOJI_BADGE = "social.colibri.beta.role#emojiBadge";
+const PICTOGRAPHIC = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 const BADGE_IMAGE_MAX_BYTES = 256 * 1024;
 const BADGE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
@@ -62,8 +68,51 @@ const iconBadge = (input: IconBadgeInput): RoleBadge => {
 	return { kind: "icon", icon, ...(input.color ? { color: input.color.toLowerCase() } : {}) };
 };
 
+const isSingleEmoji = (text: string) =>
+	PICTOGRAPHIC.test(text) && [...graphemes.segment(text)].length === 1;
+
+const emojiBadge = (input: EmojiBadgeInput): RoleBadge => {
+	const custom = input.customEmoji;
+	if (custom && input.emoji !== undefined) {
+		throw invalidBadge("an emoji badge is either a Unicode emoji or a custom emoji");
+	}
+	if (custom) {
+		const parsed = parseEmojiUri(custom.uri);
+		if (!parsed || emojiRegistry.forCollection(parsed.collection)?.kind !== "item") {
+			throw invalidBadge("a custom badge emoji must point at an emoji record");
+		}
+		return { kind: "customEmoji", uri: custom.uri, ...(custom.cid ? { cid: custom.cid } : {}) };
+	}
+	const emoji = input.emoji?.trim() ?? "";
+	if (!isSingleEmoji(emoji)) throw invalidBadge("a badge emoji must be a single emoji");
+	return { kind: "emoji", emoji };
+};
+
+const badgeInput = (input: {
+	badge?: IconBadgeInput;
+	emojiBadge?: EmojiBadgeInput;
+}): RoleBadge | undefined => {
+	if (input.badge && input.emojiBadge) {
+		throw invalidBadge("a role takes either an icon badge or an emoji badge");
+	}
+	if (input.badge) return iconBadge(input.badge);
+	if (input.emojiBadge) return emojiBadge(input.emojiBadge);
+	return undefined;
+};
+
 export const badgeRecord = (badge: RoleBadge | null): Record<string, unknown> => {
 	if (!badge) return {};
+	if (badge.kind === "emoji") {
+		return { badge: { $type: EMOJI_BADGE, emoji: badge.emoji } };
+	}
+	if (badge.kind === "customEmoji") {
+		return {
+			badge: {
+				$type: EMOJI_BADGE,
+				customEmoji: { uri: badge.uri, ...(badge.cid ? { cid: badge.cid } : {}) },
+			},
+		};
+	}
 	if (badge.kind === "icon") {
 		return {
 			badge: {
@@ -148,13 +197,14 @@ export const handleCreateRole = async (
 		hoisted?: boolean;
 		mentionable?: boolean;
 		badge?: IconBadgeInput;
+		emojiBadge?: EmojiBadgeInput;
 	},
 ): Promise<{ role: RoleView }> => {
 	try {
 		await requireCommunity(ctx, community);
 		const authz = await requirePermission(ctx, community, actor);
 
-		const badge = input.badge ? iconBadge(input.badge) : null;
+		const badge = badgeInput(input) ?? null;
 		const position = input.position ?? 0;
 		if (!outranksPosition(authz, position)) {
 			throw roleHierarchy("you cannot create a role at or above your own highest role's position");
@@ -182,7 +232,7 @@ export const handleCreateRole = async (
 		ctx.announce.toCommunity(community, roleEvent("create", community, rkey));
 
 		return {
-			role: communities.role(
+			role: await communities.resolvedRole(
 				{
 					community,
 					rkey,
@@ -221,6 +271,7 @@ export const handleUpdateRole = async (
 		mentionable?: boolean;
 		channelOverrides?: RoleChannelOverrideInput[];
 		badge?: IconBadgeInput;
+		emojiBadge?: EmojiBadgeInput;
 		removeBadge?: boolean;
 	},
 ): Promise<{ role: RoleView }> => {
@@ -242,11 +293,7 @@ export const handleUpdateRole = async (
 		if (input.permissions) assertHoldsPermissions(authz, input.permissions);
 		if (input.channelOverrides) assertHoldsOverridePermissions(authz, input.channelOverrides);
 
-		const badge = input.badge
-			? iconBadge(input.badge)
-			: input.removeBadge
-				? null
-				: (existing.badge ?? null);
+		const badge = badgeInput(input) ?? (input.removeBadge ? null : (existing.badge ?? null));
 		const name = input.name ?? existing.name;
 		const color = input.color ?? existing.color ?? undefined;
 		const permissions = input.permissions ?? existing.permissions;
@@ -281,7 +328,7 @@ export const handleUpdateRole = async (
 
 		ctx.announce.toCommunity(community, roleEvent("update", community, rkey));
 		return {
-			role: communities.role(
+			role: await communities.resolvedRole(
 				{
 					community,
 					rkey,
@@ -446,7 +493,7 @@ export const handlePutRoleBadgeImage = async (
 
 		ctx.announce.toCommunity(community, roleEvent("update", community, rkey));
 		return {
-			role: communities.role({ ...existing, badge, channelOverrides }, actor),
+			role: await communities.resolvedRole({ ...existing, badge, channelOverrides }, actor),
 		};
 	} catch (error) {
 		throw toXrpcError(error);
@@ -475,6 +522,7 @@ export const registerRoleRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 					hoisted: input.body.hoisted,
 					mentionable: input.body.mentionable,
 					badge: input.body.badge,
+					emojiBadge: input.body.emojiBadge,
 				},
 			),
 		}),
@@ -500,6 +548,7 @@ export const registerRoleRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 					mentionable: input.body.mentionable,
 					channelOverrides: input.body.channelOverrides,
 					badge: input.body.badge,
+					emojiBadge: input.body.emojiBadge,
 					removeBadge: input.body.removeBadge,
 				},
 			),

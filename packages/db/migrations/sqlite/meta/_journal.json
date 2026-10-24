@@ -218,6 +218,13 @@
 			"when": 1792745919320,
 			"tag": "0030_careless_korath",
 			"breakpoints": true
+		},
+		{
+			"idx": 31,
+			"version": "6",
+			"when": 1792834974813,
+			"tag": "0031_left_sunfire",
+			"breakpoints": true
 		}
 	]
 }

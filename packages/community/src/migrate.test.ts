@@ -240,6 +240,33 @@ describe("legacyMessageRows", () => {
 
 		expect(row).toMatchObject({ parentAuthor: null, parentRkey: null });
 	});
+	it("leaves out messages dated ahead of the import", () => {
+		const rows = legacyMessageRows(
+			COMMUNITY,
+			[
+				{
+					author: MEMBER,
+					record: legacy(MEMBER, LEGACY_COLLECTIONS.message, "3lkmsg0000005", {
+						text: "from the future",
+						channel: TEXT,
+						createdAt: "2026-10-22T01:00:00Z",
+					}),
+				},
+				{
+					author: MEMBER,
+					record: legacy(MEMBER, LEGACY_COLLECTIONS.message, "3lkmsg0000006", {
+						text: "a little early",
+						channel: TEXT,
+						createdAt: "2026-10-22T00:10:00Z",
+					}),
+				},
+			],
+			spaces,
+			"2026-10-22T00:00:00Z",
+		);
+
+		expect(rows.map((row) => row.rkey)).toEqual(["3lkmsg0000006"]);
+	});
 });
 
 describe("categoryChannelOrder", () => {

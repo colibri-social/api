@@ -7,6 +7,7 @@ import {
 	hydrateNotifications,
 	type IndexedNotificationRow,
 	indexMessage,
+	type PushAttachment,
 	type PushRouting,
 	type PushSenderProfile,
 } from "@colibri-social/notifications";
@@ -15,6 +16,7 @@ import {
 	isChannelSpace,
 	isPersonalSpace,
 	isThreadSpace,
+	messageTimeRefusal,
 	spaceContextFor,
 } from "@colibri-social/projections";
 import type { RepoChange } from "@colibri-social/space-sync";
@@ -201,6 +203,21 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		return String(forward?.text ?? "");
 	};
 
+	const pushAttachmentsOf = (
+		message: MessageView | undefined,
+		recipient: string,
+	): PushAttachment[] => {
+		if (!message) return [];
+		const viewed = channels.forViewer(message, recipient);
+		const source =
+			viewed.attachments.length > 0 ? viewed.attachments : (viewed.forward?.attachments ?? []);
+		return source.map((attachment) => ({
+			mimeType: attachment.mimeType,
+			url: attachment.url,
+			...(attachment.spoiler ? { spoiler: true } : {}),
+		}));
+	};
+
 	const withFullMessage = <View extends { message?: MessageView }>(
 		view: View,
 		message: MessageView | undefined,
@@ -238,7 +255,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 				},
 			});
 		}
-		await pushNotifications(servable, text);
+		await pushNotifications(servable, text, message);
 	};
 
 	const outsideVoiceChannel = (target: string, recipient: string): boolean => {
@@ -251,6 +268,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 	const pushNotifications = async (
 		servable: ServableNotification[],
 		text: string,
+		message?: MessageView,
 	): Promise<void> => {
 		if (servable.length === 0 || !push.enabled) return;
 
@@ -265,7 +283,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 						notifications,
 						push.senders,
 						row,
-						{ text },
+						{ text, attachments: pushAttachmentsOf(message, row.recipient) },
 						routing,
 						push.options,
 					).catch((error) => ctx.log.warn({ error }, "push.deliveryFailed")),
@@ -278,6 +296,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		author: string,
 		rkey: string,
 		text: string,
+		published?: MessageView,
 	): Promise<void> => {
 		if (!push.enabled) return;
 		const table = ctx.database.tables.messages;
@@ -304,6 +323,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			{
 				...push.options,
 				reaches: (recipient) => !outsideVoiceChannel(space, recipient),
+				attachmentsFor: (recipient) => pushAttachmentsOf(published, recipient),
 			},
 		);
 	};
@@ -501,6 +521,15 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 
 		for (const put of change.puts) {
 			if (put.collection === COLLECTIONS.message && space.community) {
+				const refusal = messageTimeRefusal(
+					ctx.projections,
+					{ space, author: change.author, rkey: put.rkey, rev: put.rev },
+					{
+						createdAt: String(put.value.createdAt ?? ""),
+						bridged: put.value.bridged as { imported?: boolean } | undefined,
+					},
+				);
+				if (refusal) continue;
 				const imported =
 					(put.value.bridged as { imported?: unknown } | undefined)?.imported === true;
 				const published = await publishMessage(change.space, change.author, put.rkey, imported);
@@ -517,8 +546,8 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 				const community = space.community;
 				const text = previewTextOf(put.value);
 				const edited = put.value.updatedAt
-					? pushMessageEdited(change.space, change.author, put.rkey, text).catch((error) =>
-							ctx.log.warn({ error }, "push.editFailed"),
+					? pushMessageEdited(change.space, change.author, put.rkey, text, published).catch(
+							(error) => ctx.log.warn({ error }, "push.editFailed"),
 						)
 					: Promise.resolve();
 				void edited

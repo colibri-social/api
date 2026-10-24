@@ -1,5 +1,6 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { CommunityLoader, type CommunityWriter, type RecordWrite } from "@colibri-social/community";
+import { BLUEMOJI } from "@colibri-social/emoji";
 import { COLLECTIONS, communitySpaces } from "@colibri-social/lexicons";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -20,6 +21,7 @@ const MOD = "did:plc:moderator";
 const MEMBER = "did:plc:member";
 const NOW = "2026-08-23T00:00:00.000Z";
 const BADGE_CID = "bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiibsojllbf5xhqzy6a";
+const CUSTOM_EMOJI = `at://${COMMUNITY}/${BLUEMOJI.item}/parrot`;
 
 const PNG = new Uint8Array([
 	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
@@ -34,6 +36,11 @@ type BadgeRecord =
 	| {
 			$type: "social.colibri.beta.role#imageBadge";
 			image: { ref: { $link: string }; mimeType: string; size: number };
+	  }
+	| {
+			$type: "social.colibri.beta.role#emojiBadge";
+			emoji?: string;
+			customEmoji?: { uri: string; cid?: string };
 	  };
 
 const badgeRow = (badge: BadgeRecord | undefined) => {
@@ -44,6 +51,11 @@ const badgeRow = (badge: BadgeRecord | undefined) => {
 			icon: badge.icon,
 			...(badge.color ? { color: badge.color } : {}),
 		};
+	}
+	if (badge.$type === "social.colibri.beta.role#emojiBadge") {
+		return badge.customEmoji
+			? { kind: "customEmoji" as const, ...badge.customEmoji }
+			: { kind: "emoji" as const, emoji: badge.emoji ?? "" };
 	}
 	return {
 		kind: "image" as const,
@@ -633,5 +645,126 @@ describe("role badges", () => {
 		await expect(
 			handlePutRoleBadgeImage(ctx, fakeWriter(), communities, COMMUNITY, MEMBER, "helper", PNG),
 		).rejects.toMatchObject({ customErrorName: "Forbidden" });
+	});
+
+	it("creates a role with a Unicode emoji badge on the record and the view", async () => {
+		const { role } = await handleCreateRole(ctx, fakeWriter(), communities, COMMUNITY, MOD, {
+			name: "Helper",
+			permissions: [],
+			position: 10,
+			emojiBadge: { emoji: "🦜" },
+		});
+
+		expect(roleRecordWrites().at(-1)?.badge).toEqual({
+			$type: "social.colibri.beta.role#emojiBadge",
+			emoji: "🦜",
+		});
+		expect(role.badge).toEqual({
+			$type: "social.colibri.beta.community.defs#roleEmojiBadgeView",
+			emoji: "🦜",
+		});
+	});
+
+	it("accepts a joined emoji sequence as one emoji", async () => {
+		const { role } = await handleCreateRole(ctx, fakeWriter(), communities, COMMUNITY, MOD, {
+			name: "Helper",
+			permissions: [],
+			position: 10,
+			emojiBadge: { emoji: "🏳️‍🌈" },
+		});
+		expect(role.badge).toMatchObject({ emoji: "🏳️‍🌈" });
+	});
+
+	it("refuses an emoji badge that is text, more than one emoji, or both kinds", async () => {
+		for (const emojiBadge of [
+			{ emoji: "ab" },
+			{ emoji: "🦜🦜" },
+			{ emoji: "" },
+			{ emoji: "🦜", customEmoji: { uri: CUSTOM_EMOJI } },
+			{ customEmoji: { uri: "at://did:plc:someone/app.bsky.feed.post/abc" } },
+		]) {
+			await expect(
+				handleCreateRole(ctx, fakeWriter(), communities, COMMUNITY, MOD, {
+					name: "Helper",
+					permissions: [],
+					position: 10,
+					emojiBadge,
+				}),
+			).rejects.toMatchObject({ customErrorName: "InvalidRequest" });
+		}
+	});
+
+	it("refuses an icon badge and an emoji badge together", async () => {
+		await expect(
+			handleCreateRole(ctx, fakeWriter(), communities, COMMUNITY, MOD, {
+				name: "Helper",
+				permissions: [],
+				position: 10,
+				badge: { icon: "star" },
+				emojiBadge: { emoji: "🦜" },
+			}),
+		).rejects.toMatchObject({ customErrorName: "InvalidRequest" });
+	});
+
+	it("sets a custom emoji badge and resolves its name and image from the emoji index", async () => {
+		await database.db.insert(database.tables.emojiItems).values({
+			owner: COMMUNITY,
+			collection: BLUEMOJI.item,
+			rkey: "parrot",
+			provider: BLUEMOJI.provider,
+			uri: CUSTOM_EMOJI,
+			cid: "cid-parrot",
+			name: "parrot",
+			value: {
+				name: ":parrot:",
+				createdAt: NOW,
+				formats: { png_128: { ref: { $link: BADGE_CID }, mimeType: "image/png", size: 1 } },
+			},
+			indexedAt: NOW,
+		});
+		const { role } = await handleCreateRole(ctx, fakeWriter(), communities, COMMUNITY, MOD, {
+			name: "Helper",
+			permissions: [],
+			position: 10,
+			badge: { icon: "star" },
+		});
+
+		const updated = await handleUpdateRole(
+			ctx,
+			fakeWriter(),
+			communities,
+			COMMUNITY,
+			MOD,
+			role.rkey,
+			{ emojiBadge: { customEmoji: { uri: CUSTOM_EMOJI, cid: "cid-parrot" } }, removeBadge: true },
+		);
+
+		expect(roleRecordWrites().at(-1)?.badge).toEqual({
+			$type: "social.colibri.beta.role#emojiBadge",
+			customEmoji: { uri: CUSTOM_EMOJI, cid: "cid-parrot" },
+		});
+		expect(updated.role.badge).toEqual({
+			$type: "social.colibri.beta.community.defs#roleEmojiBadgeView",
+			customEmoji: { uri: CUSTOM_EMOJI, cid: "cid-parrot" },
+			name: "parrot",
+			image: `https://appview.test/xrpc/social.colibri.beta.blob.get?did=${encodeURIComponent(COMMUNITY)}&cid=${BADGE_CID}`,
+		});
+		const listed = await communities.roles(COMMUNITY, MOD);
+		expect(listed.find((entry) => entry.rkey === role.rkey)?.badge).toMatchObject({
+			name: "parrot",
+		});
+	});
+
+	it("keeps only the reference for a custom emoji badge the index does not know", async () => {
+		const { role } = await handleCreateRole(ctx, fakeWriter(), communities, COMMUNITY, MOD, {
+			name: "Helper",
+			permissions: [],
+			position: 10,
+			emojiBadge: { customEmoji: { uri: CUSTOM_EMOJI } },
+		});
+		expect(role.badge).toEqual({
+			$type: "social.colibri.beta.community.defs#roleEmojiBadgeView",
+			customEmoji: { uri: CUSTOM_EMOJI },
+		});
 	});
 });

@@ -12,6 +12,7 @@ export type SettingsPatch = {
 	requiresApprovalToJoin?: boolean;
 	linkEmbeds?: boolean;
 	overrideUserNameColors?: boolean;
+	hideOwnerBadge?: boolean;
 	customEmoji?: CustomEmojiPolicy;
 	labelers?: readonly string[];
 };
@@ -40,6 +41,7 @@ export const writeCommunitySettings = async (
 	const categoryOrder = patch.categoryOrder ?? (await currentCategoryOrder(ctx, community));
 	const labelers = patch.labelers ?? row.labelers;
 	const overrideUserNameColors = patch.overrideUserNameColors ?? row.overrideUserNameColors;
+	const hideOwnerBadge = patch.hideOwnerBadge ?? row.hideOwnerBadge;
 	const customEmoji = patch.customEmoji ?? customEmojiPolicy(row.customEmoji);
 
 	await writer.put(community, {
@@ -52,6 +54,7 @@ export const writeCommunitySettings = async (
 			requiresApprovalToJoin: patch.requiresApprovalToJoin ?? row.requiresApproval,
 			linkEmbeds: patch.linkEmbeds ?? row.linkEmbeds,
 			...(overrideUserNameColors ? { overrideUserNameColors: true } : {}),
+			...(hideOwnerBadge ? { hideOwnerBadge: true } : {}),
 			...(customEmoji !== "all" ? { customEmoji } : {}),
 			...(labelers.length ? { labelers: [...labelers] } : {}),
 		},

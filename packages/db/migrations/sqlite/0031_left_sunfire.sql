@@ -1,0 +1,1 @@
+ALTER TABLE `communities` ADD `hide_owner_badge` integer DEFAULT false NOT NULL;

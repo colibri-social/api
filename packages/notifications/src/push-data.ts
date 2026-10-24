@@ -13,6 +13,7 @@ export type PushData = {
 	placeName?: string;
 	subtitle?: string;
 	body?: string;
+	imageUrl?: string;
 	badge: string;
 	readUrl?: string;
 	readToken?: string;

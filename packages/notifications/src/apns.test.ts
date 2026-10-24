@@ -222,6 +222,15 @@ describe("apnsBody", () => {
 		expect(rest).toEqual(payload.data);
 	});
 
+	it("passes the attachment image URL to the iOS extension", () => {
+		const body = apnsBody({
+			...payload,
+			data: { ...payload.data, imageUrl: "https://appview.example/blob" },
+		});
+		expect(body.imageUrl).toBe("https://appview.example/blob");
+		expect((body.aps as { alert: { body: string } }).alert.body).toBe("hello there");
+	});
+
 	it("keeps plain messages at the active interruption level", () => {
 		const aps = apnsBody({ ...payload, kind: "message", title: "New message" }).aps as {
 			"interruption-level": string;

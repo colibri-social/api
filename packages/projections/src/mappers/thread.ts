@@ -21,9 +21,10 @@ export const thread: Projector<social.colibri.beta.thread.Main> = {
 			.where(eq(deps.tables.messages.space, ref.space.uri))
 			.orderBy(desc(deps.tables.messages.rkey))
 			.limit(1);
-		const lastActivityAt = [existing?.lastActivityAt, latest?.createdAt, value.createdAt]
+		const latestActivity = [existing?.lastActivityAt, latest?.createdAt, value.createdAt]
 			.filter((at): at is string => at !== undefined)
 			.reduce((newest, at) => (at > newest ? at : newest));
+		const lastActivityAt = Date.parse(latestActivity) > Date.parse(now) ? now : latestActivity;
 
 		const row = {
 			space: ref.space.uri,

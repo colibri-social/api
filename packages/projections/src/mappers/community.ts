@@ -15,6 +15,25 @@ const isSelf = (ref: RecordRef) => ref.rkey === SELF;
 
 const ICON_BADGE = "social.colibri.beta.role#iconBadge";
 const IMAGE_BADGE = "social.colibri.beta.role#imageBadge";
+const EMOJI_BADGE = "social.colibri.beta.role#emojiBadge";
+const PICTOGRAPHIC = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
+
+const emojiBadgeFromRecord = (badge: object): RoleBadge | null => {
+	const value = badge as { emoji?: unknown; customEmoji?: unknown };
+	const custom = value.customEmoji as { uri?: unknown; cid?: unknown } | undefined;
+	if (custom && typeof custom === "object" && typeof custom.uri === "string") {
+		if (!custom.uri.startsWith("at://")) return null;
+		return {
+			kind: "customEmoji",
+			uri: custom.uri,
+			...(typeof custom.cid === "string" ? { cid: custom.cid } : {}),
+		};
+	}
+	if (typeof value.emoji === "string" && PICTOGRAPHIC.test(value.emoji)) {
+		return { kind: "emoji", emoji: value.emoji };
+	}
+	return null;
+};
 
 export const roleBadgeFromRecord = (badge: unknown): RoleBadge | null => {
 	if (!badge || typeof badge !== "object") return null;
@@ -37,6 +56,7 @@ export const roleBadgeFromRecord = (badge: unknown): RoleBadge | null => {
 			size: typeof image.size === "number" ? image.size : 0,
 		};
 	}
+	if (value.$type === EMOJI_BADGE) return emojiBadgeFromRecord(badge);
 	return null;
 };
 
@@ -99,6 +119,7 @@ export const communitySettings: Projector<social.colibri.beta.community.settings
 				requiresApproval: value.requiresApprovalToJoin,
 				linkEmbeds: value.linkEmbeds ?? true,
 				overrideUserNameColors: value.overrideUserNameColors ?? false,
+				hideOwnerBadge: value.hideOwnerBadge ?? false,
 				customEmoji:
 					value.customEmoji === "local" || value.customEmoji === "none" ? value.customEmoji : "all",
 				labelers: value.labelers ?? [],
@@ -128,6 +149,7 @@ export const communitySettings: Projector<social.colibri.beta.community.settings
 				requiresApproval: false,
 				linkEmbeds: true,
 				overrideUserNameColors: false,
+				hideOwnerBadge: false,
 				customEmoji: "all",
 				labelers: [],
 			})

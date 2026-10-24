@@ -117,7 +117,28 @@ const notificationTitle = (kind: string, mentionRole: string | null): string => 
 	return mentionRole ? `Mentioned via @${mentionRole}` : "New mention";
 };
 
-export type NotifiedMessage = { text: string };
+export type PushAttachment = { mimeType: string; url?: string; spoiler?: boolean };
+
+export type NotifiedMessage = { text: string; attachments?: readonly PushAttachment[] };
+
+const isImage = (attachment: PushAttachment): boolean => attachment.mimeType.startsWith("image/");
+
+export const attachmentFallbackBody = (
+	attachments: readonly PushAttachment[] = [],
+): string | undefined => {
+	const count = attachments.length;
+	if (count === 0) return undefined;
+	const allImages = attachments.every(isImage);
+	if (allImages) return count === 1 ? "Sent a photo" : `Sent ${count} photos`;
+	return count === 1 ? "Sent an attachment" : `Sent ${count} attachments`;
+};
+
+export const firstImageUrl = (attachments: readonly PushAttachment[] = []): string | undefined =>
+	attachments.find((attachment) => isImage(attachment) && !attachment.spoiler && attachment.url)
+		?.url;
+
+export const notificationBody = (message: NotifiedMessage): string =>
+	message.text || attachmentFallbackBody(message.attachments) || "";
 
 const channelDeepLink = (space: string): string | undefined => {
 	const ref = tryParseSpaceRef(space);
@@ -175,11 +196,13 @@ export const buildPayload = (
 		notification.messageRkey,
 	);
 	const deepLink = channelDeepLink(routing.channel);
+	const body = notificationBody(message);
+	const imageUrl = firstImageUrl(message.attachments);
 	return {
 		type,
 		kind: notification.kind,
 		title,
-		body: message.text,
+		body,
 		tag,
 		data: {
 			type,
@@ -192,7 +215,8 @@ export const buildPayload = (
 			spaceName: routing.spaceName ?? "",
 			placeName: placeName(routing),
 			subtitle: notificationSubtitle(notification, routing),
-			body: message.text,
+			body,
+			...(imageUrl ? { imageUrl } : {}),
 			badge: String(extras.badge ?? 0),
 			...(extras.readAction
 				? { readUrl: extras.readAction.url, readToken: extras.readAction.token }
@@ -334,9 +358,12 @@ export const deliverMessageEdited = async (
 	senders: Senders,
 	message: MessageRef & { text: string },
 	sender: PushSenderProfile | PushSenderFor | undefined,
-	options: DeliveryOptions & { reaches?: (recipient: string) => boolean } = {},
+	options: DeliveryOptions & {
+		reaches?: (recipient: string) => boolean;
+		attachmentsFor?: (recipient: string) => readonly PushAttachment[];
+	} = {},
 ): Promise<number> => {
-	const { reaches, ...delivery } = options;
+	const { reaches, attachmentsFor, ...delivery } = options;
 	const rows = (
 		await notificationsForMessage(deps, message.space, message.author, message.rkey)
 	).filter((row) => !reaches || reaches(row.recipient));
@@ -351,7 +378,7 @@ export const deliverMessageEdited = async (
 				deps,
 				senders,
 				row,
-				{ text: message.text },
+				{ text: message.text, attachments: attachmentsFor?.(row.recipient) },
 				{
 					channel: place.channel,
 					...(place.thread ? { thread: place.thread } : {}),

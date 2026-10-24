@@ -3,6 +3,7 @@
  */
 
 import { l } from "@atproto/lex";
+import * as RichtextFacet from "../richtext/facet.defs.js";
 import * as ActorDefs from "../actor/defs.defs.js";
 
 const $nsid = "social.colibri.beta.community.defs";
@@ -65,6 +66,11 @@ type CommunityView = { $type?: "social.colibri.beta.community.defs#communityView
   "overrideUserNameColors"?:boolean;
 
   /**
+   * Whether the owner badge next to the community owner's name is hidden. Absent means false.
+   */
+  "hideOwnerBadge"?:boolean;
+
+  /**
    * Which custom emoji render in this community. all allows custom emoji from any source, local only the community's own emoji, none disables custom emoji. Disallowed emoji show their fallback text. Absent means all.
    */
   "customEmoji"?:"all" | "local" | "none" | l.UnknownString;
@@ -97,7 +103,7 @@ type CommunityView = { $type?: "social.colibri.beta.community.defs#communityView
 export type { CommunityView };
 
 /** A community as the AppView serves it. */
-const communityView = /*#__PURE__*/ l.typedObject<CommunityView>($nsid, "communityView", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"handle":/*#__PURE__*/ l.string({"format":"handle"}),"managingApp":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string(),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"picture":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"banner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"requiresApprovalToJoin":/*#__PURE__*/ l.boolean(),"linkEmbeds":/*#__PURE__*/ l.boolean(),"overrideUserNameColors":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["all","local","none"]}>()),"labelers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"migratedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"migration":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<MigrationInfo>((() => migrationInfo) as any)),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"viewer":/*#__PURE__*/ l.ref<ViewerState>((() => viewerState) as any)}));
+const communityView = /*#__PURE__*/ l.typedObject<CommunityView>($nsid, "communityView", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"handle":/*#__PURE__*/ l.string({"format":"handle"}),"managingApp":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string(),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"picture":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"banner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"requiresApprovalToJoin":/*#__PURE__*/ l.boolean(),"linkEmbeds":/*#__PURE__*/ l.boolean(),"overrideUserNameColors":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"hideOwnerBadge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["all","local","none"]}>()),"labelers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"migratedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"migration":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<MigrationInfo>((() => migrationInfo) as any)),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"viewer":/*#__PURE__*/ l.ref<ViewerState>((() => viewerState) as any)}));
 
 export { communityView };
 
@@ -322,7 +328,7 @@ type RoleView = { $type?: "social.colibri.beta.community.defs#roleView";
   /**
    * The role's badge, if it has one.
    */
-  "badge"?:l.$Typed<RoleIconBadge> | l.$Typed<RoleImageBadgeView> | l.Unknown$TypedObject;
+  "badge"?:l.$Typed<RoleIconBadge> | l.$Typed<RoleImageBadgeView> | l.$Typed<RoleEmojiBadgeView> | l.Unknown$TypedObject;
 
   /**
    * Permissions granted.
@@ -367,7 +373,7 @@ type RoleView = { $type?: "social.colibri.beta.community.defs#roleView";
 export type { RoleView };
 
 /** A role. */
-const roleView = /*#__PURE__*/ l.typedObject<RoleView>($nsid, "roleView", /*#__PURE__*/ l.object({"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"name":/*#__PURE__*/ l.string(),"color":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":7})),"badge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<RoleIconBadge>((() => roleIconBadge) as any),/*#__PURE__*/ l.typedRef<RoleImageBadgeView>((() => roleImageBadgeView) as any)], false)),"permissions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ),"position":/*#__PURE__*/ l.integer(),"hoisted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"mentionable":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"protected":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"default":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"channelOverrides":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RoleChannelOverride>((() => roleChannelOverride) as any), )),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer())}));
+const roleView = /*#__PURE__*/ l.typedObject<RoleView>($nsid, "roleView", /*#__PURE__*/ l.object({"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"name":/*#__PURE__*/ l.string(),"color":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":7})),"badge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<RoleIconBadge>((() => roleIconBadge) as any),/*#__PURE__*/ l.typedRef<RoleImageBadgeView>((() => roleImageBadgeView) as any),/*#__PURE__*/ l.typedRef<RoleEmojiBadgeView>((() => roleEmojiBadgeView) as any)], false)),"permissions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ),"position":/*#__PURE__*/ l.integer(),"hoisted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"mentionable":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"protected":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"default":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"channelOverrides":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RoleChannelOverride>((() => roleChannelOverride) as any), )),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer())}));
 
 export { roleView };
 
@@ -430,6 +436,56 @@ export type { RoleImageBadgeView };
 const roleImageBadgeView = /*#__PURE__*/ l.typedObject<RoleImageBadgeView>($nsid, "roleImageBadgeView", /*#__PURE__*/ l.object({"image":/*#__PURE__*/ l.string({"format":"uri"})}));
 
 export { roleImageBadgeView };
+
+/** A role badge drawn from an emoji. Exactly one of emoji and customEmoji is set. */
+type RoleEmojiBadge = { $type?: "social.colibri.beta.community.defs#roleEmojiBadge";
+
+  /**
+   * A Unicode emoji.
+   */
+  "emoji"?:string;
+
+  /**
+   * The record of a custom emoji.
+   */
+  "customEmoji"?:RichtextFacet.CustomEmoji };
+
+export type { RoleEmojiBadge };
+
+/** A role badge drawn from an emoji. Exactly one of emoji and customEmoji is set. */
+const roleEmojiBadge = /*#__PURE__*/ l.typedObject<RoleEmojiBadge>($nsid, "roleEmojiBadge", /*#__PURE__*/ l.object({"emoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":64,"maxGraphemes":1})),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<RichtextFacet.CustomEmoji>((() => RichtextFacet.customEmoji) as any))}));
+
+export { roleEmojiBadge };
+
+/** A badge drawn from an emoji. Exactly one of emoji and customEmoji is set. */
+type RoleEmojiBadgeView = { $type?: "social.colibri.beta.community.defs#roleEmojiBadgeView";
+
+  /**
+   * A Unicode emoji.
+   */
+  "emoji"?:string;
+
+  /**
+   * The record of a custom emoji.
+   */
+  "customEmoji"?:RichtextFacet.CustomEmoji;
+
+  /**
+   * The custom emoji's name without colons. Absent when this AppView has not indexed the emoji.
+   */
+  "name"?:string;
+
+  /**
+   * URL of the custom emoji's image, served by this AppView's blob proxy. Absent when this AppView has not indexed the emoji.
+   */
+  "image"?:l.UriString };
+
+export type { RoleEmojiBadgeView };
+
+/** A badge drawn from an emoji. Exactly one of emoji and customEmoji is set. */
+const roleEmojiBadgeView = /*#__PURE__*/ l.typedObject<RoleEmojiBadgeView>($nsid, "roleEmojiBadgeView", /*#__PURE__*/ l.object({"emoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<RichtextFacet.CustomEmoji>((() => RichtextFacet.customEmoji) as any)),"name":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"image":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"}))}));
+
+export { roleEmojiBadgeView };
 
 /** An admitted community member. */
 type MemberView = { $type?: "social.colibri.beta.community.defs#memberView";

@@ -107,6 +107,7 @@ const provisionedView = async (
 		requiresApproval: input.requiresApprovalToJoin ?? false,
 		linkEmbeds: true,
 		overrideUserNameColors: input.overrideUserNameColors ?? false,
+		hideOwnerBadge: false,
 		customEmoji: "all",
 		labelers: [] as string[],
 		migratedFrom: null,
@@ -295,6 +296,7 @@ export const handleUpdateCommunity = async (
 		requiresApprovalToJoin?: boolean;
 		linkEmbeds?: boolean;
 		overrideUserNameColors?: boolean;
+		hideOwnerBadge?: boolean;
 		customEmoji?: string;
 		labelers?: string[];
 	},
@@ -308,6 +310,7 @@ export const handleUpdateCommunity = async (
 	const nextRequiresApproval = input.requiresApprovalToJoin ?? row.requiresApproval;
 	const nextLinkEmbeds = input.linkEmbeds ?? row.linkEmbeds;
 	const nextOverrideUserNameColors = input.overrideUserNameColors ?? row.overrideUserNameColors;
+	const nextHideOwnerBadge = input.hideOwnerBadge ?? row.hideOwnerBadge;
 	const nextCustomEmoji = customEmojiPolicy(input.customEmoji ?? row.customEmoji);
 	const nextLabelers = input.labelers ?? row.labelers;
 
@@ -344,6 +347,7 @@ export const handleUpdateCommunity = async (
 			requiresApprovalToJoin: nextRequiresApproval,
 			linkEmbeds: nextLinkEmbeds,
 			overrideUserNameColors: nextOverrideUserNameColors,
+			hideOwnerBadge: nextHideOwnerBadge,
 			customEmoji: nextCustomEmoji,
 			labelers: nextLabelers,
 		});
@@ -361,6 +365,7 @@ export const handleUpdateCommunity = async (
 		requiresApproval: nextRequiresApproval,
 		linkEmbeds: nextLinkEmbeds,
 		overrideUserNameColors: nextOverrideUserNameColors,
+		hideOwnerBadge: nextHideOwnerBadge,
 		customEmoji: nextCustomEmoji,
 		labelers: nextLabelers,
 	};

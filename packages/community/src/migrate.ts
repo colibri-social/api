@@ -9,6 +9,7 @@ import {
 	SPACE_TYPES,
 	spaceUri,
 } from "@colibri-social/lexicons";
+import { messageFutureRefusal } from "@colibri-social/projections";
 import {
 	managingAppPolicy,
 	openAppAccess,
@@ -269,7 +270,9 @@ export const legacyMessageRows = (
 		const channel = legacyChannelRkey(community, record.value.channel);
 		const space = channel ? channelSpaces.get(channel) : undefined;
 		if (!space || typeof record.value.text !== "string" || !record.value.createdAt) return [];
-		return [{ author, record, space, rkey: rkeyOf(record.uri) }];
+		const rkey = rkeyOf(record.uri);
+		if (messageFutureRefusal(indexedAt, rkey, record.value.createdAt)) return [];
+		return [{ author, record, space, rkey }];
 	});
 
 	const authorsByRkey = new Map<string, string>();

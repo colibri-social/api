@@ -34,6 +34,11 @@ type Main = { $type: "social.colibri.beta.community.settings";
   "overrideUserNameColors"?:boolean;
 
   /**
+   * Whether the owner badge next to the community owner's name is hidden. Defaults to false.
+   */
+  "hideOwnerBadge"?:boolean;
+
+  /**
    * Which custom emoji render in this community. all allows custom emoji from any source, local only the community's own emoji, none disables custom emoji. Disallowed emoji show their fallback text. Defaults to all.
    */
   "customEmoji"?:"all" | "local" | "none" | l.UnknownString;
@@ -46,7 +51,7 @@ type Main = { $type: "social.colibri.beta.community.settings";
 export type { Main };
 
 /** A community's operational settings. Separate from the profile record so the two have different read audiences. */
-const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"categoryOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), ),"requiresApprovalToJoin":/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false),"linkEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), true)),"overrideUserNameColors":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.string<{"knownValues":["all","local","none"]}>(), "all")),"labelers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ))}));
+const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"categoryOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), ),"requiresApprovalToJoin":/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false),"linkEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), true)),"overrideUserNameColors":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"hideOwnerBadge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.string<{"knownValues":["all","local","none"]}>(), "all")),"labelers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ))}));
 
 export { main };
 

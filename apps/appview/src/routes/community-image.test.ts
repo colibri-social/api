@@ -388,3 +388,39 @@ describe("the name colour override, projected through the real writer", () => {
 		expect(off.community.overrideUserNameColors).toBe(false);
 	});
 });
+
+describe("the owner badge setting, projected through the real writer", () => {
+	beforeEach(() => {
+		useRealWriter();
+	});
+
+	it("writes hideOwnerBadge to the settings record, the row and the view, and clears it again", async () => {
+		await setRecord({ $type: COLLECTIONS.community, name: "Test Community" });
+		const communities = new CommunityViews(ctx, new ActorViews(ctx));
+		const latestSettings = () =>
+			writes.filter((w) => w.record.$type === COLLECTIONS.communitySettings).at(-1)?.record;
+
+		const on = await handleUpdateCommunity(ctx, communities, OWNER, {
+			community: COMMUNITY,
+			hideOwnerBadge: true,
+		});
+		expect(latestSettings()?.hideOwnerBadge).toBe(true);
+		expect((await communityRow())?.hideOwnerBadge).toBe(true);
+		expect(on.community.hideOwnerBadge).toBe(true);
+
+		const recoloured = await handleUpdateCommunity(ctx, communities, OWNER, {
+			community: COMMUNITY,
+			overrideUserNameColors: true,
+		});
+		expect(latestSettings()?.hideOwnerBadge).toBe(true);
+		expect(recoloured.community.hideOwnerBadge).toBe(true);
+
+		const off = await handleUpdateCommunity(ctx, communities, OWNER, {
+			community: COMMUNITY,
+			hideOwnerBadge: false,
+		});
+		expect(latestSettings()).not.toHaveProperty("hideOwnerBadge");
+		expect((await communityRow())?.hideOwnerBadge).toBe(false);
+		expect(off.community.hideOwnerBadge).toBe(false);
+	});
+});

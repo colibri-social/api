@@ -21,7 +21,9 @@ export type SpaceRepoState = "pending" | "active" | "diverged" | "error" | "gone
 export type RoleChannelOverride = { channel: string; allow: string[]; deny: string[] };
 export type RoleBadge =
 	| { kind: "icon"; icon: string; color?: string }
-	| { kind: "image"; cid: string; mimeType: string; size: number };
+	| { kind: "image"; cid: string; mimeType: string; size: number }
+	| { kind: "emoji"; emoji: string }
+	| { kind: "customEmoji"; uri: string; cid?: string };
 export type ModerationAction = "ban" | "unban" | "kick";
 export type NotificationKind = "mention" | "reply" | "message";
 export type NotificationLevel = "all" | "mentionsAndReplies" | "nothing";
@@ -176,6 +178,7 @@ export const communities = pgTable(
 		requiresApproval: flag("requires_approval").notNull().default(false),
 		linkEmbeds: flag("link_embeds").notNull().default(true),
 		overrideUserNameColors: flag("override_user_name_colors").notNull().default(false),
+		hideOwnerBadge: flag("hide_owner_badge").notNull().default(false),
 		customEmoji: text("custom_emoji").notNull().default("all"),
 		labelers: json<string[]>("labelers")
 			.notNull()
