@@ -1,5 +1,12 @@
 # @colibri-social/lexicons
 
+## 2.33.0
+
+### Minor Changes
+
+- ea8de44: Add the optional `hideOwnerBadge` boolean to `social.colibri.beta.community.settings`, the community view in `social.colibri.beta.community.defs`, and the `social.colibri.beta.community.update` input.
+- ea8de44: Add emoji role badges: `#emojiBadge` in the `social.colibri.beta.role` badge union, `roleEmojiBadge` and `roleEmojiBadgeView` in `social.colibri.beta.community.defs`, and the optional `emojiBadge` input on `social.colibri.beta.role.create` and `social.colibri.beta.role.update`. A badge holds either a Unicode `emoji` or a `customEmoji` reference.
+
 ## 2.32.0
 
 ### Minor Changes

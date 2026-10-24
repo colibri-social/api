@@ -1,5 +1,20 @@
 # @colibri-social/notifications
 
+## 1.8.11
+
+### Patch Changes
+
+- ea8de44: Show the first image of a message in Android and iOS notifications, and describe a message that only carries attachments, such as "Sent a photo", in every push.
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+  - @colibri-social/projections@1.14.0
+  - @colibri-social/appview-db@0.20.0
+  - @colibri-social/lexicons@2.33.0
+
 ## 1.8.10
 
 ### Patch Changes

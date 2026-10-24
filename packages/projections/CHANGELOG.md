@@ -1,5 +1,21 @@
 # @colibri-social/projections
 
+## 1.14.0
+
+### Minor Changes
+
+- ea8de44: Project emoji role badges, both Unicode and custom emoji.
+
+### Patch Changes
+
+- ea8de44: Keep a thread's last activity at the server clock when its thread record is dated ahead, and project the new `hideOwnerBadge` Space setting.
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+- Updated dependencies [ea8de44]
+  - @colibri-social/appview-db@0.20.0
+  - @colibri-social/lexicons@2.33.0
+
 ## 1.13.6
 
 ### Patch Changes
