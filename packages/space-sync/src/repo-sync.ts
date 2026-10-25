@@ -13,6 +13,7 @@ import type {
 	RepoChange,
 	RepoCursor,
 	RepoHostResolver,
+	StoredRecord,
 	SyncStore,
 } from "./types.js";
 import type { HashOp } from "./verify-jobs.js";
@@ -231,7 +232,6 @@ export class RepoSync {
 		});
 		if (!verified.authentic) throw new RepoUnverifiedError(space, author);
 
-		const puts = verified.records;
 		const cursor: CommittedCursor = {
 			space,
 			author,
@@ -239,7 +239,11 @@ export class RepoSync {
 			setHashBase64: verified.setHashBase64,
 			state: "active",
 		};
-		await this.deps.store.replace({ space, author, puts }, cursor);
+		const held = await this.deps.store.replace({ space, author, puts: verified.records }, cursor);
+		const unchanged = new Set(held.map(storedKey));
+		const puts = verified.records.map((put) =>
+			unchanged.has(storedKey(put)) ? { ...put, replayed: true } : put,
+		);
 		return {
 			kind: "recovered",
 			change: { space, author, puts, deletes: [] },
@@ -247,6 +251,9 @@ export class RepoSync {
 		};
 	}
 }
+
+const storedKey = (record: StoredRecord): string =>
+	`${record.collection}/${record.rkey}/${record.cid}`;
 
 const blankCursor = (space: string, author: string): RepoCursor => ({
 	space,

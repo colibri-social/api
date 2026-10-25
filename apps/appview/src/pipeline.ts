@@ -520,6 +520,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		let publishedMessages = 0;
 
 		for (const put of change.puts) {
+			if (put.replayed) continue;
 			if (put.collection === COLLECTIONS.message && space.community) {
 				const refusal = messageTimeRefusal(
 					ctx.projections,

@@ -21,6 +21,13 @@ export type RecordWrite = {
 	cid: string;
 	value: Record<string, unknown>;
 	rev?: string;
+	replayed?: boolean;
+};
+
+export type StoredRecord = {
+	collection: string;
+	rkey: string;
+	cid: string;
 };
 
 export type RecordDelete = {
@@ -67,7 +74,7 @@ export type SyncStore = {
 	loadCursor(space: string, author: string): Promise<RepoCursor | null>;
 	saveCursor(cursor: RepoCursor): Promise<void>;
 	commit(change: RepoChange, cursor: CommittedCursor): Promise<void>;
-	replace(change: Omit<RepoChange, "deletes">, cursor: CommittedCursor): Promise<void>;
+	replace(change: Omit<RepoChange, "deletes">, cursor: CommittedCursor): Promise<StoredRecord[]>;
 	dropRepo(space: string, author: string): Promise<void>;
 	dropSpace(space: string): Promise<void>;
 };

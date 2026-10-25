@@ -40,9 +40,15 @@ const memoryStore = () => {
 			cursors.set(cursor.author, { ...blank(cursor.author), ...cursor });
 		},
 		replace: async (change, cursor) => {
+			const held = [...records.values()].map(({ collection, rkey, cid }) => ({
+				collection,
+				rkey,
+				cid,
+			}));
 			records.clear();
 			for (const put of change.puts) records.set(key(put.collection, put.rkey), put);
 			cursors.set(cursor.author, { ...blank(cursor.author), ...cursor });
+			return held;
 		},
 		dropRepo: async (_space, author) => {
 			records.clear();
@@ -408,6 +414,32 @@ describe("failures", () => {
 		);
 		expect((await sync.sync(SPACE, AUTHOR)).kind).toBe("recovered");
 		expect(calls.getRepoCar).toBe(1);
+	});
+
+	it("marks records it already held unchanged as replayed when it recovers", async () => {
+		const { store } = await seeded();
+		const records = await cidsFor([
+			message("3a", "hello"),
+			message("3b", "world"),
+			message("3c", "again"),
+		]);
+		const { sync } = syncerFor(
+			{
+				opsError: new XrpcError(400, "CursorNotFound", "gone", "listRepoOps"),
+				car: () => starFor(records, "3rev9"),
+			},
+			store,
+		);
+
+		const outcome = await sync.sync(SPACE, AUTHOR);
+
+		expect(outcome.kind).toBe("recovered");
+		const puts = outcome.kind === "recovered" ? outcome.change.puts : [];
+		expect(puts.map((put) => [put.rkey, put.replayed === true])).toEqual([
+			["3a", true],
+			["3b", false],
+			["3c", false],
+		]);
 	});
 
 	it("drops a repo whose account is gone", async () => {

@@ -491,6 +491,34 @@ describe("connectPipeline", () => {
 		expect(pushed.notified).toEqual([mentioned]);
 	});
 
+	it("never notifies or publishes a message a recovery replayed unchanged", async () => {
+		const mentioned = "did:plc:mentionedmentionedment";
+		await database.db.insert(database.tables.members).values([
+			{ community: COMMUNITY, did: AUTHOR, roles: [], joinedAt: NOW },
+			{ community: COMMUNITY, did: mentioned, roles: [], joinedAt: NOW },
+		]);
+		const replayed = messageChange(nextTid());
+		const replayedPut = replayed.puts[0] as { value: Record<string, unknown>; replayed?: boolean };
+		replayedPut.value.facets = [mentionFacet(mentioned)];
+		replayedPut.replayed = true;
+		const accepted = nextTid();
+		const change = messageChange(accepted);
+		(change.puts[0] as { value: Record<string, unknown> }).value.facets = [mentionFacet(mentioned)];
+		await putMessageRow(accepted, "hello");
+
+		emit(replayed);
+		emit(change);
+		await vi.waitFor(() => expect(framesOfType("notificationEvent")).toHaveLength(1));
+		await new Promise((resolve) => setTimeout(resolve, 50));
+
+		expect(framesOfType("messageEvent")).toHaveLength(1);
+		const [entry, ...rest] = framesOfType("notificationEvent");
+		expect(rest).toHaveLength(0);
+		const notification = entry?.frame.notification as { message: { rkey: string } } | undefined;
+		expect(notification?.message.rkey).toBe(accepted);
+		expect(pushed.notified).toEqual([mentioned]);
+	});
+
 	it("never notifies a mention that only appears inside a forwarded snapshot", async () => {
 		const mentioned = "did:plc:mentionedmentionedment";
 		await database.db.insert(database.tables.members).values([

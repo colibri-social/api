@@ -357,7 +357,11 @@ export const drizzleSyncStore = (
 
 		replace: async (change, cursor) => {
 			const existing = await db
-				.select({ collection: tables.records.collection, rkey: tables.records.rkey })
+				.select({
+					collection: tables.records.collection,
+					rkey: tables.records.rkey,
+					cid: tables.records.cid,
+				})
 				.from(tables.records)
 				.where(
 					and(eq(tables.records.space, change.space), eq(tables.records.author, change.author)),
@@ -384,7 +388,7 @@ export const drizzleSyncStore = (
 					space: change.space,
 					author: change.author,
 					puts: [],
-					deletes: existing,
+					deletes: existing.map(({ collection, rkey }) => ({ collection, rkey })),
 				});
 				await project(tx, {
 					space: change.space,
@@ -394,6 +398,7 @@ export const drizzleSyncStore = (
 				});
 				await writeCursor(tx, cursor);
 			});
+			return existing;
 		},
 
 		dropRepo: async (space, author) => {

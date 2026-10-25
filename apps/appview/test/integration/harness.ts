@@ -388,6 +388,7 @@ const integrationStore = (database: Database, projections: ProjectionDeps) => {
 		) => {
 			await applyChange(projections, { ...change, deletes: [] });
 			await upsertCursor(database, change.space, change.author, cursor, now());
+			return [];
 		},
 		dropRepo: async () => undefined,
 		dropSpace: async () => undefined,

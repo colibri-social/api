@@ -41,7 +41,7 @@ const store = (expected?: string[]): SyncStore => ({
 	loadCursor: async (_space, author) => cursors.get(author) ?? null,
 	saveCursor: async (next) => void cursors.set(next.author, next),
 	commit: async () => undefined,
-	replace: async () => undefined,
+	replace: async () => [],
 	dropRepo: async (_space, author) => {
 		dropped.push(author);
 		cursors.delete(author);
