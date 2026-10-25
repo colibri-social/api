@@ -1,4 +1,5 @@
 import { Worker } from "node:worker_threads";
+import { reviveCids } from "./revive-cids.js";
 import type {
 	AdvanceJob,
 	AdvanceResult,
@@ -109,7 +110,7 @@ export class VerifierPool implements Verifier {
 			pending.reject(new Error(reply.failure));
 			return;
 		}
-		pending.resolve(reply.result as VerifyResult);
+		pending.resolve(reviveCids(reply.result) as VerifyResult);
 	}
 
 	private dispatch(job: AdvanceJob | RepoJob, transfer: ArrayBuffer[] = []): Promise<VerifyResult> {

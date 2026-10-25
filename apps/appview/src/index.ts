@@ -8,6 +8,7 @@ import { Jetstream } from "./jetstream.js";
 import { createLogger } from "./logger.js";
 import { migrationJobs } from "./migrations.js";
 import { connectPipeline } from "./pipeline.js";
+import { resyncBrokenCids } from "./resync-broken-cids.js";
 import { resolveVersion } from "./routes/server.js";
 import { installFatalHandlers, startErrorReporting, stopErrorReporting } from "./sentry.js";
 import { createAppServer } from "./server.js";
@@ -57,6 +58,9 @@ const main = async (): Promise<void> => {
 
 	void healOwnerRolePermissions(ctx).catch((error: unknown) =>
 		ctx.log.warn({ err: error }, "heal.ownerPermissionsSweepFailed"),
+	);
+	void resyncBrokenCids(ctx.database, ctx.sync, ctx.log).catch((error: unknown) =>
+		ctx.log.warn({ err: error }, "heal.brokenCidResyncFailed"),
 	);
 	void migrationJobs(ctx)
 		.resume()

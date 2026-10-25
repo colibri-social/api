@@ -2,6 +2,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { parseCid } from "@atproto/lex-data";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AdvanceRequest } from "./verify-pool.js";
 import { inlineVerifier, VerifierPool } from "./verify-pool.js";
@@ -11,6 +12,10 @@ import { parentPort, threadId } from "node:worker_threads";
 
 parentPort.on("message", ({ id, job }) => {
 	if (job.author === "die") process.exit(1);
+	if (job.author === "echo") {
+		parentPort.postMessage({ id, result: { authentic: true, records: job.ops } });
+		return;
+	}
 	if (job.author === "throw") {
 		parentPort.postMessage({ id, failure: "the worker refused" });
 		return;
@@ -78,6 +83,25 @@ describe("VerifierPool", () => {
 		await vi.waitFor(() => expect(died).toHaveLength(1));
 
 		expect(await pool.advance(request("did:plc:alice"))).toMatchObject({ authentic: true });
+	});
+
+	it("returns record CIDs that still stringify after crossing the thread boundary", async () => {
+		pool = new VerifierPool({ size: 1, entry });
+		const cid = "bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku";
+		const record = {
+			attachments: [
+				{ blob: { $type: "blob", mimeType: "image/png", size: 4, ref: parseCid(cid) } },
+			],
+		};
+
+		const result = (await pool.advance({
+			...request("echo"),
+			ops: [record] as never,
+		})) as unknown as {
+			records: [typeof record];
+		};
+
+		expect(String(result.records[0].attachments[0]?.blob.ref)).toBe(cid);
 	});
 
 	it("rejects jobs once it is closed", async () => {

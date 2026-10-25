@@ -29,12 +29,12 @@
 		"clean": "tsc --build --clean"
 	},
 	"dependencies": {
+		"@atproto/lex-data": "catalog:",
 		"@atproto/space": "catalog:",
 		"@atproto/syntax": "catalog:",
 		"@colibri-social/space": "workspace:*"
 	},
 	"devDependencies": {
-		"@atproto/crypto": "catalog:",
-		"@atproto/lex-data": "catalog:"
+		"@atproto/crypto": "catalog:"
 	}
 }
