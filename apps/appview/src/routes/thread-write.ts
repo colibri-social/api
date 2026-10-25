@@ -451,121 +451,136 @@ export const registerThreadWriteRoutes = ({ server, ctx, auth }: RouteDeps): voi
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => {
 			try {
-				const actor = caller.credentials.did;
-				const source = parseSpaceRef(input.body.source);
-				const destination = parseSpaceRef(input.body.destination);
-
-				if (source.authority !== destination.authority) {
-					throw invalidRequest("a message can only move within one community");
-				}
-
-				const community = source.authority;
-				const authz = await ctx.loader.authz(community, actor);
-				if (!has(authz, "thread.move")) throw forbidden("you lack the thread.move permission");
-
-				await requireReadable(ctx, source.uri, source.spaceType, authz);
-				await requirePostable(ctx, destination.uri, destination.spaceType, authz);
-
-				const subjects = [...input.body.subjects];
-				for (const subject of subjects) {
-					if (subject.collection !== COLLECTIONS.message) {
-						throw invalidRequest("only messages can be moved");
-					}
-					if (!(await messageExists(ctx, source.uri, subject.did, subject.rkey))) {
-						throw new InvalidRequestError(
-							`no message ${subject.rkey} by ${subject.did} in ${source.uri}`,
-							"MessageNotFound",
-						);
-					}
-				}
-
-				if (source.uri === destination.uri) {
-					for (const subject of subjects) {
-						const away = await movedDestination(ctx, community, source.uri, subject);
-						if (!away) {
-							throw invalidRequest("the destination is the space the messages are already in");
-						}
-						await moderation.negateLabel(
-							community,
-							source.uri,
-							{ did: subject.did, collection: subject.collection, rkey: subject.rkey },
-							LABEL_VALUES.moved,
-						);
-						ctx.announce.toChannel(
-							source.uri,
-							labelEvent("negate", source.uri, community, subject, LABEL_VALUES.moved),
-						);
-						ctx.announce.toChannel(away, messageGone(away, subject));
-
-						const back = await channels.message(source.uri, null, {
-							author: subject.did,
-							rkey: subject.rkey,
-						});
-						if (back) {
-							ctx.announce.toChannel(source.uri, (viewer) =>
-								messageEvent("create", source.uri, channels.forViewer(back, viewer)),
-							);
-						}
-
-						await touchThread(ctx, threads, away, community);
-						if (isTextChannel(source.uri)) {
-							await carryThread(ctx, threads, source.uri, subject, source.uri);
-						}
-					}
-					return {
-						encoding: "application/json" as const,
-						body: { batch: nextTid(), count: subjects.length },
-					};
-				}
-
-				const batch = nextTid();
-				for (const subject of subjects) {
-					await moderation.applyLabel(
-						community,
-						source.uri,
-						{ did: subject.did, collection: subject.collection, rkey: subject.rkey },
-						LABEL_VALUES.moved,
-						{
-							destination: destination.uri,
-							batch,
-							...(input.body.reason ? { reason: input.body.reason } : {}),
-						},
-					);
-					ctx.announce.toChannel(
-						source.uri,
-						labelEvent("create", source.uri, community, subject, LABEL_VALUES.moved),
-					);
-
-					const moved = await channels.message(
-						source.uri,
-						null,
-						{ author: subject.did, rkey: subject.rkey },
-						destination.uri,
-					);
-					if (moved) {
-						ctx.announce.toChannel(destination.uri, (viewer) =>
-							messageEvent("create", destination.uri, channels.forViewer(moved, viewer)),
-						);
-					}
-				}
-
-				await touchThread(ctx, threads, destination.uri, community);
-
-				if (isTextChannel(destination.uri)) {
-					for (const subject of subjects) {
-						await carryThread(ctx, threads, source.uri, subject, destination.uri);
-					}
-				}
-
 				return {
 					encoding: "application/json" as const,
-					body: { batch, count: subjects.length },
+					body: await moveMessages(
+						{ ctx, channels, threads, moderation },
+						caller.credentials.did,
+						input.body,
+					),
 				};
 			} catch (error) {
 				throw toXrpcError(error);
 			}
 		},
 	});
+};
+
+export type MoveMessagesDeps = {
+	ctx: AppContext;
+	channels: ChannelViews;
+	threads: ThreadViews;
+	moderation: Moderation;
+};
+
+export const moveMessages = async (
+	{ ctx, channels, threads, moderation }: MoveMessagesDeps,
+	actor: string,
+	input: social.colibri.beta.thread.moveMessages.$InputBody,
+): Promise<social.colibri.beta.thread.moveMessages.$OutputBody> => {
+	const source = parseSpaceRef(input.source);
+	const destination = parseSpaceRef(input.destination);
+
+	if (source.authority !== destination.authority) {
+		throw invalidRequest("a message can only move within one community");
+	}
+
+	const community = source.authority;
+	const authz = await ctx.loader.authz(community, actor);
+	if (!has(authz, "thread.move")) throw forbidden("you lack the thread.move permission");
+
+	await requireReadable(ctx, source.uri, source.spaceType, authz);
+	await requirePostable(ctx, destination.uri, destination.spaceType, authz);
+
+	const subjects = [...input.subjects];
+	for (const subject of subjects) {
+		if (subject.collection !== COLLECTIONS.message) {
+			throw invalidRequest("only messages can be moved");
+		}
+		if (!(await messageExists(ctx, source.uri, subject.did, subject.rkey))) {
+			throw new InvalidRequestError(
+				`no message ${subject.rkey} by ${subject.did} in ${source.uri}`,
+				"MessageNotFound",
+			);
+		}
+	}
+
+	if (source.uri === destination.uri) {
+		for (const subject of subjects) {
+			const away = await movedDestination(ctx, community, source.uri, subject);
+			if (!away) {
+				throw invalidRequest("the destination is the space the messages are already in");
+			}
+			await moderation.negateLabel(
+				community,
+				source.uri,
+				{ did: subject.did, collection: subject.collection, rkey: subject.rkey },
+				LABEL_VALUES.moved,
+			);
+			ctx.announce.toChannel(
+				source.uri,
+				labelEvent("negate", source.uri, community, subject, LABEL_VALUES.moved),
+			);
+			ctx.announce.toChannel(away, messageGone(away, subject));
+
+			const back = await channels.message(source.uri, null, {
+				author: subject.did,
+				rkey: subject.rkey,
+			});
+			if (back) {
+				ctx.announce.toChannel(source.uri, (viewer) =>
+					messageEvent("create", source.uri, channels.forViewer(back, viewer)),
+				);
+			}
+
+			await touchThread(ctx, threads, away, community);
+			if (isTextChannel(source.uri)) {
+				await carryThread(ctx, threads, source.uri, subject, source.uri);
+			}
+		}
+		return { batch: nextTid(), count: subjects.length };
+	}
+
+	const batch = nextTid();
+	for (const subject of subjects) {
+		await moderation.applyLabel(
+			community,
+			source.uri,
+			{ did: subject.did, collection: subject.collection, rkey: subject.rkey },
+			LABEL_VALUES.moved,
+			{
+				destination: destination.uri,
+				batch,
+				...(input.reason ? { reason: input.reason } : {}),
+			},
+		);
+		ctx.announce.toChannel(
+			source.uri,
+			labelEvent("create", source.uri, community, subject, LABEL_VALUES.moved),
+		);
+
+		const moved = await channels.message(
+			source.uri,
+			null,
+			{ author: subject.did, rkey: subject.rkey },
+			destination.uri,
+		);
+		if (moved) {
+			ctx.announce.toChannel(destination.uri, (viewer) =>
+				messageEvent("create", destination.uri, channels.forViewer(moved, viewer)),
+			);
+		}
+	}
+
+	await touchThread(ctx, threads, destination.uri, community);
+
+	if (isTextChannel(destination.uri)) {
+		for (const subject of subjects) {
+			await carryThread(ctx, threads, source.uri, subject, destination.uri);
+		}
+	}
+
+	return { batch, count: subjects.length };
 };
 
 const carryThread = async (

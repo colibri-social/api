@@ -43,6 +43,8 @@ type Connection = {
 	did: string;
 	alive: boolean;
 	hints: HintBudget;
+	holds: Set<string>;
+	grants: Map<string, Set<string>>;
 };
 
 const clientFrames = {
@@ -152,6 +154,8 @@ export class EventServer {
 			did,
 			alive: true,
 			hints: { count: 0, windowStartedAt: 0 },
+			holds: new Set(),
+			grants: new Map(),
 		};
 		const first = this.presence.connections(did) === 0;
 		this.connections.add(connection);
@@ -348,11 +352,15 @@ export class EventServer {
 			for (const community of frame.communities ?? []) {
 				topics.push(communityTopic(community));
 				communities.push(community);
-				for (const space of this.channelsHeldIn(connection, community)) {
-					topics.push(channelTopic(space));
+				const granted = connection.grants.get(community) ?? new Set<string>();
+				connection.grants.delete(community);
+				for (const space of granted) {
+					if (!this.isWanted(connection, space)) topics.push(channelTopic(space));
 				}
 			}
 			for (const channel of frame.channels ?? []) {
+				connection.holds.delete(channel);
+				if (this.isWanted(connection, channel)) continue;
 				topics.push(channelTopic(channel));
 				channels.push(channel);
 			}
@@ -364,7 +372,12 @@ export class EventServer {
 				if (!authz.member && !authz.isOwner) continue;
 				topics.push(communityTopic(community));
 				communities.push(community);
-				for (const space of await this.communities.readableChannels(community, authz)) {
+				const readable = await this.communities.readableChannels(community, authz);
+				const previous = connection.grants.get(community) ?? new Set<string>();
+				connection.grants.set(community, new Set(readable));
+				const dropped = [...previous].filter((space) => !this.isWanted(connection, space));
+				if (dropped.length > 0) this.topics.unsubscribe(connection, dropped.map(channelTopic));
+				for (const space of readable) {
 					topics.push(channelTopic(space));
 					channels.push(space);
 				}
@@ -372,6 +385,7 @@ export class EventServer {
 			for (const channel of frame.channels ?? []) {
 				const access = await this.spaceAccess(connection.did, channel);
 				if (!access) continue;
+				connection.holds.add(channel);
 				topics.push(channelTopic(channel));
 				channels.push(channel);
 				const community = this.authorityOf(channel);
@@ -381,6 +395,21 @@ export class EventServer {
 		}
 
 		this.confirmSubscription(connection);
+	}
+
+	private isWanted(connection: Connection, space: string): boolean {
+		if (connection.holds.has(space)) return true;
+		const community = this.authorityOf(space);
+		return community !== null && (connection.grants.get(community)?.has(space) ?? false);
+	}
+
+	private release(connection: Connection, spaces: readonly string[]): void {
+		for (const space of spaces) {
+			connection.holds.delete(space);
+			const community = this.authorityOf(space);
+			if (community) connection.grants.get(community)?.delete(space);
+		}
+		this.topics.unsubscribe(connection, spaces.map(channelTopic));
 	}
 
 	private async mayReadSpace(did: string, space: string): Promise<boolean> {
@@ -456,7 +485,7 @@ export class EventServer {
 			}
 			if (lost.length === 0) continue;
 			for (const space of lost) this.send(connection, channelEvent("delete", community, space));
-			this.topics.unsubscribe(connection, lost.map(channelTopic));
+			this.release(connection, lost);
 			this.dropIdleBridgeTopics(connection);
 			this.confirmSubscription(connection);
 		}
@@ -484,6 +513,7 @@ export class EventServer {
 			for (const space of threads) {
 				if (!(await this.mayReadSpace(connection.did, space))) lost.push(space);
 			}
+			connection.grants.set(community, wanted);
 			if (gained.length === 0 && lost.length === 0) continue;
 
 			for (const space of lost) {
@@ -494,7 +524,7 @@ export class EventServer {
 						: channelEvent("delete", community, space),
 				);
 			}
-			this.topics.unsubscribe(connection, lost.map(channelTopic));
+			this.release(connection, lost);
 			this.topics.subscribe(connection, gained.map(channelTopic));
 			for (const space of gained) {
 				this.send(connection, channelEvent("create", community, space));
@@ -507,14 +537,14 @@ export class EventServer {
 		this.publishToChannel(space, channelEvent(event, community, space));
 		if (event !== "delete") return;
 		for (const connection of [...this.topics.subscribersOf(channelTopic(space))]) {
-			this.topics.unsubscribe(connection, [channelTopic(space)]);
+			this.release(connection, [space]);
 			this.confirmSubscription(connection);
 		}
 	}
 
 	threadDeleted(space: string): void {
 		for (const connection of [...this.topics.subscribersOf(channelTopic(space))]) {
-			this.topics.unsubscribe(connection, [channelTopic(space)]);
+			this.release(connection, [space]);
 			this.confirmSubscription(connection);
 		}
 	}
@@ -529,7 +559,9 @@ export class EventServer {
 			if (!held && channels.length === 0) continue;
 
 			this.send(connection, frame);
-			this.topics.unsubscribe(connection, [topic, ...channels.map(channelTopic)]);
+			connection.grants.delete(community);
+			this.release(connection, channels);
+			this.topics.unsubscribe(connection, [topic]);
 			this.confirmSubscription(connection);
 		}
 	}

@@ -312,6 +312,14 @@ describe("space access decisions", () => {
 		).toBe(true);
 	});
 
+	it("refuses writes to a thread whose channel is read-only for the member", () => {
+		const readOnly = { channel: channel({ ownerOnly: true }), thread: thread() };
+		expect(
+			decide(SPACE_TYPES.channelThread, authz(), { ...readOnly, access: "write" }).authorized,
+		).toBe(false);
+		expect(decide(SPACE_TYPES.channelThread, authz(), readOnly).authorized).toBe(true);
+	});
+
 	it("refuses writes to a locked thread for members who don't manage threads", () => {
 		const locked = { channel: channel(), thread: thread({ locked: true }) };
 		expect(

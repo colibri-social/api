@@ -240,6 +240,36 @@ describe("ThreadViews close and lock state", () => {
 
 		expect(view?.viewer).toMatchObject({ canPost: false, canClose: false, canDelete: true });
 	});
+
+	it("stops a member posting in a thread of a read-only channel", async () => {
+		await database.db
+			.update(database.tables.channels)
+			.set({ ownerOnly: true })
+			.where(eq(database.tables.channels.space, SPACE));
+		await putOpenedThread();
+
+		const view = await threads.view((await threads.row(THREAD))!, member(OPENER), OPENER);
+
+		expect(view?.viewer).toMatchObject({ canRead: true, canPost: false });
+	});
+
+	it("stops a member posting in a thread of a channel its category makes read-only", async () => {
+		await database.db.insert(database.tables.categories).values({
+			community: COMMUNITY,
+			rkey: "3lkcategory0000",
+			name: "announcements",
+			ownerOnly: true,
+		});
+		await database.db
+			.update(database.tables.channels)
+			.set({ category: "3lkcategory0000" })
+			.where(eq(database.tables.channels.space, SPACE));
+		await putOpenedThread();
+
+		const view = await threads.view((await threads.row(THREAD))!, member(OPENER), OPENER);
+
+		expect(view?.viewer).toMatchObject({ canRead: true, canPost: false });
+	});
 });
 
 describe("ThreadViews members", () => {

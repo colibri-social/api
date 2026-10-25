@@ -349,6 +349,79 @@ describe("EventServer", () => {
 		ws.close();
 	});
 
+	it("keeps delivering a community channel after a hold on it is released", async () => {
+		await putChannelRow(CHANNEL, "3lkgeneral");
+
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#subscribe",
+			communities: [COMMUNITY],
+		});
+		await nextFrameOfType(ws, "subscribed");
+		await subscribed(ws, CHANNEL);
+
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#unsubscribe",
+			channels: [CHANNEL],
+		});
+		expect(await nextFrameOfType(ws, "subscribed")).toMatchObject({
+			communities: [COMMUNITY],
+			channels: [CHANNEL],
+		});
+
+		events.publishToChannel(CHANNEL, {
+			$type: "social.colibri.beta.sync.defs#messageEvent",
+			event: "delete",
+			channel: CHANNEL,
+			subject: { did: BOB, rkey: "3lkaaaaaaaaa7" },
+		});
+		expect(await nextFrameOfType(ws, "messageEvent")).toMatchObject({ channel: CHANNEL });
+
+		ws.close();
+	});
+
+	it("drops a channel held only by an explicit hold once it is released", async () => {
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+		await subscribed(ws, CHANNEL);
+
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#unsubscribe",
+			channels: [CHANNEL],
+		});
+
+		expect(await nextFrameOfType(ws, "subscribed")).toMatchObject({ channels: [] });
+
+		ws.close();
+	});
+
+	it("keeps an explicitly held channel when its community is unsubscribed", async () => {
+		await putChannelRow(CHANNEL, "3lkgeneral");
+		await putChannelRow(OTHER, "3lkbackstage");
+
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#subscribe",
+			communities: [COMMUNITY],
+		});
+		await nextFrameOfType(ws, "subscribed");
+		await subscribed(ws, CHANNEL);
+
+		send(ws, {
+			$type: "social.colibri.beta.sync.defs#unsubscribe",
+			communities: [COMMUNITY],
+		});
+
+		expect(await nextFrameOfType(ws, "subscribed")).toMatchObject({
+			communities: [],
+			channels: [CHANNEL],
+		});
+
+		ws.close();
+	});
+
 	it("hands over a channel that a granted role just made readable", async () => {
 		await putChannelRow(CHANNEL, "3lkgeneral");
 		await putChannelRow(OTHER, "3lkbackstage", ["3lkinsiders"]);
