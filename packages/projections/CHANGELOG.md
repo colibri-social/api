@@ -1,5 +1,15 @@
 # @colibri-social/projections
 
+## 1.14.1
+
+### Patch Changes
+
+- 4ab879d: Fix channel reordering after a channel was deleted, and repair every category's channel order on startup and on each reorder. A new channel now takes its category's visibility rules as soon as it syncs. Messages edited outside Colibri now show as edited, a second reaction record with the same emoji no longer leaves a stale reaction behind, and links that point straight at an image, SVG included, now preview as that image.
+- f583cda: Store a volume for in-app sound effects with the other client preferences, so the setting follows you across devices
+- Updated dependencies [f583cda]
+  - @colibri-social/lexicons@2.34.0
+  - @colibri-social/appview-db@0.20.1
+
 ## 1.14.0
 
 ### Minor Changes

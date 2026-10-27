@@ -1,5 +1,11 @@
 # @colibri-social/lexicons
 
+## 2.34.0
+
+### Minor Changes
+
+- f583cda: Store a volume for in-app sound effects with the other client preferences, so the setting follows you across devices
+
 ## 2.33.0
 
 ### Minor Changes
