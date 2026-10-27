@@ -1,5 +1,31 @@
 # @colibri-social/appview
 
+## 2.33.0
+
+### Minor Changes
+
+- f583cda: Store a volume for in-app sound effects with the other client preferences, so the setting follows you across devices
+
+### Patch Changes
+
+- 4ab879d: Fix channel reordering after a channel was deleted, and repair every category's channel order on startup and on each reorder. A new channel now takes its category's visibility rules as soon as it syncs. Messages edited outside Colibri now show as edited, a second reaction record with the same emoji no longer leaves a stale reaction behind, and links that point straight at an image, SVG included, now preview as that image.
+- 1d1e179: Keep delivering a channel's events after a client releases its own hold on a channel that its community subscription still grants. Releasing a channel now drops only the explicit hold, and unsubscribing a community drops only the channels it granted.
+- 9ab78a0: Stop a full repo resync from notifying, pushing or streaming messages that were already indexed unchanged. Only new or changed records go through the notification pipeline.
+- 28372a2: Fix attachments, avatars and role images that failed to load after a repo was synced for the first time, such as messages in a new channel or thread. On startup, the AppView resyncs every repo stored with a broken blob reference.
+- Updated dependencies [4ab879d]
+- Updated dependencies [9ab78a0]
+- Updated dependencies [f583cda]
+- Updated dependencies [28372a2]
+- Updated dependencies [4ab879d]
+  - @colibri-social/projections@1.14.1
+  - @colibri-social/embeds@0.2.1
+  - @colibri-social/space-sync@0.6.2
+  - @colibri-social/lexicons@2.34.0
+  - @colibri-social/appview-db@0.20.1
+  - @colibri-social/voice@0.2.1
+  - @colibri-social/community@2.13.2
+  - @colibri-social/notifications@1.8.12
+
 ## 2.32.0
 
 ### Minor Changes

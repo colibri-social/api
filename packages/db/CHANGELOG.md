@@ -1,5 +1,11 @@
 # @colibri-social/appview-db
 
+## 0.20.1
+
+### Patch Changes
+
+- f583cda: Store a volume for in-app sound effects with the other client preferences, so the setting follows you across devices
+
 ## 0.20.0
 
 ### Minor Changes

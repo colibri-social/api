@@ -1,5 +1,12 @@
 # @colibri-social/space-sync
 
+## 0.6.2
+
+### Patch Changes
+
+- 9ab78a0: Stop a full repo resync from notifying, pushing or streaming messages that were already indexed unchanged. Only new or changed records go through the notification pipeline.
+- 28372a2: Fix attachments, avatars and role images that failed to load after a repo was synced for the first time, such as messages in a new channel or thread. On startup, the AppView resyncs every repo stored with a broken blob reference.
+
 ## 0.6.1
 
 ### Patch Changes
