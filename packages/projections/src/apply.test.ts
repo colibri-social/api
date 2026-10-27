@@ -1331,6 +1331,7 @@ describe("personal spaces", () => {
 				developerMode: true,
 				hideModeratedMessages: true,
 				inboxPresentation: "modal",
+				soundVolume: 40,
 				experiments: ["light-mode-v1"],
 				dismissedLegacyCommunities: ["did:plc:legacyxxxxxxxxxxxxxxxxxxx"],
 			}),
@@ -1344,6 +1345,7 @@ describe("personal spaces", () => {
 			developerMode: true,
 			hideModeratedMessages: true,
 			inboxPresentation: "modal",
+			soundVolume: 40,
 			experiments: ["light-mode-v1"],
 			dismissedLegacyCommunities: ["did:plc:legacyxxxxxxxxxxxxxxxxxxx"],
 		});

@@ -77,6 +77,7 @@ export type ClientPreferences = {
 	messagePreviews?: boolean;
 	linkEmbedsByDefault?: boolean;
 	gifLoopLimit?: number;
+	soundVolume?: number;
 	warnOnExternalLinks?: boolean;
 	blueskyClient?: string;
 	customBlueskyClientBase?: string;

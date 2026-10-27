@@ -45,6 +45,7 @@ export const toStoredClientPreferences = (value: ClientPreferencesIn): ClientPre
 		messagePreviews: value.messagePreviews,
 		linkEmbedsByDefault: value.linkEmbedsByDefault,
 		gifLoopLimit: value.gifLoopLimit,
+		soundVolume: value.soundVolume,
 		warnOnExternalLinks: value.warnOnExternalLinks,
 		blueskyClient: value.blueskyClient,
 		customBlueskyClientBase: value.customBlueskyClientBase,

@@ -179,6 +179,15 @@ describe("putSettings client state", () => {
 		).rejects.toMatchObject({ customErrorName: "InvalidRequest" });
 	});
 
+	it("stores the sound effects volume and returns it", async () => {
+		const result = await handlePutSettings(ctx, CALLER, {
+			clientPreferences: { theme: "dark", soundVolume: 35 },
+		});
+
+		expect(result.preferences.clientPreferences).toEqual({ theme: "dark", soundVolume: 35 });
+		asPreferencesOutput(result);
+	});
+
 	it("replaces client preferences whole and keeps them across other updates", async () => {
 		await handlePutSettings(ctx, CALLER, {
 			clientPreferences: { theme: "dark", messagePreviews: false },

@@ -468,6 +468,11 @@ type ClientPreferences = { $type?: "social.colibri.beta.actor.defs#clientPrefere
   "gifLoopLimit"?:number;
 
   /**
+   * The volume of in-app sound effects such as message pings and call sounds, in percent. Absent means 100.
+   */
+  "soundVolume"?:number;
+
+  /**
    * Whether opening a link to another site asks for confirmation first.
    */
   "warnOnExternalLinks"?:boolean;
@@ -515,7 +520,7 @@ type ClientPreferences = { $type?: "social.colibri.beta.actor.defs#clientPrefere
 export type { ClientPreferences };
 
 /** Client settings that follow the user across devices. Every field is optional and a client applies its own default for an absent one. */
-const clientPreferences = /*#__PURE__*/ l.typedObject<ClientPreferences>($nsid, "clientPreferences", /*#__PURE__*/ l.object({"controls":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Controls>((() => controls) as any)),"theme":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["system","dark","light"]}>()),"messagePreviews":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"linkEmbedsByDefault":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"gifLoopLimit":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":1,"maximum":5})),"warnOnExternalLinks":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"blueskyClient":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":64,"knownValues":["anisota","blacksky","bluesky","deer","mu","northsky","witchsky","custom"]}>({"maxLength":64})),"customBlueskyClientBase":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":253})),"inboxPresentation":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":32,"knownValues":["popover","modal"]}>({"maxLength":32})),"developerMode":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"hideModeratedMessages":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"voiceView":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<VoiceView>((() => voiceView) as any)),"experiments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"maxLength":64}), {"maxLength":64})),"dismissedLegacyCommunities":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), {"maxLength":256}))}));
+const clientPreferences = /*#__PURE__*/ l.typedObject<ClientPreferences>($nsid, "clientPreferences", /*#__PURE__*/ l.object({"controls":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Controls>((() => controls) as any)),"theme":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["system","dark","light"]}>()),"messagePreviews":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"linkEmbedsByDefault":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"gifLoopLimit":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":1,"maximum":5})),"soundVolume":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":0,"maximum":100})),"warnOnExternalLinks":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"blueskyClient":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":64,"knownValues":["anisota","blacksky","bluesky","deer","mu","northsky","witchsky","custom"]}>({"maxLength":64})),"customBlueskyClientBase":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":253})),"inboxPresentation":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":32,"knownValues":["popover","modal"]}>({"maxLength":32})),"developerMode":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"hideModeratedMessages":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"voiceView":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<VoiceView>((() => voiceView) as any)),"experiments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"maxLength":64}), {"maxLength":64})),"dismissedLegacyCommunities":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), {"maxLength":256}))}));
 
 export { clientPreferences };
 
