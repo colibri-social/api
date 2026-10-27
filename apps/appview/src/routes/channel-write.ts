@@ -1,5 +1,4 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
-import type { Schema } from "@colibri-social/appview-db";
 import {
 	type ActorAuthz,
 	type CommunityWriter,
@@ -9,12 +8,21 @@ import {
 import { COLLECTIONS, social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import { and, eq } from "drizzle-orm";
+import { categoryEvent } from "../announce.js";
+import {
+	failureCode,
+	loadChannelPlacements,
+	mergeVisibleOrder,
+	reconcileChannelOrder,
+	repairCategoryOrder,
+	sameOrder,
+	writeCategoryOrder,
+} from "../category-order.js";
 import type { AppContext } from "../context.js";
 import { toXrpcError } from "../errors.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
 import { type ChannelView, CommunityViews } from "../views/community.js";
-import { categoryFields, categoryRecord } from "./category-record.js";
 import type { RouteDeps } from "./types.js";
 
 type ChannelRow = Awaited<ReturnType<typeof loadChannelRow>>;
@@ -90,18 +98,31 @@ export const assertVisibilityHierarchy = async (
 	}
 };
 
-const rewriteCategoryOrder = async (
+const categoriesListing = async (ctx: AppContext, community: string, skey: string) => {
+	const rows = await ctx.database.db
+		.select()
+		.from(ctx.database.tables.categories)
+		.where(eq(ctx.database.tables.categories.community, community));
+	return rows.filter((row) => row.channelOrder.includes(skey));
+};
+
+const dropFromCategories = async (
+	ctx: AppContext,
 	writer: CommunityWriter,
 	community: string,
-	category: Schema["categories"]["$inferSelect"],
-	channelOrder: string[],
+	skey: string,
 ): Promise<void> => {
-	await writer.put(community, {
-		space: writer.spaces(community).configuration,
-		collection: COLLECTIONS.category,
-		rkey: category.rkey,
-		record: categoryRecord({ ...categoryFields(category), channelOrder }),
-	});
+	const placements = await loadChannelPlacements(ctx, community);
+	placements.delete(skey);
+	for (const category of await categoriesListing(ctx, community, skey)) {
+		await writeCategoryOrder(
+			writer,
+			community,
+			category,
+			reconcileChannelOrder(category.rkey, category.channelOrder, placements),
+		);
+		ctx.announce.toCommunity(community, categoryEvent("update", community, category.rkey));
+	}
 };
 
 export const handleCreateChannel = async (
@@ -145,7 +166,11 @@ export const handleCreateChannel = async (
 		});
 		const skey = space.split("/").pop() as string;
 
-		await rewriteCategoryOrder(writer, community, category, [...category.channelOrder, skey]);
+		const placements = await loadChannelPlacements(ctx, community);
+		const order = reconcileChannelOrder(category.rkey, category.channelOrder, placements).filter(
+			(entry) => entry !== skey,
+		);
+		await writeCategoryOrder(writer, community, category, [...order, skey]);
 
 		const row = {
 			space,
@@ -155,7 +180,7 @@ export const handleCreateChannel = async (
 			name: input.name,
 			description: input.description ?? null,
 			category: category.rkey,
-			position: category.channelOrder.length,
+			position: order.length,
 			ownerOnly: input.ownerOnly ?? false,
 			allowedRoles: input.allowedRoles ?? [],
 			allowedMembers: input.allowedMembers ?? [],
@@ -210,20 +235,30 @@ export const handleUpdateChannel = async (
 			const nextCategory = await loadCategoryRow(ctx, community, input.category);
 			if (!nextCategory) throw categoryNotFound();
 
-			if (existing.category) {
+			const placements = await loadChannelPlacements(ctx, community);
+			const previousCategories = await categoriesListing(ctx, community, existing.skey);
+			if (existing.category && !previousCategories.some((row) => row.rkey === existing.category)) {
 				const previousCategory = await loadCategoryRow(ctx, community, existing.category);
-				if (previousCategory) {
-					await rewriteCategoryOrder(
-						writer,
-						community,
-						previousCategory,
-						previousCategory.channelOrder.filter((skey) => skey !== existing.skey),
-					);
-				}
+				if (previousCategory) previousCategories.push(previousCategory);
+			}
+			for (const previousCategory of previousCategories) {
+				if (previousCategory.rkey === nextCategory.rkey) continue;
+				await writeCategoryOrder(
+					writer,
+					community,
+					previousCategory,
+					reconcileChannelOrder(
+						previousCategory.rkey,
+						previousCategory.channelOrder,
+						placements,
+					).filter((skey) => skey !== existing.skey),
+				);
 			}
 
-			await rewriteCategoryOrder(writer, community, nextCategory, [
-				...nextCategory.channelOrder,
+			await writeCategoryOrder(writer, community, nextCategory, [
+				...reconcileChannelOrder(nextCategory.rkey, nextCategory.channelOrder, placements).filter(
+					(skey) => skey !== existing.skey,
+				),
 				existing.skey,
 			]);
 			category = nextCategory.rkey;
@@ -286,6 +321,7 @@ export const handleUpdateChannel = async (
 
 export const handleDeleteChannel = async (
 	ctx: AppContext,
+	writer: CommunityWriter,
 	actor: string,
 	space: string,
 ): Promise<Record<string, never>> => {
@@ -300,6 +336,10 @@ export const handleDeleteChannel = async (
 		await ctx.provisioner.deleteChannel(host, space);
 		ctx.announce.channelChanged(community, space, "delete");
 
+		await dropFromCategories(ctx, writer, community, existing.skey).catch((error: unknown) =>
+			ctx.log.warn({ community, space, code: failureCode(error) }, "channel.deleteOrderFailed"),
+		);
+
 		return {};
 	} catch (error) {
 		throw toXrpcError(error);
@@ -309,6 +349,7 @@ export const handleDeleteChannel = async (
 export const handleReorderChannels = async (
 	ctx: AppContext,
 	writer: CommunityWriter,
+	communities: CommunityViews,
 	community: string,
 	actor: string,
 	category: string,
@@ -316,24 +357,27 @@ export const handleReorderChannels = async (
 ): Promise<Record<string, never>> => {
 	try {
 		await requireCommunity(ctx, community);
-		await requirePermission(ctx, community, actor, "channel.update");
+		const authz = await requirePermission(ctx, community, actor, "channel.update");
 
 		const existing = await loadCategoryRow(ctx, community, category);
 		if (!existing) throw categoryNotFound();
 
-		const currentSet = new Set(existing.channelOrder);
-		const nextSet = new Set(channels);
-		const matches =
-			currentSet.size === nextSet.size &&
-			existing.channelOrder.every((skey) => nextSet.has(skey)) &&
-			channels.every((skey) => currentSet.has(skey));
-		if (!matches) {
+		const { order } = await repairCategoryOrder(ctx, writer, community, existing);
+		const visible = new Set(
+			(await communities.channels(community, authz)).map(
+				(channel) => channel.space.split("/").pop() as string,
+			),
+		);
+		const next = mergeVisibleOrder(order, visible, channels);
+		if (!next) {
 			throw invalidRequest(
 				"the given channels do not match the category's current set of channels",
 			);
 		}
 
-		await rewriteCategoryOrder(writer, community, existing, channels);
+		if (!sameOrder(next, order)) {
+			await writeCategoryOrder(writer, community, { ...existing, channelOrder: order }, next);
+		}
 
 		return {};
 	} catch (error) {
@@ -400,7 +444,7 @@ export const registerChannelWriteRoutes = ({ server, ctx, auth }: RouteDeps): vo
 		auth: auth.required,
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
-			body: await handleDeleteChannel(ctx, caller.credentials.did, input.body.channel),
+			body: await handleDeleteChannel(ctx, ctx.writer, caller.credentials.did, input.body.channel),
 		}),
 	});
 
@@ -411,6 +455,7 @@ export const registerChannelWriteRoutes = ({ server, ctx, auth }: RouteDeps): vo
 			body: await handleReorderChannels(
 				ctx,
 				ctx.writer,
+				communities,
 				input.body.community,
 				caller.credentials.did,
 				input.body.category,

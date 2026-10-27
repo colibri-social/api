@@ -536,8 +536,9 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 				const published = await publishMessage(change.space, change.author, put.rkey, imported);
 				publishedMessages += 1;
 				if (imported) continue;
+				const wasEdited = published ? Boolean(published.updatedAt) : Boolean(put.value.updatedAt);
 				if (isThreadSpace(space)) {
-					if (!put.value.updatedAt) {
+					if (!wasEdited) {
 						await reopenOnPost(change.space, space.community, String(put.value.createdAt ?? ""));
 					}
 					await publishThreadActivity(change.space, space.community);
@@ -546,7 +547,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 				const parent = put.value.parent as { did?: string; rkey?: string } | undefined;
 				const community = space.community;
 				const text = previewTextOf(put.value);
-				const edited = put.value.updatedAt
+				const edited = wasEdited
 					? pushMessageEdited(change.space, change.author, put.rkey, text, published).catch(
 							(error) => ctx.log.warn({ error }, "push.editFailed"),
 						)

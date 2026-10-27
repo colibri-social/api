@@ -1,3 +1,4 @@
+import type { LinkedImageType } from "./image.js";
 import type { PlayableVideoType } from "./video.js";
 
 export type MeasuredImage = {
@@ -39,7 +40,7 @@ export type EmbedMedia = {
 	kind: "image" | "video" | "gifv";
 	url: string;
 	previewUrl?: string;
-	mimeType?: PlayableVideoType;
+	mimeType?: PlayableVideoType | LinkedImageType;
 	width?: number;
 	height?: number;
 	alt?: string;

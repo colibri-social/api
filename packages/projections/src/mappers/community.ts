@@ -7,7 +7,7 @@ import {
 	SPACE_TYPES,
 	social,
 } from "@colibri-social/lexicons";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { ProjectionDeps, RecordRef } from "../context.js";
 import { communityOf, type Projector } from "../projector.js";
 
@@ -289,6 +289,34 @@ export const member: Projector<social.colibri.beta.member.Main> = {
 	},
 };
 
+const listingCategory = async (
+	deps: ProjectionDeps,
+	community: string,
+	space: string,
+	skey: string,
+): Promise<{ category: string; position: number } | null> => {
+	const [existing] = await deps.db
+		.select({ category: deps.tables.channels.category })
+		.from(deps.tables.channels)
+		.where(eq(deps.tables.channels.space, space))
+		.limit(1);
+	if (existing?.category) return null;
+
+	const categories = await deps.db
+		.select({
+			rkey: deps.tables.categories.rkey,
+			channelOrder: deps.tables.categories.channelOrder,
+		})
+		.from(deps.tables.categories)
+		.where(eq(deps.tables.categories.community, community))
+		.orderBy(asc(deps.tables.categories.position), asc(deps.tables.categories.rkey));
+	for (const category of categories) {
+		const position = category.channelOrder.indexOf(skey);
+		if (position >= 0) return { category: category.rkey, position };
+	}
+	return null;
+};
+
 export const channel: Projector<social.colibri.beta.channel.Main> = {
 	collection: COLLECTIONS.channel,
 	writer: "authority",
@@ -312,10 +340,12 @@ export const channel: Projector<social.colibri.beta.channel.Main> = {
 			linkEmbeds: value.linkEmbeds ?? null,
 			migratedFrom: value.migratedFrom ?? null,
 		};
+		const placement = await listingCategory(deps, community, ref.space.uri, ref.space.skey);
+		const placed = placement ? { ...row, ...placement } : row;
 		await deps.db
 			.insert(deps.tables.channels)
-			.values(row)
-			.onConflictDoUpdate({ target: deps.tables.channels.space, set: row });
+			.values(placed)
+			.onConflictDoUpdate({ target: deps.tables.channels.space, set: placed });
 	},
 	remove: async (deps, ref) => {
 		await deps.db.delete(deps.tables.channels).where(eq(deps.tables.channels.space, ref.space.uri));

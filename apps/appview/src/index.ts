@@ -1,5 +1,6 @@
 import { ActivitySweeper } from "./activity.js";
 import { eventAnnouncer } from "./announce.js";
+import { healCategoryOrders } from "./category-order.js";
 import { describeConfig, loadConfig } from "./config.js";
 import { createContext } from "./context.js";
 import { HandOverSweeper, hostIdentityChanged } from "./hand-overs.js";
@@ -58,6 +59,9 @@ const main = async (): Promise<void> => {
 
 	void healOwnerRolePermissions(ctx).catch((error: unknown) =>
 		ctx.log.warn({ err: error }, "heal.ownerPermissionsSweepFailed"),
+	);
+	void healCategoryOrders(ctx).catch((error: unknown) =>
+		ctx.log.warn({ err: error }, "heal.categoryOrdersSweepFailed"),
 	);
 	void resyncBrokenCids(ctx.database, ctx.sync, ctx.log).catch((error: unknown) =>
 		ctx.log.warn({ err: error }, "heal.brokenCidResyncFailed"),

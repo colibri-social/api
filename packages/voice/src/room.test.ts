@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { asRouter, createFakeRouter, createFakeTransport } from "./mock-mediasoup.js";
-import { buildWebRtcTransportOptions, mediaCodecs, VoiceRoom } from "./room.js";
+import {
+	buildWebRtcTransportOptions,
+	mediaCodecs,
+	SCREEN_KEYFRAME_REQUEST_DELAY_MS,
+	VoiceRoom,
+} from "./room.js";
 
 const webRtcTransportOptions = buildWebRtcTransportOptions({ listenIp: "0.0.0.0" });
 
@@ -19,6 +24,25 @@ describe("mediaCodecs", () => {
 	it("asks opus for inband fec and dtx", () => {
 		const opus = mediaCodecs().find((codec) => codec.mimeType === "audio/opus");
 		expect(opus?.parameters).toMatchObject({ useinbandfec: 1, usedtx: 1 });
+	});
+
+	it("keeps VP8 as the default video codec and offers VP9 and H264 up to 1080p", () => {
+		const video = mediaCodecs().filter((codec) => codec.kind === "video");
+		expect(video.map((codec) => codec.mimeType)).toEqual([
+			"video/VP8",
+			"video/VP9",
+			"video/H264",
+			"video/H264",
+		]);
+		expect(video[1]?.parameters).toEqual({ "profile-id": 0 });
+		expect(video.slice(2).map((codec) => codec.parameters?.["profile-level-id"])).toEqual([
+			"42e028",
+			"640028",
+		]);
+		for (const codec of video) {
+			expect(codec.rtcpFeedback).toContainEqual({ type: "nack", parameter: "pli" });
+			expect(codec.rtcpFeedback).toContainEqual({ type: "transport-cc" });
+		}
 	});
 });
 
@@ -252,6 +276,82 @@ describe("VoiceRoom voice state", () => {
 		await room.setServerState("did:plc:listener", { deafened: false });
 		await room.resumeConsumer("did:plc:listener", consumer.id);
 		expect(consumer.paused).toBe(false);
+	});
+
+	it("keeps video running for a deafened listener", async () => {
+		const { room } = await createRoom();
+		const sendTransport = await room.createTransport("did:plc:sharer", "send");
+		const producer = await room.produce("did:plc:sharer", sendTransport.id, {
+			kind: "video",
+			rtpParameters: {} as never,
+			source: "screen",
+		});
+
+		const recvTransport = await room.createTransport("did:plc:listener", "recv");
+		const consumer = await room.consume("did:plc:listener", recvTransport.id, {
+			producerId: producer.id,
+			rtpCapabilities: {},
+		});
+		await room.setSelfState("did:plc:listener", { deafened: true });
+		await room.resumeConsumer("did:plc:listener", consumer.id);
+		expect(consumer.paused).toBe(false);
+
+		await room.setSelfState("did:plc:listener", { deafened: false });
+		await room.setSelfState("did:plc:listener", { deafened: true });
+		expect(consumer.pause).not.toHaveBeenCalled();
+	});
+
+	it("asks for a keyframe when a video consumer resumes", async () => {
+		const { room } = await createRoom();
+		const sendTransport = await room.createTransport("did:plc:sharer", "send");
+		const video = await room.produce("did:plc:sharer", sendTransport.id, {
+			kind: "video",
+			rtpParameters: {} as never,
+			source: "screen",
+		});
+		const audio = await room.produce("did:plc:sharer", sendTransport.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "mic",
+		});
+
+		const recvTransport = await room.createTransport("did:plc:viewer", "recv");
+		const videoConsumer = await room.consume("did:plc:viewer", recvTransport.id, {
+			producerId: video.id,
+			rtpCapabilities: {},
+		});
+		const audioConsumer = await room.consume("did:plc:viewer", recvTransport.id, {
+			producerId: audio.id,
+			rtpCapabilities: {},
+		});
+		await room.resumeConsumer("did:plc:viewer", videoConsumer.id);
+		await room.resumeConsumer("did:plc:viewer", audioConsumer.id);
+
+		const fakeVideo = videoConsumer as unknown as { requestKeyFrame: ReturnType<typeof vi.fn> };
+		const fakeAudio = audioConsumer as unknown as { requestKeyFrame: ReturnType<typeof vi.fn> };
+		expect(fakeVideo.requestKeyFrame).toHaveBeenCalledTimes(1);
+		expect(fakeAudio.requestKeyFrame).not.toHaveBeenCalled();
+	});
+
+	it("spaces keyframe requests for screen shares only", async () => {
+		const { room } = await createRoom();
+		const sendTransport = await room.createTransport("did:plc:sharer", "send");
+		const produce = (sendTransport as unknown as { produce: ReturnType<typeof vi.fn> }).produce;
+		await room.produce("did:plc:sharer", sendTransport.id, {
+			kind: "video",
+			rtpParameters: {} as never,
+			source: "screen",
+		});
+		await room.produce("did:plc:sharer", sendTransport.id, {
+			kind: "video",
+			rtpParameters: {} as never,
+			source: "camera",
+		});
+
+		expect(produce.mock.calls[0]?.[0]).toMatchObject({
+			keyFrameRequestDelay: SCREEN_KEYFRAME_REQUEST_DELAY_MS,
+		});
+		expect(produce.mock.calls[1]?.[0]).not.toHaveProperty("keyFrameRequestDelay");
 	});
 
 	it("emits voice-state-changed with the resulting state and its origin", async () => {

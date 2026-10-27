@@ -7,7 +7,7 @@ import {
 	threadSpace,
 	toLexForm,
 } from "@colibri-social/lexicons";
-import { tidAt } from "@colibri-social/space";
+import { tidAt, tidTime } from "@colibri-social/space";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { applyChange, type SpaceChange } from "./apply.js";
@@ -156,6 +156,86 @@ describe("community projections", () => {
 		expect(row?.name).toBe("general");
 		expect(row?.category).toBe("3lkcat1");
 		expect(row?.position).toBe(0);
+	});
+
+	it("places a channel projected after the category that lists it", async () => {
+		await applyChange(
+			deps,
+			put(SPACES.configuration, COMMUNITY, "social.colibri.beta.category", "3lkcat1", {
+				$type: "social.colibri.beta.category",
+				name: "Staff",
+				channelOrder: ["3lkchannel0", "3lkchannel1"],
+				visibleToRoles: ["3lkrole2"],
+			}),
+		);
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.channel", SELF, {
+				$type: "social.colibri.beta.channel",
+				name: "general",
+			}),
+		);
+
+		const [row] = await database.db.select().from(database.tables.channels);
+		expect(row?.category).toBe("3lkcat1");
+		expect(row?.position).toBe(1);
+	});
+
+	it("places an unplaced channel again when its record is projected once more", async () => {
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.channel", SELF, {
+				$type: "social.colibri.beta.channel",
+				name: "general",
+			}),
+		);
+		await database.db.insert(database.tables.categories).values({
+			community: COMMUNITY,
+			rkey: "3lkcat1",
+			name: "Text",
+			channelOrder: ["3lkchannel1"],
+		});
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.channel", SELF, {
+				$type: "social.colibri.beta.channel",
+				name: "general",
+			}),
+		);
+
+		const [row] = await database.db.select().from(database.tables.channels);
+		expect(row?.category).toBe("3lkcat1");
+	});
+
+	it("keeps the category of a channel that already has one", async () => {
+		await applyChange(
+			deps,
+			put(SPACES.configuration, COMMUNITY, "social.colibri.beta.category", "3lkcat1", {
+				$type: "social.colibri.beta.category",
+				name: "Text",
+				channelOrder: ["3lkchannel1"],
+			}),
+		);
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.channel", SELF, {
+				$type: "social.colibri.beta.channel",
+				name: "general",
+			}),
+		);
+		await database.db.update(database.tables.channels).set({ category: "3lkcat2", position: 4 });
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, COMMUNITY, "social.colibri.beta.channel", SELF, {
+				$type: "social.colibri.beta.channel",
+				name: "renamed",
+			}),
+		);
+
+		const [row] = await database.db.select().from(database.tables.channels);
+		expect(row?.name).toBe("renamed");
+		expect(row?.category).toBe("3lkcat2");
+		expect(row?.position).toBe(4);
 	});
 
 	it("projects a category's permissions and announces them as an authz change", async () => {
@@ -1624,5 +1704,169 @@ describe("thread projection", () => {
 			deletes: [{ collection: "social.colibri.beta.thread.follow", rkey: SELF }],
 		});
 		expect(await follows()).toHaveLength(0);
+	});
+});
+
+describe("message edits written without updatedAt", () => {
+	const RKEY = tidAt("2026-08-22T23:00:00.000Z", "edit");
+	const EDIT_REV = tidAt("2026-08-22T23:30:00.000Z", "rev");
+	const EDITED_AT = new Date(tidTime(EDIT_REV) as number).toISOString();
+
+	const messagePut = (value: Record<string, unknown>, rev?: string): SpaceChange => ({
+		space: TEXT_CHANNEL,
+		author: MEMBER,
+		puts: [
+			{
+				collection: "social.colibri.beta.message",
+				rkey: RKEY,
+				cid: "bafytest",
+				value: { $type: "social.colibri.beta.message", createdAt: NOW, ...value },
+				...(rev ? { rev } : {}),
+			},
+		],
+		deletes: [],
+	});
+
+	const storedUpdatedAt = async () => {
+		const [row] = await database.db
+			.select({ updatedAt: database.tables.messages.updatedAt })
+			.from(database.tables.messages)
+			.where(eq(database.tables.messages.rkey, RKEY));
+		return row?.updatedAt;
+	};
+
+	it("leaves a new message unedited", async () => {
+		await applyChange(deps, messagePut({ text: "hello" }, EDIT_REV));
+
+		expect(await storedUpdatedAt()).toBeNull();
+	});
+
+	it("marks a changed text as edited at the commit time", async () => {
+		await applyChange(deps, messagePut({ text: "hello" }));
+		await applyChange(deps, messagePut({ text: "hello there" }, EDIT_REV));
+
+		expect(await storedUpdatedAt()).toBe(EDITED_AT);
+	});
+
+	it("falls back to the current time without a commit rev", async () => {
+		await applyChange(deps, messagePut({ text: "hello" }));
+		await applyChange(
+			deps,
+			messagePut({ text: "hello", suppressedEmbeds: ["https://example.com/"] }),
+		);
+
+		expect(await storedUpdatedAt()).toBe(NOW);
+	});
+
+	it("keeps the stored edit time when the same record replays", async () => {
+		await applyChange(deps, messagePut({ text: "hello" }));
+		await applyChange(deps, messagePut({ text: "hello there" }, EDIT_REV));
+		await applyChange(deps, messagePut({ text: "hello there" }, tidAt(NOW, "replay")));
+
+		expect(await storedUpdatedAt()).toBe(EDITED_AT);
+	});
+
+	it("leaves an unchanged replay of an unedited message unedited", async () => {
+		await applyChange(deps, messagePut({ text: "hello" }));
+		await applyChange(deps, messagePut({ text: "hello" }, EDIT_REV));
+
+		expect(await storedUpdatedAt()).toBeNull();
+	});
+
+	it("keeps the updatedAt a client writes", async () => {
+		await applyChange(deps, messagePut({ text: "hello" }));
+		await applyChange(deps, messagePut({ text: "hello!", updatedAt: NOW }, EDIT_REV));
+
+		expect(await storedUpdatedAt()).toBe(NOW);
+	});
+});
+
+describe("duplicate reaction records", () => {
+	const TARGET = { did: COMMUNITY, rkey: "3lkmessage1" };
+	const FIRST = "3lkreactfirst";
+	const SECOND = "3lkreactsecond";
+
+	const reactionValue = (emoji = "👍") => ({
+		$type: "social.colibri.beta.reaction",
+		target: TARGET,
+		emoji,
+	});
+
+	const mirror = (rkey: string, value: Record<string, unknown>) =>
+		database.db.insert(database.tables.records).values({
+			space: TEXT_CHANNEL,
+			author: MEMBER,
+			collection: "social.colibri.beta.reaction",
+			rkey,
+			cid: "bafytest",
+			value,
+			indexedAt: NOW,
+		});
+
+	const unmirror = (rkey: string) =>
+		database.db.delete(database.tables.records).where(eq(database.tables.records.rkey, rkey));
+
+	const remove = (rkey: string): SpaceChange => ({
+		space: TEXT_CHANNEL,
+		author: MEMBER,
+		puts: [],
+		deletes: [{ collection: "social.colibri.beta.reaction", rkey }],
+	});
+
+	const storedKeys = async () =>
+		(await database.db.select().from(database.tables.reactions)).map((row) => row.rkey);
+
+	beforeEach(async () => {
+		for (const rkey of [FIRST, SECOND]) {
+			await mirror(rkey, reactionValue());
+			await applyChange(
+				deps,
+				put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.reaction", rkey, reactionValue()),
+			);
+		}
+	});
+
+	it("keeps one row that points at the newest record", async () => {
+		expect(await storedKeys()).toEqual([SECOND]);
+	});
+
+	it("falls back to the other record when the stored one is deleted", async () => {
+		await unmirror(SECOND);
+		await applyChange(deps, remove(SECOND));
+
+		expect(await storedKeys()).toEqual([FIRST]);
+	});
+
+	it("keeps the reaction when the record that is not stored is deleted", async () => {
+		await unmirror(FIRST);
+		await applyChange(deps, remove(FIRST));
+
+		expect(await storedKeys()).toEqual([SECOND]);
+	});
+
+	it("drops the reaction once both records are deleted", async () => {
+		await unmirror(SECOND);
+		await applyChange(deps, remove(SECOND));
+		await unmirror(FIRST);
+		await applyChange(deps, remove(FIRST));
+
+		expect(await storedKeys()).toEqual([]);
+	});
+
+	it("updates the stored row when the same record changes", async () => {
+		await database.db
+			.update(database.tables.records)
+			.set({ value: reactionValue("🎉") })
+			.where(eq(database.tables.records.rkey, SECOND));
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.reaction", SECOND, reactionValue("🎉")),
+		);
+
+		const rows = await database.db.select().from(database.tables.reactions);
+		expect(rows.map((row) => [row.rkey, row.emoji]).sort()).toEqual([
+			[FIRST, "👍"],
+			[SECOND, "🎉"],
+		]);
 	});
 });

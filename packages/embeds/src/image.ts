@@ -13,6 +13,10 @@ export const PROXYABLE_IMAGE_TYPES = [
 
 export type ProxyableImageType = (typeof PROXYABLE_IMAGE_TYPES)[number];
 
+export const LINKED_IMAGE_TYPES = [...PROXYABLE_IMAGE_TYPES, "image/svg+xml"] as const;
+
+export type LinkedImageType = (typeof LINKED_IMAGE_TYPES)[number];
+
 export function baseContentType(raw: string | undefined): string {
 	return (raw ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
 }
@@ -20,6 +24,11 @@ export function baseContentType(raw: string | undefined): string {
 export function proxyableImageType(raw: string | undefined): ProxyableImageType | undefined {
 	const base = baseContentType(raw);
 	return PROXYABLE_IMAGE_TYPES.find((known) => known === base);
+}
+
+export function linkedImageType(raw: string | undefined): LinkedImageType | undefined {
+	const base = baseContentType(raw);
+	return LINKED_IMAGE_TYPES.find((known) => known === base);
 }
 
 const MEASURE_TIMEOUT_MS = 5_000;

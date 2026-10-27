@@ -2,14 +2,18 @@ import {
 	baseContentType,
 	guardedFetch,
 	isEmbedError,
-	PROXYABLE_IMAGE_TYPES,
+	LINKED_IMAGE_TYPES,
 } from "@colibri-social/embeds";
 import type { Request, Response, Router } from "express";
 import type { AppContext } from "../context.js";
 import { type EmbedMediaKind, verifyEmbedToken } from "../embed-token.js";
 import { asyncHandler } from "./async-handler.js";
 
-const IMAGE_TYPES = new Set<string>(PROXYABLE_IMAGE_TYPES);
+const IMAGE_TYPES = new Set<string>(LINKED_IMAGE_TYPES);
+
+const SVG_TYPE = "image/svg+xml";
+
+const SVG_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
 
 const VIDEO_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime"]);
 
@@ -78,6 +82,7 @@ export const mountEmbedMediaRoutes = (ctx: AppContext, app: Router): void => {
 		res.setHeader("cache-control", CACHE_CONTROL);
 		res.setHeader("accept-ranges", "bytes");
 		res.setHeader("x-content-type-options", "nosniff");
+		if (mimeType === SVG_TYPE) res.setHeader("content-security-policy", SVG_POLICY);
 		const contentRange = upstream.headers["content-range"];
 		if (contentRange) res.setHeader("content-range", contentRange);
 		res.end(upstream.body);

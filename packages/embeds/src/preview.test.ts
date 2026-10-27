@@ -381,3 +381,74 @@ describe("fetchLinkPreview enrichment", () => {
 		expect(embed.post).toBeUndefined();
 	});
 });
+
+describe("fetchLinkPreview direct image links", () => {
+	const resolveHost = async () => [{ address: "93.184.216.34", family: 4 as const }];
+
+	it("previews an svg served from a png path as an image", async () => {
+		const url = "https://mail.ehis.gay/api/share/EPszVlbbHi1bXMEJKyaLh2fz/og.png";
+		const mockAgent = newMockAgent();
+		mockAgent
+			.get("https://mail.ehis.gay")
+			.intercept({ path: "/api/share/EPszVlbbHi1bXMEJKyaLh2fz/og.png", method: "GET" })
+			.reply(200, '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"></svg>', {
+				headers: { "content-type": "image/svg+xml; charset=utf-8" },
+			});
+
+		const embed = await fetchLinkPreview(url, {
+			dispatcher: mockAgent,
+			resolveHost,
+			cache: null,
+		});
+
+		expect(embed).toEqual({
+			uri: url,
+			image: { url },
+			media: [{ kind: "image", url, mimeType: "image/svg+xml" }],
+		});
+	});
+
+	it("previews an extensionless png link as an image with its measured size", async () => {
+		const url = "https://eusv.net/Z3IHTWsCwrBqzZcL";
+		const mockAgent = newMockAgent();
+		mockAgent
+			.get("https://eusv.net")
+			.intercept({ path: "/Z3IHTWsCwrBqzZcL", method: "GET" })
+			.reply(200, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), {
+				headers: { "content-type": "image/png" },
+			});
+		const measureImage = vi.fn(async () => ({ width: 800, height: 600 }));
+
+		const embed = await fetchLinkPreview(url, {
+			dispatcher: mockAgent,
+			resolveHost,
+			cache: null,
+			measureImage,
+		});
+
+		expect(measureImage).toHaveBeenCalledWith(url);
+		expect(embed).toEqual({
+			uri: url,
+			image: { url, width: 800, height: 600 },
+			media: [{ kind: "image", url, mimeType: "image/png", width: 800, height: 600 }],
+		});
+	});
+
+	it("keeps treating an unsupported image type as a page", async () => {
+		const url = "https://eusv.net/favicon";
+		const mockAgent = newMockAgent();
+		mockAgent
+			.get("https://eusv.net")
+			.intercept({ path: "/favicon", method: "GET" })
+			.reply(200, Buffer.from([0, 0, 1, 0]), { headers: { "content-type": "image/x-icon" } });
+
+		const embed = await fetchLinkPreview(url, {
+			dispatcher: mockAgent,
+			resolveHost,
+			cache: null,
+		});
+
+		expect(embed.image).toBeUndefined();
+		expect(embed.media).toBeUndefined();
+	});
+});

@@ -941,6 +941,10 @@ describe("push updates for deleted and edited messages", () => {
 		const edited = nextTid();
 		const fresh = nextTid();
 		await putMessageRow(edited, "fixed");
+		await database.db
+			.update(database.tables.messages)
+			.set({ updatedAt: NOW })
+			.where(eq(database.tables.messages.rkey, edited));
 		await putMessageRow(fresh, "new");
 		emit(messageChange(fresh));
 		emit({
@@ -960,6 +964,32 @@ describe("push updates for deleted and edited messages", () => {
 		await vi.waitFor(() => expect(pushed.edited).toHaveLength(1));
 		expect(pushed.edited[0]).toMatchObject({
 			message: { space: SPACE, author: AUTHOR, rkey: edited, text: "fixed" },
+		});
+	});
+	it("pushes an edit for a raw record edit that carries no updatedAt", async () => {
+		const edited = nextTid();
+		await putMessageRow(edited, "fixed by hand");
+		await database.db
+			.update(database.tables.messages)
+			.set({ updatedAt: NOW })
+			.where(eq(database.tables.messages.rkey, edited));
+		emit({
+			space: SPACE,
+			author: AUTHOR,
+			puts: [
+				{
+					collection: COLLECTIONS.message,
+					rkey: edited,
+					cid: "bafyreictestrawedit",
+					value: { $type: COLLECTIONS.message, text: "fixed by hand", createdAt: NOW },
+				},
+			],
+			deletes: [],
+		});
+
+		await vi.waitFor(() => expect(pushed.edited).toHaveLength(1));
+		expect(pushed.edited[0]).toMatchObject({
+			message: { space: SPACE, author: AUTHOR, rkey: edited, text: "fixed by hand" },
 		});
 	});
 });
@@ -1117,8 +1147,9 @@ describe("voice channel pushes", () => {
 			author: AUTHOR,
 			rkey: edited,
 			community: COMMUNITY,
-			text: "before",
+			text: "after",
 			createdAt: NOW,
+			updatedAt: NOW,
 			fromLegacyRepo: false,
 			indexedAt: NOW,
 		});

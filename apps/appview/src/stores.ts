@@ -408,10 +408,10 @@ export const drizzleSyncStore = (
 				.where(and(eq(tables.records.space, space), eq(tables.records.author, author)));
 
 			await db.transaction(async (tx) => {
-				await project(tx, { space, author, puts: [], deletes: existing });
 				await tx
 					.delete(tables.records)
 					.where(and(eq(tables.records.space, space), eq(tables.records.author, author)));
+				await project(tx, { space, author, puts: [], deletes: existing });
 				await tx
 					.delete(tables.spaceRepos)
 					.where(and(eq(tables.spaceRepos.space, space), eq(tables.spaceRepos.author, author)));
@@ -425,14 +425,21 @@ export const drizzleSyncStore = (
 				.where(eq(tables.records.space, space));
 
 			await db.transaction(async (tx) => {
-				for (const { author } of authors) {
-					const existing = await tx
-						.select({ collection: tables.records.collection, rkey: tables.records.rkey })
-						.from(tables.records)
-						.where(and(eq(tables.records.space, space), eq(tables.records.author, author)));
-					await project(tx, { space, author, puts: [], deletes: existing });
-				}
+				const existing = await tx
+					.select({
+						author: tables.records.author,
+						collection: tables.records.collection,
+						rkey: tables.records.rkey,
+					})
+					.from(tables.records)
+					.where(eq(tables.records.space, space));
 				await tx.delete(tables.records).where(eq(tables.records.space, space));
+				for (const { author } of authors) {
+					const deletes = existing
+						.filter((entry) => entry.author === author)
+						.map(({ collection, rkey }) => ({ collection, rkey }));
+					await project(tx, { space, author, puts: [], deletes });
+				}
 				await tx.delete(tables.spaceRepos).where(eq(tables.spaceRepos.space, space));
 				await tx.delete(tables.spaceCredentials).where(eq(tables.spaceCredentials.space, space));
 				await tx

@@ -6,6 +6,7 @@ import type {
 	Producer,
 	Router,
 	RouterRtpCodecCapability,
+	RtcpFeedback,
 	RtpCapabilities,
 	RtpParameters,
 	WebRtcTransport,
@@ -112,6 +113,16 @@ const AUDIO_LEVEL_OBSERVER_OPTIONS = {
 
 const DEFAULT_SPEAKING_DEBOUNCE_MS = 1_000;
 
+export const SCREEN_KEYFRAME_REQUEST_DELAY_MS = 1_000;
+
+const VIDEO_RTCP_FEEDBACK: RtcpFeedback[] = [
+	{ type: "nack" },
+	{ type: "nack", parameter: "pli" },
+	{ type: "ccm", parameter: "fir" },
+	{ type: "goog-remb" },
+	{ type: "transport-cc" },
+];
+
 export function mediaCodecs(): RouterRtpCodecCapability[] {
 	return [
 		{
@@ -127,13 +138,14 @@ export function mediaCodecs(): RouterRtpCodecCapability[] {
 			mimeType: "video/VP8",
 			clockRate: 90000,
 			parameters: {},
-			rtcpFeedback: [
-				{ type: "nack" },
-				{ type: "nack", parameter: "pli" },
-				{ type: "ccm", parameter: "fir" },
-				{ type: "goog-remb" },
-				{ type: "transport-cc" },
-			],
+			rtcpFeedback: VIDEO_RTCP_FEEDBACK,
+		},
+		{
+			kind: "video",
+			mimeType: "video/VP9",
+			clockRate: 90000,
+			parameters: { "profile-id": 0 },
+			rtcpFeedback: VIDEO_RTCP_FEEDBACK,
 		},
 		{
 			kind: "video",
@@ -141,16 +153,21 @@ export function mediaCodecs(): RouterRtpCodecCapability[] {
 			clockRate: 90000,
 			parameters: {
 				"packetization-mode": 1,
-				"profile-level-id": "42e01f",
+				"profile-level-id": "42e028",
 				"level-asymmetry-allowed": 1,
 			},
-			rtcpFeedback: [
-				{ type: "nack" },
-				{ type: "nack", parameter: "pli" },
-				{ type: "ccm", parameter: "fir" },
-				{ type: "goog-remb" },
-				{ type: "transport-cc" },
-			],
+			rtcpFeedback: VIDEO_RTCP_FEEDBACK,
+		},
+		{
+			kind: "video",
+			mimeType: "video/H264",
+			clockRate: 90000,
+			parameters: {
+				"packetization-mode": 1,
+				"profile-level-id": "640028",
+				"level-asymmetry-allowed": 1,
+			},
+			rtcpFeedback: VIDEO_RTCP_FEEDBACK,
 		},
 	];
 }
@@ -183,6 +200,14 @@ function isMicProducer(kind: MediaKind, source: string): boolean {
 }
 
 function isMutableProducer(kind: MediaKind): boolean {
+	return kind === "audio";
+}
+
+function isScreenVideo(kind: MediaKind, source: string): boolean {
+	return kind === "video" && source === "screen";
+}
+
+function isDeafenable(kind: MediaKind): boolean {
 	return kind === "audio";
 }
 
@@ -335,6 +360,9 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 			kind: options.kind,
 			rtpParameters: options.rtpParameters,
 			paused: startPaused,
+			...(isScreenVideo(options.kind, options.source)
+				? { keyFrameRequestDelay: SCREEN_KEYFRAME_REQUEST_DELAY_MS }
+				: {}),
 		});
 
 		if (this.participants.get(did) !== participant) {
@@ -402,14 +430,17 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 
 	async resumeConsumer(did: string, consumerId: string): Promise<void> {
 		const participant = this.getParticipant(did);
-		if (effectiveVoice(participant.voice).deafened) {
-			return;
-		}
 		const consumer = participant.consumers.get(consumerId);
 		if (!consumer) {
 			throw new Error(`no consumer ${consumerId} for ${did} in room ${this.channelRef}`);
 		}
+		if (isDeafenable(consumer.kind) && effectiveVoice(participant.voice).deafened) {
+			return;
+		}
 		await consumer.resume();
+		if (consumer.kind === "video") {
+			await consumer.requestKeyFrame();
+		}
 	}
 
 	async setSelfState(did: string, patch: VoicePatch): Promise<void> {
@@ -466,6 +497,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 
 		if (after.deafened !== before.deafened) {
 			for (const consumer of participant.consumers.values()) {
+				if (!isDeafenable(consumer.kind)) continue;
 				await (after.deafened ? consumer.pause() : consumer.resume());
 			}
 		}

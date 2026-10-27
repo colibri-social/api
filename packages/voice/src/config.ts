@@ -3,7 +3,7 @@ import { z } from "zod";
 
 export const DEFAULT_RTC_MIN_PORT = 40000;
 export const DEFAULT_RTC_MAX_PORT = 40100;
-export const DEFAULT_INITIAL_OUTGOING_BITRATE = 300000;
+export const DEFAULT_INITIAL_OUTGOING_BITRATE = 1_500_000;
 
 export const iceServerSchema = z.object({
 	urls: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),

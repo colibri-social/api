@@ -13,7 +13,7 @@ import {
 	extractTitleTag,
 	type LinkTag,
 } from "./html.js";
-import type { ImageMeasurer } from "./image.js";
+import { type ImageMeasurer, type LinkedImageType, linkedImageType } from "./image.js";
 import { fetchOEmbed, findOEmbedUrl } from "./oembed.js";
 import type {
 	EmbedImage,
@@ -305,7 +305,24 @@ async function withMeasuredImage(
 	}
 	if (!measured) return embed;
 
-	return { ...embed, image: { ...image, width: measured.width, height: measured.height } };
+	const size = { width: measured.width, height: measured.height };
+	const media =
+		embed.media?.length === 1 && embed.media[0]?.url === image.url
+			? [{ ...embed.media[0], ...size }]
+			: embed.media;
+	return {
+		...embed,
+		image: { ...image, ...size },
+		...(media ? { media } : {}),
+	};
+}
+
+export function imageLinkEmbed(uri: string, url: URL, mimeType: LinkedImageType): LinkEmbed {
+	return {
+		uri,
+		image: { url: url.href },
+		media: [{ kind: "image", url: url.href, mimeType }],
+	};
 }
 
 type PageFetch = {
@@ -336,6 +353,11 @@ async function fetchOpenGraphPreview(
 
 	if (result.statusCode < 200 || result.statusCode >= 300) {
 		throw upstreamFailure(`upstream returned status ${result.statusCode}`);
+	}
+
+	const imageType = linkedImageType(result.headers["content-type"]);
+	if (imageType) {
+		return { embed: imageLinkEmbed(rawUrl, result.url, imageType), finalUrl: result.url, html: "" };
 	}
 
 	const html = result.body.toString("utf8");

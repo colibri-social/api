@@ -13,6 +13,8 @@ import { vi } from "vitest";
 
 let nextId = 0;
 
+const producerKinds = new Map<string, MediaKind>();
+
 function id(prefix: string): string {
 	nextId += 1;
 	return `${prefix}-${nextId}`;
@@ -49,6 +51,7 @@ export function createFakeConsumer(producerId: string, kind: MediaKind) {
 		resume: vi.fn(async () => {
 			paused = false;
 		}),
+		requestKeyFrame: vi.fn(async () => {}),
 		close: vi.fn(),
 	});
 	Object.defineProperty(consumer, "paused", { get: () => paused, enumerable: true });
@@ -78,6 +81,7 @@ export function createFakeTransport() {
 		}),
 		produce: vi.fn(async (options: { kind: MediaKind; paused?: boolean }) => {
 			const producer = createFakeProducer(options.kind);
+			producerKinds.set(producer.id, options.kind);
 			if (options.paused) {
 				await producer.pause();
 			}
@@ -85,8 +89,10 @@ export function createFakeTransport() {
 			return producer;
 		}),
 		consume: vi.fn(async (options: { producerId: string; kind?: MediaKind }) => {
-			const producer = producers.get(options.producerId);
-			return createFakeConsumer(options.producerId, producer?.kind ?? "audio");
+			return createFakeConsumer(
+				options.producerId,
+				producerKinds.get(options.producerId) ?? "audio",
+			);
 		}),
 	});
 
