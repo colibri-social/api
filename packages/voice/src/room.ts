@@ -221,6 +221,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 	private readonly participants = new Map<string, ParticipantRecord>();
 	private readonly producerIndex = new Map<string, { did: string; source: string }>();
 	private readonly speakingTracker: SpeakingTracker = createSpeakingTracker();
+	private readonly clientSpeaking = new Map<string, boolean>();
 	private readonly moderation: ModerationStore;
 	private speakingSettleTimer: ReturnType<typeof setTimeout> | null = null;
 	private closed = false;
@@ -447,6 +448,15 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		await this.applyVoiceState(did, "self", patch);
 	}
 
+	setSpeaking(did: string, speaking: boolean): void {
+		const participant = this.getParticipant(did);
+		const wasSpeaking = this.isSpeaking(did);
+		forgetSpeaker(this.speakingTracker, did);
+		const next = speaking && !effectiveVoice(participant.voice).muted;
+		this.clientSpeaking.set(did, next);
+		if (next !== wasSpeaking) this.emit("speaking-changed", { did, speaking: next });
+	}
+
 	async setServerState(did: string, patch: VoicePatch): Promise<void> {
 		const enforced = this.moderation.get(did) ?? { serverMuted: false, serverDeafened: false };
 		if (patch.muted !== undefined) enforced.serverMuted = patch.muted;
@@ -487,6 +497,8 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		}
 		const after = effectiveVoice(participant.voice);
 
+		if (after.muted) this.stopSpeaking(did);
+
 		if (after.muted !== before.muted) {
 			for (const { producer } of participant.producers.values()) {
 				if (isMutableProducer(producer.kind)) {
@@ -514,6 +526,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		this.releaseMedia(participant);
 		this.participants.delete(did);
 		this.stopSpeaking(did);
+		this.clientSpeaking.delete(did);
 		this.emit("participant-left", { did, ...(reason ? { reason } : {}) });
 	}
 
@@ -552,9 +565,14 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		participant.transports.clear();
 	}
 
+	private isSpeaking(did: string): boolean {
+		return this.clientSpeaking.get(did) ?? this.speakingTracker.get(did)?.speaking ?? false;
+	}
+
 	private stopSpeaking(did: string): void {
-		const wasSpeaking = this.speakingTracker.get(did)?.speaking ?? false;
+		const wasSpeaking = this.isSpeaking(did);
 		forgetSpeaker(this.speakingTracker, did);
+		if (this.clientSpeaking.has(did)) this.clientSpeaking.set(did, false);
 		if (wasSpeaking) this.emit("speaking-changed", { did, speaking: false });
 	}
 
@@ -631,7 +649,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		this.audioLevelObserver.on("volumes", (volumes) => {
 			const activeDids = volumes
 				.map((volume) => this.producerIndex.get(volume.producer.id)?.did)
-				.filter((did): did is string => did !== undefined);
+				.filter((did): did is string => did !== undefined && !this.clientSpeaking.has(did));
 			this.tickSpeaking(activeDids);
 		});
 		this.audioLevelObserver.on("silence", () => this.tickSpeaking([]));

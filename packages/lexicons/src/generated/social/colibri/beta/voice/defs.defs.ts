@@ -330,6 +330,21 @@ const setSelfState = /*#__PURE__*/ l.typedObject<SetSelfState>($nsid, "setSelfSt
 
 export { setSelfState };
 
+/** Reports whether this connection's user is speaking, as detected on their device. Once a connection sends this, the server stops detecting speech from its audio level. The server reports false while the user is muted. */
+type SetSpeaking = { $type?: "social.colibri.beta.voice.defs#setSpeaking";
+
+  /**
+   * Whether the user is currently speaking.
+   */
+  "speaking":boolean };
+
+export type { SetSpeaking };
+
+/** Reports whether this connection's user is speaking, as detected on their device. Once a connection sends this, the server stops detecting speech from its audio level. The server reports false while the user is muted. */
+const setSpeaking = /*#__PURE__*/ l.typedObject<SetSpeaking>($nsid, "setSpeaking", /*#__PURE__*/ l.object({"speaking":/*#__PURE__*/ l.boolean()}));
+
+export { setSpeaking };
+
 /** Keeps the connection alive. The server answers with an ack. */
 type Heartbeat = { $type?: "social.colibri.beta.voice.defs#heartbeat" };
 

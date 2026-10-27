@@ -887,6 +887,34 @@ describe("VoiceServer", () => {
 		bob.close();
 	});
 
+	it("broadcasts a client-reported speaking change and announces it to the community", async () => {
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+
+		send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrame(ws);
+		send(ws, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
+		await nextFrame(ws);
+		send(ws, { $type: "social.colibri.beta.voice.defs#setSpeaking", speaking: true });
+
+		expect(await nextFrameOfType(ws, "speakingUpdate")).toMatchObject({
+			did: ALICE,
+			speaking: true,
+		});
+		expect(announced.at(-1)).toEqual({
+			community: COMMUNITY,
+			frame: {
+				$type: "social.colibri.beta.sync.defs#voiceEvent",
+				event: "speaking",
+				channel: VOICE_CHANNEL,
+				did: ALICE,
+				speaking: true,
+			},
+		});
+
+		ws.close();
+	});
+
 	it("answers a frame the sfu cannot serve instead of crashing", async () => {
 		const ws = connect("alice-token");
 		await waitForOpen(ws);

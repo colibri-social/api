@@ -258,6 +258,17 @@
 				}
 			}
 		},
+		"setSpeaking": {
+			"type": "object",
+			"description": "Reports whether this connection's user is speaking, as detected on their device. Once a connection sends this, the server stops detecting speech from its audio level. The server reports false while the user is muted.",
+			"required": ["speaking"],
+			"properties": {
+				"speaking": {
+					"type": "boolean",
+					"description": "Whether the user is currently speaking."
+				}
+			}
+		},
 		"heartbeat": {
 			"type": "object",
 			"description": "Keeps the connection alive. The server answers with an ack.",

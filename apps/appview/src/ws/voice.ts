@@ -34,6 +34,7 @@ const clientFrames = {
 	consume: social.colibri.beta.voice.defs.consume,
 	resumeConsumer: social.colibri.beta.voice.defs.resumeConsumer,
 	setSelfState: social.colibri.beta.voice.defs.setSelfState,
+	setSpeaking: social.colibri.beta.voice.defs.setSpeaking,
 	heartbeat: social.colibri.beta.voice.defs.heartbeat,
 } as const;
 
@@ -350,6 +351,9 @@ export class VoiceServer {
 			case "setSelfState":
 				await this.handleSetSelfState(connection, voice, result.value as never);
 				return;
+			case "setSpeaking":
+				this.handleSetSpeaking(connection, voice, result.value as never);
+				return;
 			default:
 				return;
 		}
@@ -615,6 +619,19 @@ export class VoiceServer {
 		this.ack(connection);
 	}
 
+	private handleSetSpeaking(
+		connection: Connection,
+		voice: VoiceSfu,
+		frame: { speaking: boolean },
+	): void {
+		if (!connection.channel) return;
+		try {
+			voice.setSpeaking(connection.channel, connection.did, frame.speaking);
+		} catch (cause) {
+			this.ctx.log.warn({ did: connection.did, reason: messageOf(cause) }, "voice.speaking.failed");
+		}
+	}
+
 	private wireVoiceEvents(voice: VoiceSfu): void {
 		voice.on("participant-joined", ({ channel, did }) => {
 			this.broadcast(channel, { $type: "social.colibri.beta.voice.defs#peerJoined", did }, did);
@@ -659,6 +676,7 @@ export class VoiceServer {
 				did,
 				speaking,
 			});
+			this.announceSpeaking(channel, did, speaking);
 		});
 		voice.on("voice-state-changed", ({ channel, did, muted, deafened, ...server }) => {
 			this.broadcast(channel, {
@@ -676,6 +694,17 @@ export class VoiceServer {
 	private announceSharing(voice: VoiceSfu, channel: string, did: string, source: string): void {
 		if (!SHARING_SOURCES.has(source) || voice.presenceOf(did) !== channel) return;
 		this.announce(channel, did, "update", voiceStateIn(voice, channel, did));
+	}
+
+	private announceSpeaking(channel: string, did: string, speaking: boolean): void {
+		if (!this.events) return;
+		this.events.publishToCommunity(parseSpaceRef(channel).authority, {
+			$type: "social.colibri.beta.sync.defs#voiceEvent",
+			event: "speaking",
+			channel: asSpaceRef(channel),
+			did: asDid(did),
+			speaking,
+		});
 	}
 
 	private announce(

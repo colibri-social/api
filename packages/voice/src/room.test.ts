@@ -495,6 +495,83 @@ describe("VoiceRoom speaking detection", () => {
 			{ did: "did:plc:a", speaking: false },
 		]);
 	});
+
+	it("lets setSpeaking override the level observer for that peer only", async () => {
+		const rawRouter = createFakeRouter();
+		const room = await VoiceRoom.create(asRouter(rawRouter), "channel", {
+			webRtcTransportOptions,
+			speakingDebounceMs: 1_000,
+		});
+		const events: unknown[] = [];
+		room.on("speaking-changed", (event) => events.push(event));
+
+		const transportA = await room.createTransport("did:plc:a", "send");
+		const producerA = await room.produce("did:plc:a", transportA.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "mic",
+		});
+		const transportB = await room.createTransport("did:plc:b", "send");
+		const producerB = await room.produce("did:plc:b", transportB.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "mic",
+		});
+
+		rawRouter.audioLevelObserver.emit("volumes", [{ producer: { id: producerA.id }, volume: -20 }]);
+		expect(events).toEqual([{ did: "did:plc:a", speaking: true }]);
+
+		room.setSpeaking("did:plc:a", false);
+		expect(events).toEqual([
+			{ did: "did:plc:a", speaking: true },
+			{ did: "did:plc:a", speaking: false },
+		]);
+
+		rawRouter.audioLevelObserver.emit("volumes", [
+			{ producer: { id: producerA.id }, volume: -20 },
+			{ producer: { id: producerB.id }, volume: -20 },
+		]);
+		expect(events).toEqual([
+			{ did: "did:plc:a", speaking: true },
+			{ did: "did:plc:a", speaking: false },
+			{ did: "did:plc:b", speaking: true },
+		]);
+
+		room.setSpeaking("did:plc:a", true);
+		rawRouter.audioLevelObserver.emit("silence");
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(events).toEqual([
+			{ did: "did:plc:a", speaking: true },
+			{ did: "did:plc:a", speaking: false },
+			{ did: "did:plc:b", speaking: true },
+			{ did: "did:plc:a", speaking: true },
+			{ did: "did:plc:b", speaking: false },
+		]);
+	});
+
+	it("forces a client-reported speaker to false on self mute and server mute", async () => {
+		const rawRouter = createFakeRouter();
+		const room = await VoiceRoom.create(asRouter(rawRouter), "channel", {
+			webRtcTransportOptions,
+		});
+		const events: unknown[] = [];
+		room.on("speaking-changed", (event) => events.push(event));
+		await room.createTransport("did:plc:a", "send");
+
+		room.setSpeaking("did:plc:a", true);
+		await room.setSelfState("did:plc:a", { muted: true });
+		room.setSpeaking("did:plc:a", true);
+		await room.setSelfState("did:plc:a", { muted: false });
+		room.setSpeaking("did:plc:a", true);
+		await room.setServerState("did:plc:a", { muted: true });
+
+		expect(events).toEqual([
+			{ did: "did:plc:a", speaking: true },
+			{ did: "did:plc:a", speaking: false },
+			{ did: "did:plc:a", speaking: true },
+			{ did: "did:plc:a", speaking: false },
+		]);
+	});
 });
 
 describe("VoiceRoom transport lifecycle", () => {

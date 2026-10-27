@@ -184,6 +184,11 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 		await room.setSelfState(did, patch);
 	}
 
+	setSpeaking(channel: string, did: string, speaking: boolean): void {
+		const room = this.requireRoom(channel);
+		room.setSpeaking(did, speaking);
+	}
+
 	async leave(channel: string, did: string, reason?: ParticipantLeftReason): Promise<void> {
 		const room = this.rooms.get(channel);
 		if (!room) {
