@@ -1,5 +1,16 @@
 # @colibri-social/voice
 
+## 0.3.0
+
+### Minor Changes
+
+- 7480051: Add the `setSpeaking` voice frame. A client that sends it decides its own speaking state, and the server stops using the audio level for that member. Clients that never send it keep the level-based state. Muting, by the member or a moderator, always clears the speaking state. Every speaking change now also goes out as a `voiceEvent` with `event: "speaking"` on the community's live feed.
+- a6eb9be: Add the `codecUnsupported` voice frame. When a viewer can't decode the video codec of a screen share, the SFU answers the viewer's `consume` with a `NotFound` error and sends `codecUnsupported` with the `producerId` to the sharer's session, at most once per producer. The sharer can then produce the screen share again with a more widely supported codec. Microphone and camera consumption are unchanged.
+
+### Patch Changes
+
+- e2936c1: Start new viewers at 3.5 Mbps and space screen share keyframe requests 400 ms apart, so a screen share reaches full quality sooner after it starts or a viewer joins.
+
 ## 0.2.1
 
 ### Patch Changes
