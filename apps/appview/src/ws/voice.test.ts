@@ -41,8 +41,14 @@ const openChannel = (space: string, skey: string): ChannelState => ({
 	visibleToMembers: [],
 });
 
+const fakeRouters: ReturnType<typeof createFakeRouter>[] = [];
+
 const fakeWorkerPool = (): WorkerPoolLike => ({
-	createRouter: async () => asRouter(createFakeRouter()),
+	createRouter: async () => {
+		const router = createFakeRouter();
+		fakeRouters.push(router);
+		return asRouter(router);
+	},
 	close: async () => {},
 });
 
@@ -929,6 +935,63 @@ describe("VoiceServer", () => {
 		});
 
 		ws.close();
+	});
+
+	it("tells a screen sharer once that a viewer cannot decode its codec", async () => {
+		const aliceWs = connect("alice-token");
+		const bobWs = connect("bob-token");
+		await Promise.all([waitForOpen(aliceWs), waitForOpen(bobWs)]);
+
+		send(aliceWs, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrameOfType(aliceWs, "joined");
+		send(aliceWs, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
+		const sendTransport = await nextFrameOfType(aliceWs, "transportOptions");
+		send(aliceWs, {
+			$type: "social.colibri.beta.voice.defs#produce",
+			transportId: sendTransport.id,
+			kind: "video",
+			rtpParameters: {},
+			source: "screen",
+		});
+		const screen = await nextFrameOfType(aliceWs, "producerInfo");
+
+		send(bobWs, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrameOfType(bobWs, "joined");
+		send(bobWs, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "recv" });
+		const recvTransport = await nextFrameOfType(bobWs, "transportOptions");
+
+		fakeRouters.at(-1)?.canConsume.mockReturnValue(false);
+		const consume = {
+			$type: "social.colibri.beta.voice.defs#consume",
+			transportId: recvTransport.id,
+			producerId: screen.producerId,
+			rtpCapabilities: {},
+		};
+
+		send(bobWs, consume);
+		expect(await nextFrameOfType(bobWs, "error")).toMatchObject({ error: "NotFound" });
+		send(bobWs, consume);
+		expect(await nextFrameOfType(bobWs, "error")).toMatchObject({ error: "NotFound" });
+
+		expect(await nextFrameOfType(aliceWs, "codecUnsupported")).toEqual({
+			$type: "social.colibri.beta.voice.defs#codecUnsupported",
+			producerId: screen.producerId,
+		});
+		send(aliceWs, { $type: "social.colibri.beta.voice.defs#heartbeat" });
+		await nextFrameOfType(aliceWs, "ack");
+		expect(
+			(inboxes.get(aliceWs)?.held ?? []).filter(
+				(frame) => frame.$type === "social.colibri.beta.voice.defs#codecUnsupported",
+			),
+		).toEqual([]);
+		expect(
+			(inboxes.get(bobWs)?.held ?? []).filter(
+				(frame) => frame.$type === "social.colibri.beta.voice.defs#codecUnsupported",
+			),
+		).toEqual([]);
+
+		aliceWs.close();
+		bobWs.close();
 	});
 
 	it("pauses a server-muted peer's audio whatever source it claims", async () => {

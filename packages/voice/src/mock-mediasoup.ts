@@ -112,6 +112,7 @@ export function createFakeRouter(rtpCapabilities: RtpCapabilities = {}) {
 		}),
 		createWebRtcTransport: vi.fn(async () => createFakeTransport()),
 		createAudioLevelObserver: vi.fn(async () => audioLevelObserver),
+		canConsume: vi.fn((_options: { producerId: string; rtpCapabilities: RtpCapabilities }) => true),
 		audioLevelObserver,
 		killWorker: () => {
 			closed = true;

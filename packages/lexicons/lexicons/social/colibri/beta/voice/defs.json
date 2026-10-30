@@ -356,6 +356,17 @@
 				}
 			}
 		},
+		"codecUnsupported": {
+			"type": "object",
+			"description": "A viewer in the voice channel can't decode the video codec of this client's screen share. The client can produce the screen share again with a more widely supported codec. Sent at most once per producer, only to the client that owns it.",
+			"required": ["producerId"],
+			"properties": {
+				"producerId": {
+					"type": "string",
+					"description": "The screen share producer a viewer couldn't consume."
+				}
+			}
+		},
 		"disconnected": {
 			"type": "object",
 			"description": "The server removed this client from the voice channel. Sent only to the client it applies to.",

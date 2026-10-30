@@ -681,3 +681,133 @@ describe("VoiceRoom participant creation", () => {
 		expect(room.hasParticipant("did:plc:a")).toBe(false);
 	});
 });
+
+describe("VoiceRoom codec support", () => {
+	async function shareScreen(rawRouter = createFakeRouter()) {
+		const { room } = await createRoom(rawRouter);
+		const sendTransport = await room.createTransport("did:plc:sharer", "send");
+		const screen = await room.produce("did:plc:sharer", sendTransport.id, {
+			kind: "video",
+			rtpParameters: {} as never,
+			source: "screen",
+		});
+		const recvTransport = await room.createTransport("did:plc:viewer", "recv");
+		const reports: Array<{ did: string; producerId: string }> = [];
+		room.on("codec-unsupported", (event) => reports.push(event));
+		return { room, rawRouter, sendTransport, screen, recvTransport, reports };
+	}
+
+	it("consumes a screen share the viewer can decode without reporting anything", async () => {
+		const { room, rawRouter, screen, recvTransport, reports } = await shareScreen();
+
+		const consumer = await room.consume("did:plc:viewer", recvTransport.id, {
+			producerId: screen.id,
+			rtpCapabilities: {},
+		});
+
+		expect(consumer.producerId).toBe(screen.id);
+		expect(rawRouter.canConsume).toHaveBeenCalledWith({
+			producerId: screen.id,
+			rtpCapabilities: {},
+		});
+		expect(reports).toEqual([]);
+	});
+
+	it("refuses a screen share the viewer cannot decode and tells its owner once", async () => {
+		const { room, rawRouter, screen, recvTransport, reports } = await shareScreen();
+		rawRouter.canConsume.mockReturnValue(false);
+		const consume = (recvTransport as unknown as { consume: ReturnType<typeof vi.fn> }).consume;
+
+		for (let attempt = 0; attempt < 3; attempt += 1) {
+			await expect(
+				room.consume("did:plc:viewer", recvTransport.id, {
+					producerId: screen.id,
+					rtpCapabilities: {},
+				}),
+			).rejects.toThrow(/cannot decode/);
+		}
+
+		expect(consume).not.toHaveBeenCalled();
+		expect(reports).toEqual([{ did: "did:plc:sharer", producerId: screen.id }]);
+	});
+
+	it("tells the owner once even when several viewers cannot decode the screen share", async () => {
+		const { room, rawRouter, screen, recvTransport, reports } = await shareScreen();
+		rawRouter.canConsume.mockReturnValue(false);
+		const secondTransport = await room.createTransport("did:plc:second", "recv");
+
+		await expect(
+			room.consume("did:plc:viewer", recvTransport.id, {
+				producerId: screen.id,
+				rtpCapabilities: {},
+			}),
+		).rejects.toThrow();
+		await expect(
+			room.consume("did:plc:second", secondTransport.id, {
+				producerId: screen.id,
+				rtpCapabilities: {},
+			}),
+		).rejects.toThrow();
+
+		expect(reports).toHaveLength(1);
+	});
+
+	it("reports a new screen share producer again after the old one closed", async () => {
+		const { room, rawRouter, sendTransport, screen, recvTransport, reports } = await shareScreen();
+		rawRouter.canConsume.mockReturnValue(false);
+
+		await expect(
+			room.consume("did:plc:viewer", recvTransport.id, {
+				producerId: screen.id,
+				rtpCapabilities: {},
+			}),
+		).rejects.toThrow();
+		room.closeProducer("did:plc:sharer", screen.id);
+
+		const next = await room.produce("did:plc:sharer", sendTransport.id, {
+			kind: "video",
+			rtpParameters: {} as never,
+			source: "screen",
+		});
+		await expect(
+			room.consume("did:plc:viewer", recvTransport.id, {
+				producerId: next.id,
+				rtpCapabilities: {},
+			}),
+		).rejects.toThrow();
+
+		expect(reports).toEqual([
+			{ did: "did:plc:sharer", producerId: screen.id },
+			{ did: "did:plc:sharer", producerId: next.id },
+		]);
+	});
+
+	it("leaves microphone and camera consumption to mediasoup", async () => {
+		const { room, rawRouter, sendTransport, recvTransport, reports } = await shareScreen();
+		rawRouter.canConsume.mockReturnValue(false);
+		const camera = await room.produce("did:plc:sharer", sendTransport.id, {
+			kind: "video",
+			rtpParameters: {} as never,
+			source: "camera",
+		});
+		const mic = await room.produce("did:plc:sharer", sendTransport.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "mic",
+		});
+
+		const cameraConsumer = await room.consume("did:plc:viewer", recvTransport.id, {
+			producerId: camera.id,
+			rtpCapabilities: {},
+		});
+		const micConsumer = await room.consume("did:plc:viewer", recvTransport.id, {
+			producerId: mic.id,
+			rtpCapabilities: {},
+		});
+
+		expect(cameraConsumer.producerId).toBe(camera.id);
+		expect(micConsumer.producerId).toBe(mic.id);
+		expect(rawRouter.canConsume).not.toHaveBeenCalled();
+		expect(reports).toEqual([]);
+	});
+});

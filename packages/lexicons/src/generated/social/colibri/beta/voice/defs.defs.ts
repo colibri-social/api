@@ -450,6 +450,21 @@ const producerRemoved = /*#__PURE__*/ l.typedObject<ProducerRemoved>($nsid, "pro
 
 export { producerRemoved };
 
+/** A viewer in the voice channel can't decode the video codec of this client's screen share. The client can produce the screen share again with a more widely supported codec. Sent at most once per producer, only to the client that owns it. */
+type CodecUnsupported = { $type?: "social.colibri.beta.voice.defs#codecUnsupported";
+
+  /**
+   * The screen share producer a viewer couldn't consume.
+   */
+  "producerId":string };
+
+export type { CodecUnsupported };
+
+/** A viewer in the voice channel can't decode the video codec of this client's screen share. The client can produce the screen share again with a more widely supported codec. Sent at most once per producer, only to the client that owns it. */
+const codecUnsupported = /*#__PURE__*/ l.typedObject<CodecUnsupported>($nsid, "codecUnsupported", /*#__PURE__*/ l.object({"producerId":/*#__PURE__*/ l.string()}));
+
+export { codecUnsupported };
+
 /** The server removed this client from the voice channel. Sent only to the client it applies to. */
 type Disconnected = { $type?: "social.colibri.beta.voice.defs#disconnected";
 

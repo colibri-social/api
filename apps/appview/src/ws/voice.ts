@@ -670,6 +670,14 @@ export class VoiceServer {
 			);
 			this.announceSharing(voice, channel, did, source);
 		});
+		voice.on("codec-unsupported", ({ channel, did, producerId }) => {
+			for (const connection of this.joined(channel, did)) {
+				this.send(connection, {
+					$type: "social.colibri.beta.voice.defs#codecUnsupported",
+					producerId,
+				});
+			}
+		});
 		voice.on("speaking-changed", ({ channel, did, speaking }) => {
 			this.broadcast(channel, {
 				$type: "social.colibri.beta.voice.defs#speakingUpdate",

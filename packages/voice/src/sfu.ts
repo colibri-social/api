@@ -43,6 +43,7 @@ export type VoiceSfuEvents = {
 		},
 	];
 	"producer-removed": [{ channel: string; did: string; producerId: string; source: string }];
+	"codec-unsupported": [{ channel: string; did: string; producerId: string }];
 	"speaking-changed": [{ channel: string; did: string; speaking: boolean }];
 	"voice-state-changed": [{ channel: string; did: string; origin: VoiceStateOrigin } & VoiceState];
 };
@@ -307,6 +308,7 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 		});
 		room.on("producer-added", (event) => this.emit("producer-added", { channel, ...event }));
 		room.on("producer-removed", (event) => this.emit("producer-removed", { channel, ...event }));
+		room.on("codec-unsupported", (event) => this.emit("codec-unsupported", { channel, ...event }));
 		room.on("speaking-changed", (event) => this.emit("speaking-changed", { channel, ...event }));
 		room.on("voice-state-changed", (event) =>
 			this.emit("voice-state-changed", { channel, ...event }),

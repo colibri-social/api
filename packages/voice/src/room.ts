@@ -80,6 +80,7 @@ export type VoiceRoomEvents = {
 		{ did: string; producerId: string; kind: MediaKind; source: string; paused: boolean },
 	];
 	"producer-removed": [{ did: string; producerId: string; source: string }];
+	"codec-unsupported": [{ did: string; producerId: string }];
 	"speaking-changed": [{ did: string; speaking: boolean }];
 	"voice-state-changed": [{ did: string; origin: VoiceStateOrigin } & VoiceState];
 };
@@ -220,6 +221,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 	private readonly speakingDebounceMs: number;
 	private readonly participants = new Map<string, ParticipantRecord>();
 	private readonly producerIndex = new Map<string, { did: string; source: string }>();
+	private readonly codecUnsupportedReported = new Set<string>();
 	private readonly speakingTracker: SpeakingTracker = createSpeakingTracker();
 	private readonly clientSpeaking = new Map<string, boolean>();
 	private readonly moderation: ModerationStore;
@@ -411,6 +413,13 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		const participant = this.getParticipant(did);
 		const transport = this.getTransport(did, transportId);
 
+		if (this.isScreenVideoProducer(options.producerId) && !this.router.canConsume(options)) {
+			this.reportCodecUnsupported(options.producerId);
+			throw new Error(
+				`${did} cannot decode the codec of screen share ${options.producerId} in room ${this.channelRef}`,
+			);
+		}
+
 		const consumer = await transport.consume({
 			producerId: options.producerId,
 			rtpCapabilities: options.rtpCapabilities,
@@ -556,6 +565,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		for (const { producer } of participant.producers.values()) {
 			producer.close();
 			this.producerIndex.delete(producer.id);
+			this.codecUnsupportedReported.delete(producer.id);
 		}
 		participant.producers.clear();
 
@@ -629,12 +639,27 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		return transport;
 	}
 
+	private isScreenVideoProducer(producerId: string): boolean {
+		const owner = this.producerIndex.get(producerId);
+		if (!owner) return false;
+		const entry = this.participants.get(owner.did)?.producers.get(producerId);
+		return entry !== undefined && isScreenVideo(entry.producer.kind, entry.source);
+	}
+
+	private reportCodecUnsupported(producerId: string): void {
+		const owner = this.producerIndex.get(producerId);
+		if (!owner || this.codecUnsupportedReported.has(producerId)) return;
+		this.codecUnsupportedReported.add(producerId);
+		this.emit("codec-unsupported", { did: owner.did, producerId });
+	}
+
 	private forgetProducer(did: string, producerId: string): void {
 		const participant = this.participants.get(did);
 		const entry = participant?.producers.get(producerId);
 		if (participant && entry) {
 			participant.producers.delete(producerId);
 			this.producerIndex.delete(producerId);
+			this.codecUnsupportedReported.delete(producerId);
 			this.emit("producer-removed", { did, producerId, source: entry.source });
 		}
 	}
