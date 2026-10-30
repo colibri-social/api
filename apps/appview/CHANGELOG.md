@@ -1,5 +1,28 @@
 # @colibri-social/appview
 
+## 2.34.0
+
+### Minor Changes
+
+- 7480051: Add the `setSpeaking` voice frame. A client that sends it decides its own speaking state, and the server stops using the audio level for that member. Clients that never send it keep the level-based state. Muting, by the member or a moderator, always clears the speaking state. Every speaking change now also goes out as a `voiceEvent` with `event: "speaking"` on the community's live feed.
+- a6eb9be: Add the `codecUnsupported` voice frame. When a viewer can't decode the video codec of a screen share, the SFU answers the viewer's `consume` with a `NotFound` error and sends `codecUnsupported` with the `producerId` to the sharer's session, at most once per producer. The sharer can then produce the screen share again with a more widely supported codec. Microphone and camera consumption are unchanged.
+- b3f77f4: Update Spaces support to the October 29 alpha (`0.0.0-spaces-alpha-20261029171913`). The vendored atproto lexicons move to `5d88b414` and replace `com.atproto.simplespace` with the `com.atproto.space` lifecycle methods and the `memberspace`, `managedspace` and `personalspace` policies. `PdsClient.createSpace` and `updateSpace` take a single `policy`, built with `memberspacePolicy` or `managedspacePolicy`. Community profile spaces are created as a member space with `publicRead`, and every other community space as a managed space. The AppView serves `com.atproto.managedspace.checkUserAccess`, treats `SpaceNotFound` from `getSpaceCredential` as a refusal, and on startup moves existing profile spaces to the public member space policy.
+
+### Patch Changes
+
+- Updated dependencies [7480051]
+- Updated dependencies [a6eb9be]
+- Updated dependencies [e2936c1]
+- Updated dependencies [b3f77f4]
+  - @colibri-social/lexicons@2.35.0
+  - @colibri-social/voice@0.3.0
+  - @colibri-social/space@0.10.0
+  - @colibri-social/community@2.14.0
+  - @colibri-social/notifications@1.8.13
+  - @colibri-social/projections@1.14.2
+  - @colibri-social/blobs@0.2.3
+  - @colibri-social/space-sync@0.6.3
+
 ## 2.33.0
 
 ### Minor Changes
