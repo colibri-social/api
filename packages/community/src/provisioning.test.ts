@@ -24,8 +24,7 @@ let createdSpaces: Array<{
 	service: string;
 	spaceType: string;
 	skey: string;
-	readPolicy: unknown;
-	writePolicy: unknown;
+	policy: unknown;
 }>;
 let stored: StoredCredentials[];
 let forgotten: string[];
@@ -42,7 +41,7 @@ const fakeClient = (service: string): PdsClient =>
 		listSpaces: async () => ({ spaces: existingSpaces.map((uri) => ({ uri })) }),
 		createSpace: async (
 			_session: PdsSession,
-			params: { spaceType: string; skey: string; readPolicy: unknown; writePolicy: unknown },
+			params: { spaceType: string; skey: string; policy: unknown },
 		) => {
 			createdSpaces.push({ service, ...params });
 			return { uri: `at://${COMMUNITY}/${params.spaceType}/${params.skey}` };
@@ -334,30 +333,26 @@ describe("adopting an existing account", () => {
 });
 
 describe("space policies", () => {
-	it("makes the profile readable by anyone but writable only through this AppView", async () => {
+	it("makes the profile readable by anyone and writable only by the community", async () => {
 		await adopt();
 		const profile = createdSpaces.find((space) => space.spaceType === SPACE_TYPES.communityProfile);
 
-		expect(profile?.readPolicy).toEqual({
-			$type: "com.atproto.simplespace.defs#publicPolicy",
-		});
-		expect(profile?.writePolicy).toEqual({
-			$type: "com.atproto.simplespace.defs#managingAppPolicy",
-			managingApp: APPVIEW_SERVICE,
+		expect(profile?.policy).toEqual({
+			$type: "com.atproto.memberspace.policy",
+			publicRead: true,
 		});
 	});
 
-	it("routes both sides of every other space through this AppView", async () => {
+	it("routes every other space through this AppView", async () => {
 		await adopt();
 		const managed = {
-			$type: "com.atproto.simplespace.defs#managingAppPolicy",
+			$type: "com.atproto.managedspace.policy",
 			managingApp: APPVIEW_SERVICE,
 		};
 
 		for (const space of createdSpaces) {
 			if (space.spaceType === SPACE_TYPES.communityProfile) continue;
-			expect(space.readPolicy).toEqual(managed);
-			expect(space.writePolicy).toEqual(managed);
+			expect(space.policy).toEqual(managed);
 		}
 	});
 });

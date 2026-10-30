@@ -27,7 +27,7 @@ carries the `openssl` lines that generate the two secrets.
 | Package                  | What it does                                                                                                                 |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
 | `packages/lexicons`      | Every Colibri schema, the space type declarations, and the types generated from them                                         |
-| `packages/space`         | Client for `com.atproto.space` and `com.atproto.simplespace`: delegation tokens, DPoP-bound credentials, verified repo reads |
+| `packages/space`         | Client for `com.atproto.space` and its space policies: delegation tokens, DPoP-bound credentials, verified repo reads |
 | `packages/space-sync`    | Keeps a local copy of a space current: writer set, operation log, LtHash reconciliation, CAR recovery                        |
 | `packages/db`            | Drizzle schema and migrations for both libSQL and Postgres                                                                   |
 | `packages/projections`   | Turns synced records into the typed read models the API serves                                                               |
@@ -74,8 +74,8 @@ pnpm lint               # Biome
 
 Every Colibri schema lives under `social.colibri.beta.*` while the spaces work is
 unstable, so it cannot collide with the `social.colibri.*` schemas already
-published from the pre-spaces AppView. The vendored `com.atproto.space` and
-`com.atproto.simplespace` documents are upstream and are never republished from
+published from the pre-spaces AppView. The vendored `com.atproto.space`,
+`memberspace`, `managedspace` and `personalspace` documents are upstream and are never republished from
 here.
 
 ```sh
@@ -125,8 +125,7 @@ the only one that can serve the community. A client that finds a community whose
 `managingApp` is not the AppView it is talking to must talk to that AppView
 instead, for reads, writes, events and voice alike. The field lives on the record
 rather than being read from the space policies because
-`com.atproto.simplespace.getSpace` only serves them to a caller already
-authorized for that space, and a prospective member is not. The profile space is
+`com.atproto.space.getSpace` only serves them to the space owner. The profile space is
 publicly readable, so the record can be read before joining.
 
 `social.colibri.beta.community.create` provisions an account on this AppView's
@@ -135,7 +134,7 @@ PDS and needs `PDS_ADMIN_PASSWORD`.
 that already exists. The owner signs in as that account on its own server, and
 the AppView adopts it as a new community, keeping its DID, handle and PDS. The
 same sign-in reconnects a community after its access lapsed or its account moved
-to another server. The PDS has to implement `com.atproto.simplespace`, and the
+to another server. The PDS has to implement the `com.atproto.space` policy methods, and the
 AppView needs `HOST_OAUTH_PRIVATE_KEY`, an ES256 key it signs its client
 assertions with. The client metadata lives at `/oauth/host/client-metadata.json`.
 OAuth sessions and passwords are stored AES-256-GCM encrypted under

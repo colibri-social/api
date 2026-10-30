@@ -10,12 +10,11 @@ import {
 	threadSpace,
 } from "@colibri-social/lexicons";
 import {
-	managingAppPolicy,
+	managedspacePolicy,
+	memberspacePolicy,
 	nextTid,
-	openAppAccess,
 	type PdsAdmin,
 	type PdsClient,
-	publicPolicy,
 	type SpacePolicy,
 	XrpcError,
 } from "@colibri-social/space";
@@ -121,15 +120,12 @@ export class CommunityProvisioner {
 		return this.deps.appviewService.split("#")[0] as string;
 	}
 
-	private policiesFor(
-		spaceType: string,
-		isPrivate: boolean,
-	): { readPolicy: SpacePolicy; writePolicy: SpacePolicy } {
-		const managed = managingAppPolicy(this.deps.appviewService);
+	private policiesFor(spaceType: string, isPrivate: boolean): { policy: SpacePolicy } {
 		const profileIsPublic = spaceType === SPACE_TYPES.communityProfile && !isPrivate;
 		return {
-			readPolicy: profileIsPublic ? publicPolicy() : managed,
-			writePolicy: managed,
+			policy: profileIsPublic
+				? memberspacePolicy({ publicRead: true })
+				: managedspacePolicy(this.deps.appviewService),
 		};
 	}
 
@@ -289,7 +285,6 @@ export class CommunityProvisioner {
 				spaceType,
 				skey: SELF,
 				...this.policiesFor(spaceType, isPrivate),
-				appAccess: openAppAccess(),
 			});
 			await this.deps.spaces.register({
 				uri: spaceUri(community, spaceType, SELF),
@@ -456,9 +451,7 @@ export class CommunityProvisioner {
 		await host.pds.createSpace(host.session, {
 			spaceType: channel.type,
 			skey,
-			readPolicy: managingAppPolicy(this.deps.appviewService),
-			writePolicy: managingAppPolicy(this.deps.appviewService),
-			appAccess: openAppAccess(),
+			policy: managedspacePolicy(this.deps.appviewService),
 		});
 		await this.deps.spaces.register({ uri: space, community, host: host.pds.service });
 
@@ -491,9 +484,7 @@ export class CommunityProvisioner {
 		await host.pds.createSpace(host.session, {
 			spaceType: SPACE_TYPES.channelThread,
 			skey,
-			readPolicy: managingAppPolicy(this.deps.appviewService),
-			writePolicy: managingAppPolicy(this.deps.appviewService),
-			appAccess: openAppAccess(),
+			policy: managedspacePolicy(this.deps.appviewService),
 		});
 		await this.deps.spaces.register({ uri: space, community, host: host.pds.service });
 

@@ -178,7 +178,7 @@ const provisioningFailure = (error: unknown): never => {
 		}
 		if (error.status === 501 || error.code === "MethodNotImplemented") {
 			throw new InvalidRequestError(
-				`${error.message} (does that PDS implement com.atproto.simplespace?)`,
+				`${error.message} (does that PDS implement com.atproto.space.createSpace?)`,
 				"SpacesUnsupported",
 			);
 		}

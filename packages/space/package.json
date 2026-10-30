@@ -1,7 +1,7 @@
 {
 	"name": "@colibri-social/space",
 	"version": "0.9.0",
-	"description": "Client for com.atproto.space and com.atproto.simplespace: delegation tokens, DPoP-bound space credentials, and verified repo reads",
+	"description": "Client for com.atproto.space and its space policies: delegation tokens, DPoP-bound space credentials, and verified repo reads",
 	"type": "module",
 	"exports": {
 		".": {

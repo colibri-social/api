@@ -82,7 +82,7 @@ jobs:
           fi
           echo "pinned at $ref"
           fail=0
-          for file in packages/lexicons/lexicons/com/atproto/{space,simplespace}/*.json; do
+          for file in packages/lexicons/lexicons/com/atproto/{space,memberspace,managedspace,personalspace}/*.json; do
             rel="lexicons/com/atproto/${file#packages/lexicons/lexicons/com/atproto/}"
             if ! curl -sfL "https://raw.githubusercontent.com/bluesky-social/atproto/$ref/$rel" -o /tmp/upstream.json; then
               echo "::error::could not fetch upstream $rel"; fail=1; continue

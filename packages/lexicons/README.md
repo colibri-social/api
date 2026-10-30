@@ -6,7 +6,7 @@ from them.
 ## Layout
 
 - `lexicons/social/colibri/**`: Colibri's own schemas
-- `lexicons/com/atproto/{space,simplespace}/**`: vendored from `bluesky-social/atproto`,
+- `lexicons/com/atproto/{space,memberspace,managedspace,personalspace}/**`: vendored from `bluesky-social/atproto`,
   pinned to the commit in `lexicons/com/atproto/PINNED_COMMIT`. Do not edit them!
 - `src/generated/**`: produced by `pnpm codegen`, verified by CI
 
@@ -20,7 +20,7 @@ To move the pin:
 
 ```sh
 ref=<new commit sha>
-for f in packages/lexicons/lexicons/com/atproto/{space,simplespace}/*.json; do
+for f in packages/lexicons/lexicons/com/atproto/{space,memberspace,managedspace,personalspace}/*.json; do
   rel="lexicons/com/atproto/${f#packages/lexicons/lexicons/com/atproto/}"
   curl -sfL "https://raw.githubusercontent.com/bluesky-social/atproto/$ref/$rel" -o "$f"
 done

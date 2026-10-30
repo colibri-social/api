@@ -203,6 +203,7 @@ const toCredentialError = (space: SpaceRefString, cause: unknown): SpaceCredenti
 			);
 		}
 		if (
+			cause.code === "SpaceNotFound" ||
 			cause.code === "UserNotAuthorized" ||
 			cause.code === "AppNotAuthorized" ||
 			cause.code === "NotAuthorized"

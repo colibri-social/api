@@ -240,6 +240,13 @@ describe("space credentials", () => {
 			reason: "refused",
 		});
 
+		const hidden = fakeSpaceHost(authorityKey, {
+			failWith: { status: 400, error: "SpaceNotFound" },
+		});
+		await expect(credentialsFor(hidden.fetchImpl).acquire(SPACE)).rejects.toMatchObject({
+			reason: "refused",
+		});
+
 		const down = fakeSpaceHost(authorityKey, { failWith: { status: 502, error: "BadGateway" } });
 		await expect(credentialsFor(down.fetchImpl).acquire(SPACE)).rejects.toMatchObject({
 			reason: "upstream",

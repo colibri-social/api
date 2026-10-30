@@ -5,7 +5,7 @@ import { route } from "../route.js";
 import type { RouteDeps } from "./types.js";
 
 export const registerProtocolRoutes = ({ server, ctx, auth }: RouteDeps): void => {
-	route(server, com.atproto.simplespace.checkUserAccess, {
+	route(server, com.atproto.managedspace.checkUserAccess, {
 		auth: auth.service,
 		handler: async ({ params, auth: caller }) => {
 			const refused = { encoding: "application/json" as const, body: { authorized: false } };

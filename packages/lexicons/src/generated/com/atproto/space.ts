@@ -3,15 +3,22 @@
  */
 
 export * as applyWrites from "./space/applyWrites.js";
+export * as clearRecords from "./space/clearRecords.js";
 export * as createRecord from "./space/createRecord.js";
+export * as createSpace from "./space/createSpace.js";
 export * as defs from "./space/defs.js";
 export * as deleteRecord from "./space/deleteRecord.js";
+export * as deleteSpace from "./space/deleteSpace.js";
+export * as exportSpaceMeta from "./space/exportSpaceMeta.js";
 export * as getBlob from "./space/getBlob.js";
 export * as getDelegationToken from "./space/getDelegationToken.js";
 export * as getLatestCommit from "./space/getLatestCommit.js";
 export * as getRecord from "./space/getRecord.js";
 export * as getRepo from "./space/getRepo.js";
+export * as getSpace from "./space/getSpace.js";
 export * as getSpaceCredential from "./space/getSpaceCredential.js";
+export * as importRepo from "./space/importRepo.js";
+export * as importSpaceMeta from "./space/importSpaceMeta.js";
 export * as listBlobs from "./space/listBlobs.js";
 export * as listRecords from "./space/listRecords.js";
 export * as listRepoOps from "./space/listRepoOps.js";
@@ -20,6 +27,9 @@ export * as listSpaces from "./space/listSpaces.js";
 export * as notifyCredentialRevoked from "./space/notifyCredentialRevoked.js";
 export * as notifySpaceDeleted from "./space/notifySpaceDeleted.js";
 export * as notifyWrite from "./space/notifyWrite.js";
+export * as policy from "./space/policy.js";
 export * as putRecord from "./space/putRecord.js";
 export * as registerNotify from "./space/registerNotify.js";
+export * as removeWriter from "./space/removeWriter.js";
 export * as unregisterNotify from "./space/unregisterNotify.js";
+export * as updateSpace from "./space/updateSpace.js";

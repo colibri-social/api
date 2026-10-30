@@ -1,8 +1,8 @@
 # @colibri-social/space
 
-A client for atproto permissioned spaces: `com.atproto.space` and
-`com.atproto.simplespace`, plus the classic PDS calls an application needs
-alongside them.
+A client for atproto permissioned spaces: `com.atproto.space` and the
+`memberspace` and `managedspace` policies, plus the classic PDS calls an
+application needs alongside them.
 
 `@atproto/space` covers verification, commits and the token formats. This covers
 the layer above: obtaining credentials and talking to hosts.
@@ -68,7 +68,7 @@ read both forms and validate their parts.
 | `credentials`  | the delegation-to-credential exchange, cached and deduplicated            |
 | `host`         | resolving `#atproto_space_host`, falling back to `#atproto_pds`           |
 | `space-client` | the `com.atproto.space.*` read and sync surface                           |
-| `pds`          | sessions, space writes, `simplespace` management, and the admin calls     |
+| `pds`          | sessions, space writes, space policy management, and the admin calls      |
 | `repo`         | commit verification, CAR reading and LtHash helpers over `@atproto/space` |
 | `http`         | a small XRPC client with the four authentication schemes these need       |
 

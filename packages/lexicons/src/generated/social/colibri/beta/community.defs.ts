@@ -19,7 +19,7 @@ type Main = { $type: "social.colibri.beta.community";
   "name":string;
 
   /**
-   * The AppView that manages this community's spaces, named without a service fragment. Clients read it here rather than from the space policy, because com.atproto.simplespace.getSpace only serves a policy to a caller already authorized for that space, which a prospective member is not.
+   * The AppView that manages this community's spaces, named without a service fragment. Clients read it here rather than from the space policy, because com.atproto.space.getSpace only serves a policy to the space owner.
    */
   "managingApp":l.DidString;
 
