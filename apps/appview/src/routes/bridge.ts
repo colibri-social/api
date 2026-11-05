@@ -290,13 +290,21 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 		event: "create" | "delete",
 		channel: string,
 		registration: BridgeRegistration,
-		reaction: { target: unknown; emoji: unknown; author: { id: string; name: string } },
+		reaction: {
+			target: unknown;
+			uri?: string;
+			reaction?: { did: string; rkey: string };
+			emoji: unknown;
+			author: { id: string; name: string };
+		},
 	) => {
 		ctx.announce.toChannel(channel, {
 			$type: "social.colibri.beta.sync.defs#reactionEvent",
 			event,
 			channel,
 			target: reaction.target,
+			...(reaction.uri ? { uri: reaction.uri } : {}),
+			...(reaction.reaction ? { reaction: reaction.reaction } : {}),
 			emoji: reaction.emoji,
 			actor: registration.community,
 			bridged: {
@@ -521,6 +529,7 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 					text: body.text,
 					...(body.facets ? { facets: [...body.facets] } : {}),
 					...(body.parent ? { parent: { did: body.parent.did, rkey: body.parent.rkey } } : {}),
+					...(body.parentUri ? { parentUri: body.parentUri } : {}),
 					...(body.attachments ? { attachments: toJsonForm([...body.attachments]) } : {}),
 					...(body.forward ? { forward: toJsonForm(body.forward) as Record<string, unknown> } : {}),
 					...(body.remoteMessage ? { remoteMessage: body.remoteMessage } : {}),
@@ -547,6 +556,7 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 						...(message.parent
 							? { parent: { did: message.parent.did, rkey: message.parent.rkey } }
 							: {}),
+						...(message.parentUri ? { parentUri: message.parentUri } : {}),
 						...(message.attachments ? { attachments: toJsonForm([...message.attachments]) } : {}),
 						...(message.forward
 							? { forward: toJsonForm(message.forward) as Record<string, unknown> }
@@ -621,19 +631,21 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 		auth: auth.service,
 		handler: async ({ input, auth: caller }) => {
 			const body = input.body;
-			const target = { did: body.target.did, rkey: body.target.rkey };
-			const { rkey } = await translated(() =>
+			const { rkey, target, uri } = await translated(() =>
 				ctx.bridges.addReaction(caller.credentials.did, {
 					...key(body),
 					channel: body.channel,
 					author: remoteAuthor(body.author),
-					target,
+					target: { did: body.target.did, rkey: body.target.rkey },
+					...(body.uri ? { uri: body.uri } : {}),
 					emoji: body.emoji,
 				}),
 			);
 			const registration = await translated(() => ctx.bridges.registration(key(body)));
 			announceReaction("create", body.channel, registration, {
 				target,
+				...(uri ? { uri } : {}),
+				reaction: { did: body.community, rkey },
 				emoji: body.emoji,
 				author: body.author,
 			});
@@ -653,7 +665,10 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 				}),
 			);
 			const registration = await translated(() => ctx.bridges.registration(key(body)));
-			announceReaction("delete", body.channel, registration, removed);
+			announceReaction("delete", body.channel, registration, {
+				...removed,
+				reaction: { did: body.community, rkey: body.rkey },
+			});
 			return { encoding: "application/json" as const, body: {} };
 		},
 	});

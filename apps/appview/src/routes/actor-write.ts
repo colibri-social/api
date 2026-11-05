@@ -347,7 +347,6 @@ export const handleSetStatus = async (
 		statusExpiresAt:
 			input.expiresAt ?? (input.removeExpiresAt ? null : (existing?.statusExpiresAt ?? null)),
 		statusShowWhileOffline: input.showWhileOffline ?? existing?.statusShowWhileOffline ?? false,
-		viewingChannel: existing?.viewingChannel ?? null,
 		updatedAt: new Date().toISOString(),
 	};
 

@@ -27,6 +27,11 @@ type Main = { $type: "social.colibri.beta.reaction";
   "target":BetaDefs.RecordRef;
 
   /**
+   * The message being reacted to, as a record URI in the same space. Readers prefer it over `target` when it is valid.
+   */
+  "uri"?:l.AtUriString;
+
+  /**
    * The emoji record behind a custom shortcode, so viewers who don't have the emoji can still show it.
    */
   "customEmoji"?:RichtextFacet.CustomEmoji;
@@ -39,7 +44,7 @@ type Main = { $type: "social.colibri.beta.reaction";
 export type { Main };
 
 /** A reaction to a message in the same channel space. */
-const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"emoji":/*#__PURE__*/ l.string({"maxLength":64}),"target":/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<RichtextFacet.CustomEmoji>((() => RichtextFacet.customEmoji) as any)),"bridged":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BridgeDefs.Attribution>((() => BridgeDefs.attribution) as any))}));
+const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"emoji":/*#__PURE__*/ l.string({"maxLength":64}),"target":/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any),"uri":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<RichtextFacet.CustomEmoji>((() => RichtextFacet.customEmoji) as any)),"bridged":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BridgeDefs.Attribution>((() => BridgeDefs.attribution) as any))}));
 
 export { main };
 

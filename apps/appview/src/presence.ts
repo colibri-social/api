@@ -1,6 +1,7 @@
 import type { OnlineState, ReactionEmojiRef } from "@colibri-social/appview-db";
 import type { social } from "@colibri-social/lexicons";
-import { eq } from "drizzle-orm";
+import { ACTIVE_WINDOW_MS, connectionStaleBefore } from "@colibri-social/notifications";
+import { eq, inArray, lt } from "drizzle-orm";
 import type { AppContext } from "./context.js";
 import { type ActivityView, loadActorActivities } from "./views/activity.js";
 import { liveVoiceState } from "./views/voice-state.js";
@@ -71,7 +72,6 @@ export type PresenceDeps = {
  */
 export class PresenceTracker {
 	private readonly sockets = new Map<string, number>();
-	private readonly views = new Map<string, Map<object, string | null>>();
 	private readonly queues = new Map<string, Promise<void>>();
 
 	constructor(private readonly deps: PresenceDeps) {}
@@ -87,57 +87,16 @@ export class PresenceTracker {
 		});
 	}
 
-	async closed(did: string, socket?: object): Promise<void> {
+	async closed(did: string): Promise<void> {
 		return this.enqueue(did, async () => {
 			const remaining = this.connections(did) - 1;
 			if (remaining > 0) {
 				this.sockets.set(did, remaining);
-				if (socket && this.views.get(did)?.delete(socket)) {
-					await this.storeViewing(did, this.viewedChannel(did));
-				}
 				return;
 			}
 			this.sockets.delete(did);
-			this.views.delete(did);
 			await this.settle(did);
 		});
-	}
-
-	async viewing(did: string, channel: string | null, socket?: object): Promise<void> {
-		return this.enqueue(did, async () => {
-			if (!socket) {
-				await this.storeViewing(did, channel);
-				return;
-			}
-			const views = this.views.get(did) ?? new Map<object, string | null>();
-			views.delete(socket);
-			views.set(socket, channel);
-			this.views.set(did, views);
-			await this.storeViewing(did, this.viewedChannel(did));
-		});
-	}
-
-	private viewedChannel(did: string): string | null {
-		let latest: string | null = null;
-		for (const channel of this.views.get(did)?.values() ?? []) {
-			if (channel) latest = channel;
-		}
-		return latest;
-	}
-
-	private async storeViewing(did: string, channel: string | null): Promise<void> {
-		const { db, tables } = this.deps.ctx.database;
-		const [existing] = await db
-			.select()
-			.from(tables.userPresence)
-			.where(eq(tables.userPresence.did, did))
-			.limit(1);
-		if (!existing) return;
-
-		await db
-			.update(tables.userPresence)
-			.set({ viewingChannel: channel, updatedAt: new Date().toISOString() })
-			.where(eq(tables.userPresence.did, did));
 	}
 
 	async requested(did: string, state: OnlineState): Promise<void> {
@@ -175,7 +134,6 @@ export class PresenceTracker {
 			statusCustomEmoji: existing?.statusCustomEmoji ?? null,
 			statusExpiresAt: existing?.statusExpiresAt ?? null,
 			statusShowWhileOffline: existing?.statusShowWhileOffline ?? false,
-			viewingChannel: derivedState === OFFLINE ? null : (existing?.viewingChannel ?? null),
 			updatedAt: new Date().toISOString(),
 		};
 
@@ -207,5 +165,100 @@ export class PresenceTracker {
 				),
 			},
 		);
+	}
+}
+
+const ACTIVE_REFRESH_MS = 60 * 1000;
+
+export type ConnectionPresenceDeps = {
+	ctx: Pick<AppContext, "database">;
+	now?: () => number;
+};
+
+export class ConnectionPresence {
+	private readonly queues = new Map<string, Promise<void>>();
+	private readonly activeUntil = new Map<string, number>();
+	private readonly now: () => number;
+
+	constructor(private readonly deps: ConnectionPresenceDeps) {
+		this.now = deps.now ?? Date.now;
+	}
+
+	private get database() {
+		return this.deps.ctx.database;
+	}
+
+	private iso(at: number = this.now()): string {
+		return new Date(at).toISOString();
+	}
+
+	async opened(id: string, did: string): Promise<void> {
+		return this.enqueue(id, async () => {
+			const { db, tables } = this.database;
+			await db
+				.insert(tables.presenceConnections)
+				.values({ id, did, viewingChannel: null, activeUntil: null, seenAt: this.iso() });
+		});
+	}
+
+	async viewing(id: string, channel: string | null): Promise<void> {
+		return this.enqueue(id, async () => {
+			const { db, tables } = this.database;
+			await db
+				.update(tables.presenceConnections)
+				.set({ viewingChannel: channel, seenAt: this.iso() })
+				.where(eq(tables.presenceConnections.id, id));
+		});
+	}
+
+	async active(id: string): Promise<void> {
+		return this.enqueue(id, async () => {
+			const now = this.now();
+			const until = now + ACTIVE_WINDOW_MS;
+			if (until - (this.activeUntil.get(id) ?? 0) < ACTIVE_REFRESH_MS) return;
+			this.activeUntil.set(id, until);
+			const { db, tables } = this.database;
+			await db
+				.update(tables.presenceConnections)
+				.set({ activeUntil: this.iso(until), seenAt: this.iso(now) })
+				.where(eq(tables.presenceConnections.id, id));
+		});
+	}
+
+	async closed(id: string): Promise<void> {
+		return this.enqueue(id, async () => {
+			this.activeUntil.delete(id);
+			const { db, tables } = this.database;
+			await db.delete(tables.presenceConnections).where(eq(tables.presenceConnections.id, id));
+		});
+	}
+
+	async touch(ids: readonly string[]): Promise<void> {
+		if (ids.length === 0) return;
+		const { db, tables } = this.database;
+		await db
+			.update(tables.presenceConnections)
+			.set({ seenAt: this.iso() })
+			.where(inArray(tables.presenceConnections.id, [...ids]));
+	}
+
+	async sweep(): Promise<void> {
+		const { db, tables } = this.database;
+		await db
+			.delete(tables.presenceConnections)
+			.where(lt(tables.presenceConnections.seenAt, connectionStaleBefore(this.iso())));
+	}
+
+	private enqueue(id: string, work: () => Promise<void>): Promise<void> {
+		const previous = this.queues.get(id) ?? Promise.resolve();
+		const next = previous.then(work);
+		const settled = next.catch(() => undefined);
+
+		this.queues.set(id, settled);
+		void settled.then(() => {
+			if (this.queues.get(id) === settled) this.queues.delete(id);
+		});
+
+		return next;
 	}
 }

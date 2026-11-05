@@ -6,7 +6,7 @@ import {
 	toLexForm,
 	withJsonBlobRef,
 } from "@colibri-social/lexicons";
-import { tidTime } from "@colibri-social/space";
+import { sameSpaceRecordPointer, tidTime } from "@colibri-social/space";
 import { and, eq, lt, ne } from "drizzle-orm";
 import type { ProjectionDeps, RecordRef } from "../context.js";
 import { communityOf, type Projector } from "../projector.js";
@@ -149,6 +149,12 @@ export const message: Projector<social.colibri.beta.message.Main> = {
 					? stored.updatedAt
 					: commitTime(ref.rev, now)
 				: null);
+		const parent = sameSpaceRecordPointer(
+			ref.space.uri,
+			COLLECTIONS.message,
+			value.parentUri,
+			value.parent,
+		);
 		const row = {
 			space: ref.space.uri,
 			author: ref.author,
@@ -157,8 +163,8 @@ export const message: Projector<social.colibri.beta.message.Main> = {
 			...content,
 			createdAt: value.createdAt,
 			updatedAt,
-			parentAuthor: value.parent?.did ?? null,
-			parentRkey: value.parent?.rkey ?? null,
+			parentAuthor: parent?.did ?? null,
+			parentRkey: parent?.rkey ?? null,
 			bridged: honouredAttribution(ref, value.bridged),
 			fromLegacyRepo: false,
 			indexedAt: now,
@@ -202,12 +208,18 @@ export const message: Projector<social.colibri.beta.message.Main> = {
 
 const reactionRow = (ref: RecordRef, value: social.colibri.beta.reaction.Main) => {
 	const bridged = honouredAttribution(ref, value.bridged);
+	const target = sameSpaceRecordPointer(
+		ref.space.uri,
+		COLLECTIONS.message,
+		value.uri,
+		value.target,
+	) ?? { did: value.target.did, rkey: value.target.rkey };
 	return {
 		space: ref.space.uri,
 		author: ref.author,
 		rkey: ref.rkey,
-		targetAuthor: value.target.did,
-		targetRkey: value.target.rkey,
+		targetAuthor: target.did,
+		targetRkey: target.rkey,
 		emoji: value.emoji,
 		customEmoji: value.customEmoji
 			? { uri: value.customEmoji.uri, cid: value.customEmoji.cid }

@@ -63,6 +63,11 @@ type ImportedMessage = { $type?: "social.colibri.beta.bridge.importMessages#impo
   "parent"?:BetaDefs.RecordRef;
 
   /**
+   * The message this one replies to, as a record URI in the channel. Preferred over `parent` when it is valid.
+   */
+  "parentUri"?:l.AtUriString;
+
+  /**
    * Files attached to the message.
    */
   "attachments"?:(BetaMessage.Attachment)[];
@@ -85,7 +90,7 @@ type ImportedMessage = { $type?: "social.colibri.beta.bridge.importMessages#impo
 export type { ImportedMessage };
 
 /** A message from the room's earlier history. */
-const importedMessage = /*#__PURE__*/ l.typedObject<ImportedMessage>($nsid, "importedMessage", /*#__PURE__*/ l.object({"author":/*#__PURE__*/ l.ref<BridgeDefs.RemoteAuthor>((() => BridgeDefs.remoteAuthor) as any),"text":/*#__PURE__*/ l.string({"maxLength":2048}),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"parent":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any)),"attachments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<BetaMessage.Attachment>((() => BetaMessage.attachment) as any), {"maxLength":10})),"forward":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaMessage.Forward>((() => BetaMessage.forward) as any)),"remoteMessage":/*#__PURE__*/ l.string({"maxLength":256}),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
+const importedMessage = /*#__PURE__*/ l.typedObject<ImportedMessage>($nsid, "importedMessage", /*#__PURE__*/ l.object({"author":/*#__PURE__*/ l.ref<BridgeDefs.RemoteAuthor>((() => BridgeDefs.remoteAuthor) as any),"text":/*#__PURE__*/ l.string({"maxLength":2048}),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"parent":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any)),"parentUri":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"attachments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<BetaMessage.Attachment>((() => BetaMessage.attachment) as any), {"maxLength":10})),"forward":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaMessage.Forward>((() => BetaMessage.forward) as any)),"remoteMessage":/*#__PURE__*/ l.string({"maxLength":256}),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
 
 export { importedMessage };
 

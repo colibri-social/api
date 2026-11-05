@@ -16,7 +16,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"community":/*#__PURE__*/ l.string({"format":"did"}),"registration":/*#__PURE__*/ l.string({"format":"tid"}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"author":/*#__PURE__*/ l.ref<BridgeDefs.RemoteAuthor>((() => BridgeDefs.remoteAuthor) as any),"target":/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any),"emoji":/*#__PURE__*/ l.string({"maxLength":64})});
+export const $input = /*#__PURE__*/ l.jsonPayload({"community":/*#__PURE__*/ l.string({"format":"did"}),"registration":/*#__PURE__*/ l.string({"format":"tid"}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"author":/*#__PURE__*/ l.ref<BridgeDefs.RemoteAuthor>((() => BridgeDefs.remoteAuthor) as any),"target":/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any),"uri":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"emoji":/*#__PURE__*/ l.string({"maxLength":64})});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;

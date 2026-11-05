@@ -63,12 +63,12 @@ const spaceLevel = async (did: string, community: string, level: NotificationLev
 	await database.db.insert(database.tables.spaceNotifications).values({ did, community, level });
 };
 
-const viewing = async (did: string, channel: string) => {
-	await database.db.insert(database.tables.userPresence).values({
+const viewing = async (did: string, channel: string, seenAt: string = NOW) => {
+	await database.db.insert(database.tables.presenceConnections).values({
+		id: `${did}-${channel}-${seenAt}`,
 		did,
-		derivedState: "online",
 		viewingChannel: channel,
-		updatedAt: NOW,
+		seenAt,
 	});
 };
 
@@ -588,6 +588,41 @@ describe("someone already looking at the channel", () => {
 			community: COMMUNITY,
 			author: AUTHOR,
 			rkey: "3lkmsg2",
+			facets: [mentionFacet(reader)],
+			parentAuthor: null,
+			parentRkey: null,
+		});
+
+		expect(await rowsFor(reader)).toHaveLength(1);
+	});
+
+	it("gets none when any one of their devices reads the channel", async () => {
+		await member(reader);
+		await viewing(reader, channelSpace(COMMUNITY, "social.colibri.beta.channel.text", "3lkelse"));
+		await viewing(reader, CHANNEL);
+
+		await indexMessage(deps, {
+			space: CHANNEL,
+			community: COMMUNITY,
+			author: AUTHOR,
+			rkey: "3lkmsg3",
+			facets: [mentionFacet(reader)],
+			parentAuthor: null,
+			parentRkey: null,
+		});
+
+		expect(await rowsFor(reader)).toHaveLength(0);
+	});
+
+	it("ignores a view left behind by a connection that stopped reporting", async () => {
+		await member(reader);
+		await viewing(reader, CHANNEL, "2026-08-22T23:50:00.000Z");
+
+		await indexMessage(deps, {
+			space: CHANNEL,
+			community: COMMUNITY,
+			author: AUTHOR,
+			rkey: "3lkmsg4",
 			facets: [mentionFacet(reader)],
 			parentAuthor: null,
 			parentRkey: null,

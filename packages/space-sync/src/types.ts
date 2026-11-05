@@ -33,6 +33,7 @@ export type StoredRecord = {
 export type RecordDelete = {
 	collection: string;
 	rkey: string;
+	previous?: Record<string, unknown>;
 };
 
 export type SyncTrigger = "notify" | "clientHint" | "sweep";

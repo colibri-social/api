@@ -42,6 +42,11 @@ type Main = { $type: "social.colibri.beta.message";
   "parent"?:BetaDefs.RecordRef;
 
   /**
+   * The message this one replies to, as a record URI in the same space. Readers prefer it over `parent` when it is valid.
+   */
+  "parentUri"?:l.AtUriString;
+
+  /**
    * Files attached to this message.
    */
   "attachments"?:(Attachment)[];
@@ -64,7 +69,7 @@ type Main = { $type: "social.colibri.beta.message";
 export type { Main };
 
 /** A message in a channel. Lives in the author's own permissioned repo for the channel's space. */
-const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"text":/*#__PURE__*/ l.string({"maxLength":2048}),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"updatedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"parent":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any)),"attachments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Attachment>((() => attachment) as any), )),"forward":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Forward>((() => forward) as any)),"suppressedEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"uri"}), )),"bridged":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BridgeDefs.Attribution>((() => BridgeDefs.attribution) as any))}));
+const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"text":/*#__PURE__*/ l.string({"maxLength":2048}),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"updatedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"})),"parent":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any)),"parentUri":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"attachments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Attachment>((() => attachment) as any), )),"forward":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Forward>((() => forward) as any)),"suppressedEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"uri"}), )),"bridged":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BridgeDefs.Attribution>((() => BridgeDefs.attribution) as any))}));
 
 export { main };
 

@@ -359,14 +359,16 @@ export const deliverMessageEdited = async (
 	message: MessageRef & { text: string },
 	sender: PushSenderProfile | PushSenderFor | undefined,
 	options: DeliveryOptions & {
-		reaches?: (recipient: string) => boolean;
+		suppressed?: (recipients: string[]) => Promise<ReadonlySet<string>>;
 		attachmentsFor?: (recipient: string) => readonly PushAttachment[];
 	} = {},
 ): Promise<number> => {
-	const { reaches, attachmentsFor, ...delivery } = options;
-	const rows = (
-		await notificationsForMessage(deps, message.space, message.author, message.rkey)
-	).filter((row) => !reaches || reaches(row.recipient));
+	const { suppressed, attachmentsFor, ...delivery } = options;
+	const notified = await notificationsForMessage(deps, message.space, message.author, message.rkey);
+	const quiet = suppressed
+		? await suppressed([...new Set(notified.map((row) => row.recipient))])
+		: new Set<string>();
+	const rows = notified.filter((row) => !quiet.has(row.recipient));
 	if (rows.length === 0) return 0;
 	const place = await resolvePlace(deps, message.space);
 	const profileFor = (recipient: string) =>

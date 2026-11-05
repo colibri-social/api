@@ -449,6 +449,89 @@ describe("bridged reactions", () => {
 	});
 });
 
+describe("bridged record uris", () => {
+	const reactionRecords = () =>
+		database.db
+			.select()
+			.from(database.tables.records)
+			.then((rows) => rows.filter((row) => row.collection === COLLECTIONS.reaction));
+
+	it("writes a reaction with both the target reference and its uri", async () => {
+		const registration = await linked();
+		const { rkey } = await bridges.postMessage(BRIDGE, {
+			...keyOf(registration),
+			channel: GENERAL,
+			author: ALICE,
+			text: "react to me",
+		});
+		const uri = `${GENERAL}/${COMMUNITY}/${COLLECTIONS.message}/${rkey}`;
+
+		const added = await bridges.addReaction(BRIDGE, {
+			...keyOf(registration),
+			channel: GENERAL,
+			author: BOB,
+			target: { did: MEMBER, rkey: "3lkwrongtarget" },
+			uri,
+			emoji: "👍",
+		});
+
+		expect(added).toMatchObject({ target: { did: COMMUNITY, rkey }, uri });
+		const [record] = await reactionRecords();
+		expect(record?.value).toMatchObject({ target: { did: COMMUNITY, rkey }, uri });
+		const [row] = await reactions();
+		expect(row).toMatchObject({ targetAuthor: COMMUNITY, targetRkey: rkey });
+
+		const removed = await bridges.removeReaction(BRIDGE, {
+			...keyOf(registration),
+			channel: GENERAL,
+			rkey: added.rkey,
+		});
+		expect(removed).toMatchObject({ target: { did: COMMUNITY, rkey }, uri });
+	});
+
+	it("ignores a reaction uri that points into another channel", async () => {
+		const registration = await linked();
+		const target = { did: COMMUNITY, rkey: "3lkrightarget" };
+
+		const added = await bridges.addReaction(BRIDGE, {
+			...keyOf(registration),
+			channel: GENERAL,
+			author: BOB,
+			target,
+			uri: `${RANDOM}/${COMMUNITY}/${COLLECTIONS.message}/3lkwrongtarget`,
+			emoji: "👍",
+		});
+
+		expect(added).toMatchObject({
+			target,
+			uri: `${GENERAL}/${COMMUNITY}/${COLLECTIONS.message}/${target.rkey}`,
+		});
+	});
+
+	it("writes a reply with both the parent reference and its uri", async () => {
+		const registration = await linked();
+		const parent = { did: MEMBER, rkey: "3lkparent0001" };
+		await bridges.postMessage(BRIDGE, {
+			...keyOf(registration),
+			channel: GENERAL,
+			author: ALICE,
+			text: "replying",
+			parent,
+		});
+
+		const [row] = await messages();
+		expect(row).toMatchObject({ parentAuthor: MEMBER, parentRkey: parent.rkey });
+		const [record] = await database.db
+			.select()
+			.from(database.tables.records)
+			.then((rows) => rows.filter((entry) => entry.collection === COLLECTIONS.message));
+		expect(record?.value).toMatchObject({
+			parent,
+			parentUri: `${GENERAL}/${MEMBER}/${COLLECTIONS.message}/${parent.rkey}`,
+		});
+	});
+});
+
 const openThread = async (
 	skey: string,
 	channel: string,

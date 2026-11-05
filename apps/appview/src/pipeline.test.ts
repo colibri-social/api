@@ -46,9 +46,9 @@ vi.mock("@colibri-social/notifications", async (importOriginal) => {
 			_senders: unknown,
 			message: unknown,
 			sender: unknown,
-			options?: { reaches?: (recipient: string) => boolean },
+			options?: { suppressed?: (recipients: string[]) => Promise<ReadonlySet<string>> },
 		) => {
-			pushed.edited.push({ message, sender, reaches: options?.reaches });
+			pushed.edited.push({ message, sender, suppressed: options?.suppressed });
 			return 0;
 		},
 	};
@@ -696,7 +696,82 @@ describe("connectPipeline", () => {
 		expect(framesOfType("messageEvent")[0]?.frame).toMatchObject({
 			event: "delete",
 			subject: { did: AUTHOR, rkey },
+			subjectUri: `${SPACE}/${AUTHOR}/${COLLECTIONS.message}/${rkey}`,
 		});
+	});
+
+	it("publishes a reaction with the target's record uri, preferring the uri", async () => {
+		const rkey = nextTid();
+		const target = nextTid();
+		emit({
+			space: SPACE,
+			author: AUTHOR,
+			puts: [
+				{
+					collection: COLLECTIONS.reaction,
+					rkey,
+					cid: "bafyreireaction",
+					value: {
+						$type: COLLECTIONS.reaction,
+						emoji: "👍",
+						target: { did: AUTHOR, rkey: nextTid() },
+						uri: `${SPACE}/${OTHER_AUTHOR}/${COLLECTIONS.message}/${target}`,
+					},
+				},
+			],
+			deletes: [],
+		});
+		await vi.waitFor(() => expect(framesOfType("reactionEvent")).toHaveLength(1));
+
+		expect(framesOfType("reactionEvent")[0]?.frame).toMatchObject({
+			event: "create",
+			target: { did: OTHER_AUTHOR, rkey: target },
+			uri: `${SPACE}/${OTHER_AUTHOR}/${COLLECTIONS.message}/${target}`,
+			reaction: { did: AUTHOR, rkey },
+			actor: AUTHOR,
+			emoji: "👍",
+		});
+	});
+
+	it("publishes a reaction delete from the removed record", async () => {
+		const rkey = nextTid();
+		const target = nextTid();
+		emit({
+			space: SPACE,
+			author: AUTHOR,
+			puts: [],
+			deletes: [
+				{
+					collection: COLLECTIONS.reaction,
+					rkey,
+					previous: {
+						$type: COLLECTIONS.reaction,
+						emoji: "🎉",
+						target: { did: OTHER_AUTHOR, rkey: target },
+					},
+				},
+			],
+		});
+		await vi.waitFor(() => expect(framesOfType("reactionEvent")).toHaveLength(1));
+
+		expect(framesOfType("reactionEvent")[0]?.frame).toMatchObject({
+			event: "delete",
+			target: { did: OTHER_AUTHOR, rkey: target },
+			uri: `${SPACE}/${OTHER_AUTHOR}/${COLLECTIONS.message}/${target}`,
+			reaction: { did: AUTHOR, rkey },
+			emoji: "🎉",
+		});
+	});
+
+	it("stays quiet about a reaction delete whose record was never stored", async () => {
+		emit({
+			space: SPACE,
+			author: AUTHOR,
+			puts: [],
+			deletes: [{ collection: COLLECTIONS.reaction, rkey: nextTid() }],
+		});
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(framesOfType("reactionEvent")).toHaveLength(0);
 	});
 });
 
@@ -1121,7 +1196,7 @@ describe("voice channel pushes", () => {
 		deletes: [],
 	});
 
-	it("pushes a voice channel message only to people connected to that channel", async () => {
+	it("notifies about a voice channel message without pushing it to anyone", async () => {
 		voicePresence.set(LISTENER, VOICE);
 		voicePresence.set(
 			ELSEWHERE,
@@ -1136,10 +1211,11 @@ describe("voice channel pushes", () => {
 					.sort(),
 			).toEqual([ELSEWHERE, LISTENER].sort()),
 		);
-		await vi.waitFor(() => expect(pushed.notified).toEqual([LISTENER]));
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(pushed.notified).toEqual([]);
 	});
 
-	it("pushes a voice channel edit only to people connected to that channel", async () => {
+	it("holds back every push for a voice channel edit", async () => {
 		const edited = nextTid();
 		voicePresence.set(LISTENER, VOICE);
 		await database.db.insert(database.tables.messages).values({
@@ -1167,9 +1243,10 @@ describe("voice channel pushes", () => {
 			deletes: [],
 		});
 		await vi.waitFor(() => expect(pushed.edited).toHaveLength(1));
-		const { reaches } = pushed.edited[0] as { reaches?: (recipient: string) => boolean };
-		expect(reaches?.(LISTENER)).toBe(true);
-		expect(reaches?.(ELSEWHERE)).toBe(false);
+		const { suppressed } = pushed.edited[0] as {
+			suppressed?: (recipients: string[]) => Promise<ReadonlySet<string>>;
+		};
+		expect(await suppressed?.([LISTENER, ELSEWHERE])).toEqual(new Set([LISTENER, ELSEWHERE]));
 	});
 
 	it("pushes a text channel message to everyone it notifies, wherever they are connected", async () => {
@@ -1177,5 +1254,24 @@ describe("voice channel pushes", () => {
 		await vi.waitFor(() =>
 			expect([...pushed.notified].sort()).toEqual([ELSEWHERE, LISTENER].sort()),
 		);
+	});
+
+	it("notifies an account active on another device without pushing to it", async () => {
+		await database.db.insert(database.tables.presenceConnections).values({
+			id: "listener-desktop",
+			did: LISTENER,
+			activeUntil: new Date(Date.now() + 60_000).toISOString(),
+			seenAt: new Date().toISOString(),
+		});
+
+		emit(mentionBoth(SPACE));
+		await vi.waitFor(() =>
+			expect(
+				framesOfType("notificationEvent")
+					.map((entry) => entry.space)
+					.sort(),
+			).toEqual([ELSEWHERE, LISTENER].sort()),
+		);
+		await vi.waitFor(() => expect(pushed.notified).toEqual([ELSEWHERE]));
 	});
 });

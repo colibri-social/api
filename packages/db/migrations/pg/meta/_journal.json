@@ -225,6 +225,13 @@
 			"when": 1792834975215,
 			"tag": "0031_legal_yellowjacket",
 			"breakpoints": true
+		},
+		{
+			"idx": 32,
+			"version": "7",
+			"when": 1793880290491,
+			"tag": "0032_puzzling_arclight",
+			"breakpoints": true
 		}
 	]
 }

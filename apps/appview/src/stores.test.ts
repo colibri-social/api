@@ -112,6 +112,21 @@ describe("commit", () => {
 		expect((await store.loadCursor(SPACE, AUTHOR))?.appliedRev).toBe("rev2");
 	});
 
+	it("hands the removed record's value to the change it deleted", async () => {
+		await store.commit(change([message("3mry5ybrkzc22", "hello")]), cursor("rev1"));
+		const deleted = change(
+			[],
+			[
+				{ collection: COLLECTIONS.message, rkey: "3mry5ybrkzc22" },
+				{ collection: COLLECTIONS.message, rkey: "3mry5ybrlyk22" },
+			],
+		);
+		await store.commit(deleted, cursor("rev2"));
+
+		expect(deleted.deletes[0]?.previous).toMatchObject({ text: "hello" });
+		expect(deleted.deletes[1]?.previous).toBeUndefined();
+	});
+
 	it("clears a failure count when a repo recovers", async () => {
 		await store.saveCursor({
 			...cursor("rev1", "error"),

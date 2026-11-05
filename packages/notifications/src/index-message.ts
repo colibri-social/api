@@ -3,6 +3,7 @@ import { isThreadSpaceType, spaceTypeOf } from "@colibri-social/lexicons";
 import { and, eq, inArray } from "drizzle-orm";
 import type { NotificationDeps } from "./deps.js";
 import { nextId } from "./id.js";
+import { viewersOf } from "./presence.js";
 
 export type IndexMessageInput = {
 	space: string;
@@ -254,16 +255,7 @@ const filterRecipients = async (
 	);
 	for (const row of spaceLevelRows) levels.set(row.did, row.level);
 
-	const viewingRows = await deps.db
-		.select({ did: deps.tables.userPresence.did })
-		.from(deps.tables.userPresence)
-		.where(
-			and(
-				inArray(deps.tables.userPresence.did, dids),
-				eq(deps.tables.userPresence.viewingChannel, message.space),
-			),
-		);
-	const watching = new Set(viewingRows.map((row) => row.did));
+	const watching = await viewersOf(deps, dids, message.space);
 
 	const alreadyNotifiedRows = await deps.db
 		.select({ recipient: deps.tables.notifications.recipient })

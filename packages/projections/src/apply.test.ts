@@ -7,7 +7,7 @@ import {
 	threadSpace,
 	toLexForm,
 } from "@colibri-social/lexicons";
-import { tidAt, tidTime } from "@colibri-social/space";
+import { spaceRecordUri, tidAt, tidTime } from "@colibri-social/space";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { applyChange, type SpaceChange } from "./apply.js";
@@ -973,6 +973,84 @@ describe("member-written collections", () => {
 		const [row] = await database.db.select().from(database.tables.messages);
 		expect(row?.parentAuthor).toBe(OUTSIDER);
 		expect(row?.parentRkey).toBe("3mry5ybrkzc22");
+	});
+
+	it("prefers a reply's parent uri over its record reference", async () => {
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3mry5ybrlyk22", {
+				$type: "social.colibri.beta.message",
+				text: "replying",
+				createdAt: NOW,
+				parent: { did: MEMBER, rkey: "3mry5ybrkzc33" },
+				parentUri: spaceRecordUri(
+					TEXT_CHANNEL,
+					OUTSIDER,
+					"social.colibri.beta.message",
+					"3mry5ybrkzc22",
+				),
+			}),
+		);
+
+		const [row] = await database.db.select().from(database.tables.messages);
+		expect(row?.parentAuthor).toBe(OUTSIDER);
+		expect(row?.parentRkey).toBe("3mry5ybrkzc22");
+	});
+
+	it("falls back to the parent reference when the parent uri points into another space", async () => {
+		const elsewhere = channelSpace(COMMUNITY, "social.colibri.beta.channel.text", "3lkchannel2");
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.message", "3mry5ybrlyk22", {
+				$type: "social.colibri.beta.message",
+				text: "replying",
+				createdAt: NOW,
+				parent: { did: MEMBER, rkey: "3mry5ybrkzc33" },
+				parentUri: spaceRecordUri(
+					elsewhere,
+					OUTSIDER,
+					"social.colibri.beta.message",
+					"3mry5ybrkzc22",
+				),
+			}),
+		);
+
+		const [row] = await database.db.select().from(database.tables.messages);
+		expect(row?.parentAuthor).toBe(MEMBER);
+		expect(row?.parentRkey).toBe("3mry5ybrkzc33");
+	});
+
+	it("prefers a reaction's uri over its target reference", async () => {
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.reaction", "3lkreact5", {
+				$type: "social.colibri.beta.reaction",
+				target: { did: MEMBER, rkey: "3mry5ybrnx333" },
+				uri: spaceRecordUri(TEXT_CHANNEL, OUTSIDER, "social.colibri.beta.message", "3mry5ybrnx222"),
+				emoji: "👍",
+			}),
+		);
+		const [row] = await database.db.select().from(database.tables.reactions);
+		expect(row).toMatchObject({ targetAuthor: OUTSIDER, targetRkey: "3mry5ybrnx222" });
+	});
+
+	it("falls back to the target reference when the reaction uri names another collection", async () => {
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.reaction", "3lkreact6", {
+				$type: "social.colibri.beta.reaction",
+				target: { did: MEMBER, rkey: "3mry5ybrnx333" },
+				uri: spaceRecordUri(
+					TEXT_CHANNEL,
+					OUTSIDER,
+					"social.colibri.beta.reaction",
+					"3mry5ybrnx222",
+				),
+				emoji: "👍",
+			}),
+		);
+		const [row] = await database.db.select().from(database.tables.reactions);
+		expect(row).toMatchObject({ targetAuthor: MEMBER, targetRkey: "3mry5ybrnx333" });
 	});
 
 	it("refuses a message that does not match its lexicon", async () => {

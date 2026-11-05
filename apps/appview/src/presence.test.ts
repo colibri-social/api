@@ -1,8 +1,14 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
+import { activeAnywhere, type NotificationDeps, viewersOf } from "@colibri-social/notifications";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AppContext } from "./context.js";
-import { effectiveOnlineState, PresenceTracker, presenceOf } from "./presence.js";
+import {
+	ConnectionPresence,
+	effectiveOnlineState,
+	PresenceTracker,
+	presenceOf,
+} from "./presence.js";
 import type { ServerFrame } from "./ws/events.js";
 
 const ACTOR = "did:plc:presenceaaaaaaaaaaaaaaaaaa";
@@ -118,46 +124,97 @@ describe("presence tracking", () => {
 		expect((await stored())?.derivedState).toBe("online");
 		expect(states().at(-1)).toBe("online");
 	});
+});
 
-	it("forgets the channel in view once the actor disconnects", async () => {
-		await tracker.opened(ACTOR);
-		await database.db
-			.update(database.tables.userPresence)
-			.set({ viewingChannel: "at://did:plc:x/space/social.colibri.beta.channel.text/3lk" })
-			.where(eq(database.tables.userPresence.did, ACTOR));
+describe("connection presence", () => {
+	let now: number;
+	let connections: ConnectionPresence;
 
-		await tracker.closed(ACTOR);
-
-		expect((await stored())?.viewingChannel).toBeNull();
+	const rows = () => database.db.select().from(database.tables.presenceConnections);
+	const deps = (): NotificationDeps => ({
+		db: database.db,
+		tables: database.tables,
+		now: () => new Date(now).toISOString(),
+		mayRead: async () => true,
 	});
 
-	it("drops a closed socket's channel while another socket stays connected", async () => {
-		const phone = {};
-		await tracker.opened(ACTOR);
-		await tracker.opened(ACTOR);
-		await tracker.viewing(ACTOR, CHANNEL, phone);
-		expect((await stored())?.viewingChannel).toBe(CHANNEL);
-
-		await tracker.closed(ACTOR, phone);
-
-		expect((await stored())?.viewingChannel).toBeNull();
-		expect((await stored())?.derivedState).toBe("online");
+	beforeEach(() => {
+		now = Date.parse("2026-11-05T12:00:00.000Z");
+		connections = new ConnectionPresence({ ctx: { database }, now: () => now });
 	});
 
-	it("keeps the channel another socket still views", async () => {
-		const phone = {};
-		const desktop = {};
-		await tracker.opened(ACTOR);
-		await tracker.opened(ACTOR);
-		await tracker.viewing(ACTOR, CHANNEL, desktop);
-		await tracker.viewing(ACTOR, OTHER_CHANNEL, phone);
-		expect((await stored())?.viewingChannel).toBe(OTHER_CHANNEL);
+	it("keeps a channel in view per connection so devices leave each other alone", async () => {
+		await connections.opened("desktop", ACTOR);
+		await connections.opened("phone", ACTOR);
+		await connections.viewing("desktop", CHANNEL);
+		await connections.viewing("phone", OTHER_CHANNEL);
 
-		await tracker.viewing(ACTOR, null, phone);
-		expect((await stored())?.viewingChannel).toBe(CHANNEL);
+		expect(await viewersOf(deps(), [ACTOR], CHANNEL)).toEqual(new Set([ACTOR]));
+		expect(await viewersOf(deps(), [ACTOR], OTHER_CHANNEL)).toEqual(new Set([ACTOR]));
 
-		await tracker.closed(ACTOR, phone);
-		expect((await stored())?.viewingChannel).toBe(CHANNEL);
+		await connections.viewing("phone", null);
+		expect(await viewersOf(deps(), [ACTOR], CHANNEL)).toEqual(new Set([ACTOR]));
+		expect(await viewersOf(deps(), [ACTOR], OTHER_CHANNEL)).toEqual(new Set());
+	});
+
+	it("forgets a connection's channel once it closes", async () => {
+		await connections.opened("phone", ACTOR);
+		await connections.viewing("phone", CHANNEL);
+		await connections.closed("phone");
+
+		expect(await viewersOf(deps(), [ACTOR], CHANNEL)).toEqual(new Set());
+		expect(await rows()).toHaveLength(0);
+	});
+
+	it("counts the account as active until five minutes after the last activity", async () => {
+		await connections.opened("desktop", ACTOR);
+		await connections.opened("phone", ACTOR);
+		await connections.active("desktop");
+		expect(await activeAnywhere(deps(), [ACTOR])).toEqual(new Set([ACTOR]));
+
+		now += 4 * 60 * 1000;
+		await connections.touch(["desktop", "phone"]);
+		expect(await activeAnywhere(deps(), [ACTOR])).toEqual(new Set([ACTOR]));
+
+		now += 2 * 60 * 1000;
+		await connections.touch(["desktop", "phone"]);
+		expect(await activeAnywhere(deps(), [ACTOR])).toEqual(new Set());
+	});
+
+	it("refreshes the activity window at most once a minute", async () => {
+		await connections.opened("desktop", ACTOR);
+		await connections.active("desktop");
+		const [first] = await rows();
+
+		now += 30 * 1000;
+		await connections.active("desktop");
+		expect((await rows())[0]?.activeUntil).toBe(first?.activeUntil);
+
+		now += 31 * 1000;
+		await connections.active("desktop");
+		expect((await rows())[0]?.activeUntil).toBe(new Date(now + 5 * 60 * 1000).toISOString());
+	});
+
+	it("ends the activity as soon as the connection closes", async () => {
+		await connections.opened("desktop", ACTOR);
+		await connections.active("desktop");
+		await connections.closed("desktop");
+
+		expect(await activeAnywhere(deps(), [ACTOR])).toEqual(new Set());
+	});
+
+	it("sweeps away connections a previous process left behind", async () => {
+		await connections.opened("stale", ACTOR);
+		await connections.viewing("stale", CHANNEL);
+		await connections.active("stale");
+
+		now += 3 * 60 * 1000;
+		expect(await viewersOf(deps(), [ACTOR], CHANNEL)).toEqual(new Set());
+		expect(await activeAnywhere(deps(), [ACTOR])).toEqual(new Set());
+
+		await connections.opened("fresh", ACTOR);
+		await connections.sweep();
+		expect((await rows()).map((row) => row.id)).toEqual(["fresh"]);
 	});
 });
 

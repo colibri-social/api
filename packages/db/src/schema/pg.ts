@@ -702,9 +702,23 @@ export const userPresence = pgTable("user_presence", {
 	voiceChannel: text("voice_channel"),
 	voiceMuted: flag("voice_muted"),
 	voiceDeafened: flag("voice_deafened"),
-	viewingChannel: text("viewing_channel"),
 	updatedAt: timestamp("updated_at").notNull(),
 });
+
+export const presenceConnections = pgTable(
+	"presence_connections",
+	{
+		id: text("id").primaryKey(),
+		did: text("did").notNull(),
+		viewingChannel: text("viewing_channel"),
+		activeUntil: timestamp("active_until"),
+		seenAt: timestamp("seen_at").notNull(),
+	},
+	(t) => [
+		index("presence_connections_did_idx").on(t.did),
+		index("presence_connections_seen_at_idx").on(t.seenAt),
+	],
+);
 
 export const actorActivity = pgTable(
 	"actor_activity",
@@ -902,6 +916,7 @@ export const schema = {
 	emojiBackfills,
 	emojiFollows,
 	userPresence,
+	presenceConnections,
 	actorActivity,
 	identityCache,
 	profileCache,

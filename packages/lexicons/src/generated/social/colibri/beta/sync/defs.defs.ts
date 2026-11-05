@@ -101,6 +101,16 @@ const viewChannel = /*#__PURE__*/ l.typedObject<ViewChannel>($nsid, "viewChannel
 
 export { viewChannel };
 
+/** Reports that the user is actively using this client, which holds back push notifications to their other devices for a few minutes. Clients send it while visible and focused. */
+type Activity = { $type?: "social.colibri.beta.sync.defs#activity" };
+
+export type { Activity };
+
+/** Reports that the user is actively using this client, which holds back push notifications to their other devices for a few minutes. Clients send it while visible and focused. */
+const activity = /*#__PURE__*/ l.typedObject<Activity>($nsid, "activity", /*#__PURE__*/ l.object({}));
+
+export { activity };
+
 /** Reports that the user just wrote a record to a space, so the AppView can pull it without waiting for the space host to forward a notification. Honoured only for a space this connection already receives. */
 type WroteTo = { $type?: "social.colibri.beta.sync.defs#wroteTo";
 
@@ -240,6 +250,11 @@ type MessageEvent = { $type?: "social.colibri.beta.sync.defs#messageEvent";
   "subject"?:BetaDefs.RecordRef;
 
   /**
+   * The record URI of the message, for deletes.
+   */
+  "subjectUri"?:l.AtUriString;
+
+  /**
    * Set when a bridge imported the message from earlier history. Clients show it without marking the channel unread.
    */
   "imported"?:boolean };
@@ -247,7 +262,7 @@ type MessageEvent = { $type?: "social.colibri.beta.sync.defs#messageEvent";
 export type { MessageEvent };
 
 /** A message was written, edited, or deleted in a subscribed channel. */
-const messageEvent = /*#__PURE__*/ l.typedObject<MessageEvent>($nsid, "messageEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["create","update","delete"]}>(),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"message":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ChannelDefs.MessageView>((() => ChannelDefs.messageView) as any)),"subject":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any)),"imported":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
+const messageEvent = /*#__PURE__*/ l.typedObject<MessageEvent>($nsid, "messageEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["create","update","delete"]}>(),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"message":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ChannelDefs.MessageView>((() => ChannelDefs.messageView) as any)),"subject":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any)),"subjectUri":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"imported":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
 
 export { messageEvent };
 
@@ -268,6 +283,16 @@ type ReactionEvent = { $type?: "social.colibri.beta.sync.defs#reactionEvent";
    * The message reacted to.
    */
   "target":BetaDefs.RecordRef;
+
+  /**
+   * The record URI of the message reacted to.
+   */
+  "uri"?:l.AtUriString;
+
+  /**
+   * The reaction record itself.
+   */
+  "reaction"?:BetaDefs.RecordRef;
 
   /**
    * The emoji or custom shortcode.
@@ -292,7 +317,7 @@ type ReactionEvent = { $type?: "social.colibri.beta.sync.defs#reactionEvent";
 export type { ReactionEvent };
 
 /** A reaction was added or removed in a subscribed channel. */
-const reactionEvent = /*#__PURE__*/ l.typedObject<ReactionEvent>($nsid, "reactionEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["create","delete"]}>(),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"target":/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any),"emoji":/*#__PURE__*/ l.string(),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<RichtextFacet.CustomEmoji>((() => RichtextFacet.customEmoji) as any)),"actor":/*#__PURE__*/ l.string({"format":"did"}),"bridged":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BridgeDefs.BridgedReactor>((() => BridgeDefs.bridgedReactor) as any))}));
+const reactionEvent = /*#__PURE__*/ l.typedObject<ReactionEvent>($nsid, "reactionEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["create","delete"]}>(),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"target":/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any),"uri":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"reaction":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BetaDefs.RecordRef>((() => BetaDefs.recordRef) as any)),"emoji":/*#__PURE__*/ l.string(),"customEmoji":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<RichtextFacet.CustomEmoji>((() => RichtextFacet.customEmoji) as any)),"actor":/*#__PURE__*/ l.string({"format":"did"}),"bridged":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<BridgeDefs.BridgedReactor>((() => BridgeDefs.bridgedReactor) as any))}));
 
 export { reactionEvent };
 

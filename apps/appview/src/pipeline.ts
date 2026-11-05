@@ -10,6 +10,7 @@ import {
 	type PushAttachment,
 	type PushRouting,
 	type PushSenderProfile,
+	pushSuppressedFor,
 } from "@colibri-social/notifications";
 import {
 	emojiSubjectOwner,
@@ -19,8 +20,13 @@ import {
 	messageTimeRefusal,
 	spaceContextFor,
 } from "@colibri-social/projections";
+import {
+	type SpaceRecordPointer,
+	sameSpaceRecordPointer,
+	trySpaceRecordUri,
+} from "@colibri-social/space";
 import type { RepoChange } from "@colibri-social/space-sync";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
 	categoryEvent,
 	communityEvent,
@@ -64,28 +70,57 @@ type LabelValue = {
 	neg?: boolean;
 };
 
-const messageDeleted = (change: RepoChange, rkey: string) => ({
-	$type: "social.colibri.beta.sync.defs#messageEvent",
-	event: "delete",
-	channel: change.space,
-	subject: { did: change.author, rkey },
-});
+const messageUriOf = (space: string, pointer: SpaceRecordPointer) =>
+	trySpaceRecordUri(space, pointer.did, COLLECTIONS.message, pointer.rkey);
+
+const messagePointerOf = (space: string, uri: unknown, ref: unknown): SpaceRecordPointer | null => {
+	const fallback = ref as Partial<SpaceRecordPointer> | undefined;
+	return sameSpaceRecordPointer(
+		space,
+		COLLECTIONS.message,
+		typeof uri === "string" ? uri : undefined,
+		typeof fallback?.did === "string" && typeof fallback.rkey === "string"
+			? { did: fallback.did, rkey: fallback.rkey }
+			: undefined,
+	);
+};
+
+const messageDeleted = (change: RepoChange, rkey: string) => {
+	const subject = { did: change.author, rkey };
+	const subjectUri = messageUriOf(change.space, subject);
+	return {
+		$type: "social.colibri.beta.sync.defs#messageEvent",
+		event: "delete",
+		channel: change.space,
+		subject,
+		...(subjectUri ? { subjectUri } : {}),
+	};
+};
 
 const reactionFrame = (
 	event: "create" | "delete",
 	change: RepoChange,
 	value: Record<string, unknown>,
 	rkey: string,
-) => ({
-	$type: "social.colibri.beta.sync.defs#reactionEvent",
-	event,
-	channel: change.space,
-	target: value.target ?? { did: change.author, rkey },
-	emoji: value.emoji ?? "",
-	actor: change.author,
-	...customEmojiOf(value),
-	...bridgedReactorOf(change, value),
-});
+) => {
+	const target = messagePointerOf(change.space, value.uri, value.target) ?? {
+		did: change.author,
+		rkey,
+	};
+	const uri = messageUriOf(change.space, target);
+	return {
+		$type: "social.colibri.beta.sync.defs#reactionEvent",
+		event,
+		channel: change.space,
+		target,
+		...(uri ? { uri } : {}),
+		reaction: { did: change.author, rkey },
+		emoji: value.emoji ?? "",
+		actor: change.author,
+		...customEmojiOf(value),
+		...bridgedReactorOf(change, value),
+	};
+};
 
 const customEmojiOf = (value: Record<string, unknown>) => {
 	const ref = value.customEmoji as Record<string, unknown> | undefined;
@@ -258,13 +293,6 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		await pushNotifications(servable, text, message);
 	};
 
-	const outsideVoiceChannel = (target: string, recipient: string): boolean => {
-		const space = spaceContextFor(target);
-		if (space?.spaceType !== SPACE_TYPES.channelVoice) return false;
-		const joined = ctx.voice?.presenceOf(recipient);
-		return !joined || spaceContextFor(joined)?.uri !== space.uri;
-	};
-
 	const pushNotifications = async (
 		servable: ServableNotification[],
 		text: string,
@@ -272,12 +300,21 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 	): Promise<void> => {
 		if (servable.length === 0 || !push.enabled) return;
 
-		const quiet = await doNotDisturb(servable.map(({ row }) => row.recipient));
+		const suppressed = new Map<string, Set<string>>();
+		for (const space of new Set(servable.map(({ row }) => row.space))) {
+			const recipients = servable.filter(({ row }) => row.space === space);
+			suppressed.set(
+				space,
+				await pushSuppressedFor(
+					notifications,
+					space,
+					recipients.map(({ row }) => row.recipient),
+				),
+			);
+		}
 		await Promise.all(
 			servable
-				.filter(
-					({ row }) => !quiet.has(row.recipient) && !outsideVoiceChannel(row.space, row.recipient),
-				)
+				.filter(({ row }) => !suppressed.get(row.space)?.has(row.recipient))
 				.map(({ row, routing }) =>
 					deliverNotification(
 						notifications,
@@ -322,7 +359,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 				: undefined,
 			{
 				...push.options,
-				reaches: (recipient) => !outsideVoiceChannel(space, recipient),
+				suppressed: (recipients) => pushSuppressedFor(notifications, space, recipients),
 				attachmentsFor: (recipient) => pushAttachmentsOf(published, recipient),
 			},
 		);
@@ -333,19 +370,6 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		void deliverMessageDeleted(notifications, push.senders, { space, author, rkey }).catch(
 			(error) => ctx.log.warn({ error }, "push.deleteFailed"),
 		);
-	};
-
-	const doNotDisturb = async (dids: string[]): Promise<Set<string>> => {
-		const rows = await ctx.database.db
-			.select({ did: ctx.database.tables.userPresence.did })
-			.from(ctx.database.tables.userPresence)
-			.where(
-				and(
-					inArray(ctx.database.tables.userPresence.did, dids),
-					eq(ctx.database.tables.userPresence.requestedState, "dnd"),
-				),
-			);
-		return new Set(rows.map((row) => row.did));
 	};
 
 	const publishMember = async (community: string, did: string): Promise<void> => {
@@ -544,7 +568,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 					await publishThreadActivity(change.space, space.community);
 				}
 
-				const parent = put.value.parent as { did?: string; rkey?: string } | undefined;
+				const parent = messagePointerOf(change.space, put.value.parentUri, put.value.parent);
 				const community = space.community;
 				const text = previewTextOf(put.value);
 				const edited = wasEdited
@@ -625,6 +649,12 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			if (entry.collection === COLLECTIONS.message) {
 				events.publishToChannel(change.space, messageDeleted(change, entry.rkey));
 				pushMessageDeleted(change.space, change.author, entry.rkey);
+			}
+			if (entry.collection === COLLECTIONS.reaction && entry.previous) {
+				events.publishToChannel(
+					change.space,
+					reactionFrame("delete", change, entry.previous, entry.rkey),
+				);
 			}
 			if (space.community && entry.collection === COLLECTIONS.channel) {
 				events.channelChanged(space.community, change.space, "delete");

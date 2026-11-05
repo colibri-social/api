@@ -13,7 +13,13 @@ import {
 	SPACE_TYPES,
 	spaceTypeOf,
 } from "@colibri-social/lexicons";
-import { tidAt, tryParseSpaceRef } from "@colibri-social/space";
+import {
+	type SpaceRecordPointer,
+	sameSpaceRecordPointer,
+	tidAt,
+	tryParseSpaceRef,
+	trySpaceRecordUri,
+} from "@colibri-social/space";
 import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
 import type { CommunityLoader } from "./loader.js";
 import type { BlobRef, CommunityWriter } from "./writes.js";
@@ -76,12 +82,40 @@ export type RegistrationKey = {
 	registration: string;
 };
 
+const messagePointer = (
+	space: string,
+	uri: string | undefined,
+	ref: SpaceRecordPointer | undefined,
+): SpaceRecordPointer | null => sameSpaceRecordPointer(space, COLLECTIONS.message, uri, ref);
+
+const messageUri = (space: string, pointer: SpaceRecordPointer): string | null =>
+	trySpaceRecordUri(space, pointer.did, COLLECTIONS.message, pointer.rkey);
+
+const pointerOf = (value: unknown): SpaceRecordPointer | undefined => {
+	const ref = value as Partial<SpaceRecordPointer> | null | undefined;
+	return typeof ref?.did === "string" && typeof ref.rkey === "string"
+		? { did: ref.did, rkey: ref.rkey }
+		: undefined;
+};
+
+const replyFields = (
+	space: string,
+	parentUri: string | undefined,
+	parent: SpaceRecordPointer | undefined,
+): { parent?: SpaceRecordPointer; parentUri?: string } => {
+	const pointer = messagePointer(space, parentUri, parent);
+	if (!pointer) return {};
+	const uri = messageUri(space, pointer);
+	return { parent: pointer, ...(uri ? { parentUri: uri } : {}) };
+};
+
 export type BridgedMessageInput = RegistrationKey & {
 	channel: string;
 	author: RemoteAuthor;
 	text: string;
 	facets?: unknown[];
 	parent?: { did: string; rkey: string };
+	parentUri?: string;
 	attachments?: unknown[];
 	forward?: Record<string, unknown>;
 	remoteMessage?: string;
@@ -93,6 +127,7 @@ export type ImportedMessageInput = {
 	text: string;
 	facets?: unknown[];
 	parent?: { did: string; rkey: string };
+	parentUri?: string;
 	attachments?: unknown[];
 	forward?: Record<string, unknown>;
 	remoteMessage: string;
@@ -125,6 +160,7 @@ export type BridgedReactionInput = RegistrationKey & {
 	channel: string;
 	author: RemoteAuthor;
 	target: { did: string; rkey: string };
+	uri?: string;
 	emoji: string;
 };
 
@@ -574,7 +610,7 @@ export class Bridges {
 			bridged: this.attribution(registration, input.author, input.remoteMessage),
 		};
 		if (input.facets?.length) record.facets = input.facets;
-		if (input.parent) record.parent = { did: input.parent.did, rkey: input.parent.rkey };
+		Object.assign(record, replyFields(input.channel, input.parentUri, input.parent));
 		if (input.attachments?.length) record.attachments = input.attachments;
 		if (input.forward) record.forward = input.forward;
 
@@ -641,7 +677,7 @@ export class Bridges {
 					},
 				};
 				if (message.facets?.length) record.facets = message.facets;
-				if (message.parent) record.parent = { did: message.parent.did, rkey: message.parent.rkey };
+				Object.assign(record, replyFields(input.channel, message.parentUri, message.parent));
 				if (message.attachments?.length) record.attachments = message.attachments;
 				if (message.forward) record.forward = message.forward;
 				const { rkey } = await this.deps.writer.put(input.community, {
@@ -745,9 +781,14 @@ export class Bridges {
 		});
 	}
 
-	async addReaction(bridge: string, input: BridgedReactionInput): Promise<{ rkey: string }> {
+	async addReaction(
+		bridge: string,
+		input: BridgedReactionInput,
+	): Promise<{ rkey: string; target: SpaceRecordPointer; uri?: string }> {
 		const registration = await this.linked(bridge, input, input.channel);
 		const bridged = this.attribution(registration, input.author);
+		const target = messagePointer(input.channel, input.uri, input.target) ?? input.target;
+		const uri = messageUri(input.channel, target);
 		return this.queues.run(input.community, async () => {
 			const { db, tables } = this.deps;
 			const [existing] = await db
@@ -756,8 +797,8 @@ export class Bridges {
 				.where(
 					and(
 						eq(tables.reactions.space, input.channel),
-						eq(tables.reactions.targetAuthor, input.target.did),
-						eq(tables.reactions.targetRkey, input.target.rkey),
+						eq(tables.reactions.targetAuthor, target.did),
+						eq(tables.reactions.targetRkey, target.rkey),
 						eq(tables.reactions.author, input.community),
 						eq(tables.reactions.bridgedFrom, `${registration.id} ${input.author.id}`),
 						eq(tables.reactions.emoji, input.emoji),
@@ -774,18 +815,24 @@ export class Bridges {
 				record: {
 					$type: COLLECTIONS.reaction,
 					emoji: input.emoji,
-					target: { did: input.target.did, rkey: input.target.rkey },
+					target: { did: target.did, rkey: target.rkey },
+					...(uri ? { uri } : {}),
 					bridged,
 				},
 			});
-			return { rkey };
+			return { rkey, target, ...(uri ? { uri } : {}) };
 		});
 	}
 
 	async removeReaction(
 		bridge: string,
 		input: BridgedRecordKey,
-	): Promise<{ target: unknown; emoji: unknown; author: { id: string; name: string } }> {
+	): Promise<{
+		target: unknown;
+		uri?: string;
+		emoji: unknown;
+		author: { id: string; name: string };
+	}> {
 		await this.linked(bridge, input, input.channel);
 		return this.queues.run(input.community, async () => {
 			const current = await this.ownRecord(input, COLLECTIONS.reaction);
@@ -795,8 +842,15 @@ export class Bridges {
 				rkey: input.rkey,
 			});
 			const bridged = current.bridged as { remoteId?: unknown; name?: unknown };
+			const target = messagePointer(
+				input.channel,
+				typeof current.uri === "string" ? current.uri : undefined,
+				pointerOf(current.target),
+			);
+			const uri = target ? messageUri(input.channel, target) : null;
 			return {
-				target: current.target,
+				target: target ?? current.target,
+				...(uri ? { uri } : {}),
 				emoji: current.emoji,
 				author: { id: String(bridged.remoteId ?? ""), name: String(bridged.name ?? "") },
 			};

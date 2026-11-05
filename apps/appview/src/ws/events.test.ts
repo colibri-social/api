@@ -179,11 +179,20 @@ describe("EventServer", () => {
 
 	const viewingChannelOf = async (did: string): Promise<string | null | undefined> => {
 		const [row] = await database.db
-			.select({ viewingChannel: database.tables.userPresence.viewingChannel })
-			.from(database.tables.userPresence)
-			.where(eq(database.tables.userPresence.did, did))
+			.select({ viewingChannel: database.tables.presenceConnections.viewingChannel })
+			.from(database.tables.presenceConnections)
+			.where(eq(database.tables.presenceConnections.did, did))
 			.limit(1);
 		return row?.viewingChannel;
+	};
+
+	const activeUntilOf = async (did: string): Promise<string | null | undefined> => {
+		const [row] = await database.db
+			.select({ activeUntil: database.tables.presenceConnections.activeUntil })
+			.from(database.tables.presenceConnections)
+			.where(eq(database.tables.presenceConnections.did, did))
+			.limit(1);
+		return row?.activeUntil;
 	};
 
 	const putChannelRow = async (
@@ -805,7 +814,19 @@ describe("EventServer", () => {
 		await vi.waitFor(async () => expect(await viewingChannelOf(ALICE)).toBe(CHANNEL));
 
 		ws.close();
-		await vi.waitFor(async () => expect(await viewingChannelOf(ALICE)).toBeNull());
+		await vi.waitFor(async () => expect(await viewingChannelOf(ALICE)).toBeUndefined());
+	});
+
+	it("records activity frames on the connection and drops them when it closes", async () => {
+		const ws = connect("alice-token");
+		await waitForOpen(ws);
+		await vi.waitFor(async () => expect(await activeUntilOf(ALICE)).toBeNull());
+
+		send(ws, { $type: "social.colibri.beta.sync.defs#activity" });
+		await vi.waitFor(async () => expect(await activeUntilOf(ALICE)).toEqual(expect.any(String)));
+
+		ws.close();
+		await vi.waitFor(async () => expect(await activeUntilOf(ALICE)).toBeUndefined());
 	});
 
 	it("clears the channel in view when the client names none", async () => {

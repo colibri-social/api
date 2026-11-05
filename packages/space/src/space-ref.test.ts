@@ -4,9 +4,12 @@ import {
 	parseSpaceRecordUri,
 	parseSpaceRef,
 	recordPath,
+	sameSpaceRecordPointer,
 	spaceRecordUri,
 	spaceRef,
+	tryParseSpaceRecordUri,
 	tryParseSpaceRef,
+	trySpaceRecordUri,
 } from "./space-ref.js";
 
 const COMMUNITY = "did:plc:2hnjxkqm6bpuvvpjbztkxxxx";
@@ -84,5 +87,43 @@ describe("space record references", () => {
 		expect(recordPath("social.colibri.beta.message", "3lxyz")).toBe(
 			"social.colibri.beta.message/3lxyz",
 		);
+	});
+});
+
+describe("same-space record pointers", () => {
+	const space = spaceRef(COMMUNITY, CHANNEL, SKEY);
+	const message = "social.colibri.beta.message";
+	const fallback = { did: COMMUNITY, rkey: "3lkfallback22" };
+
+	it("reads the author and key from a uri in the same space and collection", () => {
+		const uri = spaceRecordUri(space, AUTHOR, message, "3lkmessage222");
+		expect(sameSpaceRecordPointer(space, message, uri, fallback)).toEqual({
+			did: AUTHOR,
+			rkey: "3lkmessage222",
+		});
+	});
+
+	it("falls back when the uri points into another space", () => {
+		const other = spaceRef(COMMUNITY, CHANNEL, "3lkotherspace");
+		const uri = spaceRecordUri(other, AUTHOR, message, "3lkmessage222");
+		expect(sameSpaceRecordPointer(space, message, uri, fallback)).toEqual(fallback);
+	});
+
+	it("falls back when the uri names another collection", () => {
+		const uri = spaceRecordUri(space, AUTHOR, "social.colibri.beta.reaction", "3lkmessage222");
+		expect(sameSpaceRecordPointer(space, message, uri, fallback)).toEqual(fallback);
+	});
+
+	it("falls back when the uri does not parse", () => {
+		expect(sameSpaceRecordPointer(space, message, "not a uri", fallback)).toEqual(fallback);
+		expect(tryParseSpaceRecordUri("not a uri")).toBeNull();
+	});
+
+	it("returns null with neither a usable uri nor a fallback", () => {
+		expect(sameSpaceRecordPointer(space, message, undefined, undefined)).toBeNull();
+	});
+
+	it("builds no uri from an invalid author", () => {
+		expect(trySpaceRecordUri(space, "nobody", message, "3lkmessage222")).toBeNull();
 	});
 });

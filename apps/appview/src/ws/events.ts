@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Server as HttpServer, IncomingHttpHeaders } from "node:http";
 import { decideSpaceAccess, has } from "@colibri-social/community";
 import { ServiceAuthError } from "@colibri-social/identity";
@@ -9,7 +10,7 @@ import { backfillActivity } from "../activity.js";
 import { channelEvent, communityEvent, threadEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { fireAndForget } from "../fire-and-forget.js";
-import { isOnlineState, PresenceTracker } from "../presence.js";
+import { ConnectionPresence, isOnlineState, PresenceTracker } from "../presence.js";
 import { ActorViews } from "../views/actor.js";
 import { CommunityViews } from "../views/community.js";
 import { bearerToken, selectSubprotocol } from "./auth.js";
@@ -39,6 +40,7 @@ type HintBudget = {
 };
 
 type Connection = {
+	id: string;
 	socket: WebSocket;
 	did: string;
 	alive: boolean;
@@ -53,6 +55,7 @@ const clientFrames = {
 	heartbeat: social.colibri.beta.sync.defs.heartbeat,
 	typing: social.colibri.beta.sync.defs.typing,
 	viewChannel: social.colibri.beta.sync.defs.viewChannel,
+	activity: social.colibri.beta.sync.defs.activity,
 	wroteTo: social.colibri.beta.sync.defs.wroteTo,
 	setPresence: social.colibri.beta.sync.defs.setPresence,
 } as const;
@@ -77,6 +80,7 @@ export class EventServer {
 	private readonly topics = new TopicIndex<Connection>();
 	private readonly connections = new Set<Connection>();
 	private readonly presence: PresenceTracker;
+	private readonly connectionPresence: ConnectionPresence;
 	private readonly communities: CommunityViews;
 	private readonly stopWatchingAuthz: () => void;
 	private heartbeat: NodeJS.Timeout | null = null;
@@ -87,6 +91,7 @@ export class EventServer {
 			publish: (did, communities, frame) =>
 				this.publishTo([userTopic(did), ...communities.map(communityTopic)], frame),
 		});
+		this.connectionPresence = new ConnectionPresence({ ctx });
 		this.communities = new CommunityViews(ctx, new ActorViews(ctx));
 		this.stopWatchingAuthz = ctx.authzChanges.subscribe((change) => {
 			void this.revalidate(change.community).catch((error: unknown) => {
@@ -120,6 +125,14 @@ export class EventServer {
 
 		this.heartbeat = setInterval(() => this.reap(), HEARTBEAT_MS);
 		this.heartbeat.unref?.();
+		this.sweepPresence();
+	}
+
+	private sweepPresence(): void {
+		fireAndForget(this.ctx.log, "presence.sweep.failed", async () => {
+			await this.connectionPresence.touch([...this.connections].map((connection) => connection.id));
+			await this.connectionPresence.sweep();
+		});
 	}
 
 	async close(): Promise<void> {
@@ -150,6 +163,7 @@ export class EventServer {
 
 	private accept(socket: WebSocket, did: string): void {
 		const connection: Connection = {
+			id: randomUUID(),
 			socket,
 			did,
 			alive: true,
@@ -161,6 +175,9 @@ export class EventServer {
 		this.connections.add(connection);
 		this.topics.subscribe(connection, [userTopic(did)]);
 		void this.trackPresence(did, "opened", () => this.presence.opened(did));
+		void this.trackPresence(did, "opened", () =>
+			this.connectionPresence.opened(connection.id, did),
+		);
 		if (first) {
 			void backfillActivity(this.ctx, did).catch((error: unknown) =>
 				this.ctx.log.warn({ did, err: error }, "activity.backfillFailed"),
@@ -181,7 +198,8 @@ export class EventServer {
 		socket.on("close", () => {
 			this.topics.forget(connection);
 			this.connections.delete(connection);
-			void this.trackPresence(did, "closed", () => this.presence.closed(did, connection));
+			void this.trackPresence(did, "closed", () => this.presence.closed(did));
+			void this.trackPresence(did, "closed", () => this.connectionPresence.closed(connection.id));
 		});
 		socket.on("error", () => socket.close());
 	}
@@ -239,6 +257,11 @@ export class EventServer {
 			case "viewChannel":
 				await this.applyViewChannel(connection, result.value as never);
 				return;
+			case "activity":
+				await this.trackPresence(connection.did, "active", () =>
+					this.connectionPresence.active(connection.id),
+				);
+				return;
 			case "wroteTo":
 				await this.applyWroteTo(connection, result.value as never);
 				return;
@@ -249,7 +272,7 @@ export class EventServer {
 
 	private async trackPresence(
 		did: string,
-		transition: "opened" | "closed" | "requested" | "viewing",
+		transition: "opened" | "closed" | "requested" | "viewing" | "active",
 		work: () => Promise<void>,
 	): Promise<void> {
 		await work().catch((error: unknown) => {
@@ -334,8 +357,13 @@ export class EventServer {
 		connection: Connection,
 		frame: { channel?: string },
 	): Promise<void> {
+		const channel = frame.channel ?? null;
 		await this.trackPresence(connection.did, "viewing", () =>
-			this.presence.viewing(connection.did, frame.channel ?? null, connection),
+			this.connectionPresence.viewing(connection.id, channel),
+		);
+		if (!channel) return;
+		await this.trackPresence(connection.did, "active", () =>
+			this.connectionPresence.active(connection.id),
 		);
 	}
 
@@ -665,6 +693,7 @@ export class EventServer {
 	}
 
 	private reap(): void {
+		this.sweepPresence();
 		for (const connection of this.connections) {
 			if (!connection.alive) {
 				connection.socket.terminate();

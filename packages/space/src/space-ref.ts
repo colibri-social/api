@@ -106,3 +106,40 @@ export const parseSpaceRecordUri = (value: string): ParsedSpaceRecord => {
 };
 
 export const recordPath = (collection: string, rkey: string) => `${collection}/${rkey}`;
+
+export type SpaceRecordPointer = { did: string; rkey: string };
+
+export const tryParseSpaceRecordUri = (value: string): ParsedSpaceRecord | null => {
+	try {
+		return parseSpaceRecordUri(value);
+	} catch {
+		return null;
+	}
+};
+
+export const sameSpaceRecordPointer = (
+	space: SpaceRefString,
+	collection: string,
+	uri: string | undefined,
+	fallback: SpaceRecordPointer | undefined,
+): SpaceRecordPointer | null => {
+	const parsed = uri ? tryParseSpaceRecordUri(uri) : null;
+	const expected = tryParseSpaceRef(space);
+	if (parsed && expected && parsed.uri === expected.uri && parsed.collection === collection) {
+		return { did: parsed.author, rkey: parsed.rkey };
+	}
+	return fallback ? { did: fallback.did, rkey: fallback.rkey } : null;
+};
+
+export const trySpaceRecordUri = (
+	space: SpaceRefString,
+	author: string,
+	collection: string,
+	rkey: string,
+): SpaceRecordUri | null => {
+	try {
+		return spaceRecordUri(space, author, collection, rkey);
+	} catch {
+		return null;
+	}
+};

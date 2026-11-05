@@ -339,7 +339,7 @@ export const drizzleSyncStore = (
 						});
 				}
 				for (const entry of change.deletes) {
-					await tx
+					const [removed] = await tx
 						.delete(tables.records)
 						.where(
 							and(
@@ -348,7 +348,9 @@ export const drizzleSyncStore = (
 								eq(tables.records.collection, entry.collection),
 								eq(tables.records.rkey, entry.rkey),
 							),
-						);
+						)
+						.returning({ value: tables.records.value });
+					if (removed) entry.previous = removed.value as Record<string, unknown>;
 				}
 				await project(tx, change);
 				await writeCursor(tx, cursor);

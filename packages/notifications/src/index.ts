@@ -4,6 +4,7 @@ export * from "./deps.js";
 export * from "./id.js";
 export * from "./index-message.js";
 export * from "./place.js";
+export * from "./presence.js";
 export * from "./push.js";
 export * from "./read.js";
 export * from "./read-fanout.js";
