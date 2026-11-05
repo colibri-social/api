@@ -1,5 +1,27 @@
 # @colibri-social/notifications
 
+## 1.9.0
+
+### Minor Changes
+
+- d52006b: Add private user blocks. The `social.colibri.beta.actor.block` record lives in the personal preferences space, one record per blocked DID, and `social.colibri.beta.actor.putBlocks` pushes the whole list to the AppView. `defs#preferences` gains `blocks`, so `getPreferences` and the live preferences event carry it. A blocked author's messages produce no notification or push for the blocker, a ping from them no longer brings the blocker back into a thread they left, and their existing notifications leave the blocker's inbox, unread count and badge. The new `blocks` table is added by migration 0033 and is purged on account deletion.
+- e3aa164: Hold back push notifications while the recipient is active on another device. Clients send the new `activity` sync frame while they are visible and focused, and each one keeps the account active for 5 minutes. Notification rows still land, so unread and mention badges keep counting. A message in a channel that any of the account's devices has open skips both the row and the push.
+  
+  Track the channel in view and the activity per connection in the new `presence_connections` table, so one device no longer overwrites another's view. Connections refresh their row every 30 seconds, and rows older than 2 minutes are ignored and swept at startup, which clears views left behind by a restart. The `viewing_channel` column on `user_presence` is dropped.
+  
+  Voice channel messages and edits no longer push to anyone, since the only people they reached were the call's participants. The notification rows stay.
+
+### Patch Changes
+
+- Updated dependencies [d52006b]
+- Updated dependencies [9d42e5c]
+- Updated dependencies [e3aa164]
+- Updated dependencies [e3aa164]
+  - @colibri-social/lexicons@2.36.0
+  - @colibri-social/appview-db@0.21.0
+  - @colibri-social/projections@1.15.0
+  - @colibri-social/space@0.11.0
+
 ## 1.8.13
 
 ### Patch Changes
