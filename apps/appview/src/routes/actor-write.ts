@@ -30,6 +30,7 @@ type Preferences = social.colibri.beta.actor.defs.Preferences;
 type Presence = social.colibri.beta.actor.defs.Presence;
 type Mute = social.colibri.beta.actor.defs.Mute;
 type LeftThread = social.colibri.beta.actor.defs.LeftThread;
+type Block = social.colibri.beta.actor.defs.Block;
 
 const soleOwnerOfCommunity = () =>
 	new InvalidRequestError(
@@ -311,6 +312,51 @@ export const handlePutMutes = async (
 	return { preferences: await announcePreferences(ctx, callerDid) };
 };
 
+const replaceBlocks = async (
+	tx: Transaction,
+	ctx: AppContext,
+	callerDid: string,
+	blocks: readonly Block[],
+) => {
+	const latest = new Map<string, string>();
+	for (const block of blocks) {
+		if (block.subject !== callerDid) latest.set(block.subject, block.createdAt);
+	}
+
+	const table = ctx.database.tables.blocks;
+	const keep = [...latest.keys()];
+
+	await tx
+		.delete(table)
+		.where(
+			keep.length === 0
+				? eq(table.did, callerDid)
+				: and(eq(table.did, callerDid), notInArray(table.subject, keep)),
+		);
+
+	for (const [subject, createdAt] of latest) {
+		await tx
+			.insert(table)
+			.values({ did: callerDid, rkey: nextTid(), subject, createdAt })
+			.onConflictDoUpdate({
+				target: [table.did, table.subject],
+				set: { createdAt },
+			});
+	}
+};
+
+export const handlePutBlocks = async (
+	ctx: AppContext,
+	callerDid: string,
+	input: { blocks: readonly Block[] },
+): Promise<{ preferences: Preferences }> => {
+	await ctx.database.db.transaction(async (tx) => {
+		await replaceBlocks(tx, ctx, callerDid, input.blocks);
+	});
+
+	return { preferences: await announcePreferences(ctx, callerDid) };
+};
+
 export const handleSetStatus = async (
 	ctx: AppContext,
 	callerDid: string,
@@ -437,6 +483,7 @@ export const handleDeleteAccount = async (
 		{ table: tables.notificationClears, column: tables.notificationClears.did },
 		{ table: tables.pushSubscriptions, column: tables.pushSubscriptions.actor },
 		{ table: tables.mutes, column: tables.mutes.did },
+		{ table: tables.blocks, column: tables.blocks.did },
 		{ table: tables.leftThreads, column: tables.leftThreads.did },
 		{ table: tables.actorSettings, column: tables.actorSettings.did },
 		{ table: tables.spaceNotifications, column: tables.spaceNotifications.did },
@@ -474,6 +521,14 @@ export const registerActorWriteRoutes = ({ server, ctx, auth }: RouteDeps): void
 		handler: async ({ input, auth: caller }) => ({
 			encoding: "application/json" as const,
 			body: await handlePutMutes(ctx, caller.credentials.did, input.body),
+		}),
+	});
+
+	route(server, social.colibri.beta.actor.putBlocks, {
+		auth: auth.required,
+		handler: async ({ input, auth: caller }) => ({
+			encoding: "application/json" as const,
+			body: await handlePutBlocks(ctx, caller.credentials.did, input.body),
 		}),
 	});
 

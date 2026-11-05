@@ -15,6 +15,7 @@ const PROJECTION_TABLES = [
 	"communities",
 	"moderationLog",
 	"mutes",
+	"blocks",
 	"actorSettings",
 	"spaceNotifications",
 	"spaceModerations",

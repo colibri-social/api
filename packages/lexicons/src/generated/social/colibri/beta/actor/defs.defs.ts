@@ -293,6 +293,11 @@ type Preferences = { $type?: "social.colibri.beta.actor.defs#preferences";
   "spaceModerations"?:(SpaceModeration)[];
 
   /**
+   * Users the user blocked.
+   */
+  "blocks"?:(Block)[];
+
+  /**
    * Threads the user left. A ping in a thread after leftAt brings the user back and removes its entry.
    */
   "leftThreads"?:(LeftThread)[];
@@ -310,7 +315,7 @@ type Preferences = { $type?: "social.colibri.beta.actor.defs#preferences";
 export type { Preferences };
 
 /** The authenticated user's own settings, as the AppView currently holds them. */
-const preferences = /*#__PURE__*/ l.typedObject<Preferences>($nsid, "preferences", /*#__PURE__*/ l.object({"notificationLevel":/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies","nothing"]}>(),"communityOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"mutes":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Mute>((() => mute) as any), ),"gifFavorites":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), ),"shareActivity":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"spaceNotifications":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<SpaceNotification>((() => spaceNotification) as any), )),"spaceModerations":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<SpaceModeration>((() => spaceModeration) as any), )),"leftThreads":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<LeftThread>((() => leftThread) as any), )),"clientPreferences":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ClientPreferences>((() => clientPreferences) as any)),"composerState":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ComposerState>((() => composerState) as any))}));
+const preferences = /*#__PURE__*/ l.typedObject<Preferences>($nsid, "preferences", /*#__PURE__*/ l.object({"notificationLevel":/*#__PURE__*/ l.string<{"knownValues":["all","mentionsAndReplies","nothing"]}>(),"communityOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ),"mutes":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Mute>((() => mute) as any), ),"gifFavorites":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<EmbedDefs.GifView>((() => EmbedDefs.gifView) as any), ),"shareActivity":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"spaceNotifications":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<SpaceNotification>((() => spaceNotification) as any), )),"spaceModerations":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<SpaceModeration>((() => spaceModeration) as any), )),"blocks":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Block>((() => block) as any), )),"leftThreads":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<LeftThread>((() => leftThread) as any), )),"clientPreferences":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ClientPreferences>((() => clientPreferences) as any)),"composerState":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ComposerState>((() => composerState) as any))}));
 
 export { preferences };
 
@@ -333,6 +338,26 @@ export type { Mute };
 const mute = /*#__PURE__*/ l.typedObject<Mute>($nsid, "mute", /*#__PURE__*/ l.object({"subject":/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<MutedActor>((() => mutedActor) as any),/*#__PURE__*/ l.typedRef<MutedChannel>((() => mutedChannel) as any),/*#__PURE__*/ l.typedRef<MutedThread>((() => mutedThread) as any)], true),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
 
 export { mute };
+
+/** A blocked user. */
+type Block = { $type?: "social.colibri.beta.actor.defs#block";
+
+  /**
+   * The blocked user.
+   */
+  "subject":l.DidString;
+
+  /**
+   * When the block was created.
+   */
+  "createdAt":l.DatetimeString };
+
+export type { Block };
+
+/** A blocked user. */
+const block = /*#__PURE__*/ l.typedObject<Block>($nsid, "block", /*#__PURE__*/ l.object({"subject":/*#__PURE__*/ l.string({"format":"did"}),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
+
+export { block };
 
 /** A muted user or community. */
 type MutedActor = { $type?: "social.colibri.beta.actor.defs#mutedActor";

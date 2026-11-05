@@ -47,6 +47,12 @@ export const loadPreferences = async (ctx: AppContext, callerDid: string): Promi
 		.where(eq(ctx.database.tables.mutes.did, callerDid))
 		.orderBy(asc(ctx.database.tables.mutes.createdAt));
 
+	const blockRows = await ctx.database.db
+		.select()
+		.from(ctx.database.tables.blocks)
+		.where(eq(ctx.database.tables.blocks.did, callerDid))
+		.orderBy(asc(ctx.database.tables.blocks.createdAt));
+
 	const spaceNotificationRows = await ctx.database.db
 		.select()
 		.from(ctx.database.tables.spaceNotifications)
@@ -72,6 +78,10 @@ export const loadPreferences = async (ctx: AppContext, callerDid: string): Promi
 		communityOrder: (settings?.communityOrder ?? []).map(asDid),
 		mutes: muteRows.map((row) => ({
 			subject: decodeMuteSubject(row.subject),
+			createdAt: asDatetime(row.createdAt),
+		})),
+		blocks: blockRows.map((row) => ({
+			subject: asDid(row.subject),
 			createdAt: asDatetime(row.createdAt),
 		})),
 		gifFavorites: (settings?.gifFavorites ?? []).map(toGifView),

@@ -55,6 +55,15 @@ const mute = async (did: string, subject: string) => {
 	});
 };
 
+const block = async (did: string, subject: string) => {
+	await database.db.insert(database.tables.blocks).values({
+		did,
+		rkey: `block-${subject}`,
+		subject,
+		createdAt: NOW,
+	});
+};
+
 const notificationLevel = async (did: string, level: NotificationLevel) => {
 	await database.db.insert(database.tables.actorSettings).values({ did, notificationLevel: level });
 };
@@ -334,6 +343,15 @@ describe("indexMessage", () => {
 				expect(await leftRows()).toHaveLength(0);
 			});
 
+			it("keeps them out when someone they blocked pings them", async () => {
+				await block(leaver, AUTHOR);
+
+				await sendInThread("3lkleftmsg08", [mentionFacet(leaver)]);
+
+				expect(await rowsFor(leaver)).toHaveLength(0);
+				expect(await leftRows()).toHaveLength(1);
+			});
+
 			it("keeps them out when a message that already pinged them is indexed again", async () => {
 				await sendInThread("3lkleftmsg07", [mentionFacet(leaver)]);
 				await leave(leaver);
@@ -421,6 +439,70 @@ describe("indexMessage", () => {
 		});
 
 		expect(await rowsFor(recipient)).toHaveLength(0);
+	});
+
+	describe("for a recipient who blocked the author", () => {
+		const recipient = "did:plc:blocker00000000000000000";
+
+		beforeEach(async () => {
+			await member(recipient);
+			await block(recipient, AUTHOR);
+		});
+
+		it("skips a mention", async () => {
+			await indexMessage(deps, {
+				space: CHANNEL,
+				community: COMMUNITY,
+				author: AUTHOR,
+				rkey: "3lkblock1",
+				facets: [mentionFacet(recipient)],
+				parentAuthor: null,
+				parentRkey: null,
+			});
+
+			expect(await rowsFor(recipient)).toHaveLength(0);
+		});
+
+		it("skips a reply and a plain message", async () => {
+			await indexMessage(deps, {
+				space: CHANNEL,
+				community: COMMUNITY,
+				author: AUTHOR,
+				rkey: "3lkblock2",
+				facets: null,
+				parentAuthor: recipient,
+				parentRkey: "3lkparent1",
+			});
+			await indexMessage(deps, {
+				space: CHANNEL,
+				community: COMMUNITY,
+				author: AUTHOR,
+				rkey: "3lkblock3",
+				facets: null,
+				parentAuthor: null,
+				parentRkey: null,
+			});
+
+			expect(await rowsFor(recipient)).toHaveLength(0);
+		});
+
+		it("still notifies someone else who did not block them", async () => {
+			const other = "did:plc:other000000000000000000";
+			await member(other);
+
+			await indexMessage(deps, {
+				space: CHANNEL,
+				community: COMMUNITY,
+				author: AUTHOR,
+				rkey: "3lkblock4",
+				facets: [mentionFacet(other), mentionFacet(recipient)],
+				parentAuthor: null,
+				parentRkey: null,
+			});
+
+			expect(await rowsFor(other)).toHaveLength(1);
+			expect(await rowsFor(recipient)).toHaveLength(0);
+		});
 	});
 
 	it("suppresses a notification for a recipient who muted the community", async () => {

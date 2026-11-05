@@ -429,6 +429,20 @@ export const mutes = sqliteTable(
 	],
 );
 
+export const blocks = sqliteTable(
+	"blocks",
+	{
+		did: text("did").notNull(),
+		rkey: text("rkey").notNull(),
+		subject: text("subject").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.did, t.rkey] }),
+		uniqueIndex("blocks_one_per_subject_idx").on(t.did, t.subject),
+	],
+);
+
 export const leftThreads = sqliteTable(
 	"left_threads",
 	{
@@ -893,6 +907,7 @@ export const schema = {
 	labels,
 	moderationLog,
 	mutes,
+	blocks,
 	leftThreads,
 	actorSettings,
 	spaceNotifications,

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { NotificationDeps } from "./deps.js";
 import { nextId } from "./id.js";
 import {
+	badgeCount,
 	hydrateNotifications,
 	listNotifications,
 	markSeen,
@@ -150,6 +151,50 @@ describe("unseenForChannel", () => {
 		await insertNotification({ kind: "message" });
 		const rows = await unseenForChannel(deps, RECIPIENT, CHANNEL);
 		expect(rows).toHaveLength(1);
+	});
+});
+
+describe("a blocked author", () => {
+	beforeEach(async () => {
+		await database.db.insert(database.tables.blocks).values({
+			did: RECIPIENT,
+			rkey: "3lkblock1",
+			subject: AUTHOR,
+			createdAt: "2026-08-23T00:00:00.000Z",
+		});
+		await insertNotification({ kind: "mention" });
+		await insertNotification({ kind: "reply" });
+	});
+
+	it("leaves the unread count, the badge and the list", async () => {
+		expect(await unreadCount(deps, RECIPIENT)).toBe(0);
+		expect(await badgeCount(deps, RECIPIENT)).toBe(0);
+		expect((await listNotifications(deps, RECIPIENT)).notifications).toEqual([]);
+	});
+
+	it("comes back after an unblock", async () => {
+		await database.db.delete(database.tables.blocks);
+
+		expect(await unreadCount(deps, RECIPIENT)).toBe(2);
+		expect(await badgeCount(deps, RECIPIENT)).toBe(2);
+	});
+
+	it("only affects the person who blocked", async () => {
+		await database.db.insert(database.tables.notifications).values({
+			id: nextId(),
+			recipient: AUTHOR,
+			kind: "mention",
+			community: COMMUNITY,
+			space: CHANNEL,
+			author: RECIPIENT,
+			messageAuthor: RECIPIENT,
+			messageRkey: "3lkmsg2",
+			mentionRole: null,
+			indexedAt: "2026-08-23T00:00:00.000Z",
+			seenAt: null,
+		});
+
+		expect(await unreadCount(deps, AUTHOR)).toBe(1);
 	});
 });
 

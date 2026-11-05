@@ -45,6 +45,33 @@ export const mute: Projector<social.colibri.beta.actor.mute.Main> = {
 	},
 };
 
+export const block: Projector<social.colibri.beta.actor.block.Main> = {
+	collection: COLLECTIONS.block,
+	writer: "authority",
+	spaceTypes: PERSONAL,
+	schema: social.colibri.beta.actor.block,
+	put: async (deps, ref, value) => {
+		const row = {
+			did: ref.author,
+			rkey: ref.rkey,
+			subject: value.subject,
+			createdAt: value.createdAt,
+		};
+		await deps.db
+			.insert(deps.tables.blocks)
+			.values(row)
+			.onConflictDoUpdate({
+				target: [deps.tables.blocks.did, deps.tables.blocks.subject],
+				set: row,
+			});
+	},
+	remove: async (deps, ref) => {
+		await deps.db
+			.delete(deps.tables.blocks)
+			.where(and(eq(deps.tables.blocks.did, ref.author), eq(deps.tables.blocks.rkey, ref.rkey)));
+	},
+};
+
 export const settings: Projector<social.colibri.beta.actor.settings.Main> = {
 	collection: COLLECTIONS.settings,
 	writer: "authority",

@@ -105,12 +105,40 @@ const withoutUnreadable = async (
 	return out;
 };
 
+const withoutBlocked = async (
+	deps: NotificationDeps,
+	rows: readonly NotificationRow[],
+): Promise<NotificationRow[]> => {
+	const recipients = [...new Set(rows.map((row) => row.recipient))];
+	const authors = [...new Set(rows.flatMap((row) => [row.author, row.messageAuthor]))];
+	const blockRows = await deps.db
+		.select({ did: deps.tables.blocks.did, subject: deps.tables.blocks.subject })
+		.from(deps.tables.blocks)
+		.where(
+			and(
+				inArray(deps.tables.blocks.did, recipients),
+				inArray(deps.tables.blocks.subject, authors),
+			),
+		);
+	if (blockRows.length === 0) return [...rows];
+
+	const blocked = new Set(blockRows.map((row) => `${row.did} ${row.subject}`));
+
+	return rows.filter(
+		(row) =>
+			!blocked.has(`${row.recipient} ${row.author}`) &&
+			!blocked.has(`${row.recipient} ${row.messageAuthor}`),
+	);
+};
+
 const suppress = async (
 	deps: NotificationDeps,
 	rows: readonly NotificationRow[],
 ): Promise<SuppressedRows> => {
 	if (rows.length === 0) return { rows: [], labels: new Map() };
-	const visible = await withoutUnreadable(deps, rows);
+	const unblocked = await withoutBlocked(deps, rows);
+	if (unblocked.length === 0) return { rows: [], labels: new Map() };
+	const visible = await withoutUnreadable(deps, unblocked);
 	if (visible.length === 0) return { rows: [], labels: new Map() };
 	const labels = await labelsBySpace(deps, visible);
 	return { rows: withoutWithheld(visible, labels), labels };

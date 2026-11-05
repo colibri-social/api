@@ -31,6 +31,7 @@ export const COMMUNITY_SPACE_TYPES = [
 ] as const;
 
 export const COLLECTIONS = {
+	block: "social.colibri.beta.actor.block",
 	bridgeRegistration: "social.colibri.beta.bridge.registration",
 	category: "social.colibri.beta.category",
 	channel: "social.colibri.beta.channel",

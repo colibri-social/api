@@ -172,6 +172,21 @@ const plainMessageAudience = (deps: NotificationDeps, message: IndexMessageInput
 		? threadAudienceDids(deps, message.space)
 		: allMemberDids(deps, message.community);
 
+const blockersOf = async (
+	deps: NotificationDeps,
+	dids: readonly string[],
+	author: string,
+): Promise<Set<string>> => {
+	if (dids.length === 0) return new Set();
+
+	const rows = await deps.db
+		.select({ did: deps.tables.blocks.did })
+		.from(deps.tables.blocks)
+		.where(and(inArray(deps.tables.blocks.did, [...dids]), eq(deps.tables.blocks.subject, author)));
+
+	return new Set(rows.map((row) => row.did));
+};
+
 const rejoinPingedThread = async (
 	deps: NotificationDeps,
 	message: IndexMessageInput,
@@ -189,7 +204,8 @@ const rejoinPingedThread = async (
 			),
 		);
 	const notified = new Set(notifiedRows.map((row) => row.recipient));
-	const fresh = pinged.filter((did) => !notified.has(did));
+	const blockers = await blockersOf(deps, pinged, message.author);
+	const fresh = pinged.filter((did) => !notified.has(did) && !blockers.has(did));
 	if (fresh.length === 0) return;
 	await deps.db
 		.delete(deps.tables.leftThreads)
@@ -230,6 +246,7 @@ const filterRecipients = async (
 			),
 		);
 	const mutedDids = new Set(muteRows.map((row) => row.did));
+	const blockers = await blockersOf(deps, dids, message.author);
 
 	const settingsRows = await deps.db
 		.select({
@@ -272,6 +289,7 @@ const filterRecipients = async (
 	const eligible = recipients.filter((recipient) => {
 		if (!memberDids.has(recipient.did)) return false;
 		if (mutedDids.has(recipient.did)) return false;
+		if (blockers.has(recipient.did)) return false;
 		const level = levels.get(recipient.did) ?? "all";
 		if (level === "nothing") return false;
 		if (recipient.kind === "message" && level === "mentionsAndReplies") return false;

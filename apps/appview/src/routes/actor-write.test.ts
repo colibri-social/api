@@ -9,6 +9,7 @@ import type { AppContext } from "../context.js";
 import {
 	handleDeleteAccount,
 	handleGrantSpaceAccess,
+	handlePutBlocks,
 	handlePutMutes,
 	handlePutSettings,
 	handlePutSpaceModeration,
@@ -431,6 +432,63 @@ describe("putMutes", () => {
 			.from(database.tables.mutes)
 			.where(eq(database.tables.mutes.did, CALLER));
 		expect(rows.map((row) => row.subject)).toEqual([CHANNEL]);
+	});
+});
+
+describe("putBlocks", () => {
+	it("stores the caller's blocks and answers with them", async () => {
+		const result = await handlePutBlocks(ctx, CALLER, {
+			blocks: [{ subject: OTHER, createdAt: NOW }],
+		});
+
+		expect(result.preferences.blocks).toEqual([{ subject: OTHER, createdAt: NOW }]);
+		const rows = await database.db.select().from(database.tables.blocks);
+		expect(rows.map((row) => [row.did, row.subject])).toEqual([[CALLER, OTHER]]);
+	});
+
+	it("replaces the whole list and leaves other users alone", async () => {
+		await database.db.insert(database.tables.blocks).values({
+			did: OTHER,
+			rkey: "3lkotherblock",
+			subject: CALLER,
+			createdAt: NOW,
+		});
+		await handlePutBlocks(ctx, CALLER, {
+			blocks: [
+				{ subject: OTHER, createdAt: NOW },
+				{ subject: COMMUNITY, createdAt: NOW },
+			],
+		});
+
+		const result = await handlePutBlocks(ctx, CALLER, {
+			blocks: [{ subject: COMMUNITY, createdAt: LATER }],
+		});
+
+		expect(result.preferences.blocks).toEqual([{ subject: COMMUNITY, createdAt: LATER }]);
+		const rows = await database.db.select().from(database.tables.blocks);
+		expect(rows.filter((row) => row.did === OTHER)).toHaveLength(1);
+	});
+
+	it("keeps the rkey a repo sync already recorded for a subject", async () => {
+		await database.db.insert(database.tables.blocks).values({
+			did: CALLER,
+			rkey: "3lkfromrepo01",
+			subject: OTHER,
+			createdAt: NOW,
+		});
+
+		await handlePutBlocks(ctx, CALLER, { blocks: [{ subject: OTHER, createdAt: NOW }] });
+
+		const [row] = await database.db.select().from(database.tables.blocks);
+		expect(row?.rkey).toBe("3lkfromrepo01");
+	});
+
+	it("ignores a block of the caller's own account", async () => {
+		const result = await handlePutBlocks(ctx, CALLER, {
+			blocks: [{ subject: CALLER, createdAt: NOW }],
+		});
+
+		expect(result.preferences.blocks).toEqual([]);
 	});
 });
 

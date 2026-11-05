@@ -1182,6 +1182,29 @@ describe("personal spaces", () => {
 		expect(row?.subject).toBe(OUTSIDER);
 	});
 
+	it("projects a block and removes it on delete", async () => {
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.actor.block", "3lkblock1", {
+				$type: "social.colibri.beta.actor.block",
+				subject: OUTSIDER,
+				createdAt: NOW,
+			}),
+		);
+
+		expect(await database.db.select().from(database.tables.blocks)).toEqual([
+			{ did: MEMBER, rkey: "3lkblock1", subject: OUTSIDER, createdAt: NOW },
+		]);
+
+		await applyChange(deps, {
+			space: personal,
+			author: MEMBER,
+			puts: [],
+			deletes: [{ collection: "social.colibri.beta.actor.block", rkey: "3lkblock1" }],
+		});
+		expect(await database.db.select().from(database.tables.blocks)).toEqual([]);
+	});
+
 	it("projects an emoji follow and removes it on delete", async () => {
 		const subject = `at://${OUTSIDER}/blue.moji.packs.pack/3lkpack1`;
 		await applyChange(

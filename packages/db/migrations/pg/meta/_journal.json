@@ -232,6 +232,13 @@
 			"when": 1793880290491,
 			"tag": "0032_puzzling_arclight",
 			"breakpoints": true
+		},
+		{
+			"idx": 33,
+			"version": "7",
+			"when": 1793894112341,
+			"tag": "0033_chemical_leech",
+			"breakpoints": true
 		}
 	]
 }
