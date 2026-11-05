@@ -1,5 +1,38 @@
 # @colibri-social/appview
 
+## 2.35.0
+
+### Minor Changes
+
+- d52006b: Add private user blocks. The `social.colibri.beta.actor.block` record lives in the personal preferences space, one record per blocked DID, and `social.colibri.beta.actor.putBlocks` pushes the whole list to the AppView. `defs#preferences` gains `blocks`, so `getPreferences` and the live preferences event carry it. A blocked author's messages produce no notification or push for the blocker, a ping from them no longer brings the blocker back into a thread they left, and their existing notifications leave the blocker's inbox, unread count and badge. The new `blocks` table is added by migration 0033 and is purged on account deletion.
+- 9d42e5c: Add the `setConsumerPreference` voice frame. A viewer sets the highest simulcast or SVC layer it wants for one of its consumers and can pause it while its tile is off screen. A viewer pause survives `resumeConsumer` and undeafen, and deafen still keeps audio paused. Screen share video gets twice the priority of cameras when bandwidth is short, and send transports cap incoming media at 20 Mbps.
+- e3aa164: Hold back push notifications while the recipient is active on another device. Clients send the new `activity` sync frame while they are visible and focused, and each one keeps the account active for 5 minutes. Notification rows still land, so unread and mention badges keep counting. A message in a channel that any of the account's devices has open skips both the row and the push.
+  
+  Track the channel in view and the activity per connection in the new `presence_connections` table, so one device no longer overwrites another's view. Connections refresh their row every 30 seconds, and rows older than 2 minutes are ignored and swept at startup, which clears views left behind by a restart. The `viewing_channel` column on `user_presence` is dropped.
+  
+  Voice channel messages and edits no longer push to anyone, since the only people they reached were the call's participants. The notification rows stay.
+- e3aa164: Address reactions and replies by full record URI. `social.colibri.beta.reaction` gains an optional `uri` and `social.colibri.beta.message` an optional `parentUri`, next to the existing `target` and `parent` references. The projections read the URI first and fall back to the reference when the URI is missing, unparseable, in another space, or in another collection. `bridge.addReaction` takes an optional `uri`, and `bridge.postMessage` and `bridge.importMessages` take an optional `parentUri`. Records the community writes for a bridge carry both forms.
+  
+  `reactionEvent` gains `uri` for the target message and `reaction` for the reaction record itself, and its `target` now follows the URI when the record has one. Deleting a reaction record now publishes a `reactionEvent` with `event: "delete"`. A `messageEvent` delete carries `subjectUri`. `RecordDelete` in `@colibri-social/space-sync` carries the removed record's `previous` value when the store held it. `@colibri-social/space` adds `sameSpaceRecordPointer`, `tryParseSpaceRecordUri` and `trySpaceRecordUri`.
+
+### Patch Changes
+
+- 9d42e5c: Keep screen share sound playing when the person sharing mutes their own microphone. A self-mute now pauses only the microphone producer. A server mute still pauses every audio producer, whatever source it claims.
+- Updated dependencies [d52006b]
+- Updated dependencies [9d42e5c]
+- Updated dependencies [e3aa164]
+- Updated dependencies [e3aa164]
+- Updated dependencies [9d42e5c]
+  - @colibri-social/lexicons@2.36.0
+  - @colibri-social/appview-db@0.21.0
+  - @colibri-social/projections@1.15.0
+  - @colibri-social/notifications@1.9.0
+  - @colibri-social/voice@0.4.0
+  - @colibri-social/space@0.11.0
+  - @colibri-social/space-sync@0.7.0
+  - @colibri-social/community@2.15.0
+  - @colibri-social/blobs@0.2.4
+
 ## 2.34.0
 
 ### Minor Changes

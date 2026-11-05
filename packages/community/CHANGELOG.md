@@ -1,5 +1,24 @@
 # @colibri-social/community
 
+## 2.15.0
+
+### Minor Changes
+
+- e3aa164: Address reactions and replies by full record URI. `social.colibri.beta.reaction` gains an optional `uri` and `social.colibri.beta.message` an optional `parentUri`, next to the existing `target` and `parent` references. The projections read the URI first and fall back to the reference when the URI is missing, unparseable, in another space, or in another collection. `bridge.addReaction` takes an optional `uri`, and `bridge.postMessage` and `bridge.importMessages` take an optional `parentUri`. Records the community writes for a bridge carry both forms.
+  
+  `reactionEvent` gains `uri` for the target message and `reaction` for the reaction record itself, and its `target` now follows the URI when the record has one. Deleting a reaction record now publishes a `reactionEvent` with `event: "delete"`. A `messageEvent` delete carries `subjectUri`. `RecordDelete` in `@colibri-social/space-sync` carries the removed record's `previous` value when the store held it. `@colibri-social/space` adds `sameSpaceRecordPointer`, `tryParseSpaceRecordUri` and `trySpaceRecordUri`.
+
+### Patch Changes
+
+- Updated dependencies [d52006b]
+- Updated dependencies [9d42e5c]
+- Updated dependencies [e3aa164]
+- Updated dependencies [e3aa164]
+  - @colibri-social/lexicons@2.36.0
+  - @colibri-social/appview-db@0.21.0
+  - @colibri-social/projections@1.15.0
+  - @colibri-social/space@0.11.0
+
 ## 2.14.0
 
 ### Minor Changes

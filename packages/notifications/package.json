@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/notifications",
-	"version": "1.8.13",
+	"version": "1.9.0",
 	"description": "Notification indexing and delivery over Web Push and FCM",
 	"type": "module",
 	"private": true,
