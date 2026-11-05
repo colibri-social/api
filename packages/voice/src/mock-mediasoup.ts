@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import type {
 	AudioLevelObserver,
 	Consumer,
+	ConsumerType,
 	MediaKind,
 	Producer,
 	Router,
@@ -38,13 +39,18 @@ export function createFakeProducer(kind: MediaKind) {
 	return producer as typeof producer & { paused: boolean };
 }
 
-export function createFakeConsumer(producerId: string, kind: MediaKind) {
+export function createFakeConsumer(
+	producerId: string,
+	kind: MediaKind,
+	type: ConsumerType = kind === "video" ? "simulcast" : "simple",
+) {
 	const emitter = new EventEmitter();
 	let paused = true;
 	const consumer = Object.assign(emitter, {
 		id: id("consumer"),
 		producerId,
 		kind,
+		type,
 		pause: vi.fn(async () => {
 			paused = true;
 		}),
@@ -52,6 +58,10 @@ export function createFakeConsumer(producerId: string, kind: MediaKind) {
 			paused = false;
 		}),
 		requestKeyFrame: vi.fn(async () => {}),
+		setPreferredLayers: vi.fn(
+			async (_layers: { spatialLayer: number; temporalLayer?: number }) => {},
+		),
+		setPriority: vi.fn(async (_priority: number) => {}),
 		close: vi.fn(),
 	});
 	Object.defineProperty(consumer, "paused", { get: () => paused, enumerable: true });
@@ -75,6 +85,7 @@ export function createFakeTransport() {
 	const transport = Object.assign(emitter, {
 		id: id("transport"),
 		connect: vi.fn(async () => {}),
+		setMaxIncomingBitrate: vi.fn(async (_bitrate: number) => {}),
 		close: vi.fn(() => {
 			for (const producer of producers.values()) producer.emit("transportclose");
 			emitter.emit("transportclose");

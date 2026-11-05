@@ -33,6 +33,7 @@ const clientFrames = {
 	closeProducer: social.colibri.beta.voice.defs.closeProducer,
 	consume: social.colibri.beta.voice.defs.consume,
 	resumeConsumer: social.colibri.beta.voice.defs.resumeConsumer,
+	setConsumerPreference: social.colibri.beta.voice.defs.setConsumerPreference,
 	setSelfState: social.colibri.beta.voice.defs.setSelfState,
 	setSpeaking: social.colibri.beta.voice.defs.setSpeaking,
 	heartbeat: social.colibri.beta.voice.defs.heartbeat,
@@ -348,6 +349,9 @@ export class VoiceServer {
 			case "resumeConsumer":
 				await this.handleResumeConsumer(connection, voice, result.value as never);
 				return;
+			case "setConsumerPreference":
+				await this.handleSetConsumerPreference(connection, voice, result.value as never);
+				return;
 			case "setSelfState":
 				await this.handleSetSelfState(connection, voice, result.value as never);
 				return;
@@ -595,6 +599,27 @@ export class VoiceServer {
 		}
 		try {
 			await voice.resume(connection.channel, connection.did, frame.consumerId);
+			this.ack(connection);
+		} catch (cause) {
+			this.error(connection, "NotFound", messageOf(cause));
+		}
+	}
+
+	private async handleSetConsumerPreference(
+		connection: Connection,
+		voice: VoiceSfu,
+		frame: { consumerId: string; spatialLayer: number; temporalLayer?: number; paused: boolean },
+	): Promise<void> {
+		if (!connection.channel) {
+			this.error(connection, "NotJoined", "join a channel before setting a consumer preference");
+			return;
+		}
+		try {
+			await voice.setConsumerPreference(connection.channel, connection.did, frame.consumerId, {
+				spatialLayer: frame.spatialLayer,
+				...(frame.temporalLayer === undefined ? {} : { temporalLayer: frame.temporalLayer }),
+				paused: frame.paused,
+			});
 			this.ack(connection);
 		} catch (cause) {
 			this.error(connection, "NotFound", messageOf(cause));

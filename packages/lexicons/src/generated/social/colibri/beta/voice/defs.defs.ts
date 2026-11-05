@@ -310,6 +310,36 @@ const resumeConsumer = /*#__PURE__*/ l.typedObject<ResumeConsumer>($nsid, "resum
 
 export { resumeConsumer };
 
+/** Sets the highest simulcast or SVC layers a consumer this connection created should receive, and whether it should receive media at all. The server picks layers within the transport's bandwidth estimate and keeps a consumer paused while deafen silences it. */
+type SetConsumerPreference = { $type?: "social.colibri.beta.voice.defs#setConsumerPreference";
+
+  /**
+   * The consumer to update.
+   */
+  "consumerId":string;
+
+  /**
+   * The highest spatial layer to receive, where 0 is the lowest resolution.
+   */
+  "spatialLayer":number;
+
+  /**
+   * The highest temporal layer to receive. When absent, the server uses the highest one available.
+   */
+  "temporalLayer"?:number;
+
+  /**
+   * Whether the viewer wants this consumer paused, for example while its tile is off screen.
+   */
+  "paused":boolean };
+
+export type { SetConsumerPreference };
+
+/** Sets the highest simulcast or SVC layers a consumer this connection created should receive, and whether it should receive media at all. The server picks layers within the transport's bandwidth estimate and keeps a consumer paused while deafen silences it. */
+const setConsumerPreference = /*#__PURE__*/ l.typedObject<SetConsumerPreference>($nsid, "setConsumerPreference", /*#__PURE__*/ l.object({"consumerId":/*#__PURE__*/ l.string(),"spatialLayer":/*#__PURE__*/ l.integer({"minimum":0}),"temporalLayer":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":0})),"paused":/*#__PURE__*/ l.boolean()}));
+
+export { setConsumerPreference };
+
 /** Updates this connection's own mute or deafen state. An absent field leaves the current value unchanged. */
 type SetSelfState = { $type?: "social.colibri.beta.voice.defs#setSelfState";
 

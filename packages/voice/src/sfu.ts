@@ -10,6 +10,7 @@ import type {
 import { parseVoiceSfuConfig, type VoiceSfuConfig, type VoiceSfuConfigInput } from "./config.js";
 import {
 	buildWebRtcTransportOptions,
+	type ConsumerPreference,
 	type ModerationStore,
 	mediaCodecs,
 	type ParticipantLeftReason,
@@ -173,6 +174,16 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 	async resume(channel: string, did: string, consumerId: string): Promise<void> {
 		const room = this.requireRoom(channel);
 		await room.resumeConsumer(did, consumerId);
+	}
+
+	async setConsumerPreference(
+		channel: string,
+		did: string,
+		consumerId: string,
+		preference: ConsumerPreference,
+	): Promise<void> {
+		const room = this.requireRoom(channel);
+		await room.setConsumerPreference(did, consumerId, preference);
 	}
 
 	async moderate(channel: string, did: string, patch: VoicePatch): Promise<void> {

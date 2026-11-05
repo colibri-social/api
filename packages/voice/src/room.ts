@@ -35,6 +35,12 @@ export type VoiceStateOrigin = "self" | "server";
 
 export type VoiceSharing = { camera: boolean; screen: boolean };
 
+export type ConsumerPreference = {
+	spatialLayer: number;
+	temporalLayer?: number;
+	paused: boolean;
+};
+
 type ParticipantVoice = {
 	selfMuted: boolean;
 	selfDeafened: boolean;
@@ -103,6 +109,7 @@ type ParticipantRecord = {
 	transports: Map<string, WebRtcTransport>;
 	producers: Map<string, { producer: Producer; source: string }>;
 	consumers: Map<string, Consumer>;
+	viewerPaused: Set<string>;
 	voice: ParticipantVoice;
 };
 
@@ -115,6 +122,10 @@ const AUDIO_LEVEL_OBSERVER_OPTIONS = {
 const DEFAULT_SPEAKING_DEBOUNCE_MS = 1_000;
 
 export const SCREEN_KEYFRAME_REQUEST_DELAY_MS = 400;
+
+export const SEND_MAX_INCOMING_BITRATE = 20_000_000;
+
+export const SCREEN_CONSUMER_PRIORITY = 2;
 
 const VIDEO_RTCP_FEEDBACK: RtcpFeedback[] = [
 	{ type: "nack" },
@@ -200,8 +211,9 @@ function isMicProducer(kind: MediaKind, source: string): boolean {
 	return kind === "audio" && source === "mic";
 }
 
-function isMutableProducer(kind: MediaKind): boolean {
-	return kind === "audio";
+function silencesProducer(voice: ParticipantVoice, kind: MediaKind, source: string): boolean {
+	if (kind !== "audio") return false;
+	return voice.serverMuted || (voice.selfMuted && source === "mic");
 }
 
 function isScreenVideo(kind: MediaKind, source: string): boolean {
@@ -210,6 +222,10 @@ function isScreenVideo(kind: MediaKind, source: string): boolean {
 
 function isDeafenable(kind: MediaKind): boolean {
 	return kind === "audio";
+}
+
+function hasLayers(consumer: Consumer): boolean {
+	return consumer.type === "simulcast" || consumer.type === "svc";
 }
 
 export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
@@ -325,6 +341,10 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 			appData: { did, direction },
 		});
 
+		if (direction === "send") {
+			await transport.setMaxIncomingBitrate(SEND_MAX_INCOMING_BITRATE);
+		}
+
 		if (this.participants.get(did) !== participant) {
 			transport.close();
 			throw new Error(`${did} left room ${this.channelRef} while its transport was being created`);
@@ -357,7 +377,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		this.assertOpen();
 		const participant = this.getParticipant(did);
 		const transport = this.getTransport(did, transportId);
-		const startPaused = isMutableProducer(options.kind) && effectiveVoice(participant.voice).muted;
+		const startPaused = silencesProducer(participant.voice, options.kind, options.source);
 
 		const producer = await transport.produce({
 			kind: options.kind,
@@ -426,24 +446,62 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 			paused: true,
 		});
 
+		if (this.isScreenVideoProducer(options.producerId)) {
+			await consumer.setPriority(SCREEN_CONSUMER_PRIORITY);
+		}
+
 		if (this.participants.get(did) !== participant) {
 			consumer.close();
 			throw new Error(`${did} left room ${this.channelRef} while its consumer was being created`);
 		}
 
 		participant.consumers.set(consumer.id, consumer);
-		consumer.on("transportclose", () => participant.consumers.delete(consumer.id));
-		consumer.on("producerclose", () => participant.consumers.delete(consumer.id));
+		consumer.on("transportclose", () => this.forgetConsumer(participant, consumer.id));
+		consumer.on("producerclose", () => this.forgetConsumer(participant, consumer.id));
 
 		return consumer;
 	}
 
 	async resumeConsumer(did: string, consumerId: string): Promise<void> {
 		const participant = this.getParticipant(did);
-		const consumer = participant.consumers.get(consumerId);
-		if (!consumer) {
-			throw new Error(`no consumer ${consumerId} for ${did} in room ${this.channelRef}`);
+		const consumer = this.getConsumer(did, consumerId);
+		if (participant.viewerPaused.has(consumerId)) {
+			return;
 		}
+		await this.resumeUnlessDeafened(participant, consumer);
+	}
+
+	async setConsumerPreference(
+		did: string,
+		consumerId: string,
+		preference: ConsumerPreference,
+	): Promise<void> {
+		const participant = this.getParticipant(did);
+		const consumer = this.getConsumer(did, consumerId);
+
+		if (hasLayers(consumer)) {
+			await consumer.setPreferredLayers({
+				spatialLayer: preference.spatialLayer,
+				...(preference.temporalLayer === undefined
+					? {}
+					: { temporalLayer: preference.temporalLayer }),
+			});
+		}
+
+		if (preference.paused) {
+			participant.viewerPaused.add(consumerId);
+			if (!consumer.paused) await consumer.pause();
+			return;
+		}
+
+		participant.viewerPaused.delete(consumerId);
+		if (consumer.paused) await this.resumeUnlessDeafened(participant, consumer);
+	}
+
+	private async resumeUnlessDeafened(
+		participant: ParticipantRecord,
+		consumer: Consumer,
+	): Promise<void> {
 		if (isDeafenable(consumer.kind) && effectiveVoice(participant.voice).deafened) {
 			return;
 		}
@@ -508,17 +566,18 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 
 		if (after.muted) this.stopSpeaking(did);
 
-		if (after.muted !== before.muted) {
-			for (const { producer } of participant.producers.values()) {
-				if (isMutableProducer(producer.kind)) {
-					await (after.muted ? producer.pause() : producer.resume());
-				}
+		if (patch.muted !== undefined) {
+			for (const { producer, source } of participant.producers.values()) {
+				const silenced = silencesProducer(participant.voice, producer.kind, source);
+				if (producer.paused === silenced) continue;
+				await (silenced ? producer.pause() : producer.resume());
 			}
 		}
 
 		if (after.deafened !== before.deafened) {
 			for (const consumer of participant.consumers.values()) {
 				if (!isDeafenable(consumer.kind)) continue;
+				if (!after.deafened && participant.viewerPaused.has(consumer.id)) continue;
 				await (after.deafened ? consumer.pause() : consumer.resume());
 			}
 		}
@@ -561,6 +620,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 			consumer.close();
 		}
 		participant.consumers.clear();
+		participant.viewerPaused.clear();
 
 		for (const { producer } of participant.producers.values()) {
 			producer.close();
@@ -610,6 +670,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 				transports: new Map(),
 				producers: new Map(),
 				consumers: new Map(),
+				viewerPaused: new Set(),
 				voice: {
 					...SILENT,
 					serverMuted: enforced?.serverMuted ?? false,
@@ -637,6 +698,19 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 			throw new Error(`no transport ${transportId} for ${did} in room ${this.channelRef}`);
 		}
 		return transport;
+	}
+
+	private getConsumer(did: string, consumerId: string): Consumer {
+		const consumer = this.getParticipant(did).consumers.get(consumerId);
+		if (!consumer) {
+			throw new Error(`no consumer ${consumerId} for ${did} in room ${this.channelRef}`);
+		}
+		return consumer;
+	}
+
+	private forgetConsumer(participant: ParticipantRecord, consumerId: string): void {
+		participant.consumers.delete(consumerId);
+		participant.viewerPaused.delete(consumerId);
 	}
 
 	private isScreenVideoProducer(producerId: string): boolean {

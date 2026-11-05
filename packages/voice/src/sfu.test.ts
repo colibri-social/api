@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { asRouter, createFakeRouter } from "./mock-mediasoup.js";
+import { asRouter, type createFakeConsumer, createFakeRouter } from "./mock-mediasoup.js";
 import { VoiceSfu } from "./sfu.js";
 import type { WorkerPoolLike } from "./worker-pool.js";
 
@@ -135,6 +135,59 @@ describe("VoiceSfu event forwarding", () => {
 				paused: false,
 			},
 		]);
+	});
+});
+
+describe("VoiceSfu consumer preferences", () => {
+	async function shareScreen() {
+		const { sfu } = await createSfu();
+		const sendTransport = await sfu.createTransport(CHANNEL_A, "did:plc:sharer", "send");
+		const producer = await sfu.produce(CHANNEL_A, "did:plc:sharer", sendTransport.id, {
+			kind: "video",
+			rtpParameters: {} as never,
+			source: "screen",
+		});
+		const recvTransport = await sfu.createTransport(CHANNEL_A, "did:plc:viewer", "recv");
+		const consumer = await sfu.consume(CHANNEL_A, "did:plc:viewer", recvTransport.id, {
+			producerId: producer.id,
+			rtpCapabilities: {},
+		});
+		return { sfu, consumer: consumer as unknown as ReturnType<typeof createFakeConsumer> };
+	}
+
+	it("forwards a preference to the consumer in the viewer's room", async () => {
+		const { sfu, consumer } = await shareScreen();
+
+		await sfu.setConsumerPreference(CHANNEL_A, "did:plc:viewer", consumer.id, {
+			spatialLayer: 1,
+			paused: false,
+		});
+
+		expect(consumer.setPreferredLayers).toHaveBeenCalledWith({ spatialLayer: 1 });
+		expect(consumer.paused).toBe(false);
+	});
+
+	it("rejects a preference for a consumer the sender does not own", async () => {
+		const { sfu, consumer } = await shareScreen();
+
+		await expect(
+			sfu.setConsumerPreference(CHANNEL_A, "did:plc:sharer", consumer.id, {
+				spatialLayer: 0,
+				paused: true,
+			}),
+		).rejects.toThrow(/no consumer/);
+		expect(consumer.pause).not.toHaveBeenCalled();
+	});
+
+	it("rejects a preference for a channel with no room", async () => {
+		const { sfu, consumer } = await shareScreen();
+
+		await expect(
+			sfu.setConsumerPreference(CHANNEL_B, "did:plc:viewer", consumer.id, {
+				spatialLayer: 0,
+				paused: true,
+			}),
+		).rejects.toThrow(/no voice room/);
 	});
 });
 

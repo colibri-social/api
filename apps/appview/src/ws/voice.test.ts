@@ -994,6 +994,84 @@ describe("VoiceServer", () => {
 		bobWs.close();
 	});
 
+	it("applies a viewer's consumer preference and refuses one from anyone else", async () => {
+		const aliceWs = connect("alice-token");
+		const bobWs = connect("bob-token");
+		await Promise.all([waitForOpen(aliceWs), waitForOpen(bobWs)]);
+
+		send(aliceWs, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrameOfType(aliceWs, "joined");
+		send(aliceWs, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
+		const sendTransport = await nextFrameOfType(aliceWs, "transportOptions");
+		send(aliceWs, {
+			$type: "social.colibri.beta.voice.defs#produce",
+			transportId: sendTransport.id,
+			kind: "video",
+			rtpParameters: {},
+			source: "camera",
+		});
+		const camera = await nextFrameOfType(aliceWs, "producerInfo");
+
+		send(bobWs, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+		await nextFrameOfType(bobWs, "joined");
+		send(bobWs, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "recv" });
+		const recvTransport = await nextFrameOfType(bobWs, "transportOptions");
+		send(bobWs, {
+			$type: "social.colibri.beta.voice.defs#consume",
+			transportId: recvTransport.id,
+			producerId: camera.producerId,
+			rtpCapabilities: {},
+		});
+		const consumerOptions = await nextFrameOfType(bobWs, "consumerOptions");
+
+		const router = fakeRouters.at(-1);
+		const rawRecv = await router?.createWebRtcTransport.mock.results[1]?.value;
+		const rawConsumer = await rawRecv?.consume.mock.results[0]?.value;
+		expect(rawConsumer?.id).toBe(consumerOptions.id);
+
+		send(bobWs, {
+			$type: "social.colibri.beta.voice.defs#setConsumerPreference",
+			consumerId: consumerOptions.id,
+			spatialLayer: 1,
+			temporalLayer: 0,
+			paused: false,
+		});
+		expect(await nextFrame(bobWs)).toEqual({ $type: "social.colibri.beta.voice.defs#ack" });
+		expect(rawConsumer?.setPreferredLayers).toHaveBeenCalledWith({
+			spatialLayer: 1,
+			temporalLayer: 0,
+		});
+		expect(rawConsumer?.paused).toBe(false);
+
+		send(bobWs, {
+			$type: "social.colibri.beta.voice.defs#setConsumerPreference",
+			consumerId: consumerOptions.id,
+			spatialLayer: 0,
+			paused: true,
+		});
+		expect(await nextFrame(bobWs)).toEqual({ $type: "social.colibri.beta.voice.defs#ack" });
+		expect(rawConsumer?.paused).toBe(true);
+
+		send(aliceWs, {
+			$type: "social.colibri.beta.voice.defs#setConsumerPreference",
+			consumerId: consumerOptions.id,
+			spatialLayer: 2,
+			paused: false,
+		});
+		expect(await nextFrameOfType(aliceWs, "error")).toMatchObject({ error: "NotFound" });
+		expect(rawConsumer?.paused).toBe(true);
+
+		send(bobWs, {
+			$type: "social.colibri.beta.voice.defs#setConsumerPreference",
+			consumerId: consumerOptions.id,
+			spatialLayer: 0,
+		});
+		expect(await nextFrame(bobWs)).toMatchObject({ error: "InvalidFrame" });
+
+		aliceWs.close();
+		bobWs.close();
+	});
+
 	it("pauses a server-muted peer's audio whatever source it claims", async () => {
 		const ws = connect("alice-token");
 		await waitForOpen(ws);

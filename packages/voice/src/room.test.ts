@@ -1,9 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { asRouter, createFakeRouter, createFakeTransport } from "./mock-mediasoup.js";
+import {
+	asRouter,
+	createFakeConsumer,
+	createFakeRouter,
+	createFakeTransport,
+} from "./mock-mediasoup.js";
 import {
 	buildWebRtcTransportOptions,
 	mediaCodecs,
+	SCREEN_CONSUMER_PRIORITY,
 	SCREEN_KEYFRAME_REQUEST_DELAY_MS,
+	SEND_MAX_INCOMING_BITRATE,
 	VoiceRoom,
 } from "./room.js";
 
@@ -250,6 +257,53 @@ describe("VoiceRoom voice state", () => {
 
 		await room.setServerState("did:plc:a", { muted: true });
 		expect(producer.paused).toBe(false);
+	});
+
+	it("keeps screen share sound running when the sharer mutes", async () => {
+		const { room } = await createRoom();
+		const transport = await room.createTransport("did:plc:a", "send");
+		const screenSound = await room.produce("did:plc:a", transport.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "screen",
+		});
+
+		await room.setSelfState("did:plc:a", { muted: true });
+		expect(screenSound.paused).toBe(false);
+
+		await room.setSelfState("did:plc:a", { muted: false });
+		expect(screenSound.paused).toBe(false);
+	});
+
+	it("resumes screen share sound when a server mute lifts while the sharer stays self-muted", async () => {
+		const { room } = await createRoom();
+		const transport = await room.createTransport("did:plc:a", "send");
+		const screenSound = await room.produce("did:plc:a", transport.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "screen",
+		});
+
+		await room.setSelfState("did:plc:a", { muted: true });
+		await room.setServerState("did:plc:a", { muted: true });
+		expect(screenSound.paused).toBe(true);
+
+		await room.setServerState("did:plc:a", { muted: false });
+		expect(screenSound.paused).toBe(false);
+	});
+
+	it("starts screen share sound unpaused while the sharer is muted", async () => {
+		const { room } = await createRoom();
+		const transport = await room.createTransport("did:plc:a", "send");
+		await room.setSelfState("did:plc:a", { muted: true });
+
+		const screenSound = await room.produce("did:plc:a", transport.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "screen",
+		});
+
+		expect(screenSound.paused).toBe(false);
 	});
 
 	it("pauses consumers when deafened and refuses to resume them until undeafened", async () => {
@@ -809,5 +863,238 @@ describe("VoiceRoom codec support", () => {
 		expect(micConsumer.producerId).toBe(mic.id);
 		expect(rawRouter.canConsume).not.toHaveBeenCalled();
 		expect(reports).toEqual([]);
+	});
+});
+
+type FakeConsumer = ReturnType<typeof createFakeConsumer>;
+
+async function consumeMedia(source: "camera" | "screen" = "camera") {
+	const { room, rawRouter } = await createRoom();
+	const sendTransport = await room.createTransport("did:plc:sharer", "send");
+	const video = await room.produce("did:plc:sharer", sendTransport.id, {
+		kind: "video",
+		rtpParameters: {} as never,
+		source,
+	});
+	const audio = await room.produce("did:plc:sharer", sendTransport.id, {
+		kind: "audio",
+		rtpParameters: {} as never,
+		source: "mic",
+	});
+
+	const recvTransport = await room.createTransport("did:plc:viewer", "recv");
+	const videoConsumer = await room.consume("did:plc:viewer", recvTransport.id, {
+		producerId: video.id,
+		rtpCapabilities: {},
+	});
+	const audioConsumer = await room.consume("did:plc:viewer", recvTransport.id, {
+		producerId: audio.id,
+		rtpCapabilities: {},
+	});
+
+	return {
+		room,
+		rawRouter,
+		sendTransport,
+		recvTransport,
+		video,
+		videoConsumer: videoConsumer as unknown as FakeConsumer,
+		audioConsumer: audioConsumer as unknown as FakeConsumer,
+	};
+}
+
+describe("VoiceRoom consumer preferences", () => {
+	it("sets the preferred layers of a simulcast consumer", async () => {
+		const { room, videoConsumer } = await consumeMedia();
+
+		await room.setConsumerPreference("did:plc:viewer", videoConsumer.id, {
+			spatialLayer: 1,
+			temporalLayer: 2,
+			paused: false,
+		});
+
+		expect(videoConsumer.setPreferredLayers).toHaveBeenCalledWith({
+			spatialLayer: 1,
+			temporalLayer: 2,
+		});
+	});
+
+	it("leaves the temporal layer to mediasoup when the viewer names none", async () => {
+		const { room, videoConsumer } = await consumeMedia();
+
+		await room.setConsumerPreference("did:plc:viewer", videoConsumer.id, {
+			spatialLayer: 0,
+			paused: false,
+		});
+
+		expect(videoConsumer.setPreferredLayers).toHaveBeenCalledWith({ spatialLayer: 0 });
+	});
+
+	it("skips layers for a consumer of a single layer producer", async () => {
+		const { room, rawRouter } = await createRoom();
+		const sendTransport = await room.createTransport("did:plc:sharer", "send");
+		const video = await room.produce("did:plc:sharer", sendTransport.id, {
+			kind: "video",
+			rtpParameters: {} as never,
+			source: "camera",
+		});
+		const rawRecv = createFakeTransport();
+		const simple = createFakeConsumer(video.id, "video", "simple");
+		rawRecv.consume.mockResolvedValueOnce(simple);
+		rawRouter.createWebRtcTransport.mockResolvedValueOnce(rawRecv);
+		const recvTransport = await room.createTransport("did:plc:viewer", "recv");
+		await room.consume("did:plc:viewer", recvTransport.id, {
+			producerId: video.id,
+			rtpCapabilities: {},
+		});
+
+		await room.setConsumerPreference("did:plc:viewer", simple.id, {
+			spatialLayer: 2,
+			paused: false,
+		});
+
+		expect(simple.setPreferredLayers).not.toHaveBeenCalled();
+		expect(simple.paused).toBe(false);
+	});
+
+	it("pauses a video consumer and resumes it with a keyframe", async () => {
+		const { room, videoConsumer } = await consumeMedia();
+		await room.resumeConsumer("did:plc:viewer", videoConsumer.id);
+		videoConsumer.requestKeyFrame.mockClear();
+
+		await room.setConsumerPreference("did:plc:viewer", videoConsumer.id, {
+			spatialLayer: 0,
+			paused: true,
+		});
+		expect(videoConsumer.paused).toBe(true);
+		expect(videoConsumer.requestKeyFrame).not.toHaveBeenCalled();
+
+		await room.setConsumerPreference("did:plc:viewer", videoConsumer.id, {
+			spatialLayer: 2,
+			paused: false,
+		});
+		expect(videoConsumer.paused).toBe(false);
+		expect(videoConsumer.requestKeyFrame).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not ask for a keyframe when a running consumer only changes layers", async () => {
+		const { room, videoConsumer } = await consumeMedia();
+		await room.resumeConsumer("did:plc:viewer", videoConsumer.id);
+		videoConsumer.requestKeyFrame.mockClear();
+
+		await room.setConsumerPreference("did:plc:viewer", videoConsumer.id, {
+			spatialLayer: 1,
+			paused: false,
+		});
+
+		expect(videoConsumer.resume).toHaveBeenCalledTimes(1);
+		expect(videoConsumer.requestKeyFrame).not.toHaveBeenCalled();
+	});
+
+	it("keeps a viewer paused consumer paused through resumeConsumer", async () => {
+		const { room, videoConsumer } = await consumeMedia();
+
+		await room.setConsumerPreference("did:plc:viewer", videoConsumer.id, {
+			spatialLayer: 0,
+			paused: true,
+		});
+		await room.resumeConsumer("did:plc:viewer", videoConsumer.id);
+
+		expect(videoConsumer.paused).toBe(true);
+	});
+
+	it("never resumes a consumer that deafen keeps paused", async () => {
+		const { room, audioConsumer } = await consumeMedia();
+		await room.resumeConsumer("did:plc:viewer", audioConsumer.id);
+		await room.setSelfState("did:plc:viewer", { deafened: true });
+		audioConsumer.resume.mockClear();
+
+		await room.setConsumerPreference("did:plc:viewer", audioConsumer.id, {
+			spatialLayer: 0,
+			paused: false,
+		});
+
+		expect(audioConsumer.paused).toBe(true);
+		expect(audioConsumer.resume).not.toHaveBeenCalled();
+	});
+
+	it("keeps a viewer paused consumer paused when the viewer undeafens", async () => {
+		const { room, audioConsumer } = await consumeMedia();
+		await room.resumeConsumer("did:plc:viewer", audioConsumer.id);
+		await room.setConsumerPreference("did:plc:viewer", audioConsumer.id, {
+			spatialLayer: 0,
+			paused: true,
+		});
+
+		await room.setSelfState("did:plc:viewer", { deafened: true });
+		await room.setSelfState("did:plc:viewer", { deafened: false });
+
+		expect(audioConsumer.paused).toBe(true);
+	});
+
+	it("keeps video preferences independent of deafen", async () => {
+		const { room, videoConsumer } = await consumeMedia();
+		await room.setSelfState("did:plc:viewer", { deafened: true });
+
+		await room.setConsumerPreference("did:plc:viewer", videoConsumer.id, {
+			spatialLayer: 2,
+			paused: false,
+		});
+
+		expect(videoConsumer.paused).toBe(false);
+	});
+
+	it("rejects a preference for a consumer another participant owns", async () => {
+		const { room, sendTransport, video, videoConsumer } = await consumeMedia();
+		await room.consume("did:plc:sharer", sendTransport.id, {
+			producerId: video.id,
+			rtpCapabilities: {},
+		});
+
+		await expect(
+			room.setConsumerPreference("did:plc:sharer", videoConsumer.id, {
+				spatialLayer: 0,
+				paused: true,
+			}),
+		).rejects.toThrow(/no consumer/);
+		expect(videoConsumer.pause).not.toHaveBeenCalled();
+		expect(videoConsumer.setPreferredLayers).not.toHaveBeenCalled();
+	});
+
+	it("rejects a preference from someone who is not in the room", async () => {
+		const { room, videoConsumer } = await consumeMedia();
+
+		await expect(
+			room.setConsumerPreference("did:plc:stranger", videoConsumer.id, {
+				spatialLayer: 0,
+				paused: true,
+			}),
+		).rejects.toThrow(/no participant/);
+	});
+});
+
+describe("VoiceRoom bandwidth", () => {
+	it("gives screen share consumers a higher priority than cameras", async () => {
+		const screen = await consumeMedia("screen");
+		const camera = await consumeMedia("camera");
+
+		expect(screen.videoConsumer.setPriority).toHaveBeenCalledWith(SCREEN_CONSUMER_PRIORITY);
+		expect(SCREEN_CONSUMER_PRIORITY).toBeGreaterThan(1);
+		expect(camera.videoConsumer.setPriority).not.toHaveBeenCalled();
+		expect(screen.audioConsumer.setPriority).not.toHaveBeenCalled();
+	});
+
+	it("caps the incoming bitrate of send transports only", async () => {
+		const { room, rawRouter } = await createRoom();
+		const rawSend = createFakeTransport();
+		const rawRecv = createFakeTransport();
+		rawRouter.createWebRtcTransport.mockResolvedValueOnce(rawSend);
+		rawRouter.createWebRtcTransport.mockResolvedValueOnce(rawRecv);
+
+		await room.createTransport("did:plc:a", "send");
+		await room.createTransport("did:plc:a", "recv");
+
+		expect(rawSend.setMaxIncomingBitrate).toHaveBeenCalledWith(SEND_MAX_INCOMING_BITRATE);
+		expect(rawRecv.setMaxIncomingBitrate).not.toHaveBeenCalled();
 	});
 });
