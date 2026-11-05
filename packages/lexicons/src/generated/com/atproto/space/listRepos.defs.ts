@@ -20,7 +20,7 @@ export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
 /** List the known repos that hold data in a space (the writer set), with each repo's current repoRev and commit data. Served by the space host. This is the sync boundary, not an access-control list: it enumerates only writers, never readers. The set is what the authority claims from write notifications and is not itself authoritative; a repo's host is the source of truth. */
-const main = /*#__PURE__*/ l.query($nsid, $params, $output, ["SpaceNotFound"]);
+const main = /*#__PURE__*/ l.query($nsid, $params, $output, ["SpaceNotFound","RepoTakendown","RepoDeactivated"]);
 
 export { main };
 

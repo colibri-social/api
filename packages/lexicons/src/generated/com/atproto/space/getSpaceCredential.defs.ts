@@ -25,7 +25,7 @@ export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
 /** Request a space credential. Called on the space authority. A delegation token is required when the space gates on the user. A client attestation is required when the space gates on app identity. A space that requires neither offers public access. The resulting space credential reads repos across the space. */
-const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["SpaceNotFound","SpaceDeleted","UserNotAuthorized","AppNotAuthorized","NotAuthorized","InvalidDelegationToken","InvalidClientAttestation"]);
+const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["SpaceNotFound","SpaceDeleted","UserNotAuthorized","AppNotAuthorized","NotAuthorized","InvalidDelegationToken","InvalidClientAttestation","RepoTakendown","RepoDeactivated"]);
 
 export { main };
 
