@@ -1,4 +1,5 @@
 import { createClient, type ResultSet } from "@libsql/client";
+import { sql } from "drizzle-orm";
 import { drizzle as drizzleLibsql, type LibSQLDatabase } from "drizzle-orm/libsql";
 import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
@@ -14,6 +15,7 @@ export type Database = {
 	db: Db;
 	tables: Schema;
 	dialect: Dialect;
+	ping: () => Promise<void>;
 	close: () => Promise<void>;
 };
 
@@ -35,6 +37,9 @@ const openSqlite = ({ url, authToken }: DatabaseOptions): Database => {
 		db,
 		tables: sqliteTables,
 		dialect: "sqlite",
+		ping: async () => {
+			await db.run(sql`select 1`);
+		},
 		close: async () => client.close(),
 	};
 };
@@ -46,6 +51,9 @@ const openPostgres = ({ url, maxConnections }: DatabaseOptions): Database => {
 		db: asCanonical<Db>(db),
 		tables: asCanonical<Schema>(pgTables),
 		dialect: "postgres",
+		ping: async () => {
+			await db.execute(sql`select 1`);
+		},
 		close: () => pool.end(),
 	};
 };

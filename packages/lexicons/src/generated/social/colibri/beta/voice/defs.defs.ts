@@ -421,12 +421,22 @@ type Joined = { $type?: "social.colibri.beta.voice.defs#joined";
   /**
    * The voice channel now joined.
    */
-  "channel":l.SpaceRefString };
+  "channel":l.SpaceRefString;
+
+  /**
+   * The node hosting the call.
+   */
+  "nodeId"?:string;
+
+  /**
+   * The region of the node hosting the call.
+   */
+  "region"?:string };
 
 export type { Joined };
 
 /** Confirms this connection has joined a voice channel. */
-const joined = /*#__PURE__*/ l.typedObject<Joined>($nsid, "joined", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"})}));
+const joined = /*#__PURE__*/ l.typedObject<Joined>($nsid, "joined", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"nodeId":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"region":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())}));
 
 export { joined };
 
@@ -499,14 +509,14 @@ export { codecUnsupported };
 type Disconnected = { $type?: "social.colibri.beta.voice.defs#disconnected";
 
   /**
-   * Why it happened.
+   * Why it happened. 'nodeClosed' means the node hosting the call shut down before the call could move. 'migrated' means the call moved to another node and this connection is no longer needed.
    */
-  "reason"?:"moderator" | "superseded" | "channelGone" | "forbidden" | l.UnknownString };
+  "reason"?:"moderator" | "superseded" | "channelGone" | "forbidden" | "nodeClosed" | "migrated" | l.UnknownString };
 
 export type { Disconnected };
 
 /** The server removed this client from the voice channel. Sent only to the client it applies to. */
-const disconnected = /*#__PURE__*/ l.typedObject<Disconnected>($nsid, "disconnected", /*#__PURE__*/ l.object({"reason":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["moderator","superseded","channelGone","forbidden"]}>())}));
+const disconnected = /*#__PURE__*/ l.typedObject<Disconnected>($nsid, "disconnected", /*#__PURE__*/ l.object({"reason":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["moderator","superseded","channelGone","forbidden","nodeClosed","migrated"]}>())}));
 
 export { disconnected };
 
@@ -559,3 +569,153 @@ export type { ModerationChanged };
 const moderationChanged = /*#__PURE__*/ l.typedObject<ModerationChanged>($nsid, "moderationChanged", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"muted":/*#__PURE__*/ l.boolean(),"deafened":/*#__PURE__*/ l.boolean(),"serverMuted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"serverDeafened":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
 
 export { moderationChanged };
+
+/** A voice node a call can move to. */
+type MigrationCandidate = { $type?: "social.colibri.beta.voice.defs#migrationCandidate";
+
+  /**
+   * Stable node identifier.
+   */
+  "nodeId":string;
+
+  /**
+   * Region name.
+   */
+  "region":string;
+
+  /**
+   * Base URL for voice signaling on that node.
+   */
+  "signalingUrl":l.UriString;
+
+  /**
+   * A cheap URL to measure the round trip to that node.
+   */
+  "probeUrl":l.UriString };
+
+export type { MigrationCandidate };
+
+/** A voice node a call can move to. */
+const migrationCandidate = /*#__PURE__*/ l.typedObject<MigrationCandidate>($nsid, "migrationCandidate", /*#__PURE__*/ l.object({"nodeId":/*#__PURE__*/ l.string(),"region":/*#__PURE__*/ l.string(),"signalingUrl":/*#__PURE__*/ l.string({"format":"uri"}),"probeUrl":/*#__PURE__*/ l.string({"format":"uri"})}));
+
+export { migrationCandidate };
+
+/** This node is going offline and the call has to move. Clients measure the round trip to every candidate and answer with rttReport. */
+type MigrationProposal = { $type?: "social.colibri.beta.voice.defs#migrationProposal";
+
+  /**
+   * Voice nodes the call can move to.
+   */
+  "candidates":(MigrationCandidate)[];
+
+  /**
+   * When the call moves without further notice.
+   */
+  "deadline":l.DatetimeString };
+
+export type { MigrationProposal };
+
+/** This node is going offline and the call has to move. Clients measure the round trip to every candidate and answer with rttReport. */
+const migrationProposal = /*#__PURE__*/ l.typedObject<MigrationProposal>($nsid, "migrationProposal", /*#__PURE__*/ l.object({"candidates":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<MigrationCandidate>((() => migrationCandidate) as any), ),"deadline":/*#__PURE__*/ l.string({"format":"datetime"})}));
+
+export { migrationProposal };
+
+/** Round trips this client measured to the candidates of a migrationProposal. */
+type RttReport = { $type?: "social.colibri.beta.voice.defs#rttReport";
+
+  /**
+   * One result per candidate.
+   */
+  "results":(RttResult)[] };
+
+export type { RttReport };
+
+/** Round trips this client measured to the candidates of a migrationProposal. */
+const rttReport = /*#__PURE__*/ l.typedObject<RttReport>($nsid, "rttReport", /*#__PURE__*/ l.object({"results":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RttResult>((() => rttResult) as any), )}));
+
+export { rttReport };
+
+/** One measured round trip. */
+type RttResult = { $type?: "social.colibri.beta.voice.defs#rttResult";
+
+  /**
+   * The candidate measured.
+   */
+  "nodeId":string;
+
+  /**
+   * Round trip in milliseconds. Absent when the node could not be reached.
+   */
+  "rttMs"?:number };
+
+export type { RttResult };
+
+/** One measured round trip. */
+const rttResult = /*#__PURE__*/ l.typedObject<RttResult>($nsid, "rttResult", /*#__PURE__*/ l.object({"nodeId":/*#__PURE__*/ l.string(),"rttMs":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":0}))}));
+
+export { rttResult };
+
+/** The call moves to another node. Clients join the same channel there, switch their media over, and then leave this node. */
+type MigrateTo = { $type?: "social.colibri.beta.voice.defs#migrateTo";
+
+  /**
+   * The node the call moves to.
+   */
+  "nodeId":string;
+
+  /**
+   * Base URL for voice signaling on that node.
+   */
+  "signalingUrl":l.UriString;
+
+  /**
+   * The voice channel.
+   */
+  "channel":l.SpaceRefString;
+
+  /**
+   * True when a participant asked to move right away.
+   */
+  "now"?:boolean };
+
+export type { MigrateTo };
+
+/** The call moves to another node. Clients join the same channel there, switch their media over, and then leave this node. */
+const migrateTo = /*#__PURE__*/ l.typedObject<MigrateTo>($nsid, "migrateTo", /*#__PURE__*/ l.object({"nodeId":/*#__PURE__*/ l.string(),"signalingUrl":/*#__PURE__*/ l.string({"format":"uri"}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"now":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
+
+export { migrateTo };
+
+/** Asks the node to move the call to the chosen node right away, without waiting for the deadline. */
+type MoveNow = { $type?: "social.colibri.beta.voice.defs#moveNow" };
+
+export type { MoveNow };
+
+/** Asks the node to move the call to the chosen node right away, without waiting for the deadline. */
+const moveNow = /*#__PURE__*/ l.typedObject<MoveNow>($nsid, "moveNow", /*#__PURE__*/ l.object({}));
+
+export { moveNow };
+
+/** The call in the requested channel runs on another node. Clients join it there. */
+type CallElsewhere = { $type?: "social.colibri.beta.voice.defs#callElsewhere";
+
+  /**
+   * The node hosting the call.
+   */
+  "nodeId":string;
+
+  /**
+   * Base URL for voice signaling on that node.
+   */
+  "signalingUrl":l.UriString;
+
+  /**
+   * The voice channel.
+   */
+  "channel":l.SpaceRefString };
+
+export type { CallElsewhere };
+
+/** The call in the requested channel runs on another node. Clients join it there. */
+const callElsewhere = /*#__PURE__*/ l.typedObject<CallElsewhere>($nsid, "callElsewhere", /*#__PURE__*/ l.object({"nodeId":/*#__PURE__*/ l.string(),"signalingUrl":/*#__PURE__*/ l.string({"format":"uri"}),"channel":/*#__PURE__*/ l.string({"format":"space-ref"})}));
+
+export { callElsewhere };

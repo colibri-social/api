@@ -1,5 +1,4 @@
 import { createServer, type Server } from "@atproto/xrpc-server";
-import { sql } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { authVerifiers } from "./auth.js";
 import type { AppContext } from "./context.js";
@@ -87,7 +86,7 @@ export const createAppServer = (ctx: AppContext): Server => {
 		"/health",
 		asyncHandler(ctx, "health.failed", async (_req: Request, res: Response) => {
 			try {
-				await ctx.database.db.run(sql`select 1`);
+				await ctx.database.ping();
 			} catch (error) {
 				ctx.log.error({ err: error }, "health.databaseUnreachable");
 				res.status(503).json({ status: "degraded", did: ctx.config.APPVIEW_DID, database: "down" });

@@ -1,3 +1,4 @@
+import type { NodeRole } from "@colibri-social/appview-db";
 import {
 	apnsConfigSchema,
 	configuredProviders,
@@ -19,6 +20,51 @@ const optionalString = z
 	.optional()
 	.or(z.literal("").transform(() => undefined));
 
+const NODE_ROLES = [
+	"main",
+	"failover",
+	"api",
+	"live",
+	"voice",
+] as const satisfies readonly NodeRole[];
+
+const DEFAULT_ROLES: NodeRole[] = ["main", "api", "live", "voice"];
+
+const rolesList = z
+	.string()
+	.optional()
+	.transform((value, context) => {
+		if (value === undefined || value.trim() === "") {
+			return DEFAULT_ROLES;
+		}
+
+		const roles = [
+			...new Set(
+				value
+					.split(",")
+					.map((role) => role.trim())
+					.filter(Boolean),
+			),
+		];
+		const unknown = roles.filter((role) => !NODE_ROLES.includes(role as NodeRole));
+
+		if (unknown.length > 0) {
+			context.addIssue({
+				code: "custom",
+				message: `unknown role ${unknown.join(", ")}, expected any of ${NODE_ROLES.join(", ")}`,
+			});
+
+			return z.NEVER;
+		}
+
+		return roles as NodeRole[];
+	});
+
+const optOut = z
+	.string()
+	.optional()
+	.transform((value) => value !== undefined && value.trim() !== "" && value.trim() !== "0");
+
 const boolish = (fallback: boolean) =>
 	z
 		.string()
@@ -36,7 +82,7 @@ export const configSchema = z.object({
 		.startsWith("did:web:")
 		.refine((value) => !BARE_IP_DID_WEB.test(value), {
 			message:
-				"a did:web host must be a name, not an IP address: a PDS refuses a bare IP as a service-auth audience. Use did:web:spaces-api.colibri.social and keep listening on 127.0.0.1",
+				"a did:web host must be a name, not an IP address. A PDS refuses a bare IP as a service-auth audience. Use a hostname such as did:web:appview.example.com and keep listening on 127.0.0.1",
 		}),
 	PUBLIC_URL: z.url(),
 	CORS_ORIGINS: optionalString,
@@ -46,6 +92,18 @@ export const configSchema = z.object({
 	DATABASE_URL: z.string().default("file:./data/colibri.db"),
 	DATABASE_AUTH_TOKEN: optionalString,
 	DATABASE_MAX_CONNECTIONS: z.coerce.number().int().positive().default(20),
+	DATABASE_READ_URL: optionalString,
+
+	ROLES: rolesList,
+	NODE_ID: optionalString,
+	NODE_REGION: optionalString,
+	MAIN_NODE_URL: z
+		.url()
+		.optional()
+		.or(z.literal("").transform(() => undefined)),
+	DRAIN_GRACE_MINUTES: z.coerce.number().nonnegative().default(120),
+	WRITE_QUEUE_SECONDS: z.coerce.number().int().nonnegative().default(90),
+	MESSAGE_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(180),
 
 	PDS_URL: z.url(),
 	HOST_OAUTH_PRIVATE_KEY: optionalString,
@@ -101,6 +159,12 @@ export const configSchema = z.object({
 		.int()
 		.positive()
 		.default(256 * 1024 * 1024),
+	BLOB_DISK_CACHE_DIR: z.string().default("./data/blob-cache"),
+	BLOB_DISK_CACHE_MAX_BYTES: z.coerce
+		.number()
+		.int()
+		.nonnegative()
+		.default(10 * 1024 * 1024 * 1024),
 
 	VAPID_PUBLIC_KEY: optionalString,
 	VAPID_PRIVATE_KEY: optionalString,
@@ -126,6 +190,9 @@ export const configSchema = z.object({
 	SFU_RTC_MIN_PORT: z.coerce.number().int().positive().default(40000),
 	SFU_RTC_MAX_PORT: z.coerce.number().int().positive().default(40100),
 	SFU_ICE_SERVERS: optionalString,
+	SFU_RTC_PORT: z.coerce.number().int().min(1).max(65535).default(40000),
+	TURN_KEY_ID: optionalString,
+	TURN_KEY_API_TOKEN: optionalString,
 
 	APPVIEW_FLAVOR: z.string().trim().min(1).default("vanilla"),
 	DEFAULT_COMMUNITY_DID: z
@@ -137,6 +204,9 @@ export const configSchema = z.object({
 
 	SENTRY_DSN: optionalString,
 	ADMIN_PASSWORD: optionalString,
+
+	COLIBRI_TELEMETRY_DISABLED: optOut,
+	DO_NOT_TRACK: optOut,
 });
 
 export type RawConfig = z.infer<typeof configSchema>;
@@ -147,6 +217,7 @@ export type Config = RawConfig & {
 	notifications: NotificationsConfig;
 	gifsEnabled: boolean;
 	corsOrigins: string[];
+	telemetryEnabled: boolean;
 };
 
 export class ConfigError extends Error {
@@ -204,6 +275,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): Config => {
 		notifications,
 		gifsEnabled: Boolean(raw.KLIPY_API_KEY),
 		corsOrigins,
+		telemetryEnabled: !raw.COLIBRI_TELEMETRY_DISABLED && !raw.DO_NOT_TRACK,
 	};
 };
 

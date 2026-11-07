@@ -239,6 +239,13 @@
 			"when": 1793894112341,
 			"tag": "0033_chemical_leech",
 			"breakpoints": true
+		},
+		{
+			"idx": 34,
+			"version": "7",
+			"when": 1794048328120,
+			"tag": "0034_complex_jigsaw",
+			"breakpoints": true
 		}
 	]
 }

@@ -16,7 +16,7 @@ export const $params = /*#__PURE__*/ l.params({"channel":/*#__PURE__*/ l.string(
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $output = /*#__PURE__*/ l.jsonPayload({"cursor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"forwardCursor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"messages":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ChannelDefs.MessageView>((() => ChannelDefs.messageView) as any), ),"threads":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ThreadDefs.ThreadView>((() => ThreadDefs.threadView) as any), ))});
+export const $output = /*#__PURE__*/ l.jsonPayload({"cursor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"forwardCursor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"messages":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ChannelDefs.MessageView>((() => ChannelDefs.messageView) as any), ),"threads":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ThreadDefs.ThreadView>((() => ThreadDefs.threadView) as any), )),"unavailableAuthors":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ))});
 
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;

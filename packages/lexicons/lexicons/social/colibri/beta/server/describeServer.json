@@ -9,7 +9,14 @@
 				"encoding": "application/json",
 				"schema": {
 					"type": "object",
-					"required": ["did", "software", "flavor", "version", "handleDomain", "pds"],
+					"required": [
+						"did",
+						"software",
+						"flavor",
+						"version",
+						"handleDomain",
+						"pds"
+					],
 					"properties": {
 						"did": {
 							"type": "string",
@@ -47,7 +54,14 @@
 							"items": {
 								"type": "string",
 								"description": "A feature identifier.",
-								"knownValues": ["voice", "push", "gifs", "embeds", "emoji"]
+								"knownValues": [
+									"voice",
+									"push",
+									"gifs",
+									"embeds",
+									"emoji",
+									"nodes"
+								]
 							}
 						},
 						"defaultCommunity": {

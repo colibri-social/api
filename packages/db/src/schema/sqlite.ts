@@ -28,6 +28,9 @@ export type PushPlatform = "web" | "ios" | "android" | "macos";
 export type PushEnvironment = "sandbox" | "production";
 export type CredentialSource = "provisioned" | "registered" | "oauth";
 export type HostAuthorizationIntent = "adopt" | "reconnect";
+export type NodeRole = "main" | "failover" | "api" | "live" | "voice";
+export type NodeState = "joining" | "active" | "draining" | "maintenance" | "retired" | "down";
+export type WriteMode = "normal" | "queued" | "readOnly";
 export type HostAuthorizationStatus = "pending" | "done" | "failed";
 export type HostAuthorizationInput = {
 	name?: string;
@@ -122,6 +125,7 @@ export const spaceRepos = sqliteTable(
 		consecutiveFailures: integer("consecutive_failures").notNull().default(0),
 		retryAfter: timestamp("retry_after"),
 		syncedAt: timestamp("synced_at"),
+		host: text("host"),
 	},
 	(t) => [
 		primaryKey({ columns: [t.space, t.author] }),
@@ -296,6 +300,7 @@ export const messages = sqliteTable(
 		bridged: json<BridgedAttribution>("bridged"),
 		fromLegacyRepo: flag("from_legacy_repo").notNull().default(false),
 		indexedAt: timestamp("indexed_at").notNull(),
+		rehydratedAt: timestamp("rehydrated_at"),
 	},
 	(t) => [
 		primaryKey({ columns: [t.space, t.author, t.rkey] }),
@@ -721,10 +726,12 @@ export const presenceConnections = sqliteTable(
 		viewingChannel: text("viewing_channel"),
 		activeUntil: timestamp("active_until"),
 		seenAt: timestamp("seen_at").notNull(),
+		nodeId: text("node_id"),
 	},
 	(t) => [
 		index("presence_connections_did_idx").on(t.did),
 		index("presence_connections_seen_at_idx").on(t.seenAt),
+		index("presence_connections_node_idx").on(t.nodeId),
 	],
 );
 
@@ -779,6 +786,77 @@ export const serviceState = sqliteTable("service_state", {
 	key: text("key").primaryKey(),
 	value: text("value").notNull(),
 	updatedAt: timestamp("updated_at").notNull(),
+});
+
+export const nodes = sqliteTable(
+	"nodes",
+	{
+		id: text("id").primaryKey(),
+		region: text("region").notNull(),
+		roles: json<NodeRole[]>("roles").notNull(),
+		publicUrl: text("public_url").notNull(),
+		tailnetUrl: text("tailnet_url").notNull(),
+		announcedIp: text("announced_ip"),
+		state: text("state").notNull().$type<NodeState>().default("joining"),
+		version: text("version"),
+		connections: integer("connections").notNull().default(0),
+		activeCalls: integer("active_calls").notNull().default(0),
+		drainDeadline: timestamp("drain_deadline"),
+		registeredAt: timestamp("registered_at").notNull(),
+		heartbeatAt: timestamp("heartbeat_at"),
+	},
+	(t) => [index("nodes_state_idx").on(t.state, t.region)],
+);
+
+export const nodeJoinTokens = sqliteTable("node_join_tokens", {
+	tokenHash: text("token_hash").primaryKey(),
+	nodeId: text("node_id").notNull(),
+	region: text("region").notNull(),
+	roles: json<NodeRole[]>("roles").notNull(),
+	expiresAt: timestamp("expires_at").notNull(),
+	usedAt: timestamp("used_at"),
+});
+
+export const clusterConfig = sqliteTable("cluster_config", {
+	key: text("key").primaryKey(),
+	ciphertext: text("ciphertext").notNull(),
+	updatedAt: timestamp("updated_at").notNull(),
+});
+
+export const clusterState = sqliteTable("cluster_state", {
+	id: text("id").primaryKey(),
+	epoch: integer("epoch").notNull().default(1),
+	mainNodeId: text("main_node_id"),
+	writeMode: text("write_mode").notNull().$type<WriteMode>().default("normal"),
+	rolloutPaused: flag("rollout_paused").notNull().default(false),
+	updatedAt: timestamp("updated_at").notNull(),
+});
+
+export const voiceCalls = sqliteTable(
+	"voice_calls",
+	{
+		channel: text("channel").primaryKey(),
+		nodeId: text("node_id").notNull(),
+		startedAt: timestamp("started_at").notNull(),
+	},
+	(t) => [index("voice_calls_node_idx").on(t.nodeId)],
+);
+
+export const eventPayloads = sqliteTable(
+	"event_payloads",
+	{
+		id: text("id").primaryKey(),
+		payload: json<Record<string, unknown>>("payload").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [index("event_payloads_created_at_idx").on(t.createdAt)],
+);
+
+export const telemetryState = sqliteTable("telemetry_state", {
+	id: text("id").primaryKey(),
+	instanceId: text("instance_id").notNull(),
+	noticeShownAt: timestamp("notice_shown_at"),
+	lastSentAt: timestamp("last_sent_at"),
 });
 
 export const legacyRecords = sqliteTable(
@@ -931,6 +1009,13 @@ export const schema = {
 	profileCache,
 	linkPreviews,
 	serviceState,
+	nodes,
+	nodeJoinTokens,
+	clusterConfig,
+	clusterState,
+	voiceCalls,
+	eventPayloads,
+	telemetryState,
 	legacyRecords,
 	communityMigrations,
 	hostOauthSessions,

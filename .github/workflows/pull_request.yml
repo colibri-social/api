@@ -47,6 +47,41 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+  test-postgres:
+    name: Test on Postgres
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: colibri
+          POSTGRES_PASSWORD: colibri
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U colibri"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://colibri:colibri@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
+      - name: Unit tests
+        run: pnpm test
+
   lexicons:
     name: Lexicons
     runs-on: ubuntu-latest

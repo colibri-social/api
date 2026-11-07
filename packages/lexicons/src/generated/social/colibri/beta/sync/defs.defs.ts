@@ -192,7 +192,7 @@ type Error = { $type?: "social.colibri.beta.sync.defs#error";
   /**
    * Error name.
    */
-  "error":"InvalidFrame" | "Forbidden" | "NotFound" | "RateLimited" | l.UnknownString;
+  "error":"InvalidFrame" | "Forbidden" | "NotFound" | "RateLimited" | "ReadOnly" | l.UnknownString;
 
   /**
    * Human-readable detail.
@@ -202,7 +202,7 @@ type Error = { $type?: "social.colibri.beta.sync.defs#error";
 export type { Error };
 
 /** Something the client sent could not be acted on. */
-const error = /*#__PURE__*/ l.typedObject<Error>($nsid, "error", /*#__PURE__*/ l.object({"error":/*#__PURE__*/ l.string<{"knownValues":["InvalidFrame","Forbidden","NotFound","RateLimited"]}>(),"message":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())}));
+const error = /*#__PURE__*/ l.typedObject<Error>($nsid, "error", /*#__PURE__*/ l.object({"error":/*#__PURE__*/ l.string<{"knownValues":["InvalidFrame","Forbidden","NotFound","RateLimited","ReadOnly"]}>(),"message":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())}));
 
 export { error };
 
@@ -870,3 +870,38 @@ export type { BridgeEvent };
 const bridgeEvent = /*#__PURE__*/ l.typedObject<BridgeEvent>($nsid, "bridgeEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["update","delete"]}>(),"community":/*#__PURE__*/ l.string({"format":"did"}),"registration":/*#__PURE__*/ l.string({"format":"tid"})}));
 
 export { bridgeEvent };
+
+/** This node is going offline. Clients move their event socket to another node from listNodes. When no other node exists, clients warn the user that the connection may drop at the deadline. */
+type DrainNotice = { $type?: "social.colibri.beta.sync.defs#drainNotice";
+
+  /**
+   * When the node closes its remaining connections.
+   */
+  "deadline":l.DatetimeString;
+
+  /**
+   * Why the node goes offline.
+   */
+  "reason"?:"update" | "maintenance" | "retire" | l.UnknownString };
+
+export type { DrainNotice };
+
+/** This node is going offline. Clients move their event socket to another node from listNodes. When no other node exists, clients warn the user that the connection may drop at the deadline. */
+const drainNotice = /*#__PURE__*/ l.typedObject<DrainNotice>($nsid, "drainNotice", /*#__PURE__*/ l.object({"deadline":/*#__PURE__*/ l.string({"format":"datetime"}),"reason":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["update","maintenance","retire"]}>())}));
+
+export { drainNotice };
+
+/** Whether this node can take writes right now. Sent on connect and whenever it changes. */
+type WriteState = { $type?: "social.colibri.beta.sync.defs#writeState";
+
+  /**
+   * 'normal' accepts writes. 'queued' accepts writes and applies them once the network can take them again. 'readOnly' rejects writes with a ReadOnly error.
+   */
+  "mode":"normal" | "queued" | "readOnly" | l.UnknownString };
+
+export type { WriteState };
+
+/** Whether this node can take writes right now. Sent on connect and whenever it changes. */
+const writeState = /*#__PURE__*/ l.typedObject<WriteState>($nsid, "writeState", /*#__PURE__*/ l.object({"mode":/*#__PURE__*/ l.string<{"knownValues":["normal","queued","readOnly"]}>()}));
+
+export { writeState };

@@ -185,6 +185,11 @@ type AttachmentView = { $type?: "social.colibri.beta.channel.defs#attachmentView
   "url":l.UriString;
 
   /**
+   * A smaller rendition of an image for inline display, served by this AppView's blob proxy. Clients fall back to url when it's absent. Lightboxes and downloads use url.
+   */
+  "previewUrl"?:l.UriString;
+
+  /**
    * The original filename.
    */
   "name"?:string;
@@ -222,7 +227,7 @@ type AttachmentView = { $type?: "social.colibri.beta.channel.defs#attachmentView
 export type { AttachmentView };
 
 /** A file attached to a message. */
-const attachmentView = /*#__PURE__*/ l.typedObject<AttachmentView>($nsid, "attachmentView", /*#__PURE__*/ l.object({"url":/*#__PURE__*/ l.string({"format":"uri"}),"name":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256})),"mimeType":/*#__PURE__*/ l.string(),"size":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"width":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"height":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"spoiler":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"alt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":20000,"maxGraphemes":2000}))}));
+const attachmentView = /*#__PURE__*/ l.typedObject<AttachmentView>($nsid, "attachmentView", /*#__PURE__*/ l.object({"url":/*#__PURE__*/ l.string({"format":"uri"}),"previewUrl":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"name":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256})),"mimeType":/*#__PURE__*/ l.string(),"size":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"width":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"height":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer()),"spoiler":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"alt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":20000,"maxGraphemes":2000}))}));
 
 export { attachmentView };
 

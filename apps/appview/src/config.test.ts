@@ -24,7 +24,7 @@ describe("APPVIEW_DID", () => {
 	});
 
 	it("names the working alternative in the error, so the fix does not need a search", () => {
-		expect(() => load("did:web:127.0.0.1%3A8000")).toThrow(/did:web:spaces-api\.colibri\.social/);
+		expect(() => load("did:web:127.0.0.1%3A8000")).toThrow(/did:web:appview\.example\.com/);
 	});
 
 	it("still refuses a DID that is not a did:web at all", () => {
@@ -112,5 +112,57 @@ describe("PUSH_ACTION_SECRET", () => {
 
 	it("refuses a short secret", () => {
 		expect(() => withSecret("short")).toThrow(/openssl rand -base64 32/);
+	});
+});
+
+describe("ROLES", () => {
+	const withRoles = (value: string | undefined) => {
+		return loadConfig({
+			...REQUIRED,
+			APPVIEW_DID: "did:web:appview.example.com",
+			ROLES: value,
+		});
+	};
+
+	it("runs every role except failover when unset", () => {
+		expect(withRoles(undefined).ROLES).toEqual(["main", "api", "live", "voice"]);
+		expect(withRoles("").ROLES).toEqual(["main", "api", "live", "voice"]);
+	});
+
+	it("parses a comma-separated list and drops duplicates", () => {
+		expect(withRoles("api, live,api").ROLES).toEqual(["api", "live"]);
+	});
+
+	it("refuses an unknown role", () => {
+		expect(() => withRoles("api,writer")).toThrow(/unknown role writer/);
+	});
+});
+
+describe("telemetry opt-out", () => {
+	const withEnv = (env: Record<string, string>) => {
+		return loadConfig({ ...REQUIRED, APPVIEW_DID: "did:web:appview.example.com", ...env });
+	};
+
+	it("is on by default", () => {
+		expect(withEnv({}).telemetryEnabled).toBe(true);
+	});
+
+	it("turns off for any non-empty value other than 0", () => {
+		expect(withEnv({ COLIBRI_TELEMETRY_DISABLED: "1" }).telemetryEnabled).toBe(false);
+		expect(withEnv({ COLIBRI_TELEMETRY_DISABLED: "true" }).telemetryEnabled).toBe(false);
+		expect(withEnv({ COLIBRI_TELEMETRY_DISABLED: "0" }).telemetryEnabled).toBe(true);
+	});
+
+	it("honors DO_NOT_TRACK", () => {
+		expect(withEnv({ DO_NOT_TRACK: "1" }).telemetryEnabled).toBe(false);
+	});
+});
+
+describe("cluster defaults", () => {
+	it("drains for 120 minutes and queues writes for 90 seconds", () => {
+		const config = loadConfig({ ...REQUIRED, APPVIEW_DID: "did:web:appview.example.com" });
+
+		expect(config.DRAIN_GRACE_MINUTES).toBe(120);
+		expect(config.WRITE_QUEUE_SECONDS).toBe(90);
 	});
 });

@@ -3,3 +3,4 @@
  */
 
 export * as describeServer from "./server/describeServer.js";
+export * as listNodes from "./server/listNodes.js";
