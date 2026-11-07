@@ -1,5 +1,14 @@
 # @colibri-social/bridge-core
 
+## 0.2.23
+
+### Patch Changes
+
+- 19be678: Update Spaces support to the November 5 alpha (`0.0.0-spaces-alpha-20261105160032`). STAR archives from `getRepo` use the new control-byte framing through the `@atproto/space` helpers, so the AppView needs a PDS on the same alpha. `@atproto/star` is pinned to the alpha build, because its caret range otherwise resolves to a broken `0.0.0-stage` release. The vendored atproto space lexicons move to `704b9e2a`, which adds `RepoTakendown` and `RepoDeactivated` to `getSpaceCredential` and `listRepos`. A suspended space keeps its synced data and retries, as before.
+- Updated dependencies [aea9292]
+- Updated dependencies [19be678]
+  - @colibri-social/lexicons@2.37.0
+
 ## 0.2.22
 
 ### Patch Changes

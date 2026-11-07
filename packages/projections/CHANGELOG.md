@@ -1,5 +1,15 @@
 # @colibri-social/projections
 
+## 1.15.1
+
+### Patch Changes
+
+- Updated dependencies [aea9292]
+- Updated dependencies [19be678]
+  - @colibri-social/lexicons@2.37.0
+  - @colibri-social/appview-db@0.22.0
+  - @colibri-social/space@0.11.1
+
 ## 1.15.0
 
 ### Minor Changes
