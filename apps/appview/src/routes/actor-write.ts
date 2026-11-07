@@ -23,6 +23,7 @@ import { isOnlineState, presenceOf } from "../presence.js";
 import { route } from "../route.js";
 import { loadActorActivities } from "../views/activity.js";
 import { toGifFavorite } from "../views/gif.js";
+import { loadVoiceState } from "../views/voice-state.js";
 import { findSoleOwnedCommunities, loadPreferences } from "./actor.js";
 import type { RouteDeps } from "./types.js";
 
@@ -401,7 +402,11 @@ export const handleSetStatus = async (
 		.values(row)
 		.onConflictDoUpdate({ target: ctx.database.tables.userPresence.did, set: row });
 
-	const presence = presenceOf(ctx, callerDid, row, await loadActorActivities(ctx, callerDid));
+	const presence = presenceOf(
+		row,
+		await loadActorActivities(ctx, callerDid),
+		await loadVoiceState(ctx, callerDid),
+	);
 
 	await announceToCommunities(ctx, callerDid, presenceEvent(callerDid, presence));
 

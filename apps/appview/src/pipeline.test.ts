@@ -7,7 +7,7 @@ import type { RepoChange } from "@colibri-social/space-sync";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { busAnnouncer, type EventMessage } from "./announce.js";
-import { memoryBus } from "./bus.js";
+import { type EventBus, memoryBus } from "./bus.js";
 import type { AppContext } from "./context.js";
 import { eventDelivery } from "./event-delivery.js";
 import { createLinkEmbedResolver } from "./link-embeds.js";
@@ -89,6 +89,8 @@ let authzChanges: string[];
 let forgotten: string[];
 let releasePreview: () => void;
 let threadWrites: { community: string; space: string; record: Record<string, unknown> }[];
+let bus: EventBus<EventMessage>;
+const busErrors: unknown[] = [];
 let voicePresence: Map<string, string>;
 
 const framesOfType = (suffix: string) =>
@@ -288,6 +290,17 @@ beforeEach(async () => {
 		publishToCommunity: (community: string, frame: ServerFrame) =>
 			published.push({ space: community, frame }),
 		publishToUser: (did: string, frame: ServerFrame) => published.push({ space: did, frame }),
+		publishToCommunityViewers: async (
+			community: string,
+			render: (did: string) => Promise<ServerFrame | null>,
+		) => {
+			const frame = await render(VIEWER);
+
+			if (frame) {
+				published.push({ space: community, frame });
+			}
+		},
+		publishToBridges: async () => {},
 		channelChanged: (community: string, space: string, event: "update" | "delete") =>
 			published.push({
 				space,
@@ -330,7 +343,10 @@ beforeEach(async () => {
 		name: "general",
 	});
 
-	const bus = memoryBus<EventMessage>("test", ctx.log as never);
+	bus = memoryBus<EventMessage>("test", {
+		warn: () => {},
+		error: (fields: { err?: unknown }) => busErrors.push(fields.err),
+	});
 
 	bus.subscribe(eventDelivery({ ctx, events, authz: () => {} }));
 	(ctx as { announce: AppContext["announce"] }).announce = busAnnouncer(bus);
@@ -341,7 +357,9 @@ beforeEach(async () => {
 afterEach(async () => {
 	stalledIndexing.enabled = false;
 	disconnect();
+	await bus.close();
 	await database.destroy();
+	expect(busErrors.splice(0)).toEqual([]);
 });
 
 describe("connectPipeline", () => {

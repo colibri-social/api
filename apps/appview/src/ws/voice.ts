@@ -7,10 +7,12 @@ import type { VoiceSfu } from "@colibri-social/voice";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { AppContext } from "../context.js";
 import { fireAndForget } from "../fire-and-forget.js";
-import { voiceStateIn } from "../views/voice-state.js";
+import { participantStateIn, voiceStateIn } from "../views/voice-state.js";
+import type { VoiceCommand } from "../voice-calls.js";
 import { bearerToken, selectSubprotocol } from "./auth.js";
 import type { ServerFrame } from "./events.js";
 import { channelTopic, TopicIndex } from "./topics.js";
+import { candidateOf, type Migration, pickTarget, type RttResult } from "./voice-migration.js";
 
 const VOICE_PATH = "/xrpc/social.colibri.beta.voice.subscribeSignals";
 const HEARTBEAT_MS = 30_000;
@@ -37,14 +39,15 @@ const clientFrames = {
 	setSelfState: social.colibri.beta.voice.defs.setSelfState,
 	setSpeaking: social.colibri.beta.voice.defs.setSpeaking,
 	heartbeat: social.colibri.beta.voice.defs.heartbeat,
+	rttReport: social.colibri.beta.voice.defs.rttReport,
+	moveNow: social.colibri.beta.voice.defs.moveNow,
 } as const;
 
 type ClientFrameName = keyof typeof clientFrames;
 
 export type VoiceRoster = {
 	isJoined: (channel: string, did: string) => boolean;
-	disconnect: (channel: string, did: string) => Promise<void>;
-	move: (channel: string, did: string, destination: string) => Promise<void>;
+	apply: (command: VoiceCommand) => Promise<void>;
 };
 
 const frameName = (value: unknown): ClientFrameName | null => {
@@ -72,6 +75,8 @@ export class VoiceServer {
 	});
 	private readonly topics = new TopicIndex<Connection>();
 	private readonly connections = new Set<Connection>();
+	private readonly migrations = new Map<string, Migration>();
+	private readonly persisting = new Map<string, Promise<void>>();
 	private heartbeat: NodeJS.Timeout | null = null;
 	private readonly stopWatchingAuthz: () => void;
 
@@ -93,6 +98,76 @@ export class VoiceServer {
 
 	isJoined(channel: string, did: string): boolean {
 		return this.joined(channel, did).length > 0;
+	}
+
+	async apply(command: VoiceCommand): Promise<void> {
+		const voice = this.ctx.voice;
+
+		if (!voice) {
+			return;
+		}
+
+		if (command.supersede) {
+			for (const connection of this.joined(command.channel, command.subject)) {
+				this.detach(connection, "superseded");
+			}
+
+			await voice.leave(command.channel, command.subject);
+
+			return;
+		}
+
+		const carriesMedia = voice.presenceOf(command.subject) === command.channel;
+
+		if (carriesMedia && (command.muted !== undefined || command.deafened !== undefined)) {
+			await voice.moderate(command.channel, command.subject, {
+				...(command.muted === undefined ? {} : { muted: command.muted }),
+				...(command.deafened === undefined ? {} : { deafened: command.deafened }),
+			});
+		}
+
+		if (command.disconnect) {
+			await this.disconnect(command.channel, command.subject);
+		} else if (command.moveTo) {
+			await this.move(command.channel, command.subject, command.moveTo);
+		}
+	}
+
+	async beginMigration(deadline: Date): Promise<void> {
+		const voice = this.ctx.voice;
+
+		if (!voice) {
+			return;
+		}
+
+		const channels = voice.channels.filter((channel) => voice.listParticipants(channel).length > 0);
+
+		if (channels.length === 0) {
+			return;
+		}
+
+		const candidates = (await this.ctx.voiceCalls.candidates()).map(candidateOf);
+
+		if (candidates.length === 0) {
+			this.ctx.log.warn({ calls: channels.length }, "voice.migrationNoCandidates");
+
+			return;
+		}
+
+		const noticeMs = Math.min(
+			this.ctx.config.VOICE_MIGRATION_NOTICE_SECONDS * 1_000,
+			Math.max(0, deadline.getTime() - Date.now()),
+		);
+		const at = new Date(Date.now() + noticeMs);
+
+		for (const channel of channels) {
+			this.startMigration(channel, candidates, at);
+		}
+
+		this.ctx.log.info(
+			{ calls: channels.length, candidates: candidates.length, at: at.toISOString() },
+			"voice.migrationProposed",
+		);
 	}
 
 	async disconnect(channel: string, did: string): Promise<void> {
@@ -169,7 +244,17 @@ export class VoiceServer {
 	async close(): Promise<void> {
 		this.stopWatchingAuthz();
 		if (this.heartbeat) clearInterval(this.heartbeat);
+		for (const migration of this.migrations.values()) {
+			if (migration.timer) clearTimeout(migration.timer);
+		}
+		this.migrations.clear();
 		for (const connection of this.connections) {
+			if (connection.channel) {
+				this.send(connection, {
+					$type: "social.colibri.beta.voice.defs#disconnected",
+					reason: "nodeClosed",
+				});
+			}
 			this.topics.forget(connection);
 			connection.socket.close(1001, "shutting down");
 		}
@@ -355,6 +440,12 @@ export class VoiceServer {
 			case "setSpeaking":
 				this.handleSetSpeaking(connection, voice, result.value as never);
 				return;
+			case "rttReport":
+				this.handleRttReport(connection, result.value as never);
+				return;
+			case "moveNow":
+				await this.handleMoveNow(connection);
+				return;
 			default:
 				return;
 		}
@@ -383,6 +474,36 @@ export class VoiceServer {
 			return;
 		}
 
+		const claim = await this.ctx.voiceCalls.claim(frame.channel, {
+			acceptNew: !this.ctx.drain.draining,
+		});
+
+		if (claim.kind === "elsewhere") {
+			this.send(connection, {
+				$type: "social.colibri.beta.voice.defs#callElsewhere",
+				nodeId: claim.node.id,
+				signalingUrl: candidateOf(claim.node).signalingUrl,
+				channel: frame.channel,
+			});
+			return;
+		}
+
+		voice.setModeration(
+			frame.channel,
+			connection.did,
+			await this.ctx.voiceCalls.moderationOf(parsed.authority, connection.did),
+		);
+
+		const elsewhere = await this.ctx.voiceCalls.participant(connection.did);
+
+		if (elsewhere && elsewhere.nodeId !== this.ctx.nodeId && elsewhere.channel !== frame.channel) {
+			this.ctx.announce.voiceCommand(elsewhere.nodeId, {
+				channel: elsewhere.channel,
+				subject: connection.did,
+				supersede: true,
+			});
+		}
+
 		await this.supersedeOtherSessions(connection, voice, frame.channel);
 
 		const previous = this.forgetChannel(connection);
@@ -394,6 +515,8 @@ export class VoiceServer {
 		this.send(connection, {
 			$type: "social.colibri.beta.voice.defs#joined",
 			channel: frame.channel,
+			nodeId: this.ctx.nodeId,
+			...(this.ctx.config.NODE_REGION ? { region: this.ctx.config.NODE_REGION } : {}),
 		});
 
 		for (const did of voice.listParticipants(frame.channel)) {
@@ -422,6 +545,111 @@ export class VoiceServer {
 				source: toWireSource(producer.source),
 			});
 		}
+
+		const migration = this.migrations.get(frame.channel);
+
+		if (migration && !migration.target) {
+			this.send(connection, this.proposalFrame(migration));
+		}
+	}
+
+	private proposalFrame(migration: Migration): ServerFrame {
+		return {
+			$type: "social.colibri.beta.voice.defs#migrationProposal",
+			candidates: migration.candidates,
+			deadline: migration.deadline.toISOString(),
+		};
+	}
+
+	private startMigration(channel: string, candidates: Migration["candidates"], at: Date): void {
+		if (this.migrations.has(channel)) {
+			return;
+		}
+
+		const migration: Migration = {
+			candidates,
+			deadline: at,
+			reports: new Map(),
+			timer: null,
+			target: null,
+		};
+
+		migration.timer = setTimeout(
+			() => {
+				void this.finishMigration(channel, false).catch((error: unknown) =>
+					this.ctx.log.error({ channel, err: error }, "voice.migrationFailed"),
+				);
+			},
+			Math.max(0, at.getTime() - Date.now()),
+		);
+		migration.timer.unref?.();
+		this.migrations.set(channel, migration);
+		this.broadcast(channel, this.proposalFrame(migration));
+	}
+
+	private async finishMigration(channel: string, now: boolean): Promise<void> {
+		const migration = this.migrations.get(channel);
+
+		if (!migration || migration.target) {
+			return;
+		}
+
+		if (migration.timer) {
+			clearTimeout(migration.timer);
+			migration.timer = null;
+		}
+
+		const target = pickTarget(migration.candidates, migration.reports);
+
+		if (!target) {
+			return;
+		}
+
+		migration.target = target;
+
+		const handedOver = await this.ctx.voiceCalls.handOver(channel, target.nodeId);
+
+		if (!handedOver) {
+			this.ctx.log.warn({ channel, target: target.nodeId }, "voice.handOverMissed");
+		}
+
+		this.ctx.log.info(
+			{ channel, target: target.nodeId, reports: migration.reports.size, now },
+			"voice.migrating",
+		);
+		this.broadcast(channel, {
+			$type: "social.colibri.beta.voice.defs#migrateTo",
+			nodeId: target.nodeId,
+			signalingUrl: target.signalingUrl,
+			channel,
+			...(now ? { now: true } : {}),
+		});
+	}
+
+	private handleRttReport(connection: Connection, frame: { results: RttResult[] }): void {
+		if (!connection.channel) return;
+
+		const migration = this.migrations.get(connection.channel);
+
+		if (!migration || migration.target) {
+			this.ack(connection);
+			return;
+		}
+
+		migration.reports.set(connection.did, frame.results);
+		this.ack(connection);
+	}
+
+	private async handleMoveNow(connection: Connection): Promise<void> {
+		if (!connection.channel) return;
+
+		if (!this.migrations.has(connection.channel)) {
+			this.error(connection, "NoMigration", "this call is not moving");
+			return;
+		}
+
+		this.ack(connection);
+		await this.finishMigration(connection.channel, true);
 	}
 
 	private async supersedeOtherSessions(
@@ -472,6 +700,7 @@ export class VoiceServer {
 				connection.did,
 				frame.direction,
 			);
+			const iceServers = [...(await this.ctx.turn.iceServers()), ...voice.iceServers];
 			this.send(connection, {
 				$type: "social.colibri.beta.voice.defs#transportOptions",
 				id: transport.id,
@@ -479,7 +708,7 @@ export class VoiceServer {
 				iceCandidates: transport.iceCandidates,
 				dtlsParameters: transport.dtlsParameters,
 				direction: frame.direction,
-				...(voice.iceServers.length > 0 ? { iceServers: voice.iceServers } : {}),
+				...(iceServers.length > 0 ? { iceServers } : {}),
 			});
 		} catch (cause) {
 			this.error(connection, "NotFound", messageOf(cause));
@@ -658,6 +887,7 @@ export class VoiceServer {
 		voice.on("participant-joined", ({ channel, did }) => {
 			this.broadcast(channel, { $type: "social.colibri.beta.voice.defs#peerJoined", did }, did);
 			this.announce(channel, did, "join", voiceStateIn(voice, channel, did));
+			this.persist(voice, channel, did);
 		});
 		voice.on("participant-left", ({ channel, did, reason }) => {
 			this.broadcast(channel, { $type: "social.colibri.beta.voice.defs#peerLeft", did }, did);
@@ -667,7 +897,26 @@ export class VoiceServer {
 					reason,
 				});
 			}
-			this.announce(channel, did, "leave");
+			if (this.migrations.get(channel)?.target) {
+				this.announceLeaveUnlessMoved(channel, did);
+			} else {
+				this.announce(channel, did, "leave");
+			}
+			this.queuePersist(did, () => this.ctx.voiceCalls.left(did, channel));
+		});
+		voice.on("room-closed", ({ channel }) => {
+			const migration = this.migrations.get(channel);
+			if (migration?.timer) clearTimeout(migration.timer);
+			this.migrations.delete(channel);
+			fireAndForget(
+				this.ctx.log,
+				"voice.callEndFailed",
+				async () => {
+					if (voice.hasRoom(channel)) return;
+					await this.ctx.voiceCalls.end(channel);
+				},
+				{ channel },
+			);
 		});
 		voice.on("producer-added", ({ channel, did, producerId, kind, source, paused }) => {
 			this.broadcast(
@@ -718,12 +967,63 @@ export class VoiceServer {
 				serverDeafened: server.serverDeafened,
 			});
 			this.announce(channel, did, "update", voiceStateIn(voice, channel, did));
+			this.persist(voice, channel, did);
+			if (server.origin === "server") {
+				const state = {
+					serverMuted: server.serverMuted,
+					serverDeafened: server.serverDeafened,
+				};
+
+				fireAndForget(
+					this.ctx.log,
+					"voice.moderationSaveFailed",
+					async () =>
+						this.ctx.voiceCalls.saveModeration(parseSpaceRef(channel).authority, did, state),
+					{ channel, did },
+				);
+			}
 		});
+	}
+
+	private queuePersist(did: string, write: () => Promise<void>): void {
+		const previous = this.persisting.get(did) ?? Promise.resolve();
+		const next = previous
+			.then(write)
+			.catch((error: unknown) => this.ctx.log.warn({ did, err: error }, "voice.persistFailed"));
+
+		this.persisting.set(did, next);
+		void next.then(() => {
+			if (this.persisting.get(did) === next) this.persisting.delete(did);
+		});
+	}
+
+	private persist(voice: VoiceSfu, channel: string, did: string): void {
+		if (voice.presenceOf(did) !== channel) return;
+
+		const state = participantStateIn(voice, channel, did);
+
+		this.queuePersist(did, () => this.ctx.voiceCalls.joined(did, channel, state));
+	}
+
+	private announceLeaveUnlessMoved(channel: string, did: string): void {
+		fireAndForget(
+			this.ctx.log,
+			"voice.leaveAnnounceFailed",
+			async () => {
+				const row = await this.ctx.voiceCalls.participant(did);
+
+				if (row && row.channel === channel && row.nodeId !== this.ctx.nodeId) return;
+
+				this.announce(channel, did, "leave");
+			},
+			{ channel, did },
+		);
 	}
 
 	private announceSharing(voice: VoiceSfu, channel: string, did: string, source: string): void {
 		if (!SHARING_SOURCES.has(source) || voice.presenceOf(did) !== channel) return;
 		this.announce(channel, did, "update", voiceStateIn(voice, channel, did));
+		this.persist(voice, channel, did);
 	}
 
 	private announceSpeaking(channel: string, did: string, speaking: boolean): void {

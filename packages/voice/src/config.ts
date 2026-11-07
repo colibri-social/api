@@ -1,8 +1,7 @@
 import { availableParallelism } from "node:os";
 import { z } from "zod";
 
-export const DEFAULT_RTC_MIN_PORT = 40000;
-export const DEFAULT_RTC_MAX_PORT = 40100;
+export const DEFAULT_RTC_PORT = 40000;
 export const DEFAULT_INITIAL_OUTGOING_BITRATE = 3_500_000;
 
 export const iceServerSchema = z.object({
@@ -22,14 +21,14 @@ export const voiceSfuConfigSchema = z.object({
 		.default(() => availableParallelism()),
 	listenIp: z.string().min(1).default("0.0.0.0"),
 	announcedIp: z.string().min(1).optional(),
-	rtcMinPort: z.number().int().min(0).max(65535).default(DEFAULT_RTC_MIN_PORT),
-	rtcMaxPort: z.number().int().min(0).max(65535).default(DEFAULT_RTC_MAX_PORT),
+	rtcPort: z.number().int().min(1).max(65535).default(DEFAULT_RTC_PORT),
 	iceServers: z.array(iceServerSchema).default([]),
 	initialAvailableOutgoingBitrate: z
 		.number()
 		.int()
 		.positive()
 		.default(DEFAULT_INITIAL_OUTGOING_BITRATE),
+	participantsPerWorker: z.number().int().positive().default(20),
 	roomGraceMs: z.number().int().nonnegative().default(30_000),
 	speakingDebounceMs: z.number().int().nonnegative().default(1_000),
 });
@@ -38,19 +37,8 @@ export type VoiceSfuConfigInput = z.input<typeof voiceSfuConfigSchema>;
 
 export type VoiceSfuConfig = z.output<typeof voiceSfuConfigSchema>;
 
-function normalizePortRange(
-	rtcMinPort: number,
-	rtcMaxPort: number,
-): { rtcMinPort: number; rtcMaxPort: number } {
-	if (rtcMinPort <= rtcMaxPort) {
-		return { rtcMinPort, rtcMaxPort };
-	}
-	return { rtcMinPort: DEFAULT_RTC_MIN_PORT, rtcMaxPort: DEFAULT_RTC_MAX_PORT };
-}
-
 export function parseVoiceSfuConfig(input: VoiceSfuConfigInput = {}): VoiceSfuConfig {
-	const parsed = voiceSfuConfigSchema.parse(input);
-	return { ...parsed, ...normalizePortRange(parsed.rtcMinPort, parsed.rtcMaxPort) };
+	return voiceSfuConfigSchema.parse(input);
 }
 
 export function parseIceServers(raw: string | undefined): IceServer[] {
@@ -70,31 +58,4 @@ export function parseIceServers(raw: string | undefined): IceServer[] {
 		throw new Error(`SFU_ICE_SERVERS is invalid: ${result.error.message}`);
 	}
 	return result.data;
-}
-
-function optionalString(value: string | undefined): string | undefined {
-	return value !== undefined && value.trim() !== "" ? value : undefined;
-}
-
-function optionalPositiveInt(value: string | undefined): number | undefined {
-	if (value === undefined || value.trim() === "") {
-		return undefined;
-	}
-	const parsed = Number(value);
-	return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-}
-
-export function voiceSfuConfigFromEnv(
-	env: Record<string, string | undefined> = process.env,
-): VoiceSfuConfig {
-	return parseVoiceSfuConfig({
-		workerCount: optionalPositiveInt(env.SFU_WORKER_COUNT),
-		listenIp: optionalString(env.SFU_LISTEN_IP) ?? "0.0.0.0",
-		announcedIp: optionalString(env.SFU_ANNOUNCED_IP),
-		rtcMinPort: optionalPositiveInt(env.SFU_RTC_MIN_PORT) ?? DEFAULT_RTC_MIN_PORT,
-		rtcMaxPort: optionalPositiveInt(env.SFU_RTC_MAX_PORT) ?? DEFAULT_RTC_MAX_PORT,
-		iceServers: parseIceServers(env.SFU_ICE_SERVERS),
-		initialAvailableOutgoingBitrate:
-			optionalPositiveInt(env.SFU_INITIAL_OUTGOING_BITRATE) ?? DEFAULT_INITIAL_OUTGOING_BITRATE,
-	});
 }

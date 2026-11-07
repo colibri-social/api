@@ -115,12 +115,17 @@ export function createFakeRouter(rtpCapabilities: RtpCapabilities = {}) {
 	const emitter = new EventEmitter();
 	let closed = false;
 
+	const observer = new EventEmitter();
 	const router = Object.assign(emitter, {
 		id: id("router"),
 		rtpCapabilities,
+		observer,
 		close: vi.fn(() => {
+			if (closed) return;
 			closed = true;
+			observer.emit("close");
 		}),
+		pipeToRouter: vi.fn(async (_options: { producerId: string; router: unknown }) => ({})),
 		createWebRtcTransport: vi.fn(async () => createFakeTransport()),
 		createAudioLevelObserver: vi.fn(async () => audioLevelObserver),
 		canConsume: vi.fn((_options: { producerId: string; rtpCapabilities: RtpCapabilities }) => true),
@@ -155,6 +160,11 @@ export function createFakeWorker(pid: number, options: { autoExit?: boolean } = 
 		}),
 		exitSubprocess,
 		createRouter: vi.fn(async () => createFakeRouter()),
+		createWebRtcServer: vi.fn(async (options: unknown) => ({
+			id: id("webrtc-server"),
+			options,
+			close: vi.fn(),
+		})),
 	});
 
 	Object.defineProperty(worker, "closed", { get: () => closed, enumerable: true });

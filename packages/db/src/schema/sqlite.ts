@@ -842,6 +842,38 @@ export const voiceCalls = sqliteTable(
 	(t) => [index("voice_calls_node_idx").on(t.nodeId)],
 );
 
+export const voiceModeration = sqliteTable(
+	"voice_moderation",
+	{
+		community: text("community").notNull(),
+		did: text("did").notNull(),
+		serverMuted: flag("server_muted").notNull().default(false),
+		serverDeafened: flag("server_deafened").notNull().default(false),
+		updatedAt: timestamp("updated_at").notNull(),
+	},
+	(t) => [primaryKey({ columns: [t.community, t.did] })],
+);
+
+export const voiceParticipants = sqliteTable(
+	"voice_participants",
+	{
+		did: text("did").primaryKey(),
+		channel: text("channel").notNull(),
+		nodeId: text("node_id").notNull(),
+		muted: flag("muted").notNull().default(false),
+		deafened: flag("deafened").notNull().default(false),
+		serverMuted: flag("server_muted").notNull().default(false),
+		serverDeafened: flag("server_deafened").notNull().default(false),
+		camera: flag("camera").notNull().default(false),
+		screen: flag("screen").notNull().default(false),
+		updatedAt: timestamp("updated_at").notNull(),
+	},
+	(t) => [
+		index("voice_participants_channel_idx").on(t.channel),
+		index("voice_participants_node_idx").on(t.nodeId),
+	],
+);
+
 export const eventPayloads = sqliteTable(
 	"event_payloads",
 	{
@@ -1014,6 +1046,8 @@ export const schema = {
 	clusterConfig,
 	clusterState,
 	voiceCalls,
+	voiceParticipants,
+	voiceModeration,
 	eventPayloads,
 	telemetryState,
 	legacyRecords,

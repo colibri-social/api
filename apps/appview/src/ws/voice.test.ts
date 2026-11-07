@@ -1,14 +1,19 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { type ActorAuthz, anonymousAuthz, type ChannelState } from "@colibri-social/community";
 import { COLLECTIONS, channelSpace, SPACE_TYPES, social } from "@colibri-social/lexicons";
 import { VoiceSfu, type WorkerPoolLike } from "@colibri-social/voice";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { asRouter, createFakeRouter } from "../../../../packages/voice/src/mock-mediasoup.js";
 import { silentAnnouncer } from "../announce.js";
 import { type AuthzChanges, createAuthzChanges } from "../authz-changes.js";
 import type { AppContext } from "../context.js";
+import { createDrainState } from "../drain.js";
+import { noTurnCredentials } from "../turn.js";
+import { createVoiceCalls } from "../voice-calls.js";
 import { VoiceServer } from "./voice.js";
 
 const VOICE_PATH = "/xrpc/social.colibri.beta.voice.subscribeSignals";
@@ -47,7 +52,7 @@ const fakeWorkerPool = (): WorkerPoolLike => ({
 	createRouter: async () => {
 		const router = createFakeRouter();
 		fakeRouters.push(router);
-		return asRouter(router);
+		return { router: asRouter(router) };
 	},
 	close: async () => {},
 });
@@ -59,7 +64,7 @@ type Harness = {
 	authz: Map<string, ActorAuthz>;
 };
 
-const buildCtx = (voice: VoiceSfu | null): Harness => {
+const buildCtx = (voice: VoiceSfu | null, database?: TestDatabase): Harness => {
 	const channels = new Map<string, ChannelState>([
 		[VOICE_CHANNEL, openChannel(VOICE_CHANNEL, "general")],
 		[OTHER_VOICE_CHANNEL, openChannel(OTHER_VOICE_CHANNEL, "lounge")],
@@ -79,6 +84,13 @@ const buildCtx = (voice: VoiceSfu | null): Harness => {
 	const ctx = {
 		voice,
 		authzChanges,
+		nodeId: "node-a",
+		config: { NODE_REGION: "eu", VOICE_MIGRATION_NOTICE_SECONDS: 60 },
+		drain: createDrainState(),
+		turn: noTurnCredentials,
+		...(database
+			? { database, voiceCalls: createVoiceCalls({ database, nodeId: "node-a", region: "eu" }) }
+			: {}),
 		log: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
 		serviceAuth: {
 			verify: async (token: string, lxm: string | null) => {
@@ -150,12 +162,14 @@ describe("VoiceServer", () => {
 	let voiceServer: VoiceServer;
 	let port: number;
 	let harness: Harness;
+	let database: TestDatabase;
 	let announced: Array<{ community: string; frame: Record<string, unknown> }>;
 
 	beforeEach(async () => {
+		database = await openTestDatabase();
 		sfu = await VoiceSfu.create({ roomGraceMs: 1_000 }, { workerPool: fakeWorkerPool() });
 		announced = [];
-		harness = buildCtx(sfu);
+		harness = buildCtx(sfu, database);
 		harness.ctx.announce = {
 			...silentAnnouncer,
 			toCommunity: (community, frame) => {
@@ -172,6 +186,7 @@ describe("VoiceServer", () => {
 		await voiceServer.close();
 		await new Promise<void>((resolve) => http.close(() => resolve()));
 		await sfu.close();
+		await database.destroy();
 	});
 
 	const connect = (token: string): WebSocket =>
@@ -276,6 +291,8 @@ describe("VoiceServer", () => {
 		expect(joined).toEqual({
 			$type: "social.colibri.beta.voice.defs#joined",
 			channel: VOICE_CHANNEL,
+			nodeId: "node-a",
+			region: "eu",
 		});
 
 		send(ws, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
@@ -1100,6 +1117,283 @@ describe("VoiceServer", () => {
 		);
 
 		ws.close();
+	});
+
+	describe("across nodes", () => {
+		const registerNode = async (id: string, state: "active" | "draining" = "active") => {
+			const now = new Date().toISOString();
+
+			await database.db.insert(database.tables.nodes).values({
+				id,
+				region: "eu",
+				roles: ["voice"],
+				publicUrl: `https://${id}.nodes.colibri.social`,
+				tailnetUrl: `http://${id}:3000`,
+				state,
+				registeredAt: now,
+				heartbeatAt: now,
+			});
+		};
+
+		const pinCall = async (channel: string, nodeId: string) => {
+			await database.db.insert(database.tables.voiceCalls).values({
+				channel,
+				nodeId,
+				startedAt: new Date().toISOString(),
+			});
+		};
+
+		const join = async (token: string, channel = VOICE_CHANNEL) => {
+			const ws = connect(token);
+
+			await waitForOpen(ws);
+			send(ws, { $type: "social.colibri.beta.voice.defs#join", channel });
+
+			return ws;
+		};
+
+		const callRow = async (channel = VOICE_CHANNEL) => {
+			const [row] = await database.db
+				.select()
+				.from(database.tables.voiceCalls)
+				.where(eq(database.tables.voiceCalls.channel, channel));
+
+			return row;
+		};
+
+		it("pins a new call to this node and records who is in it", async () => {
+			const ws = await join("alice-token");
+
+			await nextFrameOfType(ws, "joined");
+
+			expect(await callRow()).toMatchObject({ nodeId: "node-a" });
+			await vi.waitFor(async () => {
+				expect(await harness.ctx.voiceCalls.participant(ALICE)).toMatchObject({
+					channel: VOICE_CHANNEL,
+					nodeId: "node-a",
+					muted: false,
+				});
+			});
+
+			ws.close();
+		});
+
+		it("sends a joiner to the node already hosting the call", async () => {
+			await registerNode("node-b");
+			await pinCall(VOICE_CHANNEL, "node-b");
+
+			const ws = await join("alice-token");
+
+			expect(await nextFrame(ws)).toEqual({
+				$type: "social.colibri.beta.voice.defs#callElsewhere",
+				nodeId: "node-b",
+				signalingUrl: "https://node-b.nodes.colibri.social",
+				channel: VOICE_CHANNEL,
+			});
+			expect(sfu.listParticipants(VOICE_CHANNEL)).toEqual([]);
+
+			ws.close();
+		});
+
+		it("takes over a call from a node that went away", async () => {
+			await pinCall(VOICE_CHANNEL, "node-gone");
+
+			const ws = await join("alice-token");
+
+			await nextFrameOfType(ws, "joined");
+
+			expect(await callRow()).toMatchObject({ nodeId: "node-a" });
+
+			ws.close();
+		});
+
+		it("keeps a server mute for the whole Space, in later calls and other channels", async () => {
+			const first = await join("alice-token");
+
+			await nextFrameOfType(first, "joined");
+			await voiceServer.apply({ channel: VOICE_CHANNEL, subject: ALICE, muted: true });
+
+			await vi.waitFor(async () => {
+				expect(await harness.ctx.voiceCalls.moderationOf(COMMUNITY, ALICE)).toEqual({
+					serverMuted: true,
+					serverDeafened: false,
+				});
+			});
+
+			first.close();
+			await vi.waitFor(() => expect(sfu.listParticipants(VOICE_CHANNEL)).toEqual([]));
+
+			const second = await join("alice-token", OTHER_VOICE_CHANNEL);
+
+			await nextFrameOfType(second, "joined");
+
+			expect(sfu.getVoiceState(OTHER_VOICE_CHANNEL, ALICE)).toMatchObject({
+				muted: true,
+				serverMuted: true,
+			});
+
+			await voiceServer.apply({ channel: OTHER_VOICE_CHANNEL, subject: ALICE, muted: false });
+
+			await vi.waitFor(async () => {
+				expect(await harness.ctx.voiceCalls.moderationOf(COMMUNITY, ALICE)).toEqual({
+					serverMuted: false,
+					serverDeafened: false,
+				});
+			});
+
+			second.close();
+		});
+
+		it("sends new calls on a draining node to another voice node", async () => {
+			await registerNode("node-b");
+			harness.ctx.drain.begin(new Date(Date.now() + 60_000));
+
+			const ws = await join("alice-token");
+
+			expect(await nextFrame(ws)).toMatchObject({
+				$type: "social.colibri.beta.voice.defs#callElsewhere",
+				nodeId: "node-b",
+			});
+
+			ws.close();
+		});
+
+		it("supersedes the caller's session on another node", async () => {
+			const commands: unknown[] = [];
+
+			harness.ctx.announce = {
+				...harness.ctx.announce,
+				voiceCommand: (node, command) => commands.push({ node, command }),
+			};
+			await database.db.insert(database.tables.voiceParticipants).values({
+				did: ALICE,
+				channel: OTHER_VOICE_CHANNEL,
+				nodeId: "node-b",
+				updatedAt: new Date().toISOString(),
+			});
+
+			const ws = await join("alice-token");
+
+			await nextFrameOfType(ws, "joined");
+
+			expect(commands).toEqual([
+				{
+					node: "node-b",
+					command: { channel: OTHER_VOICE_CHANNEL, subject: ALICE, supersede: true },
+				},
+			]);
+
+			ws.close();
+		});
+
+		it("hands out TURN credentials next to the configured servers", async () => {
+			harness.ctx.turn = {
+				iceServers: async () => [{ urls: ["turn:turn.cloudflare.com:3478"], username: "u" }],
+			};
+
+			const ws = await join("alice-token");
+
+			await nextFrameOfType(ws, "joined");
+			send(ws, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "recv" });
+
+			expect(await nextFrameOfType(ws, "transportOptions")).toMatchObject({
+				iceServers: [{ urls: ["turn:turn.cloudflare.com:3478"], username: "u" }],
+			});
+
+			ws.close();
+		});
+
+		it("moves a call to the node every participant reaches best", async () => {
+			await registerNode("node-b");
+			await registerNode("node-c");
+
+			const alice = await join("alice-token");
+			const bob = await join("bob-token");
+
+			await nextFrameOfType(alice, "joined");
+			await nextFrameOfType(bob, "joined");
+			await voiceServer.beginMigration(new Date(Date.now() + 60 * 60_000));
+
+			const proposal = await nextFrameOfType(alice, "migrationProposal");
+
+			expect(proposal.candidates).toHaveLength(2);
+			await nextFrameOfType(bob, "migrationProposal");
+
+			send(alice, {
+				$type: "social.colibri.beta.voice.defs#rttReport",
+				results: [
+					{ nodeId: "node-b", rttMs: 20 },
+					{ nodeId: "node-c", rttMs: 40 },
+				],
+			});
+			send(bob, {
+				$type: "social.colibri.beta.voice.defs#rttReport",
+				results: [
+					{ nodeId: "node-b", rttMs: 90 },
+					{ nodeId: "node-c", rttMs: 30 },
+				],
+			});
+			await nextFrameOfType(alice, "ack");
+			await nextFrameOfType(bob, "ack");
+			send(bob, { $type: "social.colibri.beta.voice.defs#moveNow" });
+
+			const expected = {
+				$type: "social.colibri.beta.voice.defs#migrateTo",
+				nodeId: "node-c",
+				signalingUrl: "https://node-c.nodes.colibri.social",
+				channel: VOICE_CHANNEL,
+				now: true,
+			};
+
+			expect(await nextFrameOfType(alice, "migrateTo")).toEqual(expected);
+			expect(await nextFrameOfType(bob, "migrateTo")).toEqual(expected);
+			expect(await callRow()).toMatchObject({ nodeId: "node-c" });
+
+			await database.db
+				.update(database.tables.voiceParticipants)
+				.set({ nodeId: "node-c" })
+				.where(eq(database.tables.voiceParticipants.did, ALICE));
+			announced = [];
+			alice.close();
+
+			await vi.waitFor(() => expect(sfu.listParticipants(VOICE_CHANNEL)).toEqual([BOB]));
+			await new Promise((resolve) => setTimeout(resolve, 50));
+
+			expect(announced.map(({ frame }) => frame.event)).not.toContain("leave");
+
+			bob.close();
+
+			await vi.waitFor(() =>
+				expect(announced.map(({ frame }) => [frame.event, frame.did])).toContainEqual([
+					"leave",
+					BOB,
+				]),
+			);
+		});
+
+		it("proposes nothing without another voice node", async () => {
+			const ws = await join("alice-token");
+
+			await nextFrameOfType(ws, "joined");
+			await voiceServer.beginMigration(new Date(Date.now() + 60_000));
+			send(ws, { $type: "social.colibri.beta.voice.defs#moveNow" });
+
+			expect(await nextFrameOfType(ws, "error")).toMatchObject({ error: "NoMigration" });
+
+			ws.close();
+		});
+
+		it("tells callers the node closed when it shuts down", async () => {
+			const ws = await join("alice-token");
+
+			await nextFrameOfType(ws, "joined");
+			await voiceServer.close();
+
+			expect(await nextFrameOfType(ws, "disconnected")).toEqual({
+				$type: "social.colibri.beta.voice.defs#disconnected",
+				reason: "nodeClosed",
+			});
+		});
 	});
 });
 

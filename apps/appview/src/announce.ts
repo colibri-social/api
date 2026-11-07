@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import type { EventBus } from "./bus.js";
 import type { AppContext } from "./context.js";
 import type { ThreadRow, ThreadViews } from "./views/thread.js";
+import type { VoiceCommand } from "./voice-calls.js";
 import type { ServerFrame } from "./ws/events.js";
 import type { Topic } from "./ws/topics.js";
 
@@ -36,7 +37,8 @@ export type EventMessage =
 	| { t: "channelChanged"; community: string; space: string; event: "update" | "delete" }
 	| { t: "threadDeleted"; space: string }
 	| { t: "communityDeleted"; community: string }
-	| { t: "authz"; change: AuthzChange };
+	| { t: "authz"; change: AuthzChange }
+	| { t: "voiceCommand"; node: string; command: VoiceCommand };
 
 export type Announcer = {
 	toCommunity(community: string, frame: ServerFrame): void;
@@ -59,6 +61,7 @@ export type Announcer = {
 	channelChanged(community: string, space: string, event: "update" | "delete"): void;
 	threadDeleted(space: string): void;
 	communityDeleted(community: string): void;
+	voiceCommand(node: string, command: VoiceCommand): void;
 };
 
 export const silentAnnouncer: Announcer = {
@@ -73,6 +76,7 @@ export const silentAnnouncer: Announcer = {
 	channelChanged: () => {},
 	threadDeleted: () => {},
 	communityDeleted: () => {},
+	voiceCommand: () => {},
 };
 
 export const busAnnouncer = (bus: Pick<EventBus<EventMessage>, "publish">): Announcer => {
@@ -102,6 +106,7 @@ export const busAnnouncer = (bus: Pick<EventBus<EventMessage>, "publish">): Anno
 		},
 		threadDeleted: (space) => bus.publish({ t: "threadDeleted", space }),
 		communityDeleted: (community) => bus.publish({ t: "communityDeleted", community }),
+		voiceCommand: (node, command) => bus.publish({ t: "voiceCommand", node, command }),
 	};
 };
 

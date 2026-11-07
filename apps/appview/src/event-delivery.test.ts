@@ -22,13 +22,15 @@ const harness = (waitForReplay = vi.fn(async () => true)) => {
 	const ctx = {
 		config: { PUBLIC_URL: "https://appview.test", SIGNING_KEY: "a".repeat(64) },
 		database: { waitForReplay },
+		nodeId: "node-a",
 		loader: { threadRow: vi.fn(async () => null) },
 		log: { warn: vi.fn(), debug: vi.fn() },
 	} as unknown as AppContext;
 	const authz = vi.fn();
-	const deliver = eventDelivery({ ctx, events, authz });
+	const voice = vi.fn(async () => {});
+	const deliver = eventDelivery({ ctx, events, authz, voice });
 
-	return { deliver, sent, events, ctx, authz, waitForReplay };
+	return { deliver, sent, events, ctx, authz, voice, waitForReplay };
 };
 
 const remote = (
@@ -143,5 +145,16 @@ describe("eventDelivery", () => {
 		await deliver(remote({ t: "authz", change }));
 
 		expect(authz).toHaveBeenCalledWith(change);
+	});
+
+	it("runs a voice command only on the node it names", async () => {
+		const { deliver, voice } = harness();
+		const command = { channel: SPACE, subject: VIEWER, disconnect: true };
+
+		await deliver(remote({ t: "voiceCommand", node: "node-b", command }));
+		await deliver(remote({ t: "voiceCommand", node: "node-a", command }));
+
+		expect(voice).toHaveBeenCalledTimes(1);
+		expect(voice).toHaveBeenCalledWith(command);
 	});
 });

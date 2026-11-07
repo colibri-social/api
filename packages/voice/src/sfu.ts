@@ -15,6 +15,7 @@ import {
 	mediaCodecs,
 	type ParticipantLeftReason,
 	type ProducerSnapshot,
+	type ServerVoiceState,
 	type TransportDirection,
 	type VoicePatch,
 	VoiceRoom,
@@ -23,7 +24,7 @@ import {
 	type VoiceStateOrigin,
 } from "./room.js";
 import { TypedEmitter } from "./typed-emitter.js";
-import { WorkerPool, type WorkerPoolLike } from "./worker-pool.js";
+import { type PooledRouter, WorkerPool, type WorkerPoolLike } from "./worker-pool.js";
 
 export type VoiceSfuEvents = {
 	"room-created": [{ channel: string }];
@@ -56,7 +57,6 @@ export type VoiceSfuDependencies = {
 export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 	private readonly config: VoiceSfuConfig;
 	private readonly workerPool: WorkerPoolLike;
-	private readonly webRtcTransportOptions: ReturnType<typeof buildWebRtcTransportOptions>;
 	private readonly rooms = new Map<string, VoiceRoom>();
 	private readonly roomCreations = new Map<string, Promise<VoiceRoom>>();
 	private readonly roomGraceTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -68,7 +68,6 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 		super();
 		this.config = config;
 		this.workerPool = workerPool;
-		this.webRtcTransportOptions = buildWebRtcTransportOptions(config);
 	}
 
 	static async create(
@@ -77,7 +76,15 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 	): Promise<VoiceSfu> {
 		const config = parseVoiceSfuConfig(input);
 		const workerPool =
-			deps.workerPool ?? (await WorkerPool.create({ workerCount: config.workerCount }));
+			deps.workerPool ??
+			(await WorkerPool.create({
+				workerCount: config.workerCount,
+				webRtcServer: {
+					listenIp: config.listenIp,
+					basePort: config.rtcPort,
+					...(config.announcedIp ? { announcedIp: config.announcedIp } : {}),
+				},
+			}));
 		const sfu = new VoiceSfu(config, workerPool);
 		if (workerPool instanceof WorkerPool) {
 			workerPool.on("worker-died", (event) => sfu.emit("worker-died", event));
@@ -88,6 +95,24 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 
 	get iceServers(): readonly unknown[] {
 		return this.config.iceServers;
+	}
+
+	get channels(): string[] {
+		return [...this.rooms.keys()];
+	}
+
+	hasRoom(channel: string): boolean {
+		return this.rooms.has(channel);
+	}
+
+	setModeration(channel: string, did: string, state: ServerVoiceState): void {
+		const store = this.moderationFor(channel);
+
+		if (state.serverMuted || state.serverDeafened) {
+			store.set(did, { serverMuted: state.serverMuted, serverDeafened: state.serverDeafened });
+		} else {
+			store.delete(did);
+		}
 	}
 
 	presenceOf(did: string): string | undefined {
@@ -262,9 +287,25 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 	}
 
 	private async createRoom(channel: string): Promise<VoiceRoom> {
-		const router = await this.workerPool.createRouter({ mediaCodecs: mediaCodecs() });
+		const pooled = await this.workerPool.createRouter({ mediaCodecs: mediaCodecs() });
+		const router = pooled.router;
 		const room = await VoiceRoom.create(router, channel, {
-			webRtcTransportOptions: this.webRtcTransportOptions,
+			webRtcTransportOptions: this.transportOptions(pooled),
+			...(pooled.worker === undefined ? {} : { worker: pooled.worker }),
+			extraRouter: async (busyWorkers) => {
+				const extra = await this.workerPool.createRouter(
+					{ mediaCodecs: mediaCodecs() },
+					{ avoid: busyWorkers },
+				);
+
+				return {
+					router: extra.router,
+					webRtcTransportOptions: this.transportOptions(extra),
+					...(extra.worker === undefined ? {} : { worker: extra.worker }),
+				};
+			},
+			participantsPerRouter: this.config.participantsPerWorker,
+			maxRouters: this.workerPool.size ?? 1,
 			speakingDebounceMs: this.config.speakingDebounceMs,
 			moderation: this.moderationFor(channel),
 		});
@@ -276,6 +317,11 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 
 		this.rooms.set(channel, room);
 		this.wireRoomEvents(channel, room);
+		room.on("router-lost", () => {
+			void this.discardRoom(channel, room).catch((error: unknown) =>
+				this.emit("room-close-failed", { channel, error }),
+			);
+		});
 		router.on("workerclose", () => {
 			void this.discardRoom(channel, room).catch((error: unknown) =>
 				this.emit("room-close-failed", { channel, error }),
@@ -293,6 +339,15 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 		this.cancelGraceTimer(channel);
 		await room.close();
 		this.emit("room-closed", { channel });
+	}
+
+	private transportOptions(pooled: PooledRouter): ReturnType<typeof buildWebRtcTransportOptions> {
+		return buildWebRtcTransportOptions({
+			listenIp: this.config.listenIp,
+			initialAvailableOutgoingBitrate: this.config.initialAvailableOutgoingBitrate,
+			...(this.config.announcedIp ? { announcedIp: this.config.announcedIp } : {}),
+			...(pooled.webRtcServer ? { webRtcServer: pooled.webRtcServer } : {}),
+		});
 	}
 
 	private moderationFor(channel: string): ModerationStore {

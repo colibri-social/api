@@ -9,6 +9,7 @@ import type {
 	RtcpFeedback,
 	RtpCapabilities,
 	RtpParameters,
+	WebRtcServer,
 	WebRtcTransport,
 	WebRtcTransportOptions,
 } from "mediasoup/types";
@@ -89,23 +90,43 @@ export type VoiceRoomEvents = {
 	"codec-unsupported": [{ did: string; producerId: string }];
 	"speaking-changed": [{ did: string; speaking: boolean }];
 	"voice-state-changed": [{ did: string; origin: VoiceStateOrigin } & VoiceState];
+	"router-lost": [];
 };
 
 export type WebRtcListenOptions = {
 	listenIp: string;
 	announcedIp?: string;
-	rtcMinPort?: number;
-	rtcMaxPort?: number;
+	webRtcServer?: WebRtcServer;
 	initialAvailableOutgoingBitrate?: number;
 };
+
+export type RoomRouter = {
+	router: Router;
+	webRtcTransportOptions: WebRtcTransportOptions;
+	worker?: number;
+};
+
+export type ExtraRouterSource = (busyWorkers: readonly number[]) => Promise<RoomRouter>;
 
 export type VoiceRoomOptions = {
 	webRtcTransportOptions: WebRtcTransportOptions;
 	speakingDebounceMs?: number;
 	moderation?: ModerationStore;
+	worker?: number;
+	extraRouter?: ExtraRouterSource;
+	participantsPerRouter?: number;
+	maxRouters?: number;
 };
 
+type RouterSlot = RoomRouter & {
+	members: Set<string>;
+	piped: Map<string, Promise<void>>;
+};
+
+export const DEFAULT_PARTICIPANTS_PER_ROUTER = 20;
+
 type ParticipantRecord = {
+	slot: RouterSlot | null;
 	transports: Map<string, WebRtcTransport>;
 	producers: Map<string, { producer: Producer; source: string }>;
 	consumers: Map<string, Consumer>;
@@ -185,15 +206,24 @@ export function mediaCodecs(): RouterRtpCodecCapability[] {
 }
 
 export function buildWebRtcTransportOptions(options: WebRtcListenOptions): WebRtcTransportOptions {
-	const portRange =
-		options.rtcMinPort !== undefined && options.rtcMaxPort !== undefined
-			? { min: options.rtcMinPort, max: options.rtcMaxPort }
-			: undefined;
+	const bitrate =
+		options.initialAvailableOutgoingBitrate !== undefined
+			? { initialAvailableOutgoingBitrate: options.initialAvailableOutgoingBitrate }
+			: {};
+
+	if (options.webRtcServer) {
+		return {
+			webRtcServer: options.webRtcServer,
+			enableUdp: true,
+			enableTcp: true,
+			preferUdp: true,
+			...bitrate,
+		};
+	}
 
 	const baseListenInfo = {
 		ip: options.listenIp,
 		announcedAddress: options.announcedIp,
-		portRange,
 	};
 
 	return {
@@ -201,9 +231,7 @@ export function buildWebRtcTransportOptions(options: WebRtcListenOptions): WebRt
 			{ ...baseListenInfo, protocol: "udp" },
 			{ ...baseListenInfo, protocol: "tcp" },
 		],
-		...(options.initialAvailableOutgoingBitrate !== undefined
-			? { initialAvailableOutgoingBitrate: options.initialAvailableOutgoingBitrate }
-			: {}),
+		...bitrate,
 	};
 }
 
@@ -232,9 +260,14 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 	readonly channelRef: string;
 
 	private readonly router: Router;
+	private readonly primary: RouterSlot;
+	private readonly slots: RouterSlot[];
 	private readonly audioLevelObserver: AudioLevelObserver;
-	private readonly webRtcTransportOptions: WebRtcTransportOptions;
 	private readonly speakingDebounceMs: number;
+	private readonly extraRouter: ExtraRouterSource | undefined;
+	private readonly participantsPerRouter: number;
+	private readonly maxRouters: number;
+	private addingSlot: Promise<RouterSlot> | null = null;
 	private readonly participants = new Map<string, ParticipantRecord>();
 	private readonly producerIndex = new Map<string, { did: string; source: string }>();
 	private readonly codecUnsupportedReported = new Set<string>();
@@ -248,17 +281,25 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		channelRef: string,
 		router: Router,
 		audioLevelObserver: AudioLevelObserver,
-		webRtcTransportOptions: WebRtcTransportOptions,
-		speakingDebounceMs: number,
-		moderation: ModerationStore,
+		options: VoiceRoomOptions,
 	) {
 		super();
 		this.channelRef = channelRef;
 		this.router = router;
+		this.primary = {
+			router,
+			webRtcTransportOptions: options.webRtcTransportOptions,
+			...(options.worker === undefined ? {} : { worker: options.worker }),
+			members: new Set(),
+			piped: new Map(),
+		};
+		this.slots = [this.primary];
 		this.audioLevelObserver = audioLevelObserver;
-		this.webRtcTransportOptions = webRtcTransportOptions;
-		this.speakingDebounceMs = speakingDebounceMs;
-		this.moderation = moderation;
+		this.speakingDebounceMs = options.speakingDebounceMs ?? DEFAULT_SPEAKING_DEBOUNCE_MS;
+		this.moderation = options.moderation ?? new Map();
+		this.extraRouter = options.extraRouter;
+		this.participantsPerRouter = options.participantsPerRouter ?? DEFAULT_PARTICIPANTS_PER_ROUTER;
+		this.maxRouters = options.maxRouters ?? 1;
 		this.wireAudioLevelObserver();
 	}
 
@@ -268,14 +309,15 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		options: VoiceRoomOptions,
 	): Promise<VoiceRoom> {
 		const audioLevelObserver = await router.createAudioLevelObserver(AUDIO_LEVEL_OBSERVER_OPTIONS);
-		return new VoiceRoom(
-			channelRef,
-			router,
-			audioLevelObserver,
-			options.webRtcTransportOptions,
-			options.speakingDebounceMs ?? DEFAULT_SPEAKING_DEBOUNCE_MS,
-			options.moderation ?? new Map(),
-		);
+		return new VoiceRoom(channelRef, router, audioLevelObserver, options);
+	}
+
+	get routerCount(): number {
+		return this.slots.length;
+	}
+
+	routerLoad(): number[] {
+		return this.slots.map((slot) => slot.members.size);
 	}
 
 	get rtpCapabilities(): RtpCapabilities {
@@ -336,8 +378,9 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 	async createTransport(did: string, direction: TransportDirection): Promise<WebRtcTransport> {
 		this.assertOpen();
 		const participant = this.ensureParticipant(did);
-		const transport = await this.router.createWebRtcTransport({
-			...this.webRtcTransportOptions,
+		const slot = await this.slotFor(did, participant);
+		const transport = await slot.router.createWebRtcTransport({
+			...slot.webRtcTransportOptions,
 			appData: { did, direction },
 		});
 
@@ -400,7 +443,14 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 			this.forgetProducer(did, producer.id);
 		});
 
+		const home = participant.slot ?? this.primary;
+
+		for (const slot of this.slots) {
+			if (slot !== home) this.pipe(producer.id, home, slot);
+		}
+
 		if (isMicProducer(options.kind, options.source)) {
+			await this.primary.piped.get(producer.id);
 			await this.audioLevelObserver.addProducer({ producerId: producer.id });
 		}
 
@@ -432,8 +482,11 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		this.assertOpen();
 		const participant = this.getParticipant(did);
 		const transport = this.getTransport(did, transportId);
+		const slot = participant.slot ?? this.primary;
 
-		if (this.isScreenVideoProducer(options.producerId) && !this.router.canConsume(options)) {
+		await slot.piped.get(options.producerId);
+
+		if (this.isScreenVideoProducer(options.producerId) && !slot.router.canConsume(options)) {
 			this.reportCodecUnsupported(options.producerId);
 			throw new Error(
 				`${did} cannot decode the codec of screen share ${options.producerId} in room ${this.channelRef}`,
@@ -593,9 +646,118 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 
 		this.releaseMedia(participant);
 		this.participants.delete(did);
+		this.releaseSlot(did, participant);
 		this.stopSpeaking(did);
 		this.clientSpeaking.delete(did);
 		this.emit("participant-left", { did, ...(reason ? { reason } : {}) });
+	}
+
+	private async slotFor(did: string, participant: ParticipantRecord): Promise<RouterSlot> {
+		if (participant.slot) {
+			return participant.slot;
+		}
+
+		const lightest = this.lightestSlot();
+		const slot =
+			lightest.members.size < this.participantsPerRouter || !this.canAddSlot()
+				? lightest
+				: await this.addSlot().catch(() => this.lightestSlot());
+
+		if (participant.slot) {
+			return participant.slot;
+		}
+
+		participant.slot = slot;
+		slot.members.add(did);
+
+		return slot;
+	}
+
+	private lightestSlot(): RouterSlot {
+		return this.slots.reduce((best, slot) => (slot.members.size < best.members.size ? slot : best));
+	}
+
+	private canAddSlot(): boolean {
+		return this.extraRouter !== undefined && this.slots.length < this.maxRouters;
+	}
+
+	private addSlot(): Promise<RouterSlot> {
+		if (this.addingSlot) {
+			return this.addingSlot;
+		}
+
+		const source = this.extraRouter;
+
+		if (!source) {
+			return Promise.resolve(this.lightestSlot());
+		}
+
+		const busy = this.slots.flatMap((slot) => (slot.worker === undefined ? [] : [slot.worker]));
+
+		this.addingSlot = source(busy)
+			.then((extra) => {
+				if (this.closed) {
+					extra.router.close();
+
+					throw new Error(`room ${this.channelRef} is closed`);
+				}
+
+				const slot: RouterSlot = { ...extra, members: new Set(), piped: new Map() };
+
+				this.slots.push(slot);
+				extra.router.on("workerclose", () => this.emit("router-lost"));
+
+				for (const [producerId] of this.producerIndex) {
+					const home = this.homeOf(producerId);
+
+					if (home) this.pipe(producerId, home, slot);
+				}
+
+				return slot;
+			})
+			.finally(() => {
+				this.addingSlot = null;
+			});
+
+		return this.addingSlot;
+	}
+
+	private homeOf(producerId: string): RouterSlot | null {
+		const owner = this.producerIndex.get(producerId);
+
+		if (!owner) {
+			return null;
+		}
+
+		return this.participants.get(owner.did)?.slot ?? this.primary;
+	}
+
+	private pipe(producerId: string, from: RouterSlot, to: RouterSlot): void {
+		const piping = from.router
+			.pipeToRouter({ producerId, router: to.router })
+			.then(() => {})
+			.catch(() => {});
+
+		to.piped.set(producerId, piping);
+	}
+
+	private releaseSlot(did: string, participant: ParticipantRecord): void {
+		const slot = participant.slot;
+
+		participant.slot = null;
+
+		if (!slot) {
+			return;
+		}
+
+		slot.members.delete(did);
+
+		if (slot === this.primary || slot.members.size > 0) {
+			return;
+		}
+
+		this.slots.splice(this.slots.indexOf(slot), 1);
+		slot.router.close();
 	}
 
 	dropMedia(did: string): void {
@@ -625,6 +787,9 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		for (const { producer } of participant.producers.values()) {
 			producer.close();
 			this.producerIndex.delete(producer.id);
+			for (const slot of this.slots) {
+				slot.piped.delete(producer.id);
+			}
 			this.codecUnsupportedReported.delete(producer.id);
 		}
 		participant.producers.clear();
@@ -659,7 +824,9 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 			await this.leave(did, "channelGone");
 		}
 		this.audioLevelObserver.close();
-		this.router.close();
+		for (const slot of this.slots) {
+			slot.router.close();
+		}
 	}
 
 	private ensureParticipant(did: string): ParticipantRecord {
@@ -667,6 +834,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		if (!participant) {
 			const enforced = this.moderation.get(did);
 			participant = {
+				slot: null,
 				transports: new Map(),
 				producers: new Map(),
 				consumers: new Map(),
@@ -733,6 +901,9 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		if (participant && entry) {
 			participant.producers.delete(producerId);
 			this.producerIndex.delete(producerId);
+			for (const slot of this.slots) {
+				slot.piped.delete(producerId);
+			}
 			this.codecUnsupportedReported.delete(producerId);
 			this.emit("producer-removed", { did, producerId, source: entry.source });
 		}

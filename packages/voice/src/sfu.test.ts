@@ -8,7 +8,7 @@ const CHANNEL_B = "at://did:plc:community/social.colibri.beta.channel.voice/b";
 
 function fakeWorkerPool(): WorkerPoolLike & { createRouter: ReturnType<typeof vi.fn> } {
 	return {
-		createRouter: vi.fn(async () => asRouter(createFakeRouter())),
+		createRouter: vi.fn(async () => ({ router: asRouter(createFakeRouter()) })),
 		close: vi.fn(async () => {}),
 	};
 }
@@ -95,7 +95,7 @@ describe("VoiceSfu worker death", () => {
 	it("discards a room whose router died, so presence and the roster let go", async () => {
 		const workerPool = fakeWorkerPool();
 		const router = createFakeRouter();
-		workerPool.createRouter.mockResolvedValue(asRouter(router));
+		workerPool.createRouter.mockResolvedValue({ router: asRouter(router) });
 		const sfu = await VoiceSfu.create({ roomGraceMs: 1_000 }, { workerPool });
 
 		const closed: unknown[] = [];
@@ -232,5 +232,29 @@ describe("VoiceSfu grace period teardown", () => {
 
 		expect(closed).toEqual([]);
 		expect(workerPool.createRouter).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("VoiceSfu stored moderation", () => {
+	it("applies stored server state to a participant who joins afterwards", async () => {
+		const { sfu } = await createSfu();
+
+		sfu.setModeration(CHANNEL_A, "did:plc:muted", { serverMuted: true, serverDeafened: false });
+		await sfu.join(CHANNEL_A, "did:plc:muted");
+
+		expect(sfu.getVoiceState(CHANNEL_A, "did:plc:muted")).toMatchObject({
+			muted: true,
+			serverMuted: true,
+		});
+	});
+
+	it("lifts a stale entry when the stored state is clear", async () => {
+		const { sfu } = await createSfu();
+
+		sfu.setModeration(CHANNEL_A, "did:plc:a", { serverMuted: true, serverDeafened: false });
+		sfu.setModeration(CHANNEL_A, "did:plc:a", { serverMuted: false, serverDeafened: false });
+		await sfu.join(CHANNEL_A, "did:plc:a");
+
+		expect(sfu.getVoiceState(CHANNEL_A, "did:plc:a")).toMatchObject({ serverMuted: false });
 	});
 });

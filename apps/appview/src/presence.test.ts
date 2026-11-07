@@ -38,7 +38,10 @@ beforeEach(async () => {
 	database = await openTestDatabase();
 	published = [];
 	tracker = new PresenceTracker({
-		ctx: { database, voice: null } as unknown as AppContext,
+		ctx: {
+			database,
+			voice: null,
+		} as unknown as AppContext,
 		nodeId: "node-a",
 		publish: (did, communities, frame) => published.push({ did, communities, frame }),
 	});
@@ -273,7 +276,6 @@ describe("connection presence", () => {
 });
 
 describe("presenceOf", () => {
-	const ctx = { voice: null } as unknown as AppContext;
 	const row = {
 		derivedState: "online" as const,
 		requestedState: null,
@@ -285,7 +287,7 @@ describe("presenceOf", () => {
 	};
 
 	it("returns a status without an expiry", () => {
-		expect(presenceOf(ctx, ACTOR, row, []).status).toEqual({
+		expect(presenceOf(row, []).status).toEqual({
 			text: "lunch",
 			emoji: undefined,
 			expiresAt: undefined,
@@ -295,7 +297,7 @@ describe("presenceOf", () => {
 
 	it("returns a status until it expires", () => {
 		const expiresAt = new Date(Date.now() + 60_000).toISOString();
-		expect(presenceOf(ctx, ACTOR, { ...row, statusExpiresAt: expiresAt }, []).status).toEqual({
+		expect(presenceOf({ ...row, statusExpiresAt: expiresAt }, []).status).toEqual({
 			text: "lunch",
 			emoji: undefined,
 			expiresAt,
@@ -305,33 +307,30 @@ describe("presenceOf", () => {
 
 	it("hides a status once it has expired", () => {
 		const expiresAt = new Date(Date.now() - 1).toISOString();
-		expect(
-			presenceOf(ctx, ACTOR, { ...row, statusExpiresAt: expiresAt }, []).status,
-		).toBeUndefined();
+		expect(presenceOf({ ...row, statusExpiresAt: expiresAt }, []).status).toBeUndefined();
 	});
 
 	it("returns an emoji-only status", () => {
-		expect(
-			presenceOf(ctx, ACTOR, { ...row, statusText: "", statusEmoji: "🍜" }, []).status,
-		).toEqual({ text: "", emoji: "🍜", showWhileOffline: false });
+		expect(presenceOf({ ...row, statusText: "", statusEmoji: "🍜" }, []).status).toEqual({
+			text: "",
+			emoji: "🍜",
+			showWhileOffline: false,
+		});
 	});
 
 	it("returns a status that only has a custom emoji", () => {
 		const customEmoji = { uri: "at://did:plc:emoji/blue.moji.collection.item/3lk" };
 		expect(
-			presenceOf(ctx, ACTOR, { ...row, statusText: null, statusCustomEmoji: customEmoji }, [])
-				.status,
+			presenceOf({ ...row, statusText: null, statusCustomEmoji: customEmoji }, []).status,
 		).toEqual({ text: "", customEmoji, showWhileOffline: false });
 	});
 
 	it("returns no status without text or an emoji", () => {
-		expect(presenceOf(ctx, ACTOR, { ...row, statusText: "" }, []).status).toBeUndefined();
+		expect(presenceOf({ ...row, statusText: "" }, []).status).toBeUndefined();
 	});
 
 	it("passes showWhileOffline through for an offline actor", () => {
 		const presence = presenceOf(
-			ctx,
-			ACTOR,
 			{ ...row, derivedState: "offline", statusShowWhileOffline: true },
 			[],
 		);

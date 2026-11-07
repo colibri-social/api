@@ -36,7 +36,7 @@ import {
 	SpaceCredentials,
 } from "@colibri-social/space";
 import { RepoHostMissingError, SpaceSyncEngine } from "@colibri-social/space-sync";
-import { createVoiceSfu, voiceSfuConfigFromEnv } from "@colibri-social/voice";
+import { createVoiceSfu, parseIceServers } from "@colibri-social/voice";
 import {
 	ARTWORK_CACHE_MAX_ENTRIES,
 	ARTWORK_CACHE_TTL_MS,
@@ -61,13 +61,14 @@ import {
 	drizzleStoredPreviews,
 	drizzleSyncStore,
 } from "./stores.js";
+import { turnCredentialsFor } from "./turn.js";
 import { createVideoArtworkClient } from "./video-artwork.js";
+import { createVoiceCalls } from "./voice-calls.js";
 import type { VoiceRoster } from "./ws/voice.js";
 
 const emptyVoiceRoster: VoiceRoster = {
 	isJoined: () => false,
-	disconnect: async () => {},
-	move: async () => {},
+	apply: async () => {},
 };
 
 const authorityOf = (space: string): string | null => {
@@ -284,7 +285,15 @@ export const createContext = async (config: Config) => {
 
 	const voice =
 		config.VOICE_ENABLED && config.ROLES.includes("voice")
-			? await createVoiceSfu(voiceSfuConfigFromEnv())
+			? await createVoiceSfu({
+					listenIp: config.SFU_LISTEN_IP,
+					rtcPort: config.SFU_RTC_PORT,
+					iceServers: parseIceServers(config.SFU_ICE_SERVERS),
+					initialAvailableOutgoingBitrate: config.SFU_INITIAL_OUTGOING_BITRATE,
+					participantsPerWorker: config.SFU_PARTICIPANTS_PER_WORKER,
+					...(config.SFU_WORKER_COUNT ? { workerCount: config.SFU_WORKER_COUNT } : {}),
+					...(config.SFU_ANNOUNCED_IP ? { announcedIp: config.SFU_ANNOUNCED_IP } : {}),
+				})
 			: null;
 	voice?.on("room-close-failed", ({ channel, error }) =>
 		log.error({ channel, err: error }, "voice.roomCloseFailed"),
@@ -304,9 +313,13 @@ export const createContext = async (config: Config) => {
 		return host.pds.getDelegationToken(host.session, space);
 	}
 
+	const nodeId = config.NODE_ID ?? `local-${randomUUID()}`;
+
 	return {
-		nodeId: config.NODE_ID ?? `local-${randomUUID()}`,
+		nodeId,
 		drain: createDrainState(),
+		voiceCalls: createVoiceCalls({ database, nodeId, region: config.NODE_REGION }),
+		turn: turnCredentialsFor(config, log),
 		announce: silentAnnouncer as Announcer,
 		voiceRoster: emptyVoiceRoster as VoiceRoster,
 		authzChanges: authzChanges as AuthzChanges,

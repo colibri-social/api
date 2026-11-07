@@ -15,6 +15,7 @@ export type Db = LibSQLDatabase<Schema>;
 
 export type Database = {
 	db: Db;
+	primary: Db;
 	tables: Schema;
 	dialect: Dialect;
 	ping: () => Promise<void>;
@@ -40,6 +41,7 @@ const openSqlite = ({ url, authToken }: DatabaseOptions): Database => {
 	const db = drizzleLibsql(client, { schema: sqliteTables });
 	return {
 		db,
+		primary: db,
 		tables: sqliteTables,
 		dialect: "sqlite",
 		ping: async () => {
@@ -62,6 +64,7 @@ const openPostgres = ({ url, maxConnections, readUrl }: DatabaseOptions): Databa
 
 	return {
 		db: asCanonical<Db>(db),
+		primary: asCanonical<Db>(primary),
 		tables: asCanonical<Schema>(pgTables),
 		dialect: "postgres",
 		ping: async () => {

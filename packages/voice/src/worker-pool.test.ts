@@ -59,6 +59,70 @@ describe("WorkerPool", () => {
 		expect(create).toHaveBeenCalledTimes(3);
 	});
 
+	it("gives each worker a WebRtcServer on its own port", async () => {
+		const { create, workers } = fakeWorkerFactory();
+		const pool = await WorkerPool.create({
+			workerCount: 2,
+			createWorker: create,
+			webRtcServer: { listenIp: "0.0.0.0", announcedIp: "203.0.113.1", basePort: 40_000 },
+		});
+
+		expect(pool.ports).toEqual([40_000, 40_001]);
+		expect(workers[1]?.createWebRtcServer).toHaveBeenCalledWith({
+			listenInfos: [
+				{ ip: "0.0.0.0", announcedAddress: "203.0.113.1", port: 40_001, protocol: "udp" },
+				{ ip: "0.0.0.0", announcedAddress: "203.0.113.1", port: 40_001, protocol: "tcp" },
+			],
+			appData: { index: 1 },
+		});
+
+		const first = await pool.createRouter({ mediaCodecs: [] });
+		const second = await pool.createRouter({ mediaCodecs: [] });
+
+		expect(first.webRtcServer).toBe(await workers[0]?.createWebRtcServer.mock.results[0]?.value);
+		expect(second.webRtcServer).toBe(await workers[1]?.createWebRtcServer.mock.results[0]?.value);
+	});
+
+	it("binds a replacement worker to the dead worker's port", async () => {
+		const { create, workers } = fakeWorkerFactory();
+		const pool = await WorkerPool.create({
+			workerCount: 2,
+			createWorker: create,
+			webRtcServer: { listenIp: "0.0.0.0", basePort: 40_000 },
+		});
+
+		workers[0]?.emit("died", new Error("boom"));
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(workers[2]?.createWebRtcServer).toHaveBeenCalledWith(
+			expect.objectContaining({
+				listenInfos: [
+					expect.objectContaining({ port: 40_000, protocol: "udp" }),
+					expect.objectContaining({ port: 40_000, protocol: "tcp" }),
+				],
+			}),
+		);
+		expect(pool.size).toBe(2);
+	});
+
+	it("puts a router on the worker with the fewest routers outside the avoid list", async () => {
+		const { create, workers } = fakeWorkerFactory();
+		const pool = await WorkerPool.create({ workerCount: 3, createWorker: create });
+
+		const first = await pool.createRouter({ mediaCodecs: [] });
+		const avoiding = await pool.createRouter({ mediaCodecs: [] }, { avoid: [1] });
+
+		expect(first.worker).toBe(0);
+		expect(avoiding.worker).toBe(2);
+
+		first.router.close();
+
+		const reused = await pool.createRouter({ mediaCodecs: [] }, { avoid: [1, 2] });
+
+		expect(reused.worker).toBe(0);
+		expect(workers[0]?.createRouter).toHaveBeenCalledTimes(2);
+	});
+
 	it("stops replacing workers once closed", async () => {
 		const { create } = fakeWorkerFactory();
 		const pool = await WorkerPool.create({ workerCount: 1, createWorker: create });

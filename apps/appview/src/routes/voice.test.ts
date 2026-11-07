@@ -60,18 +60,27 @@ const channels = new Map<string, ChannelState>([
 
 let roster: {
 	isJoined: ReturnType<typeof vi.fn>;
-	disconnect: ReturnType<typeof vi.fn>;
-	move: ReturnType<typeof vi.fn>;
+	apply: ReturnType<typeof vi.fn>;
 };
+let voiceCommand: ReturnType<typeof vi.fn>;
+let participant: ReturnType<typeof vi.fn>;
 let ctx: AppContext;
+
+const moved = (destination: string) => {
+	return { channel: GENERAL, subject: MEMBER, moveTo: destination };
+};
 
 beforeEach(() => {
 	roster = {
 		isJoined: vi.fn(() => true),
-		disconnect: vi.fn(async () => {}),
-		move: vi.fn(async () => {}),
+		apply: vi.fn(async () => {}),
 	};
+	voiceCommand = vi.fn();
+	participant = vi.fn(async () => null);
 	ctx = {
+		nodeId: "node-a",
+		announce: { voiceCommand },
+		voiceCalls: { participant },
 		loader: {
 			channel: async (space: string) => channels.get(space) ?? null,
 			authz: async (_community: string, actor: string) =>
@@ -85,24 +94,71 @@ beforeEach(() => {
 	} as unknown as AppContext;
 });
 
+describe("handleModerateVoice across nodes", () => {
+	beforeEach(() => {
+		ctx.voice = { presenceOf: () => undefined } as unknown as AppContext["voice"];
+		roster.isJoined.mockReturnValue(false);
+	});
+
+	it("sends the command to the node hosting the call", async () => {
+		participant.mockResolvedValue({ did: MEMBER, channel: GENERAL, nodeId: "node-b" });
+
+		await handleModerateVoice(ctx, MOD, { channel: GENERAL, subject: MEMBER, muted: true });
+
+		expect(voiceCommand).toHaveBeenCalledWith("node-b", {
+			channel: GENERAL,
+			subject: MEMBER,
+			muted: true,
+		});
+		expect(roster.apply).not.toHaveBeenCalled();
+	});
+
+	it("rejects a subject who is in no call on any node", async () => {
+		await expect(
+			handleModerateVoice(ctx, MOD, { channel: GENERAL, subject: MEMBER, disconnect: true }),
+		).rejects.toMatchObject({ customErrorName: "NotInVoice" });
+	});
+
+	it("rejects a subject whose call is in another channel", async () => {
+		participant.mockResolvedValue({ did: MEMBER, channel: LOUNGE, nodeId: "node-b" });
+
+		await expect(
+			handleModerateVoice(ctx, MOD, { channel: GENERAL, subject: MEMBER, disconnect: true }),
+		).rejects.toMatchObject({ customErrorName: "NotInVoice" });
+	});
+
+	it("works on a node without voice when the call runs elsewhere", async () => {
+		ctx.voice = null as unknown as AppContext["voice"];
+		participant.mockResolvedValue({ did: MEMBER, channel: GENERAL, nodeId: "node-b" });
+
+		await handleModerateVoice(ctx, MOD, { channel: GENERAL, subject: MEMBER, disconnect: true });
+
+		expect(voiceCommand).toHaveBeenCalledWith("node-b", {
+			channel: GENERAL,
+			subject: MEMBER,
+			disconnect: true,
+		});
+	});
+});
+
 describe("handleModerateVoice moveTo", () => {
 	it("moves the subject to another voice channel in the same space", async () => {
 		await handleModerateVoice(ctx, MOD, { channel: GENERAL, subject: MEMBER, moveTo: LOUNGE });
 
-		expect(roster.move).toHaveBeenCalledWith(GENERAL, MEMBER, LOUNGE);
+		expect(roster.apply).toHaveBeenCalledWith(moved(LOUNGE));
 	});
 
 	it("does nothing when the destination is the current channel", async () => {
 		await handleModerateVoice(ctx, MOD, { channel: GENERAL, subject: MEMBER, moveTo: GENERAL });
 
-		expect(roster.move).not.toHaveBeenCalled();
+		expect(roster.apply).toHaveBeenCalledWith({ channel: GENERAL, subject: MEMBER });
 	});
 
 	it("rejects a destination in another space", async () => {
 		await expect(
 			handleModerateVoice(ctx, MOD, { channel: GENERAL, subject: MEMBER, moveTo: FOREIGN }),
 		).rejects.toMatchObject({ customErrorName: "NotVoiceChannel" });
-		expect(roster.move).not.toHaveBeenCalled();
+		expect(roster.apply).not.toHaveBeenCalled();
 	});
 
 	it("rejects a text channel as the destination", async () => {
@@ -115,7 +171,7 @@ describe("handleModerateVoice moveTo", () => {
 		await expect(
 			handleModerateVoice(ctx, MOD, { channel: GENERAL, subject: MEMBER, moveTo: STAGE }),
 		).rejects.toMatchObject({ customErrorName: "Forbidden" });
-		expect(roster.move).not.toHaveBeenCalled();
+		expect(roster.apply).not.toHaveBeenCalled();
 	});
 
 	it("rejects a destination the subject cannot speak in", async () => {

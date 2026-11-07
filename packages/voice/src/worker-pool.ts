@@ -1,12 +1,30 @@
 import { availableParallelism } from "node:os";
 import { createWorker } from "mediasoup";
-import type { Router, RouterOptions, Worker, WorkerSettings } from "mediasoup/types";
+import type {
+	Router,
+	RouterOptions,
+	WebRtcServer,
+	WebRtcServerOptions,
+	Worker,
+	WorkerSettings,
+} from "mediasoup/types";
 import { TypedEmitter } from "./typed-emitter.js";
 
 export type WorkerFactory = (settings?: WorkerSettings) => Promise<Worker>;
 
+export type PooledRouter = {
+	router: Router;
+	webRtcServer?: WebRtcServer;
+	worker?: number;
+};
+
+export type RouterPlacement = {
+	avoid?: readonly number[];
+};
+
 export interface RouterProvider {
-	createRouter(options: RouterOptions): Promise<Router>;
+	readonly size?: number;
+	createRouter(options: RouterOptions, placement?: RouterPlacement): Promise<PooledRouter>;
 }
 
 export interface WorkerPoolLike extends RouterProvider {
@@ -18,14 +36,46 @@ export type WorkerPoolEvents = {
 	"worker-restarted": [{ pid: number }];
 };
 
+export type WebRtcServerListen = {
+	listenIp: string;
+	announcedIp?: string;
+	basePort: number;
+};
+
 export type WorkerPoolOptions = {
 	workerCount?: number;
+	webRtcServer?: WebRtcServerListen;
 	workerSettings?: WorkerSettings;
 	createWorker?: WorkerFactory;
 	subprocessExitTimeoutMs?: number;
 };
 
+type WorkerSlot = {
+	worker: Worker;
+	webRtcServer?: WebRtcServer;
+	routers: number;
+};
+
 export const DEFAULT_SUBPROCESS_EXIT_TIMEOUT_MS = 5_000;
+
+export function webRtcServerOptions(
+	listen: WebRtcServerListen,
+	index: number,
+): WebRtcServerOptions {
+	const base = {
+		ip: listen.listenIp,
+		announcedAddress: listen.announcedIp,
+		port: listen.basePort + index,
+	};
+
+	return {
+		listenInfos: [
+			{ ...base, protocol: "udp" },
+			{ ...base, protocol: "tcp" },
+		],
+		appData: { index },
+	};
+}
 
 function killSubprocess(pid: number): void {
 	if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) {
@@ -39,52 +89,114 @@ function killSubprocess(pid: number): void {
 }
 
 export class WorkerPool extends TypedEmitter<WorkerPoolEvents> implements WorkerPoolLike {
-	private workers: Worker[];
+	private slots: WorkerSlot[];
 	private nextWorkerIndex = 0;
 	private closed = false;
 
 	private readonly workerSettings: WorkerSettings;
 	private readonly createWorkerFn: WorkerFactory;
 	private readonly subprocessExitTimeoutMs: number;
+	private readonly listen: WebRtcServerListen | undefined;
 
 	private constructor(
-		workers: Worker[],
-		workerSettings: WorkerSettings,
-		createWorkerFn: WorkerFactory,
-		subprocessExitTimeoutMs: number,
+		slots: WorkerSlot[],
+		options: Required<Pick<WorkerPoolOptions, "workerSettings" | "subprocessExitTimeoutMs">> & {
+			createWorker: WorkerFactory;
+			webRtcServer?: WebRtcServerListen;
+		},
 	) {
 		super();
-		this.workers = workers;
-		this.workerSettings = workerSettings;
-		this.createWorkerFn = createWorkerFn;
-		this.subprocessExitTimeoutMs = subprocessExitTimeoutMs;
-		for (const worker of workers) {
-			this.attachWorkerListeners(worker);
+		this.slots = slots;
+		this.workerSettings = options.workerSettings;
+		this.createWorkerFn = options.createWorker;
+		this.subprocessExitTimeoutMs = options.subprocessExitTimeoutMs;
+		this.listen = options.webRtcServer;
+		for (const slot of slots) {
+			this.attachWorkerListeners(slot.worker);
 		}
 	}
 
 	static async create(options: WorkerPoolOptions = {}): Promise<WorkerPool> {
 		const count = options.workerCount ?? availableParallelism();
-		const workerSettings = options.workerSettings ?? {};
-		const createWorkerFn = options.createWorker ?? createWorker;
-		const subprocessExitTimeoutMs =
-			options.subprocessExitTimeoutMs ?? DEFAULT_SUBPROCESS_EXIT_TIMEOUT_MS;
-		const workers = await Promise.all(
-			Array.from({ length: count }, () => createWorkerFn(workerSettings)),
+		const settings = {
+			workerSettings: options.workerSettings ?? {},
+			createWorker: options.createWorker ?? createWorker,
+			subprocessExitTimeoutMs:
+				options.subprocessExitTimeoutMs ?? DEFAULT_SUBPROCESS_EXIT_TIMEOUT_MS,
+			...(options.webRtcServer ? { webRtcServer: options.webRtcServer } : {}),
+		};
+		const slots = await Promise.all(
+			Array.from({ length: count }, (_, index) => WorkerPool.startSlot(settings, index)),
 		);
-		return new WorkerPool(workers, workerSettings, createWorkerFn, subprocessExitTimeoutMs);
+
+		return new WorkerPool(slots, settings);
+	}
+
+	private static async startSlot(
+		settings: {
+			workerSettings: WorkerSettings;
+			createWorker: WorkerFactory;
+			webRtcServer?: WebRtcServerListen;
+		},
+		index: number,
+	): Promise<WorkerSlot> {
+		const worker = await settings.createWorker(settings.workerSettings);
+
+		if (!settings.webRtcServer) {
+			return { worker, routers: 0 };
+		}
+
+		try {
+			const webRtcServer = await worker.createWebRtcServer(
+				webRtcServerOptions(settings.webRtcServer, index),
+			);
+
+			return { worker, webRtcServer, routers: 0 };
+		} catch (error) {
+			worker.close();
+
+			throw error;
+		}
 	}
 
 	get size(): number {
-		return this.workers.length;
+		return this.slots.length;
 	}
 
-	async createRouter(options: RouterOptions): Promise<Router> {
+	get ports(): number[] {
+		if (!this.listen) {
+			return [];
+		}
+
+		const basePort = this.listen.basePort;
+
+		return this.slots.map((_, index) => basePort + index);
+	}
+
+	async createRouter(
+		options: RouterOptions,
+		placement: RouterPlacement = {},
+	): Promise<PooledRouter> {
 		if (this.closed) {
 			throw new Error("worker pool is closed");
 		}
-		const worker = this.pickWorker();
-		return worker.createRouter(options);
+		const index = this.pickSlot(placement.avoid ?? []);
+		const slot = this.slots[index];
+		if (!slot) {
+			throw new Error("worker pool has no workers");
+		}
+		const router = await slot.worker.createRouter(options);
+
+		slot.routers += 1;
+		router.observer.once("close", () => {
+			if (this.slots[index] === slot) slot.routers -= 1;
+		});
+
+		return {
+			router,
+			worker: index,
+			...(slot.webRtcServer ? { webRtcServer: slot.webRtcServer } : {}),
+		};
 	}
 
 	async close(): Promise<void> {
@@ -92,9 +204,9 @@ export class WorkerPool extends TypedEmitter<WorkerPoolEvents> implements Worker
 			return;
 		}
 		this.closed = true;
-		const workers = this.workers;
-		this.workers = [];
-		await Promise.all(workers.map((worker) => this.terminate(worker)));
+		const slots = this.slots;
+		this.slots = [];
+		await Promise.all(slots.map((slot) => this.terminate(slot.worker)));
 	}
 
 	private async terminate(worker: Worker): Promise<void> {
@@ -125,13 +237,31 @@ export class WorkerPool extends TypedEmitter<WorkerPoolEvents> implements Worker
 		});
 	}
 
-	private pickWorker(): Worker {
-		const worker = this.workers[this.nextWorkerIndex % this.workers.length];
-		this.nextWorkerIndex = (this.nextWorkerIndex + 1) % this.workers.length;
-		if (!worker) {
-			throw new Error("worker pool has no workers");
+	private pickSlot(avoid: readonly number[]): number {
+		const indexes = this.slots.map((_, index) => index);
+		const allowed = indexes.filter((index) => !avoid.includes(index));
+		const pool = allowed.length > 0 ? allowed : indexes;
+		const start = this.nextWorkerIndex % this.slots.length;
+
+		this.nextWorkerIndex = (this.nextWorkerIndex + 1) % this.slots.length;
+
+		let best: number | null = null;
+
+		for (let offset = 0; offset < this.slots.length; offset += 1) {
+			const index = (start + offset) % this.slots.length;
+
+			if (!pool.includes(index)) continue;
+
+			if (best === null || this.load(index) < this.load(best)) {
+				best = index;
+			}
 		}
-		return worker;
+
+		return best ?? 0;
+	}
+
+	private load(index: number): number {
+		return this.slots[index]?.routers ?? 0;
 	}
 
 	private attachWorkerListeners(worker: Worker): void {
@@ -141,7 +271,7 @@ export class WorkerPool extends TypedEmitter<WorkerPoolEvents> implements Worker
 	}
 
 	private async handleWorkerDeath(worker: Worker, error: Error): Promise<void> {
-		const index = this.workers.indexOf(worker);
+		const index = this.slots.findIndex((slot) => slot.worker === worker);
 		if (index === -1) {
 			return;
 		}
@@ -153,10 +283,24 @@ export class WorkerPool extends TypedEmitter<WorkerPoolEvents> implements Worker
 		}
 
 		try {
-			const replacement = await this.createWorkerFn(this.workerSettings);
-			this.workers[index] = replacement;
-			this.attachWorkerListeners(replacement);
-			this.emit("worker-restarted", { pid: replacement.pid });
+			const replacement = await WorkerPool.startSlot(
+				{
+					workerSettings: this.workerSettings,
+					createWorker: this.createWorkerFn,
+					...(this.listen ? { webRtcServer: this.listen } : {}),
+				},
+				index,
+			);
+
+			if (this.closed) {
+				await this.terminate(replacement.worker);
+
+				return;
+			}
+
+			this.slots[index] = replacement;
+			this.attachWorkerListeners(replacement.worker);
+			this.emit("worker-restarted", { pid: replacement.worker.pid });
 		} catch (restartError) {
 			this.emit("worker-died", { pid: worker.pid, error: restartError as Error });
 		}

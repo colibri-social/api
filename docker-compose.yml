@@ -11,8 +11,8 @@ services:
       PORT: 3000
       DATABASE_URL: ${DATABASE_URL:-file:/data/colibri.db}
     ports:
-      - "${SFU_RTC_MIN_PORT:-40000}-${SFU_RTC_MAX_PORT:-40100}:${SFU_RTC_MIN_PORT:-40000}-${SFU_RTC_MAX_PORT:-40100}/udp"
-      - "${SFU_RTC_MIN_PORT:-40000}-${SFU_RTC_MAX_PORT:-40100}:${SFU_RTC_MIN_PORT:-40000}-${SFU_RTC_MAX_PORT:-40100}/tcp"
+      - "40000-40031:40000-40031/udp"
+      - "40000-40031:40000-40031/tcp"
     volumes:
       - appview-data:/data
     mem_limit: ${APPVIEW_MEM_LIMIT:-2g}

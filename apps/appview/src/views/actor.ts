@@ -16,11 +16,12 @@ import type { AppContext } from "../context.js";
 import { signBlobUrl } from "../media-token.js";
 import { presenceOf } from "../presence.js";
 import { loadActivities } from "./activity.js";
+import { loadVoiceStates } from "./voice-state.js";
 
 export type ProfileView = social.colibri.beta.actor.defs.ProfileView;
 export type Presence = social.colibri.beta.actor.defs.Presence;
 
-type PresenceRow = Parameters<typeof presenceOf>[2];
+type PresenceRow = Parameters<typeof presenceOf>[0];
 
 type ColibriProfile = social.colibri.beta.actor.profile.Main;
 type BlueskyProfile = {
@@ -198,7 +199,7 @@ export class ActorViews {
 		});
 		this.refreshInBackground(stale);
 
-		const [fetchedEntries, activities, handles, presenceRows] = await Promise.all([
+		const [fetchedEntries, activities, handles, presenceRows, voices] = await Promise.all([
 			mapWithConcurrency(
 				blocking,
 				this.ctx.config.PROFILE_FETCH_CONCURRENCY,
@@ -207,6 +208,7 @@ export class ActorViews {
 			loadActivities(this.ctx, unique),
 			this.ctx.identity.resolveVerifiedHandles(unique).catch(() => new Map<string, null>()),
 			this.presenceRows(unique),
+			loadVoiceStates(this.ctx, unique),
 		]);
 
 		const fetched = new Map(
@@ -223,7 +225,7 @@ export class ActorViews {
 			const handle = handles.get(did) ?? null;
 			const presenceRow = presenceRows.get(did);
 			const presence = presenceRow
-				? presenceOf(this.ctx, did, presenceRow, activities.get(did) ?? [])
+				? presenceOf(presenceRow, activities.get(did) ?? [], voices.get(did))
 				: undefined;
 
 			out.set(did, {

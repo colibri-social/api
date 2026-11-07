@@ -11,19 +11,21 @@ import type { AppContext } from "./context.js";
 import { ActorViews } from "./views/actor.js";
 import { ChannelViews } from "./views/channel.js";
 import { ThreadViews } from "./views/thread.js";
+import type { VoiceCommand } from "./voice-calls.js";
 import type { EventServer } from "./ws/events.js";
 
 export type DeliveryDeps = {
 	ctx: AppContext;
 	events: EventServer;
 	authz: (change: AuthzChange) => void;
+	voice?: (command: VoiceCommand) => Promise<void>;
 };
 
 const readsDatabase = (message: EventMessage): boolean => {
 	return message.t === "thread" || message.t === "communityPermission";
 };
 
-export const eventDelivery = ({ ctx, events, authz }: DeliveryDeps) => {
+export const eventDelivery = ({ ctx, events, authz, voice }: DeliveryDeps) => {
 	const actors = new ActorViews(ctx);
 	const channels = new ChannelViews(ctx, actors);
 	const threads = new ThreadViews(ctx, channels);
@@ -131,6 +133,12 @@ export const eventDelivery = ({ ctx, events, authz }: DeliveryDeps) => {
 				return;
 			case "authz":
 				authz(message.change);
+
+				return;
+			case "voiceCommand":
+				if (message.node === ctx.nodeId && voice) {
+					await voice(message.command);
+				}
 
 				return;
 		}

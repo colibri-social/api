@@ -4,7 +4,7 @@ import { ACTIVE_WINDOW_MS, connectionStaleBefore } from "@colibri-social/notific
 import { and, eq, gte, inArray, lt, ne } from "drizzle-orm";
 import type { AppContext } from "./context.js";
 import { type ActivityView, loadActorActivities } from "./views/activity.js";
-import { liveVoiceState } from "./views/voice-state.js";
+import { loadVoiceState } from "./views/voice-state.js";
 import type { ServerFrame } from "./ws/events.js";
 
 const ONLINE = "online" satisfies OnlineState;
@@ -46,15 +46,14 @@ const statusOf = (row: PresenceParts): social.colibri.beta.actor.defs.Status | u
 };
 
 export const presenceOf = (
-	ctx: AppContext,
-	did: string,
 	row: PresenceParts,
 	activities: ActivityView[],
+	voice?: social.colibri.beta.actor.defs.VoiceState,
 ): social.colibri.beta.actor.defs.Presence =>
 	({
 		onlineState: effectiveOnlineState(row),
 		status: statusOf(row),
-		voice: liveVoiceState(ctx.voice, did),
+		voice,
 		activities,
 	}) as social.colibri.beta.actor.defs.Presence;
 
@@ -198,10 +197,9 @@ export class PresenceTracker {
 				$type: "social.colibri.beta.sync.defs#presenceEvent",
 				did,
 				presence: presenceOf(
-					this.deps.ctx,
-					did,
 					row,
 					await loadActorActivities(this.deps.ctx, did),
+					await loadVoiceState(this.deps.ctx, did),
 				),
 			},
 		);

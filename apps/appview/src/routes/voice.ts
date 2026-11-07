@@ -4,6 +4,7 @@ import { SPACE_TYPES, social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
+import type { VoiceCommand } from "../voice-calls.js";
 import type { RouteDeps } from "./types.js";
 
 const channelNotFound = (channel: string) =>
@@ -26,6 +27,26 @@ const destinationForbidden = (subject: string) =>
 
 const voiceUnavailable = () =>
 	new InvalidRequestError("this AppView has no voice SFU running", "VoiceUnavailable");
+
+const callOwner = async (
+	ctx: AppContext,
+	channel: string,
+	subject: string,
+): Promise<{ nodeId: string; carriesMedia: boolean } | null> => {
+	if (ctx.voice?.presenceOf(subject) === channel) {
+		return { nodeId: ctx.nodeId, carriesMedia: true };
+	}
+
+	if (ctx.voiceRoster.isJoined(channel, subject)) {
+		return { nodeId: ctx.nodeId, carriesMedia: false };
+	}
+
+	const participant = await ctx.voiceCalls.participant(subject);
+
+	return participant?.channel === channel
+		? { nodeId: participant.nodeId, carriesMedia: true }
+		: null;
+};
 
 const moveDestination = async (
 	ctx: AppContext,
@@ -80,26 +101,32 @@ export const handleModerateVoice = async (
 			? await moveDestination(ctx, actor, community, input.moveTo, input.subject)
 			: null;
 
-	if (!ctx.voice) throw voiceUnavailable();
+	const owner = await callOwner(ctx, input.channel, input.subject);
 
-	const carriesMedia = ctx.voice.presenceOf(input.subject) === input.channel;
-	if (!carriesMedia && !ctx.voiceRoster.isJoined(input.channel, input.subject)) {
+	if (!owner) throw notInVoice(input.subject);
+
+	if ((input.muted !== undefined || input.deafened !== undefined) && !owner.carriesMedia) {
 		throw notInVoice(input.subject);
 	}
 
-	if (input.muted !== undefined || input.deafened !== undefined) {
-		if (!carriesMedia) throw notInVoice(input.subject);
-		await ctx.voice.moderate(input.channel, input.subject, {
-			...(input.muted === undefined ? {} : { muted: input.muted }),
-			...(input.deafened === undefined ? {} : { deafened: input.deafened }),
-		});
+	const command: VoiceCommand = {
+		channel: input.channel,
+		subject: input.subject,
+		...(input.muted === undefined ? {} : { muted: input.muted }),
+		...(input.deafened === undefined ? {} : { deafened: input.deafened }),
+		...(input.disconnect ? { disconnect: true } : {}),
+		...(destination ? { moveTo: destination } : {}),
+	};
+
+	if (owner.nodeId !== ctx.nodeId) {
+		ctx.announce.voiceCommand(owner.nodeId, command);
+
+		return {};
 	}
 
-	if (input.disconnect) {
-		await ctx.voiceRoster.disconnect(input.channel, input.subject);
-	} else if (destination) {
-		await ctx.voiceRoster.move(input.channel, input.subject, destination);
-	}
+	if (!ctx.voice) throw voiceUnavailable();
+
+	await ctx.voiceRoster.apply(command);
 
 	return {};
 };

@@ -187,10 +187,11 @@ export const configSchema = z.object({
 	SFU_WORKER_COUNT: z.coerce.number().int().positive().optional(),
 	SFU_LISTEN_IP: z.string().default("0.0.0.0"),
 	SFU_ANNOUNCED_IP: optionalString,
-	SFU_RTC_MIN_PORT: z.coerce.number().int().positive().default(40000),
-	SFU_RTC_MAX_PORT: z.coerce.number().int().positive().default(40100),
 	SFU_ICE_SERVERS: optionalString,
 	SFU_RTC_PORT: z.coerce.number().int().min(1).max(65535).default(40000),
+	SFU_INITIAL_OUTGOING_BITRATE: z.coerce.number().int().positive().default(3_500_000),
+	SFU_PARTICIPANTS_PER_WORKER: z.coerce.number().int().positive().default(20),
+	VOICE_MIGRATION_NOTICE_SECONDS: z.coerce.number().int().min(0).default(60),
 	TURN_KEY_ID: optionalString,
 	TURN_KEY_API_TOKEN: optionalString,
 

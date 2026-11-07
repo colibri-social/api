@@ -1,3 +1,4 @@
+import type { WebRtcServer } from "mediasoup/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	asRouter,
@@ -57,8 +58,8 @@ describe("buildWebRtcTransportOptions", () => {
 	it("declares both a udp and a tcp listen info", () => {
 		const options = buildWebRtcTransportOptions({ listenIp: "0.0.0.0" });
 		expect(options.listenInfos).toEqual([
-			{ ip: "0.0.0.0", announcedAddress: undefined, portRange: undefined, protocol: "udp" },
-			{ ip: "0.0.0.0", announcedAddress: undefined, portRange: undefined, protocol: "tcp" },
+			{ ip: "0.0.0.0", announcedAddress: undefined, protocol: "udp" },
+			{ ip: "0.0.0.0", announcedAddress: undefined, protocol: "tcp" },
 		]);
 	});
 
@@ -75,27 +76,32 @@ describe("buildWebRtcTransportOptions", () => {
 		expect(options.initialAvailableOutgoingBitrate).toBe(300_000);
 	});
 
-	it("carries the announced ip and port range through to both protocols", () => {
+	it("carries the announced ip through to both protocols", () => {
 		const options = buildWebRtcTransportOptions({
 			listenIp: "0.0.0.0",
 			announcedIp: "203.0.113.1",
-			rtcMinPort: 40_000,
-			rtcMaxPort: 40_100,
 		});
 		expect(options.listenInfos).toEqual([
-			{
-				ip: "0.0.0.0",
-				announcedAddress: "203.0.113.1",
-				portRange: { min: 40_000, max: 40_100 },
-				protocol: "udp",
-			},
-			{
-				ip: "0.0.0.0",
-				announcedAddress: "203.0.113.1",
-				portRange: { min: 40_000, max: 40_100 },
-				protocol: "tcp",
-			},
+			{ ip: "0.0.0.0", announcedAddress: "203.0.113.1", protocol: "udp" },
+			{ ip: "0.0.0.0", announcedAddress: "203.0.113.1", protocol: "tcp" },
 		]);
+	});
+
+	it("routes transports through the worker's WebRtcServer when one is given", () => {
+		const webRtcServer = { id: "server-1" } as unknown as WebRtcServer;
+		const options = buildWebRtcTransportOptions({
+			listenIp: "0.0.0.0",
+			webRtcServer,
+			initialAvailableOutgoingBitrate: 300_000,
+		});
+
+		expect(options).toEqual({
+			webRtcServer,
+			enableUdp: true,
+			enableTcp: true,
+			preferUdp: true,
+			initialAvailableOutgoingBitrate: 300_000,
+		});
 	});
 });
 
@@ -1096,5 +1102,103 @@ describe("VoiceRoom bandwidth", () => {
 
 		expect(rawSend.setMaxIncomingBitrate).toHaveBeenCalledWith(SEND_MAX_INCOMING_BITRATE);
 		expect(rawRecv.setMaxIncomingBitrate).not.toHaveBeenCalled();
+	});
+});
+
+describe("VoiceRoom across workers", () => {
+	async function spreadRoom(participantsPerRouter = 2) {
+		const primary = createFakeRouter();
+		const extras: ReturnType<typeof createFakeRouter>[] = [];
+		const extraRouter = vi.fn(async (_busy: readonly number[]) => {
+			const router = createFakeRouter();
+			extras.push(router);
+			return { router: asRouter(router), webRtcTransportOptions, worker: extras.length };
+		});
+		const room = await VoiceRoom.create(asRouter(primary), "at://did:plc:c/vc", {
+			webRtcTransportOptions,
+			worker: 0,
+			extraRouter,
+			participantsPerRouter,
+			maxRouters: 3,
+		});
+
+		return { room, primary, extras, extraRouter };
+	}
+
+	it("keeps a small call on one worker", async () => {
+		const { room, extraRouter } = await spreadRoom();
+
+		await room.createTransport("did:plc:a", "send");
+		await room.createTransport("did:plc:b", "send");
+
+		expect(room.routerCount).toBe(1);
+		expect(extraRouter).not.toHaveBeenCalled();
+	});
+
+	it("takes another worker once a router is full, and stops at the worker count", async () => {
+		const { room, extraRouter } = await spreadRoom(1);
+
+		await room.createTransport("did:plc:a", "send");
+		await room.createTransport("did:plc:b", "send");
+		await room.createTransport("did:plc:c", "send");
+		await room.createTransport("did:plc:d", "send");
+
+		expect(extraRouter).toHaveBeenNthCalledWith(1, [0]);
+		expect(extraRouter).toHaveBeenNthCalledWith(2, [0, 1]);
+		expect(room.routerCount).toBe(3);
+		expect(room.routerLoad()).toEqual([2, 1, 1]);
+	});
+
+	it("pipes every producer into every other router of the call", async () => {
+		const { room, primary, extras } = await spreadRoom(1);
+
+		const sendA = await room.createTransport("did:plc:a", "send");
+		await room.produce("did:plc:a", sendA.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "mic",
+		});
+		const sendB = await room.createTransport("did:plc:b", "send");
+		const fromB = await room.produce("did:plc:b", sendB.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "mic",
+		});
+
+		const extra = extras[0];
+
+		expect(primary.pipeToRouter).toHaveBeenCalledWith(
+			expect.objectContaining({ router: asRouter(extra as ReturnType<typeof createFakeRouter>) }),
+		);
+		expect(extra?.pipeToRouter).toHaveBeenCalledWith({
+			producerId: fromB.id,
+			router: asRouter(primary),
+		});
+		expect(primary.audioLevelObserver.addProducer).toHaveBeenCalledWith({
+			producerId: fromB.id,
+		});
+	});
+
+	it("closes an extra router once its last participant leaves", async () => {
+		const { room, extras } = await spreadRoom(1);
+
+		await room.createTransport("did:plc:a", "send");
+		await room.createTransport("did:plc:b", "send");
+		await room.leave("did:plc:b");
+
+		expect(extras[0]?.close).toHaveBeenCalled();
+		expect(room.routerCount).toBe(1);
+	});
+
+	it("drops the call when a worker under an extra router dies", async () => {
+		const { room, extras } = await spreadRoom(1);
+		const lost = vi.fn();
+
+		room.on("router-lost", lost);
+		await room.createTransport("did:plc:a", "send");
+		await room.createTransport("did:plc:b", "send");
+		extras[0]?.killWorker();
+
+		expect(lost).toHaveBeenCalled();
 	});
 });

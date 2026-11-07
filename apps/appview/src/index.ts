@@ -1,4 +1,6 @@
 import { type AdvisoryLock, holdLock, type LockHolder } from "@colibri-social/appview-db";
+import { asDid, asSpaceRef } from "@colibri-social/lexicons";
+import { parseSpaceRef } from "@colibri-social/space";
 import { lt } from "drizzle-orm";
 import { ActivitySweeper } from "./activity.js";
 import { busAnnouncer, type EventMessage } from "./announce.js";
@@ -20,6 +22,7 @@ import { resyncBrokenCids } from "./resync-broken-cids.js";
 import { resolveVersion } from "./routes/server.js";
 import { installFatalHandlers, startErrorReporting, stopErrorReporting } from "./sentry.js";
 import { createAppServer } from "./server.js";
+import type { ParticipantRow } from "./voice-calls.js";
 import { EventServer } from "./ws/events.js";
 import { VoiceServer } from "./ws/voice.js";
 
@@ -31,6 +34,21 @@ const EVENT_PAYLOAD_TTL_MS = 10 * 60_000;
 
 type MainJobs = {
 	stop: () => Promise<void>;
+};
+
+const announceVoiceLeaves = (ctx: AppContext, rows: readonly ParticipantRow[]): void => {
+	for (const row of rows) {
+		ctx.announce.toCommunity(parseSpaceRef(row.channel).authority, {
+			$type: "social.colibri.beta.sync.defs#voiceEvent",
+			event: "leave",
+			channel: asSpaceRef(row.channel),
+			did: asDid(row.did),
+		});
+	}
+};
+
+const sweepVoiceParticipants = async (ctx: AppContext): Promise<void> => {
+	announceVoiceLeaves(ctx, await ctx.voiceCalls.sweep());
 };
 
 const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<MainJobs> => {
@@ -69,6 +87,10 @@ const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<Main
 		void events
 			.reconcilePresence()
 			.catch((error: unknown) => ctx.log.warn({ err: error }, "presence.reconcileFailed"));
+
+		void sweepVoiceParticipants(ctx).catch((error: unknown) =>
+			ctx.log.warn({ err: error }, "voice.sweepFailed"),
+		);
 
 		const { db, tables } = ctx.database;
 		const before = new Date(Date.now() - EVENT_PAYLOAD_TTL_MS).toISOString();
@@ -127,11 +149,23 @@ const main = async (): Promise<void> => {
 
 	const server = createAppServer(ctx, { api: roles.has("api") });
 	const events = new EventServer(ctx);
-	const stopDelivery = bus.subscribe(
-		eventDelivery({ ctx, events, authz: (change) => ctx.authzChanges.deliver(change) }),
-	);
 	const voice = new VoiceServer(ctx);
 	ctx.voiceRoster = voice;
+	const stopDelivery = bus.subscribe(
+		eventDelivery({
+			ctx,
+			events,
+			authz: (change) => ctx.authzChanges.deliver(change),
+			voice: (command) => voice.apply(command),
+		}),
+	);
+
+	if (ctx.voice) {
+		await ctx.voiceCalls
+			.forgetNode()
+			.then((rows) => announceVoiceLeaves(ctx, rows))
+			.catch((error: unknown) => ctx.log.warn({ err: error }, "voice.forgetNodeFailed"));
+	}
 	const disconnectPipeline = connectPipeline({ ctx });
 
 	const http = server.listen(config.PORT, () => {
@@ -178,6 +212,9 @@ const main = async (): Promise<void> => {
 
 		ctx.drain.begin(deadline);
 		events.announceDrain(deadline);
+		void voice
+			.beginMigration(deadline)
+			.catch((error: unknown) => ctx.log.error({ err: error }, "voice.migrationFailed"));
 
 		ctx.log.info(
 			{ peers, graceMs, deadline: deadline.toISOString(), connections: connectionCount() },

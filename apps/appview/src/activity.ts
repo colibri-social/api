@@ -12,6 +12,7 @@ import { announceToCommunities, presenceEvent } from "./announce.js";
 import type { AppContext } from "./context.js";
 import { presenceOf } from "./presence.js";
 import { activityIsCurrent, loadActorActivities } from "./views/activity.js";
+import { loadVoiceState } from "./views/voice-state.js";
 
 export const ACTIVITY_SWEEP_MS = 30_000;
 
@@ -101,8 +102,6 @@ export const announceActivity = async (ctx: AppContext, did: string): Promise<vo
 
 	const activities = await loadActorActivities(ctx, did);
 	const view = presenceOf(
-		ctx,
-		did,
 		presence ?? {
 			derivedState: "offline",
 			requestedState: null,
@@ -113,6 +112,7 @@ export const announceActivity = async (ctx: AppContext, did: string): Promise<vo
 			statusShowWhileOffline: false,
 		},
 		activities,
+		await loadVoiceState(ctx, did),
 	);
 	await announceToCommunities(ctx, did, presenceEvent(did, view));
 };

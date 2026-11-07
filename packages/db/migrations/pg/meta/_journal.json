@@ -246,6 +246,13 @@
 			"when": 1794048328120,
 			"tag": "0034_complex_jigsaw",
 			"breakpoints": true
+		},
+		{
+			"idx": 35,
+			"version": "7",
+			"when": 1794063713043,
+			"tag": "0035_fancy_ultimatum",
+			"breakpoints": true
 		}
 	]
 }
