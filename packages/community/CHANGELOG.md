@@ -1,5 +1,18 @@
 # @colibri-social/community
 
+## 2.15.1
+
+### Patch Changes
+
+- 19be678: Update Spaces support to the November 5 alpha (`0.0.0-spaces-alpha-20261105160032`). STAR archives from `getRepo` use the new control-byte framing through the `@atproto/space` helpers, so the AppView needs a PDS on the same alpha. `@atproto/star` is pinned to the alpha build, because its caret range otherwise resolves to a broken `0.0.0-stage` release. The vendored atproto space lexicons move to `704b9e2a`, which adds `RepoTakendown` and `RepoDeactivated` to `getSpaceCredential` and `listRepos`. A suspended space keeps its synced data and retries, as before.
+- Updated dependencies [aea9292]
+- Updated dependencies [19be678]
+  - @colibri-social/lexicons@2.37.0
+  - @colibri-social/appview-db@0.22.0
+  - @colibri-social/space@0.11.1
+  - @colibri-social/identity@0.3.2
+  - @colibri-social/projections@1.15.1
+
 ## 2.15.0
 
 ### Minor Changes
