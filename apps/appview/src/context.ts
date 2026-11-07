@@ -1,5 +1,5 @@
 import { Secp256k1Keypair } from "@atproto/crypto";
-import { type Database, openDatabase, runMigrations } from "@colibri-social/appview-db";
+import { type Database, openDatabase } from "@colibri-social/appview-db";
 import { BlobCache, BlobService } from "@colibri-social/blobs";
 import {
 	admitCommunityWrites,
@@ -45,12 +45,14 @@ import { GAME_CACHE_MAX_ENTRIES, GAME_CACHE_TTL_MS, type GameEntry } from "./act
 import { type Announcer, silentAnnouncer } from "./announce.js";
 import { type AuthzChanges, createAuthzChanges } from "./authz-changes.js";
 import type { Config } from "./config.js";
+import { createDrainState } from "./drain.js";
 import { HostOAuth } from "./host-oauth.js";
 import {
 	createLinkEmbedResolver,
 	PREVIEW_CACHE_MAX_ENTRIES,
 	PREVIEW_CACHE_TTL_MS,
 } from "./link-embeds.js";
+import { migrateUnderLock } from "./locks.js";
 import { createLogger, type Logger } from "./logger.js";
 import {
 	drizzleCredentialStorage,
@@ -84,8 +86,12 @@ export const createContext = async (config: Config) => {
 		url: config.DATABASE_URL,
 		...(config.DATABASE_AUTH_TOKEN ? { authToken: config.DATABASE_AUTH_TOKEN } : {}),
 		maxConnections: config.DATABASE_MAX_CONNECTIONS,
+		...(config.DATABASE_READ_URL ? { readUrl: config.DATABASE_READ_URL } : {}),
 	});
-	await runMigrations(database);
+
+	if (config.ROLES.includes("main")) {
+		await migrateUnderLock(database);
+	}
 
 	const keypair = await Secp256k1Keypair.import(config.SIGNING_KEY, {
 		exportable: true,
@@ -275,7 +281,10 @@ export const createContext = async (config: Config) => {
 	});
 	const videoArtwork = config.VIDEO_ARTWORK_ENABLED ? createVideoArtworkClient({ log }) : null;
 
-	const voice = config.VOICE_ENABLED ? await createVoiceSfu(voiceSfuConfigFromEnv()) : null;
+	const voice =
+		config.VOICE_ENABLED && config.ROLES.includes("voice")
+			? await createVoiceSfu(voiceSfuConfigFromEnv())
+			: null;
 	voice?.on("room-close-failed", ({ channel, error }) =>
 		log.error({ channel, err: error }, "voice.roomCloseFailed"),
 	);
@@ -295,6 +304,7 @@ export const createContext = async (config: Config) => {
 	}
 
 	return {
+		drain: createDrainState(),
 		announce: silentAnnouncer as Announcer,
 		voiceRoster: emptyVoiceRoster as VoiceRoster,
 		authzChanges: authzChanges as AuthzChanges,

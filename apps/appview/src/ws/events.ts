@@ -9,6 +9,7 @@ import { type WebSocket, WebSocketServer } from "ws";
 import { backfillActivity } from "../activity.js";
 import { channelEvent, communityEvent, threadEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
+import type { DrainReason } from "../drain.js";
 import { fireAndForget } from "../fire-and-forget.js";
 import { ConnectionPresence, isOnlineState, PresenceTracker } from "../presence.js";
 import { ActorViews } from "../views/actor.js";
@@ -105,6 +106,18 @@ export class EventServer {
 
 	get connectionCount(): number {
 		return this.connections.size;
+	}
+
+	announceDrain(deadline: Date, reason?: DrainReason): void {
+		const frame: ServerFrame = {
+			$type: "social.colibri.beta.sync.defs#drainNotice",
+			deadline: deadline.toISOString(),
+			...(reason ? { reason } : {}),
+		};
+
+		for (const connection of this.connections) {
+			this.send(connection, frame);
+		}
 	}
 
 	attach(http: HttpServer): void {

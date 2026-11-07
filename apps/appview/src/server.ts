@@ -45,7 +45,14 @@ Code: https://github.com/colibri-social/appview
 Protocol: https://atproto.com
 `;
 
-export const createAppServer = (ctx: AppContext): Server => {
+export type AppServerOptions = {
+	api: boolean;
+};
+
+export const createAppServer = (
+	ctx: AppContext,
+	{ api }: AppServerOptions = { api: true },
+): Server => {
 	const server = createServer(undefined, {
 		payload: { jsonLimit: 1_000_000, blobLimit: 20 * 1024 * 1024 },
 		catchall: undefined,
@@ -57,6 +64,55 @@ export const createAppServer = (ctx: AppContext): Server => {
 	const auth = authVerifiers(ctx);
 	const deps = { server, ctx, auth };
 
+	if (api) {
+		registerXrpcRoutes(deps);
+	}
+
+	app.get("/", (_req: Request, res: Response) => {
+		res.type("text/plain").send(BANNER);
+	});
+
+	app.get(
+		"/health",
+		asyncHandler(ctx, "health.failed", async (_req: Request, res: Response) => {
+			if (ctx.drain.draining) {
+				res.status(503).json({
+					status: "draining",
+					did: ctx.config.APPVIEW_DID,
+					deadline: ctx.drain.deadline?.toISOString(),
+				});
+
+				return;
+			}
+
+			try {
+				await ctx.database.ping();
+			} catch (error) {
+				ctx.log.error({ err: error }, "health.databaseUnreachable");
+				res.status(503).json({ status: "degraded", did: ctx.config.APPVIEW_DID, database: "down" });
+				return;
+			}
+			res.json({ status: "ok", did: ctx.config.APPVIEW_DID, database: "up" });
+		}),
+	);
+
+	app.get("/.well-known/did.json", (_req: Request, res: Response) => {
+		res.json(ctx.didDocument);
+	});
+
+	if (api) {
+		mountBlobRoutes(ctx, app);
+		mountEmbedMediaRoutes(ctx, app);
+		mountIdentityRoutes(ctx, app);
+		mountHostOAuthRoutes(ctx, app);
+	}
+
+	app.use(respondWithError(ctx.log));
+
+	return server;
+};
+
+const registerXrpcRoutes = (deps: Parameters<typeof registerProtocolRoutes>[0]): void => {
 	registerProtocolRoutes(deps);
 	registerActorRoutes(deps);
 	registerActorWriteRoutes(deps);
@@ -77,35 +133,4 @@ export const createAppServer = (ctx: AppContext): Server => {
 	registerNotificationRoutes(deps);
 	registerServerRoutes(deps);
 	// NOTE: Humming was dropped with the rebuild, implementation follows after reconsideration
-
-	app.get("/", (_req: Request, res: Response) => {
-		res.type("text/plain").send(BANNER);
-	});
-
-	app.get(
-		"/health",
-		asyncHandler(ctx, "health.failed", async (_req: Request, res: Response) => {
-			try {
-				await ctx.database.ping();
-			} catch (error) {
-				ctx.log.error({ err: error }, "health.databaseUnreachable");
-				res.status(503).json({ status: "degraded", did: ctx.config.APPVIEW_DID, database: "down" });
-				return;
-			}
-			res.json({ status: "ok", did: ctx.config.APPVIEW_DID, database: "up" });
-		}),
-	);
-
-	app.get("/.well-known/did.json", (_req: Request, res: Response) => {
-		res.json(ctx.didDocument);
-	});
-
-	mountBlobRoutes(ctx, app);
-	mountEmbedMediaRoutes(ctx, app);
-	mountIdentityRoutes(ctx, app);
-	mountHostOAuthRoutes(ctx, app);
-
-	app.use(respondWithError(ctx.log));
-
-	return server;
 };

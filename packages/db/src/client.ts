@@ -2,8 +2,10 @@ import { createClient, type ResultSet } from "@libsql/client";
 import { sql } from "drizzle-orm";
 import { drizzle as drizzleLibsql, type LibSQLDatabase } from "drizzle-orm/libsql";
 import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
+import { withReplicas } from "drizzle-orm/pg-core";
 import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 import pg from "pg";
+import { type AdvisoryLock, grantedLock, postgresAdvisoryLock } from "./lock.js";
 import { schema as pgTables } from "./schema/pg.js";
 import { type Schema, schema as sqliteTables } from "./schema/sqlite.js";
 
@@ -16,6 +18,7 @@ export type Database = {
 	tables: Schema;
 	dialect: Dialect;
 	ping: () => Promise<void>;
+	advisoryLock: (key: number) => AdvisoryLock;
 	close: () => Promise<void>;
 };
 
@@ -23,6 +26,7 @@ export type DatabaseOptions = {
 	url: string;
 	authToken?: string;
 	maxConnections?: number;
+	readUrl?: string;
 };
 
 export const dialectFor = (url: string): Dialect =>
@@ -40,21 +44,32 @@ const openSqlite = ({ url, authToken }: DatabaseOptions): Database => {
 		ping: async () => {
 			await db.run(sql`select 1`);
 		},
+		advisoryLock: () => grantedLock(),
 		close: async () => client.close(),
 	};
 };
 
-const openPostgres = ({ url, maxConnections }: DatabaseOptions): Database => {
-	const pool = new pg.Pool({ connectionString: url, max: maxConnections ?? 20 });
-	const db = drizzlePg(pool, { schema: pgTables });
+const openPostgres = ({ url, maxConnections, readUrl }: DatabaseOptions): Database => {
+	const max = maxConnections ?? 20;
+	const pool = new pg.Pool({ connectionString: url, max });
+	const primary = drizzlePg(pool, { schema: pgTables });
+	const readPool = readUrl ? new pg.Pool({ connectionString: readUrl, max }) : null;
+	const db = readPool
+		? withReplicas(primary, [drizzlePg(readPool, { schema: pgTables })])
+		: primary;
+
 	return {
 		db: asCanonical<Db>(db),
 		tables: asCanonical<Schema>(pgTables),
 		dialect: "postgres",
 		ping: async () => {
-			await db.execute(sql`select 1`);
+			await primary.execute(sql`select 1`);
 		},
-		close: () => pool.end(),
+		advisoryLock: (key) => postgresAdvisoryLock(url, key),
+		close: async () => {
+			await pool.end();
+			await readPool?.end();
+		},
 	};
 };
 
