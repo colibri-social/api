@@ -1,14 +1,17 @@
-import { holdLock, type LockHolder } from "@colibri-social/appview-db";
+import { type AdvisoryLock, holdLock, type LockHolder } from "@colibri-social/appview-db";
+import { lt } from "drizzle-orm";
 import { ActivitySweeper } from "./activity.js";
-import { eventAnnouncer } from "./announce.js";
+import { busAnnouncer, type EventMessage } from "./announce.js";
+import { type EventBus, memoryBus, postgresBus } from "./bus.js";
 import { healCategoryOrders } from "./category-order.js";
 import { describeConfig, loadConfig } from "./config.js";
 import { type AppContext, createContext } from "./context.js";
 import { drainGraceMs, hasPeers, waitForConnections } from "./drain.js";
+import { eventDelivery } from "./event-delivery.js";
 import { HandOverSweeper, hostIdentityChanged } from "./hand-overs.js";
 import { healOwnerRolePermissions } from "./heal.js";
 import { Jetstream } from "./jetstream.js";
-import { MAIN_LOCK_KEY } from "./locks.js";
+import { claimClockId, MAIN_LOCK_KEY } from "./locks.js";
 import { createLogger } from "./logger.js";
 import { migrationJobs } from "./migrations.js";
 import { connectPipeline } from "./pipeline.js";
@@ -22,11 +25,15 @@ import { VoiceServer } from "./ws/voice.js";
 
 const SHUTDOWN_DEADLINE_MS = 15_000;
 
+const PRESENCE_RECONCILE_MS = 60_000;
+
+const EVENT_PAYLOAD_TTL_MS = 10 * 60_000;
+
 type MainJobs = {
 	stop: () => Promise<void>;
 };
 
-const startMainJobs = async (ctx: AppContext): Promise<MainJobs> => {
+const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<MainJobs> => {
 	const jetstream = new Jetstream(ctx, {
 		onIdentity: (did) => {
 			void hostIdentityChanged(ctx, did).catch((error: unknown) =>
@@ -58,8 +65,25 @@ const startMainJobs = async (ctx: AppContext): Promise<MainJobs> => {
 		.resume()
 		.catch((error: unknown) => ctx.log.warn({ err: error }, "migration.resumeFailed"));
 
+	const housekeeping = setInterval(() => {
+		void events
+			.reconcilePresence()
+			.catch((error: unknown) => ctx.log.warn({ err: error }, "presence.reconcileFailed"));
+
+		const { db, tables } = ctx.database;
+		const before = new Date(Date.now() - EVENT_PAYLOAD_TTL_MS).toISOString();
+
+		void db
+			.delete(tables.eventPayloads)
+			.where(lt(tables.eventPayloads.createdAt, before))
+			.catch((error: unknown) => ctx.log.warn({ err: error }, "bus.payloadCleanupFailed"));
+	}, PRESENCE_RECONCILE_MS);
+
+	housekeeping.unref?.();
+
 	return {
 		stop: async () => {
+			clearInterval(housekeeping);
 			await jetstream.stop();
 			await activities.stop();
 			await handOvers.stop();
@@ -82,12 +106,33 @@ const main = async (): Promise<void> => {
 
 	ctx.log.info({ roles: [...roles] }, "config.roles");
 
+	const bus: EventBus<EventMessage> =
+		ctx.database.dialect === "postgres"
+			? await postgresBus<EventMessage>({
+					url: config.DATABASE_URL,
+					nodeId: ctx.nodeId,
+					database: ctx.database,
+					log: ctx.log,
+				})
+			: memoryBus<EventMessage>(ctx.nodeId, ctx.log);
+
+	ctx.announce = busAnnouncer(bus);
+	ctx.authzChanges.route((change) => bus.publish({ t: "authz", change }));
+
+	const clockLock: AdvisoryLock | null = await claimClockId(ctx.database);
+
+	if (!clockLock) {
+		ctx.log.warn("notifications.clockIdUnclaimed");
+	}
+
 	const server = createAppServer(ctx, { api: roles.has("api") });
 	const events = new EventServer(ctx);
-	ctx.announce = eventAnnouncer(events);
-	const voice = new VoiceServer(ctx, events);
+	const stopDelivery = bus.subscribe(
+		eventDelivery({ ctx, events, authz: (change) => ctx.authzChanges.deliver(change) }),
+	);
+	const voice = new VoiceServer(ctx);
 	ctx.voiceRoster = voice;
-	const disconnectPipeline = connectPipeline({ ctx, events });
+	const disconnectPipeline = connectPipeline({ ctx });
 
 	const http = server.listen(config.PORT, () => {
 		ctx.log.info({ port: config.PORT, host: config.HOST }, "listening");
@@ -123,7 +168,7 @@ const main = async (): Promise<void> => {
 	};
 
 	const drain = async (): Promise<void> => {
-		const peers = await hasPeers(ctx.database, config.NODE_ID).catch((error: unknown) => {
+		const peers = await hasPeers(ctx.database, ctx.nodeId).catch((error: unknown) => {
 			ctx.log.warn({ err: error }, "drain.peerCheckFailed");
 
 			return false;
@@ -180,6 +225,11 @@ const main = async (): Promise<void> => {
 		await step("main-jobs", () => mainJobs?.stop());
 		await step("main-lock", () => mainLock?.stop());
 		await step("events", () => events.close());
+		await step("bus", async () => {
+			stopDelivery();
+			await bus.close();
+		});
+		await step("clock", () => clockLock?.release());
 		await step("voice", () => voice.close());
 		await step("http", () => http.close());
 		await step("context", () => ctx.close());
@@ -193,7 +243,7 @@ const main = async (): Promise<void> => {
 			lock: ctx.database.advisoryLock(MAIN_LOCK_KEY),
 			onAcquired: async () => {
 				ctx.log.info("main.acquired");
-				mainJobs = await startMainJobs(ctx);
+				mainJobs = await startMainJobs(ctx, events);
 			},
 			onLost: (error) => {
 				ctx.log.error({ err: error }, "main.lost");

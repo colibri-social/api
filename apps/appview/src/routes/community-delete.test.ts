@@ -3,7 +3,7 @@ import { CommunityCredentialError, CommunityLoader } from "@colibri-social/commu
 import { channelSpace, communitySpaces, SPACE_TYPES } from "@colibri-social/lexicons";
 import type { AuthzChange } from "@colibri-social/projections";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Announcer } from "../announce.js";
+import { type Announcer, silentAnnouncer } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { ActorViews } from "../views/actor.js";
 import { CommunityViews } from "../views/community.js";
@@ -109,14 +109,7 @@ beforeEach(async () => {
 
 	const loader = new CommunityLoader({ db: database.db, tables: database.tables });
 	const announcer: Announcer = {
-		toCommunity: () => {},
-		toCommunityPermission: async () => {},
-		toCommunityViewers: async () => {},
-		toChannel: () => {},
-		toBridges: async () => {},
-		toUser: () => {},
-		channelChanged: () => {},
-		threadDeleted: () => {},
+		...silentAnnouncer,
 		communityDeleted: (community) => announced.push({ kind: "communityDeleted", community }),
 	};
 

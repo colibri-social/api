@@ -204,6 +204,9 @@ importers:
       hono:
         specifier: 'catalog:'
         version: 4.13.3
+      pg:
+        specifier: 'catalog:'
+        version: 8.23.0
       pino:
         specifier: 'catalog:'
         version: 10.3.1
@@ -220,6 +223,9 @@ importers:
       '@types/express':
         specifier: ^5.0.0
         version: 5.0.6
+      '@types/pg':
+        specifier: 'catalog:'
+        version: 8.23.1
       '@types/ws':
         specifier: 'catalog:'
         version: 8.18.1

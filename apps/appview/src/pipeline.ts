@@ -37,7 +37,6 @@ import {
 	readCursorEvent,
 	roleEvent,
 	threadEvent,
-	threadFrameForBridges,
 } from "./announce.js";
 import type { AppContext } from "./context.js";
 import { republishWhenPreviewsSettle } from "./embed-republish.js";
@@ -53,7 +52,7 @@ import { ActorViews, type ProfileView } from "./views/actor.js";
 import { ChannelViews, type MessageView } from "./views/channel.js";
 import { CommunityViews } from "./views/community.js";
 import { ThreadViews } from "./views/thread.js";
-import type { EventServer, ServerFrame } from "./ws/events.js";
+import type { ServerFrame } from "./ws/events.js";
 
 type ServableNotification = { row: IndexedNotificationRow; routing: PushRouting };
 
@@ -61,7 +60,6 @@ const SLOW_DELIVERY_MS = 2_000;
 
 type Deps = {
 	ctx: AppContext;
-	events: EventServer;
 };
 
 type LabelValue = {
@@ -170,7 +168,7 @@ const readCursorsOf = (value: Record<string, unknown>): { channel: string; curso
 	});
 };
 
-export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
+export const connectPipeline = ({ ctx }: Deps): (() => void) => {
 	const actors = new ActorViews(ctx);
 	const channels = new ChannelViews(ctx, actors);
 	const communities = new CommunityViews(ctx, actors);
@@ -183,7 +181,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		await purgeCommunity(ctx.database, community, spaces);
 		for (const space of spaces) ctx.sync.notifySpaceDeleted(space);
 
-		events.communityDeleted(community);
+		ctx.announce.communityDeleted(community);
 		ctx.authzChanges.publish({ community, collection: COLLECTIONS.member });
 	};
 
@@ -192,15 +190,15 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		if (!space?.community) return;
 
 		if (isChannelSpace(space)) {
-			events.channelChanged(space.community, uri, "delete");
+			ctx.announce.channelChanged(space.community, uri, "delete");
 			return;
 		}
 
 		if (isThreadSpace(space)) {
 			const frame = threadEvent("delete", space.community, { space: uri });
-			events.publishToCommunity(space.community, frame);
-			void events.publishToBridges(space.community, async () => frame);
-			events.threadDeleted(uri);
+			ctx.announce.toCommunity(space.community, frame);
+			ctx.announce.toBridges(space.community, frame);
+			ctx.announce.threadDeleted(uri);
 			return;
 		}
 
@@ -277,7 +275,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		for (const view of views) {
 			const row = byId.get(view.id);
 			if (!row) continue;
-			events.publishToUser(
+			ctx.announce.toUser(
 				row.recipient,
 				notificationEvent(withFullMessage(view, message, row.recipient)),
 			);
@@ -375,7 +373,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 	const publishMember = async (community: string, did: string): Promise<void> => {
 		const member = await communities.memberOf(community, did);
 		if (!member) return;
-		events.publishToCommunity(community, memberEvent("update", community, member));
+		ctx.announce.toCommunity(community, memberEvent("update", community, member));
 	};
 
 	const logDelivery = (change: RepoChange, published: number): void => {
@@ -410,18 +408,12 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		const key = { author, rkey };
 		const message = await channels.message(space, null, key, space, { embedWaitMs: 0 });
 		if (!message) return undefined;
-		events.publishToChannel(space, (viewer) => ({
-			$type: "social.colibri.beta.sync.defs#messageEvent",
-			event: message.updatedAt ? "update" : "create",
-			channel: space,
-			message: channels.forViewer(message, viewer),
-			...(imported ? { imported: true } : {}),
-		}));
+		ctx.announce.message(space, message.updatedAt ? "update" : "create", message, { imported });
 
 		republishWhenPreviewsSettle(
 			ctx,
 			channels,
-			(target, frame) => events.publishToChannel(target, frame),
+			(target, enriched) => ctx.announce.message(target, "update", enriched),
 			{ space, readingSpace: space, author, rkey },
 			linkUrisOf(message.facets, message.suppressedEmbeds).filter(
 				(uri) => !ctx.linkEmbeds.peek(uri),
@@ -435,14 +427,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		community: string,
 		event: "create" | "update",
 	): Promise<void> => {
-		const row = await threads.row(space);
-		if (!row) return;
-		await events.publishToCommunityViewers(community, async (did) => {
-			const authz = await ctx.loader.authz(community, did);
-			const view = await threads.view(row, authz, did);
-			return view ? threadEvent(event, community, { channel: row.channel, thread: view }) : null;
-		});
-		await events.publishToBridges(community, threadFrameForBridges(ctx, threads, row, event));
+		ctx.announce.thread({ community, space, event, whenHidden: "skip", bridges: true });
 	};
 
 	const reopenOnPost = async (space: string, community: string, postedAt: string) => {
@@ -453,19 +438,12 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 	};
 
 	const publishThreadActivity = async (space: string, community: string): Promise<void> => {
-		const row = await threads.row(space);
-		if (!row) return;
-		await events.publishToCommunityViewers(community, async (did) => {
-			const authz = await ctx.loader.authz(community, did);
-			const view = await threads.view(row, authz, did);
-			return view
-				? threadEvent("activity", community, {
-						channel: row.channel,
-						space,
-						lastActivityAt: row.lastActivityAt,
-						thread: view,
-					})
-				: null;
+		ctx.announce.thread({
+			community,
+			space,
+			event: "activity",
+			whenHidden: "skip",
+			bridges: false,
 		});
 	};
 
@@ -475,7 +453,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			.select({ channel: table.channel, cursor: table.cursor })
 			.from(table)
 			.where(and(eq(table.did, did), eq(table.community, community)));
-		if (rows.length > 0) events.publishToUser(did, readCursorEvent(community, rows));
+		if (rows.length > 0) ctx.announce.toUser(did, readCursorEvent(community, rows));
 	};
 
 	const publishFollow = async (space: string, community: string, did: string): Promise<void> => {
@@ -484,7 +462,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		const authz = await ctx.loader.authz(community, did);
 		const view = await threads.view(row, authz, did);
 		if (view) {
-			events.publishToUser(
+			ctx.announce.toUser(
 				did,
 				threadEvent("update", community, { channel: row.channel, thread: view }),
 			);
@@ -514,7 +492,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 		if (!space) return;
 
 		if (isPersonalSpace(space)) {
-			events.publishToUser(
+			ctx.announce.toUser(
 				space.authority,
 				preferencesEvent(await loadPreferences(ctx, space.authority)),
 			);
@@ -593,12 +571,12 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			}
 
 			if (put.collection === COLLECTIONS.reaction) {
-				events.publishToChannel(change.space, reactionFrame("create", change, put.value, put.rkey));
+				ctx.announce.toChannel(change.space, reactionFrame("create", change, put.value, put.rkey));
 			}
 
 			if (put.collection === COLLECTIONS.label) {
 				const value = put.value as LabelValue;
-				events.publishToChannel(
+				ctx.announce.toChannel(
 					change.space,
 					labelFrame(value.neg ? "negate" : "create", change.space, change.author, value),
 				);
@@ -614,7 +592,7 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			}
 
 			if (space.community && put.collection === COLLECTIONS.channel) {
-				events.channelChanged(space.community, change.space, "update");
+				ctx.announce.channelChanged(space.community, change.space, "update");
 			}
 
 			if (space.community && put.collection === COLLECTIONS.thread) {
@@ -622,22 +600,22 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 			}
 
 			if (space.community && put.collection === COLLECTIONS.category) {
-				events.publishToCommunity(
+				ctx.announce.toCommunity(
 					space.community,
 					categoryEvent("update", space.community, put.rkey),
 				);
 			}
 
 			if (space.community && put.collection === COLLECTIONS.community) {
-				events.publishToCommunity(space.community, communityEvent("update", space.community));
+				ctx.announce.toCommunity(space.community, communityEvent("update", space.community));
 			}
 
 			if (space.community && put.collection === COLLECTIONS.communitySettings) {
-				events.publishToCommunity(space.community, communityEvent("update", space.community));
+				ctx.announce.toCommunity(space.community, communityEvent("update", space.community));
 			}
 
 			if (space.community && put.collection === COLLECTIONS.role) {
-				events.publishToCommunity(space.community, roleEvent("update", space.community, put.rkey));
+				ctx.announce.toCommunity(space.community, roleEvent("update", space.community, put.rkey));
 			}
 
 			if (space.community && put.collection === COLLECTIONS.member) {
@@ -647,41 +625,38 @@ export const connectPipeline = ({ ctx, events }: Deps): (() => void) => {
 
 		for (const entry of change.deletes) {
 			if (entry.collection === COLLECTIONS.message) {
-				events.publishToChannel(change.space, messageDeleted(change, entry.rkey));
+				ctx.announce.toChannel(change.space, messageDeleted(change, entry.rkey));
 				pushMessageDeleted(change.space, change.author, entry.rkey);
 			}
 			if (entry.collection === COLLECTIONS.reaction && entry.previous) {
-				events.publishToChannel(
+				ctx.announce.toChannel(
 					change.space,
 					reactionFrame("delete", change, entry.previous, entry.rkey),
 				);
 			}
 			if (space.community && entry.collection === COLLECTIONS.channel) {
-				events.channelChanged(space.community, change.space, "delete");
+				ctx.announce.channelChanged(space.community, change.space, "delete");
 			}
 
 			if (space.community && entry.collection === COLLECTIONS.thread) {
 				const frame = threadEvent("delete", space.community, { space: change.space });
-				events.publishToCommunity(space.community, frame);
-				void events.publishToBridges(space.community, async () => frame);
+				ctx.announce.toCommunity(space.community, frame);
+				ctx.announce.toBridges(space.community, frame);
 			}
 
 			if (space.community && entry.collection === COLLECTIONS.category) {
-				events.publishToCommunity(
+				ctx.announce.toCommunity(
 					space.community,
 					categoryEvent("delete", space.community, entry.rkey),
 				);
 			}
 
 			if (space.community && entry.collection === COLLECTIONS.role) {
-				events.publishToCommunity(
-					space.community,
-					roleEvent("delete", space.community, entry.rkey),
-				);
+				ctx.announce.toCommunity(space.community, roleEvent("delete", space.community, entry.rkey));
 			}
 
 			if (space.community && entry.collection === COLLECTIONS.member) {
-				events.publishToCommunity(space.community, memberGoneEvent(space.community, entry.rkey));
+				ctx.announce.toCommunity(space.community, memberGoneEvent(space.community, entry.rkey));
 			}
 		}
 

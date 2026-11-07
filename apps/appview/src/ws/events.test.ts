@@ -12,7 +12,7 @@ import { nextTid } from "@colibri-social/space";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
-import { readCursorEvent } from "../announce.js";
+import { readCursorEvent, silentAnnouncer } from "../announce.js";
 import { createAuthzChanges } from "../authz-changes.js";
 import type { AppContext } from "../context.js";
 import { EventServer } from "./events.js";
@@ -219,7 +219,14 @@ describe("EventServer", () => {
 		database = await openTestDatabase();
 		notifyWrite = vi.fn();
 		http = createServer();
-		events = new EventServer(buildCtx());
+		const ctx = buildCtx();
+
+		events = new EventServer(ctx);
+		ctx.announce = {
+			...silentAnnouncer,
+			toChannel: (space, frame, except) => events.publishToChannel(space, frame, except),
+			toTopics: (topics, frame) => events.publishTo(topics, frame),
+		};
 		events.attach(http);
 		port = await new Promise<number>((resolve) => {
 			http.listen(0, () => resolve((http.address() as AddressInfo).port));

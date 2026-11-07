@@ -19,6 +19,7 @@ export type Database = {
 	dialect: Dialect;
 	ping: () => Promise<void>;
 	advisoryLock: (key: number) => AdvisoryLock;
+	waitForReplay: (lsn: string, timeoutMs: number) => Promise<boolean>;
 	close: () => Promise<void>;
 };
 
@@ -45,6 +46,7 @@ const openSqlite = ({ url, authToken }: DatabaseOptions): Database => {
 			await db.run(sql`select 1`);
 		},
 		advisoryLock: () => grantedLock(),
+		waitForReplay: async () => true,
 		close: async () => client.close(),
 	};
 };
@@ -66,11 +68,38 @@ const openPostgres = ({ url, maxConnections, readUrl }: DatabaseOptions): Databa
 			await primary.execute(sql`select 1`);
 		},
 		advisoryLock: (key) => postgresAdvisoryLock(url, key),
+		waitForReplay: (lsn, timeoutMs) => {
+			return readPool ? waitForReplay(readPool, lsn, timeoutMs) : Promise.resolve(true);
+		},
 		close: async () => {
 			await pool.end();
 			await readPool?.end();
 		},
 	};
+};
+
+const REPLAY_POLL_MS = 50;
+
+const waitForReplay = async (pool: pg.Pool, lsn: string, timeoutMs: number): Promise<boolean> => {
+	const deadline = Date.now() + timeoutMs;
+
+	while (true) {
+		const result = await pool.query<{ caught_up: boolean | null }>(
+			"select pg_last_wal_replay_lsn() >= $1::pg_lsn as caught_up",
+			[lsn],
+		);
+		const caughtUp = result.rows[0]?.caught_up;
+
+		if (caughtUp !== false) {
+			return true;
+		}
+
+		if (Date.now() >= deadline) {
+			return false;
+		}
+
+		await new Promise((resolve) => setTimeout(resolve, REPLAY_POLL_MS));
+	}
 };
 
 export const openDatabase = (options: DatabaseOptions): Database =>

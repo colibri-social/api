@@ -1,7 +1,7 @@
 import type { OnlineState, ReactionEmojiRef } from "@colibri-social/appview-db";
 import type { social } from "@colibri-social/lexicons";
 import { ACTIVE_WINDOW_MS, connectionStaleBefore } from "@colibri-social/notifications";
-import { eq, inArray, lt } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, ne } from "drizzle-orm";
 import type { AppContext } from "./context.js";
 import { type ActivityView, loadActorActivities } from "./views/activity.js";
 import { liveVoiceState } from "./views/voice-state.js";
@@ -63,6 +63,7 @@ export const isOnlineState = (value: string): value is OnlineState =>
 
 export type PresenceDeps = {
 	ctx: AppContext;
+	nodeId: string;
 	publish: (did: string, communities: readonly string[], frame: ServerFrame) => void;
 };
 
@@ -103,6 +104,44 @@ export class PresenceTracker {
 		return this.enqueue(did, () => this.settle(did, state));
 	}
 
+	async reconcile(limit = RECONCILE_BATCH): Promise<number> {
+		const { db, tables } = this.deps.ctx.database;
+		const online = await db
+			.select({ did: tables.userPresence.did })
+			.from(tables.userPresence)
+			.where(eq(tables.userPresence.derivedState, ONLINE))
+			.limit(limit);
+		let settled = 0;
+
+		for (const { did } of online) {
+			if (this.connections(did) > 0) {
+				continue;
+			}
+
+			await this.enqueue(did, () => this.settle(did));
+			settled += 1;
+		}
+
+		return settled;
+	}
+
+	private async connectedElsewhere(did: string): Promise<boolean> {
+		const { db, tables } = this.deps.ctx.database;
+		const rows = await db
+			.select({ id: tables.presenceConnections.id })
+			.from(tables.presenceConnections)
+			.where(
+				and(
+					eq(tables.presenceConnections.did, did),
+					ne(tables.presenceConnections.nodeId, this.deps.nodeId),
+					gte(tables.presenceConnections.seenAt, connectionStaleBefore(new Date().toISOString())),
+				),
+			)
+			.limit(1);
+
+		return rows.length > 0;
+	}
+
 	private enqueue(did: string, work: () => Promise<void>): Promise<void> {
 		const previous = this.queues.get(did) ?? Promise.resolve();
 		const next = previous.then(work);
@@ -124,7 +163,8 @@ export class PresenceTracker {
 			.where(eq(tables.userPresence.did, did))
 			.limit(1);
 
-		const derivedState: OnlineState = this.connections(did) > 0 ? ONLINE : OFFLINE;
+		const connected = this.connections(did) > 0 || (await this.connectedElsewhere(did));
+		const derivedState: OnlineState = connected ? ONLINE : OFFLINE;
 		const row = {
 			did,
 			derivedState,
@@ -170,8 +210,11 @@ export class PresenceTracker {
 
 const ACTIVE_REFRESH_MS = 60 * 1000;
 
+const RECONCILE_BATCH = 500;
+
 export type ConnectionPresenceDeps = {
 	ctx: Pick<AppContext, "database">;
+	nodeId: string;
 	now?: () => number;
 };
 
@@ -195,9 +238,14 @@ export class ConnectionPresence {
 	async opened(id: string, did: string): Promise<void> {
 		return this.enqueue(id, async () => {
 			const { db, tables } = this.database;
-			await db
-				.insert(tables.presenceConnections)
-				.values({ id, did, viewingChannel: null, activeUntil: null, seenAt: this.iso() });
+			await db.insert(tables.presenceConnections).values({
+				id,
+				did,
+				viewingChannel: null,
+				activeUntil: null,
+				seenAt: this.iso(),
+				nodeId: this.deps.nodeId,
+			});
 		});
 	}
 

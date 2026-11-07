@@ -15,7 +15,7 @@ import {
 } from "@colibri-social/lexicons";
 import { nextTid } from "@colibri-social/space";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type Announcer, silentAnnouncer } from "../announce.js";
+import { type Announcer, messageEvent, silentAnnouncer } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { ActorViews } from "../views/actor.js";
 import { ChannelViews } from "../views/channel.js";
@@ -26,7 +26,6 @@ import { moveMessages } from "./thread-write.js";
 const COMMUNITY = "did:plc:2hnjxkqm6bpuvvpjbztkxxxx";
 const MOVER = "did:plc:7fkdlwjqmzcuvvpjbztkmmmm";
 const AUTHOR = "did:plc:7fkdlwjqmzcuvvpjbztkaaaa";
-const VIEWER = "did:plc:7fkdlwjqmzcuvvpjbztkvvvv";
 const NOW = "2026-08-23T00:00:00.000Z";
 const SOURCE = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkchannelsrc00");
 const DESTINATION = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkchanneldst00");
@@ -41,7 +40,10 @@ let writes: RecordWrite[];
 const recordingAnnouncer = (): Announcer => ({
 	...silentAnnouncer,
 	toChannel: (space, frame) => {
-		published.push({ space, frame: typeof frame === "function" ? frame(VIEWER) : frame });
+		published.push({ space, frame });
+	},
+	message: (space, event, message) => {
+		published.push({ space, frame: messageEvent(event, space, message) });
 	},
 });
 

@@ -9,7 +9,7 @@ import type { AppContext } from "../context.js";
 import { fireAndForget } from "../fire-and-forget.js";
 import { voiceStateIn } from "../views/voice-state.js";
 import { bearerToken, selectSubprotocol } from "./auth.js";
-import type { EventServer, ServerFrame } from "./events.js";
+import type { ServerFrame } from "./events.js";
 import { channelTopic, TopicIndex } from "./topics.js";
 
 const VOICE_PATH = "/xrpc/social.colibri.beta.voice.subscribeSignals";
@@ -75,10 +75,7 @@ export class VoiceServer {
 	private heartbeat: NodeJS.Timeout | null = null;
 	private readonly stopWatchingAuthz: () => void;
 
-	constructor(
-		private readonly ctx: AppContext,
-		private readonly events: EventServer | null = null,
-	) {
+	constructor(private readonly ctx: AppContext) {
 		if (ctx.voice) this.wireVoiceEvents(ctx.voice);
 		this.stopWatchingAuthz = ctx.authzChanges.subscribe((change) => {
 			void this.revalidate(change.community).catch((error: unknown) => {
@@ -730,8 +727,7 @@ export class VoiceServer {
 	}
 
 	private announceSpeaking(channel: string, did: string, speaking: boolean): void {
-		if (!this.events) return;
-		this.events.publishToCommunity(parseSpaceRef(channel).authority, {
+		this.ctx.announce.toCommunity(parseSpaceRef(channel).authority, {
 			$type: "social.colibri.beta.sync.defs#voiceEvent",
 			event: "speaking",
 			channel: asSpaceRef(channel),
@@ -746,8 +742,7 @@ export class VoiceServer {
 		event: "join" | "leave" | "update",
 		voice?: social.colibri.beta.actor.defs.VoiceState,
 	): void {
-		if (!this.events) return;
-		this.events.publishToCommunity(parseSpaceRef(channel).authority, {
+		this.ctx.announce.toCommunity(parseSpaceRef(channel).authority, {
 			$type: "social.colibri.beta.sync.defs#voiceEvent",
 			event,
 			channel: asSpaceRef(channel),

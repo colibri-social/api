@@ -6,9 +6,9 @@ import { VoiceSfu, type WorkerPoolLike } from "@colibri-social/voice";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { asRouter, createFakeRouter } from "../../../../packages/voice/src/mock-mediasoup.js";
+import { silentAnnouncer } from "../announce.js";
 import { type AuthzChanges, createAuthzChanges } from "../authz-changes.js";
 import type { AppContext } from "../context.js";
-import type { EventServer } from "./events.js";
 import { VoiceServer } from "./voice.js";
 
 const VOICE_PATH = "/xrpc/social.colibri.beta.voice.subscribeSignals";
@@ -156,11 +156,13 @@ describe("VoiceServer", () => {
 		sfu = await VoiceSfu.create({ roomGraceMs: 1_000 }, { workerPool: fakeWorkerPool() });
 		announced = [];
 		harness = buildCtx(sfu);
-		voiceServer = new VoiceServer(harness.ctx, {
-			publishToCommunity: (community: string, frame: Record<string, unknown>) => {
+		harness.ctx.announce = {
+			...silentAnnouncer,
+			toCommunity: (community, frame) => {
 				announced.push({ community, frame });
 			},
-		} as unknown as EventServer);
+		};
+		voiceServer = new VoiceServer(harness.ctx);
 		http = createServer();
 		voiceServer.attach(http);
 		port = await listen(http);

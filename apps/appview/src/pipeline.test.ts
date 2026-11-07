@@ -6,7 +6,10 @@ import { nextTid } from "@colibri-social/space";
 import type { RepoChange } from "@colibri-social/space-sync";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { busAnnouncer, type EventMessage } from "./announce.js";
+import { memoryBus } from "./bus.js";
 import type { AppContext } from "./context.js";
+import { eventDelivery } from "./event-delivery.js";
 import { createLinkEmbedResolver } from "./link-embeds.js";
 import type { Logger } from "./logger.js";
 import { verifyMediaGrant } from "./media-token.js";
@@ -327,7 +330,12 @@ beforeEach(async () => {
 		name: "general",
 	});
 
-	disconnect = connectPipeline({ ctx, events });
+	const bus = memoryBus<EventMessage>("test", ctx.log as never);
+
+	bus.subscribe(eventDelivery({ ctx, events, authz: () => {} }));
+	(ctx as { announce: AppContext["announce"] }).announce = busAnnouncer(bus);
+
+	disconnect = connectPipeline({ ctx });
 });
 
 afterEach(async () => {

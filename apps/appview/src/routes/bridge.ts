@@ -28,7 +28,7 @@ import {
 	toLexForm,
 } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
-import { labelEvent, messageEvent, messageGone } from "../announce.js";
+import { labelEvent, messageGone } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
@@ -277,13 +277,7 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 	const announceMessage = async (channel: string, author: string, rkey: string) => {
 		const message = await channels.message(channel, null, { author, rkey });
 		if (!message) return;
-		ctx.announce.toChannel(channel, (viewer) =>
-			messageEvent(
-				message.updatedAt ? "update" : "create",
-				channel,
-				channels.forViewer(message, viewer),
-			),
-		);
+		ctx.announce.message(channel, message.updatedAt ? "update" : "create", message);
 	};
 
 	const announceReaction = (
@@ -456,7 +450,7 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 			}
 			for (const space of replaced.threads) {
 				const row = await threads.row(space);
-				if (row) await announceThread(ctx, threads, row, "update");
+				if (row) await announceThread(ctx, row, "update");
 			}
 			return {
 				encoding: "application/json" as const,
@@ -711,7 +705,7 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 				}),
 			);
 			const row = await threads.row(space);
-			if (row) await announceThread(ctx, threads, row, "create");
+			if (row) await announceThread(ctx, row, "create");
 			return { encoding: "application/json" as const, body: { thread: asSpaceRef(space) } };
 		},
 	});
@@ -749,7 +743,7 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 				),
 			);
 			const row = await threads.row(existing.space);
-			if (row) await announceThread(ctx, threads, row, "update");
+			if (row) await announceThread(ctx, row, "update");
 			return { encoding: "application/json" as const, body: {} };
 		},
 	});

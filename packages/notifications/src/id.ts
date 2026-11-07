@@ -13,7 +13,17 @@ const encode = (value: number, length: number): string => {
 	return out;
 };
 
-const clockId = Math.floor(Math.random() * 32 ** CLOCK_CHARS);
+export const CLOCK_IDS = 32 ** CLOCK_CHARS;
+
+let clockId = Math.floor(Math.random() * CLOCK_IDS);
+
+export const setClockId = (value: number): void => {
+	if (!Number.isInteger(value) || value < 0 || value >= CLOCK_IDS) {
+		throw new RangeError(`clock id must be an integer from 0 to ${CLOCK_IDS - 1}`);
+	}
+
+	clockId = value;
+};
 
 let lastTimestamp = 0;
 let counter = 0;

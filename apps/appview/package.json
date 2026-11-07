@@ -57,12 +57,14 @@
 		"@sentry/node": "catalog:",
 		"drizzle-orm": "catalog:",
 		"hono": "catalog:",
+		"pg": "catalog:",
 		"pino": "catalog:",
 		"ws": "catalog:",
 		"youtubei.js": "^18.0.0",
 		"zod": "catalog:"
 	},
 	"devDependencies": {
+		"@types/pg": "catalog:",
 		"@types/ws": "catalog:",
 		"pino-pretty": "catalog:",
 		"@types/express": "^5.0.0"

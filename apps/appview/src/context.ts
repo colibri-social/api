@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Secp256k1Keypair } from "@atproto/crypto";
 import { type Database, openDatabase } from "@colibri-social/appview-db";
 import { BlobCache, BlobService } from "@colibri-social/blobs";
@@ -304,6 +305,7 @@ export const createContext = async (config: Config) => {
 	}
 
 	return {
+		nodeId: config.NODE_ID ?? `local-${randomUUID()}`,
 		drain: createDrainState(),
 		announce: silentAnnouncer as Announcer,
 		voiceRoster: emptyVoiceRoster as VoiceRoster,

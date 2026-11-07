@@ -39,12 +39,66 @@ beforeEach(async () => {
 	published = [];
 	tracker = new PresenceTracker({
 		ctx: { database, voice: null } as unknown as AppContext,
+		nodeId: "node-a",
 		publish: (did, communities, frame) => published.push({ did, communities, frame }),
 	});
 });
 
 afterEach(async () => {
 	await database.close();
+});
+
+describe("presence across nodes", () => {
+	const connectOn = async (nodeId: string, seenAt = new Date().toISOString()) => {
+		await database.db.insert(database.tables.presenceConnections).values({
+			id: `${nodeId}-socket`,
+			did: ACTOR,
+			viewingChannel: null,
+			activeUntil: null,
+			seenAt,
+			nodeId,
+		});
+	};
+
+	it("stays online when the last local socket closes but another node still holds one", async () => {
+		await tracker.opened(ACTOR);
+		await connectOn("node-b");
+		await tracker.closed(ACTOR);
+
+		expect((await stored())?.derivedState).toBe("online");
+		expect(states()).toEqual(["online"]);
+	});
+
+	it("ignores a stale socket row from a node that went away", async () => {
+		await tracker.opened(ACTOR);
+		await connectOn("node-b", "2020-01-01T00:00:00.000Z");
+		await tracker.closed(ACTOR);
+
+		expect((await stored())?.derivedState).toBe("offline");
+	});
+
+	it("reads as online when another node holds the only socket", async () => {
+		await connectOn("node-b");
+		await tracker.requested(ACTOR, "online");
+
+		expect((await stored())?.derivedState).toBe("online");
+	});
+
+	it("reconciles a user left online after every node lost its sockets", async () => {
+		await connectOn("node-b");
+		await tracker.requested(ACTOR, "online");
+		await database.db.delete(database.tables.presenceConnections);
+
+		expect(await tracker.reconcile()).toBe(1);
+		expect((await stored())?.derivedState).toBe("offline");
+	});
+
+	it("leaves users with a local socket alone while reconciling", async () => {
+		await tracker.opened(ACTOR);
+
+		expect(await tracker.reconcile()).toBe(0);
+		expect((await stored())?.derivedState).toBe("online");
+	});
 });
 
 describe("presence tracking", () => {
@@ -140,7 +194,7 @@ describe("connection presence", () => {
 
 	beforeEach(() => {
 		now = Date.parse("2026-11-05T12:00:00.000Z");
-		connections = new ConnectionPresence({ ctx: { database }, now: () => now });
+		connections = new ConnectionPresence({ ctx: { database }, nodeId: "node-a", now: () => now });
 	});
 
 	it("keeps a channel in view per connection so devices leave each other alone", async () => {

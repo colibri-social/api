@@ -1,14 +1,14 @@
+import type { MessageView } from "./announce.js";
 import type { AppContext } from "./context.js";
 import { fireAndForget } from "./fire-and-forget.js";
 import type { ChannelViews, LatePreviewTarget } from "./views/channel.js";
-import type { ChannelFrame } from "./ws/events.js";
 
 const settling = new Set<string>();
 
 export const republishWhenPreviewsSettle = (
 	ctx: AppContext,
 	channels: ChannelViews,
-	publish: (space: string, frame: ChannelFrame) => void,
+	publish: (space: string, message: MessageView) => void,
 	target: LatePreviewTarget,
 	unresolved: readonly string[],
 ): void => {
@@ -28,12 +28,7 @@ export const republishWhenPreviewsSettle = (
 					embedWaitMs: 0,
 				});
 				if (!enriched) return;
-				publish(target.readingSpace, (viewer) => ({
-					$type: "social.colibri.beta.sync.defs#messageEvent",
-					event: "update",
-					channel: target.readingSpace,
-					message: channels.forViewer(enriched, viewer),
-				}));
+				publish(target.readingSpace, enriched);
 			} finally {
 				settling.delete(key);
 			}

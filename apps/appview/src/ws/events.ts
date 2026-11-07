@@ -89,10 +89,11 @@ export class EventServer {
 	constructor(private readonly ctx: AppContext) {
 		this.presence = new PresenceTracker({
 			ctx,
+			nodeId: ctx.nodeId,
 			publish: (did, communities, frame) =>
-				this.publishTo([userTopic(did), ...communities.map(communityTopic)], frame),
+				ctx.announce.toTopics([userTopic(did), ...communities.map(communityTopic)], frame),
 		});
-		this.connectionPresence = new ConnectionPresence({ ctx });
+		this.connectionPresence = new ConnectionPresence({ ctx, nodeId: ctx.nodeId });
 		this.communities = new CommunityViews(ctx, new ActorViews(ctx));
 		this.stopWatchingAuthz = ctx.authzChanges.subscribe((change) => {
 			void this.revalidate(change.community).catch((error: unknown) => {
@@ -106,6 +107,10 @@ export class EventServer {
 
 	get connectionCount(): number {
 		return this.connections.size;
+	}
+
+	reconcilePresence(): Promise<number> {
+		return this.presence.reconcile();
 	}
 
 	announceDrain(deadline: Date, reason?: DrainReason): void {
@@ -313,7 +318,7 @@ export class EventServer {
 
 	private applyTyping(connection: Connection, frame: { channel: string }): void {
 		if (!this.topics.topicsOf(connection).includes(channelTopic(frame.channel))) return;
-		this.publishToChannel(
+		this.ctx.announce.toChannel(
 			frame.channel,
 			{
 				$type: "social.colibri.beta.sync.defs#typingEvent",

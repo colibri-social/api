@@ -26,13 +26,7 @@ import {
 } from "@colibri-social/lexicons";
 import { nextTid, parseSpaceRef } from "@colibri-social/space";
 import { and, asc, eq } from "drizzle-orm";
-import {
-	labelEvent,
-	messageEvent,
-	messageGone,
-	threadEvent,
-	threadFrameForBridges,
-} from "../announce.js";
+import { labelEvent, messageGone, threadEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { toXrpcError } from "../errors.js";
 import { route } from "../route.js";
@@ -280,7 +274,7 @@ export const registerThreadWriteRoutes = ({ server, ctx, auth }: RouteDeps): voi
 
 				const row = await loadThread(space);
 				const thread = await viewOf(row, actor);
-				await announceThread(ctx, threads, row, "create");
+				await announceThread(ctx, row, "create");
 
 				return { encoding: "application/json" as const, body: { thread } };
 			} catch (error) {
@@ -349,7 +343,7 @@ export const registerThreadWriteRoutes = ({ server, ctx, auth }: RouteDeps): voi
 
 				const row = await loadThread(existing.space);
 				const thread = await viewOf(row, actor);
-				await announceThread(ctx, threads, row, "update");
+				await announceThread(ctx, row, "update");
 				if (changesVisibility || changesLock) {
 					ctx.authzChanges.publish({
 						community: existing.community,
@@ -416,7 +410,7 @@ export const registerThreadWriteRoutes = ({ server, ctx, auth }: RouteDeps): voi
 
 				const row = await loadThread(existing.space);
 				const thread = await viewOf(row, actor);
-				await announceThread(ctx, threads, row, "update");
+				await announceThread(ctx, row, "update");
 				ctx.authzChanges.publish({ community: existing.community, collection: COLLECTIONS.thread });
 
 				return { encoding: "application/json" as const, body: { thread } };
@@ -528,12 +522,10 @@ export const moveMessages = async (
 				rkey: subject.rkey,
 			});
 			if (back) {
-				ctx.announce.toChannel(source.uri, (viewer) =>
-					messageEvent("create", source.uri, channels.forViewer(back, viewer)),
-				);
+				ctx.announce.message(source.uri, "create", back);
 			}
 
-			await touchThread(ctx, threads, away, community);
+			await touchThread(ctx, away, community);
 			if (isTextChannel(source.uri)) {
 				await carryThread(ctx, threads, source.uri, subject, source.uri);
 			}
@@ -566,13 +558,11 @@ export const moveMessages = async (
 			destination.uri,
 		);
 		if (moved) {
-			ctx.announce.toChannel(destination.uri, (viewer) =>
-				messageEvent("create", destination.uri, channels.forViewer(moved, viewer)),
-			);
+			ctx.announce.message(destination.uri, "create", moved);
 		}
 	}
 
-	await touchThread(ctx, threads, destination.uri, community);
+	await touchThread(ctx, destination.uri, community);
 
 	if (isTextChannel(destination.uri)) {
 		for (const subject of subjects) {
@@ -612,22 +602,22 @@ const carryThread = async (
 
 	const moved = await threads.row(row.space);
 	if (!moved) return;
-	await announceThread(ctx, threads, moved, "update");
+	await announceThread(ctx, moved, "update");
 	ctx.authzChanges.publish({ community: row.community, collection: COLLECTIONS.thread });
 };
 
 export const announceThread = async (
 	ctx: AppContext,
-	threads: ThreadViews,
 	row: ThreadRow,
 	event: "create" | "update",
 ): Promise<void> => {
-	await ctx.announce.toCommunityViewers(row.community, async (did) => {
-		const authz = await ctx.loader.authz(row.community, did);
-		const view = await threads.view(row, authz, did);
-		return view ? threadEvent(event, row.community, { channel: row.channel, thread: view }) : null;
+	ctx.announce.thread({
+		community: row.community,
+		space: row.space,
+		event,
+		whenHidden: "skip",
+		bridges: true,
 	});
-	await ctx.announce.toBridges(row.community, threadFrameForBridges(ctx, threads, row, event));
 };
 
 export const announceThreadDeleted = (
@@ -636,7 +626,7 @@ export const announceThreadDeleted = (
 ): void => {
 	const frame = threadEvent("delete", row.community, { channel: row.channel, space: row.space });
 	ctx.announce.toCommunity(row.community, frame);
-	void ctx.announce.toBridges(row.community, async () => frame);
+	ctx.announce.toBridges(row.community, frame);
 	ctx.announce.threadDeleted(row.space);
 };
 
@@ -688,26 +678,18 @@ const movedDestination = async (
 	return latest.destination;
 };
 
-const touchThread = async (
-	ctx: AppContext,
-	threads: ThreadViews,
-	space: string,
-	community: string,
-): Promise<void> => {
+const touchThread = async (ctx: AppContext, space: string, community: string): Promise<void> => {
 	if (!isThreadSpaceType(spaceTypeOf(space) ?? "")) return;
 	const table = ctx.database.tables.threads;
 	const lastActivityAt = new Date().toISOString();
 	await ctx.database.db.update(table).set({ lastActivityAt }).where(eq(table.space, space));
 
-	const row = await threads.row(space);
-	await ctx.announce.toCommunityViewers(community, async (did) => {
-		const authz = await ctx.loader.authz(community, did);
-		const view = row ? await threads.view(row, authz, did) : null;
-		return threadEvent("activity", community, {
-			space,
-			lastActivityAt,
-			...(row ? { channel: row.channel } : {}),
-			...(view ? { thread: view } : {}),
-		});
+	ctx.announce.thread({
+		community,
+		space,
+		event: "activity",
+		lastActivityAt,
+		whenHidden: "bare",
+		bridges: false,
 	});
 };

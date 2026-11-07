@@ -1,8 +1,42 @@
 import type { Permission, social } from "@colibri-social/lexicons";
+import type { AuthzChange } from "@colibri-social/projections";
 import { eq } from "drizzle-orm";
+import type { EventBus } from "./bus.js";
 import type { AppContext } from "./context.js";
 import type { ThreadRow, ThreadViews } from "./views/thread.js";
-import type { ChannelFrame, EventServer, ServerFrame } from "./ws/events.js";
+import type { ServerFrame } from "./ws/events.js";
+import type { Topic } from "./ws/topics.js";
+
+export type MessageView = social.colibri.beta.channel.defs.MessageView;
+
+export type ThreadRecipe = {
+	community: string;
+	space: string;
+	event: "create" | "update" | "activity";
+	lastActivityAt?: string;
+	whenHidden: "skip" | "bare";
+	bridges: boolean;
+};
+
+export type EventMessage =
+	| { t: "topics"; topics: Topic[]; frame: ServerFrame }
+	| { t: "community"; community: string; frame: ServerFrame }
+	| { t: "communityPermission"; community: string; permission: Permission; frame: ServerFrame }
+	| { t: "channel"; space: string; frame: ServerFrame; except?: string }
+	| {
+			t: "message";
+			space: string;
+			event: "create" | "update";
+			message: MessageView;
+			imported?: boolean;
+	  }
+	| { t: "thread"; recipe: ThreadRecipe }
+	| { t: "user"; did: string; frame: ServerFrame }
+	| { t: "bridges"; community: string; frame: ServerFrame }
+	| { t: "channelChanged"; community: string; space: string; event: "update" | "delete" }
+	| { t: "threadDeleted"; space: string }
+	| { t: "communityDeleted"; community: string }
+	| { t: "authz"; change: AuthzChange };
 
 export type Announcer = {
 	toCommunity(community: string, frame: ServerFrame): void;
@@ -11,13 +45,17 @@ export type Announcer = {
 		permission: Permission,
 		frame: ServerFrame,
 	): Promise<void>;
-	toCommunityViewers(
-		community: string,
-		build: (did: string) => Promise<ServerFrame | null>,
-	): Promise<void>;
-	toChannel(space: string, frame: ChannelFrame): void;
-	toBridges(community: string, build: (did: string) => Promise<ServerFrame | null>): Promise<void>;
+	toChannel(space: string, frame: ServerFrame, except?: string): void;
+	message(
+		space: string,
+		event: "create" | "update",
+		message: MessageView,
+		options?: { imported?: boolean },
+	): void;
+	thread(recipe: ThreadRecipe): void;
+	toBridges(community: string, frame: ServerFrame): void;
 	toUser(did: string, frame: ServerFrame): void;
+	toTopics(topics: Topic[], frame: ServerFrame): void;
 	channelChanged(community: string, space: string, event: "update" | "delete"): void;
 	threadDeleted(space: string): void;
 	communityDeleted(community: string): void;
@@ -26,27 +64,46 @@ export type Announcer = {
 export const silentAnnouncer: Announcer = {
 	toCommunity: () => {},
 	toCommunityPermission: async () => {},
-	toCommunityViewers: async () => {},
 	toChannel: () => {},
-	toBridges: async () => {},
+	message: () => {},
+	thread: () => {},
+	toBridges: () => {},
 	toUser: () => {},
+	toTopics: () => {},
 	channelChanged: () => {},
 	threadDeleted: () => {},
 	communityDeleted: () => {},
 };
 
-export const eventAnnouncer = (events: EventServer): Announcer => ({
-	toCommunity: (community, frame) => events.publishToCommunity(community, frame),
-	toCommunityPermission: (community, permission, frame) =>
-		events.publishToCommunityPermission(community, permission, frame),
-	toCommunityViewers: (community, build) => events.publishToCommunityViewers(community, build),
-	toChannel: (space, frame) => events.publishToChannel(space, frame),
-	toBridges: (community, build) => events.publishToBridges(community, build),
-	toUser: (did, frame) => events.publishToUser(did, frame),
-	channelChanged: (community, space, event) => events.channelChanged(community, space, event),
-	threadDeleted: (space) => events.threadDeleted(space),
-	communityDeleted: (community) => events.communityDeleted(community),
-});
+export const busAnnouncer = (bus: Pick<EventBus<EventMessage>, "publish">): Announcer => {
+	return {
+		toCommunity: (community, frame) => bus.publish({ t: "community", community, frame }),
+		toCommunityPermission: async (community, permission, frame) => {
+			bus.publish({ t: "communityPermission", community, permission, frame });
+		},
+		toChannel: (space, frame, except) => {
+			bus.publish({ t: "channel", space, frame, ...(except ? { except } : {}) });
+		},
+		message: (space, event, message, options) => {
+			bus.publish({
+				t: "message",
+				space,
+				event,
+				message,
+				...(options?.imported ? { imported: true } : {}),
+			});
+		},
+		thread: (recipe) => bus.publish({ t: "thread", recipe }),
+		toBridges: (community, frame) => bus.publish({ t: "bridges", community, frame }),
+		toUser: (did, frame) => bus.publish({ t: "user", did, frame }),
+		toTopics: (topics, frame) => bus.publish({ t: "topics", topics, frame }),
+		channelChanged: (community, space, event) => {
+			bus.publish({ t: "channelChanged", community, space, event });
+		},
+		threadDeleted: (space) => bus.publish({ t: "threadDeleted", space }),
+		communityDeleted: (community) => bus.publish({ t: "communityDeleted", community }),
+	};
+};
 
 type Lifecycle = "create" | "update" | "delete";
 

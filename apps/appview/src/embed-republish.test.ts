@@ -4,15 +4,14 @@ import type { LinkEmbed } from "@colibri-social/embeds";
 import { channelSpace, SPACE_TYPES } from "@colibri-social/lexicons";
 import { nextTid } from "@colibri-social/space";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { MessageView } from "./announce.js";
 import type { AppContext } from "./context.js";
 import { republishWhenPreviewsSettle } from "./embed-republish.js";
 import { ActorViews } from "./views/actor.js";
 import { ChannelViews } from "./views/channel.js";
-import type { ChannelFrame } from "./ws/events.js";
 
 const COMMUNITY = "did:plc:2hnjxkqm6bpuvvpjbztkxxxx";
 const AUTHOR = "did:plc:7fkdlwjqmzcuvvpjbztkaaaa";
-const VIEWER = "did:plc:viewerviewerviewerviewer";
 const SPACE = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkrepublishtest");
 const NOW = "2026-08-23T00:00:00.000Z";
 const URI = "https://example.test/article";
@@ -22,9 +21,11 @@ let ctx: AppContext;
 let channels: ChannelViews;
 let previews: Map<string, LinkEmbed>;
 let release: () => void;
-let published: { space: string; frame: ChannelFrame }[];
+let published: { space: string; message: MessageView }[];
 
-const publish = (space: string, frame: ChannelFrame) => published.push({ space, frame });
+const publish = (space: string, message: MessageView) => {
+	published.push({ space, message });
+};
 
 beforeEach(async () => {
 	database = await openTestDatabase();
@@ -100,15 +101,13 @@ describe("republishWhenPreviewsSettle", () => {
 		release();
 
 		await vi.waitFor(() => expect(published).toHaveLength(1));
-		const entry = published[0] as { space: string; frame: ChannelFrame };
-		const frame = (entry.frame as (viewer: string) => Record<string, unknown>)(VIEWER);
+		const entry = published[0] as { space: string; message: MessageView };
 		expect(entry.space).toBe(SPACE);
-		expect(frame).toMatchObject({
-			event: "update",
-			channel: SPACE,
-			message: { rkey, embeds: [expect.objectContaining({ title: "An article" })] },
+		expect(entry.message).toMatchObject({
+			rkey,
+			embeds: [expect.objectContaining({ title: "An article" })],
 		});
-		expect((frame.message as { updatedAt?: string }).updatedAt).toBeUndefined();
+		expect(entry.message.updatedAt).toBeUndefined();
 	});
 
 	it("stays quiet when the preview never resolves", async () => {

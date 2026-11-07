@@ -6,7 +6,7 @@ import pg from "pg";
 import { type Database, openDatabase } from "./client.js";
 import { runMigrations } from "./migrate.js";
 
-export type TestDatabase = Database & { destroy: () => Promise<void> };
+export type TestDatabase = Database & { url: string; destroy: () => Promise<void> };
 
 const withAdmin = async (url: string, statement: string): Promise<void> => {
 	const admin = new pg.Client({ connectionString: url });
@@ -34,6 +34,7 @@ const openPostgresTestDatabase = async (adminUrl: string): Promise<TestDatabase>
 
 	return {
 		...database,
+		url: url.toString(),
 		destroy: async () => {
 			await database.close();
 			await withAdmin(adminUrl, `drop database if exists ${name} with (force)`);
@@ -43,12 +44,14 @@ const openPostgresTestDatabase = async (adminUrl: string): Promise<TestDatabase>
 
 const openSqliteTestDatabase = async (): Promise<TestDatabase> => {
 	const directory = mkdtempSync(join(tmpdir(), "colibri-test-"));
-	const database = openDatabase({ url: `file:${join(directory, "test.db")}` });
+	const url = `file:${join(directory, "test.db")}`;
+	const database = openDatabase({ url });
 
 	await runMigrations(database);
 
 	return {
 		...database,
+		url,
 		destroy: async () => {
 			await database.close();
 			rmSync(directory, { recursive: true, force: true });

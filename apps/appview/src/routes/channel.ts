@@ -41,7 +41,7 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 		republishWhenPreviewsSettle(
 			ctx,
 			channels,
-			(space, frame) => ctx.announce.toChannel(space, frame),
+			(space, message) => ctx.announce.message(space, "update", message),
 			target,
 			unresolved,
 		);
