@@ -175,6 +175,8 @@ const main = async (): Promise<void> => {
 		}),
 		onDrain: (mode, graceMinutes) => onDrainOrder(mode, graceMinutes),
 		onResume: () => onResumeOrder(),
+		onWriteMode: (mode) => events.announceWriteState(mode),
+		app: server.router,
 	});
 
 	if (cluster?.parked) {

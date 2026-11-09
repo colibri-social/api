@@ -47,6 +47,7 @@ import { type Announcer, silentAnnouncer } from "./announce.js";
 import { type AuthzChanges, createAuthzChanges } from "./authz-changes.js";
 import { createConfigStore } from "./cluster/config-store.js";
 import { createRegistry } from "./cluster/registry.js";
+import type { WriteProxy } from "./cluster/write-proxy.js";
 import type { Config } from "./config.js";
 import { createDrainState } from "./drain.js";
 import { HostOAuth } from "./host-oauth.js";
@@ -323,6 +324,7 @@ export const createContext = async (config: Config) => {
 		clustered: Boolean(config.NODE_ID),
 		registry: createRegistry(database),
 		clusterConfig: createConfigStore(database, secrets),
+		writeProxy: null as WriteProxy | null,
 		voiceCalls: createVoiceCalls({ database, nodeId, region: config.NODE_REGION }),
 		turn: turnCredentialsFor(config, log),
 		announce: silentAnnouncer as Announcer,

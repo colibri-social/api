@@ -239,6 +239,25 @@ describe("EventServer", () => {
 		await database.destroy();
 	});
 
+	it("tells each socket whether this node takes writes, on connect and on every change", async () => {
+		const ws = connect("alice-token");
+
+		expect(await nextFrameOfType(ws, "writeState")).toEqual({
+			$type: "social.colibri.beta.sync.defs#writeState",
+			mode: "normal",
+		});
+
+		events.announceWriteState("queued");
+
+		expect(await nextFrameOfType(ws, "writeState")).toMatchObject({ mode: "queued" });
+
+		const late = connect("alice-token");
+
+		expect(await nextFrameOfType(late, "writeState")).toMatchObject({ mode: "queued" });
+		ws.close();
+		late.close();
+	});
+
 	it("grants a subscription to a channel the caller can read", async () => {
 		const ws = connect("alice-token");
 		await waitForOpen(ws);

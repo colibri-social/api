@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Server as HttpServer, IncomingHttpHeaders } from "node:http";
+import type { WriteMode } from "@colibri-social/appview-db";
 import { decideSpaceAccess, has } from "@colibri-social/community";
 import { ServiceAuthError } from "@colibri-social/identity";
 import type { Permission } from "@colibri-social/lexicons";
@@ -73,6 +74,10 @@ const frameName = (value: unknown): ClientFrameName | null => {
 	return suffix && suffix in clientFrames ? (suffix as ClientFrameName) : null;
 };
 
+const writeStateFrame = (mode: WriteMode): ServerFrame => {
+	return { $type: "social.colibri.beta.sync.defs#writeState", mode };
+};
+
 export class EventServer {
 	private readonly wss = new WebSocketServer({
 		noServer: true,
@@ -85,6 +90,7 @@ export class EventServer {
 	private readonly communities: CommunityViews;
 	private readonly stopWatchingAuthz: () => void;
 	private heartbeat: NodeJS.Timeout | null = null;
+	private writeMode: WriteMode = "normal";
 
 	constructor(private readonly ctx: AppContext) {
 		this.presence = new PresenceTracker({
@@ -111,6 +117,14 @@ export class EventServer {
 
 	reconcilePresence(): Promise<number> {
 		return this.presence.reconcile();
+	}
+
+	announceWriteState(mode: WriteMode): void {
+		this.writeMode = mode;
+
+		for (const connection of this.connections) {
+			this.send(connection, writeStateFrame(mode));
+		}
 	}
 
 	announceDrain(deadline: Date, reason?: DrainReason): void {
@@ -191,6 +205,7 @@ export class EventServer {
 		};
 		const first = this.presence.connections(did) === 0;
 		this.connections.add(connection);
+		this.send(connection, writeStateFrame(this.writeMode));
 		this.topics.subscribe(connection, [userTopic(did)]);
 		void this.trackPresence(did, "opened", () => this.presence.opened(did));
 		void this.trackPresence(did, "opened", () =>

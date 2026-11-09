@@ -128,3 +128,67 @@ describe("control link", () => {
 		expect(frames.filter((frame) => frame.t === "welcome")).toHaveLength(2);
 	});
 });
+
+describe("write forwarding on the main node", () => {
+	const startWithApp = async () => {
+		const reached: Record<string, unknown>[] = [];
+		const forwarding = new ControlServer({
+			registry,
+			log,
+			nodeId: "eu-1",
+			isMain: () => isMain,
+			app: (request, response) => {
+				reached.push({ ...request.headers });
+				response.writeHead(200, { "content-type": "application/json" });
+				response.end("{}");
+			},
+		});
+		const port = await forwarding.listen(0, "127.0.0.1");
+
+		return { forwarding, reached, url: `http://127.0.0.1:${port}` };
+	};
+
+	it("answers pings only while main", async () => {
+		const { forwarding, url } = await startWithApp();
+
+		try {
+			expect((await fetch(`${url}/cluster/ping`)).status).toBe(200);
+
+			isMain = false;
+
+			expect(await (await fetch(`${url}/cluster/ping`)).json()).toMatchObject({
+				error: "NotMain",
+			});
+		} finally {
+			await forwarding.close();
+		}
+	});
+
+	it("hands writes from known nodes to the app without their secret", async () => {
+		const { secret } = await join2();
+		const { forwarding, reached, url } = await startWithApp();
+
+		try {
+			const write = (headers: Record<string, string>) => {
+				return fetch(`${url}/xrpc/social.colibri.beta.channel.postMessage`, {
+					method: "POST",
+					headers: { "content-type": "application/json", ...headers },
+					body: "{}",
+				});
+			};
+
+			expect((await write({})).status).toBe(401);
+			expect(
+				(await write({ "x-colibri-node": "eu-2", "x-colibri-node-secret": "wrong" })).status,
+			).toBe(401);
+			expect(
+				(await write({ "x-colibri-node": "eu-2", "x-colibri-node-secret": secret })).status,
+			).toBe(200);
+			expect(reached).toHaveLength(1);
+			expect(reached[0]).toMatchObject({ "x-colibri-node": "eu-2" });
+			expect(reached[0]).not.toHaveProperty("x-colibri-node-secret");
+		} finally {
+			await forwarding.close();
+		}
+	});
+});

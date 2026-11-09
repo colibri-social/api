@@ -14,6 +14,7 @@ import {
 	parseFrame,
 } from "./protocol.js";
 import type { Registry } from "./registry.js";
+import { PING_PATH } from "./write-proxy.js";
 
 const MAX_BODY_BYTES = 16 * 1024;
 
@@ -27,7 +28,10 @@ export type ControlServerDeps = {
 	onFrame?: (nodeId: string, frame: NodeFrame) => void;
 	routes?: (request: IncomingMessage, response: ServerResponse) => boolean;
 	config?: (nodeId: string) => Promise<Record<string, string>>;
+	app?: (request: IncomingMessage, response: ServerResponse) => void;
 };
+
+const VERIFIED_TTL_MS = 60_000;
 
 type Link = {
 	socket: WebSocket;
@@ -65,6 +69,7 @@ const headerOf = (request: IncomingMessage, name: string): string | null => {
 export class ControlServer {
 	private readonly wss = new WebSocketServer({ noServer: true });
 	private readonly links = new Map<string, Link>();
+	private readonly verified = new Map<string, number>();
 	private readonly http: Server;
 	private ping: ReturnType<typeof setInterval> | null = null;
 
@@ -140,6 +145,23 @@ export class ControlServer {
 		}
 
 		const path = new URL(request.url ?? "/", "http://localhost").pathname;
+
+		if (request.method === "GET" && path === PING_PATH) {
+			if (this.deps.isMain()) {
+				respond(response, 200, { status: "main" });
+			} else {
+				await this.notMain(response);
+			}
+
+			return;
+		}
+
+		if (path.startsWith("/xrpc/") && this.deps.app) {
+			await this.forwardWrite(request, response, this.deps.app);
+
+			return;
+		}
+
 		const known =
 			(request.method === "POST" && path === JOIN_PATH) ||
 			(request.method === "GET" && path === CONFIG_PATH);
@@ -151,12 +173,7 @@ export class ControlServer {
 		}
 
 		if (!this.deps.isMain()) {
-			const main = await this.deps.registry.mainNode().catch(() => null);
-
-			respond(response, 503, {
-				error: "NotMain",
-				main: main && main.id !== this.deps.nodeId ? main.tailnetUrl : null,
-			});
+			await this.notMain(response);
 
 			return;
 		}
@@ -187,6 +204,59 @@ export class ControlServer {
 
 		this.deps.log.info({ node: joined.id }, "cluster.joined");
 		respond(response, 200, joined);
+	}
+
+	private async notMain(response: ServerResponse): Promise<void> {
+		const main = await this.deps.registry.mainNode().catch(() => null);
+
+		respond(response, 503, {
+			error: "NotMain",
+			main: main && main.id !== this.deps.nodeId ? main.tailnetUrl : null,
+		});
+	}
+
+	private async trusted(request: IncomingMessage): Promise<boolean> {
+		const nodeId = headerOf(request, NODE_ID_HEADER);
+		const secret = headerOf(request, NODE_SECRET_HEADER);
+
+		if (!nodeId || !secret) {
+			return false;
+		}
+
+		const key = `${nodeId}:${secret}`;
+
+		if ((this.verified.get(key) ?? 0) > Date.now()) {
+			return true;
+		}
+
+		if (!(await this.deps.registry.verify(nodeId, secret))) {
+			return false;
+		}
+
+		this.verified.set(key, Date.now() + VERIFIED_TTL_MS);
+
+		return true;
+	}
+
+	private async forwardWrite(
+		request: IncomingMessage,
+		response: ServerResponse,
+		app: (request: IncomingMessage, response: ServerResponse) => void,
+	): Promise<void> {
+		if (!(await this.trusted(request))) {
+			respond(response, 401, { error: "Unauthorized" });
+
+			return;
+		}
+
+		if (!this.deps.isMain()) {
+			await this.notMain(response);
+
+			return;
+		}
+
+		delete request.headers[NODE_SECRET_HEADER];
+		app(request, response);
 	}
 
 	private async serveConfig(request: IncomingMessage, response: ServerResponse): Promise<void> {

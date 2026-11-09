@@ -1,6 +1,7 @@
 import { createServer, type Server } from "@atproto/xrpc-server";
 import type { Request, Response } from "express";
 import { authVerifiers } from "./auth.js";
+import { isWrite } from "./cluster/write-proxy.js";
 import type { AppContext } from "./context.js";
 import { corsMiddleware } from "./cors.js";
 import { registerActorRoutes } from "./routes/actor.js";
@@ -60,6 +61,17 @@ export const createAppServer = (
 
 	const app = server.routes;
 	app.use(corsMiddleware(ctx.config.corsOrigins));
+	app.use((req: Request, res: Response, next: (error?: unknown) => void) => {
+		const proxy = ctx.writeProxy;
+
+		if (!proxy || !isWrite(req) || ctx.drain.parked) {
+			next();
+
+			return;
+		}
+
+		proxy.handle(req, res).catch(next);
+	});
 	app.use((req: Request, res: Response, next: () => void) => {
 		if (!ctx.drain.parked) {
 			next();

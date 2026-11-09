@@ -1,5 +1,6 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { hostname } from "node:os";
-import type { NodeRole, NodeState } from "@colibri-social/appview-db";
+import type { NodeRole, NodeState, WriteMode } from "@colibri-social/appview-db";
 import type { AppContext } from "../context.js";
 import { resolveVersion } from "../routes/server.js";
 import { ControlClient } from "./control-client.js";
@@ -8,6 +9,7 @@ import { joinCluster } from "./node-secret.js";
 import { type ClusterOrder, handleOrder } from "./orders.js";
 import type { NodeFrame, ParkMode } from "./protocol.js";
 import type { NodeAddress, NodeIdentity } from "./registry.js";
+import { WriteProxy } from "./write-proxy.js";
 
 export const HEARTBEAT_MS = 15_000;
 
@@ -20,6 +22,8 @@ export type ClusterNodeDeps = {
 	load: () => { connections: number; activeCalls: number };
 	onDrain: (mode: ParkMode, graceMinutes: number | undefined) => void;
 	onResume: () => void;
+	onWriteMode: (mode: WriteMode) => void;
+	app: (request: IncomingMessage, response: ServerResponse) => void;
 };
 
 export type ClusterNode = {
@@ -80,6 +84,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 					nodeId: ctx.nodeId,
 					isMain: deps.isMain,
 					config: () => ctx.clusterConfig.values(),
+					app: deps.app,
 					onFrame: (nodeId, frame) =>
 						log.info({ node: nodeId, mode: frame.mode }, "cluster.drained"),
 				})
@@ -92,16 +97,29 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 	}
 
 	const secret = credentials?.secret ?? null;
+	const mainUrl = async (): Promise<string | null> => {
+		const main = await registry.mainNode().catch(() => null);
+
+		return main && main.id !== ctx.nodeId ? main.tailnetUrl : (config.MAIN_NODE_URL ?? null);
+	};
+
+	if (secret && roles.has("api")) {
+		ctx.writeProxy = new WriteProxy({
+			nodeId: ctx.nodeId,
+			secret,
+			windowMs: config.WRITE_QUEUE_SECONDS * 1_000,
+			mainUrl,
+			log,
+			onMode: deps.onWriteMode,
+		});
+	}
+
 	const link = secret
 		? new ControlClient({
 				nodeId: ctx.nodeId,
 				secret,
 				log,
-				mainUrl: async () => {
-					const main = await registry.mainNode();
-
-					return main && main.id !== ctx.nodeId ? main.tailnetUrl : (config.MAIN_NODE_URL ?? null);
-				},
+				mainUrl,
 				onFrame: (frame) => {
 					if (frame.t === "drain") deps.onDrain(frame.mode, frame.graceMinutes);
 					if (frame.t === "resume") deps.onResume();
@@ -149,6 +167,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 		becameMain: () => registry.claimMain(ctx.nodeId),
 		stop: async () => {
 			clearInterval(heartbeat);
+			ctx.writeProxy?.stop();
 			link?.stop();
 			await control?.close();
 		},
