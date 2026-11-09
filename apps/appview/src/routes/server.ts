@@ -28,6 +28,7 @@ export const describeServer = (ctx: AppContext): ServerDescription => {
 	if (ctx.config.gifsEnabled) features.push("gifs");
 	features.push("embeds");
 	features.push("emoji");
+	if (ctx.clustered) features.push("nodes");
 
 	return {
 		did: asDid(ctx.config.APPVIEW_DID),
@@ -44,7 +45,33 @@ export const describeServer = (ctx: AppContext): ServerDescription => {
 	};
 };
 
+export const listNodes = async (
+	ctx: AppContext,
+): Promise<social.colibri.beta.server.listNodes.$OutputBody> => {
+	if (!ctx.clustered) {
+		return { nodes: [] };
+	}
+
+	const nodes = await ctx.registry.accepting();
+
+	return {
+		nodes: nodes.map((node) => ({
+			id: node.id,
+			region: node.region,
+			roles: node.roles,
+			endpoint: asUri(node.publicUrl),
+			probeUrl: asUri(new URL("/health", node.publicUrl).toString()),
+		})),
+	};
+};
+
 export const registerServerRoutes = ({ server, ctx }: RouteDeps): void => {
+	publicRoute(server, social.colibri.beta.server.listNodes, {
+		handler: async () => ({
+			encoding: "application/json" as const,
+			body: await listNodes(ctx),
+		}),
+	});
 	publicRoute(server, social.colibri.beta.server.describeServer, {
 		handler: async () => ({
 			encoding: "application/json" as const,

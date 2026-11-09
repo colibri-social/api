@@ -2,6 +2,7 @@ import type { Permission, social } from "@colibri-social/lexicons";
 import type { AuthzChange } from "@colibri-social/projections";
 import { eq } from "drizzle-orm";
 import type { EventBus } from "./bus.js";
+import type { ClusterOrder, OrderResult } from "./cluster/orders.js";
 import type { AppContext } from "./context.js";
 import type { ThreadRow, ThreadViews } from "./views/thread.js";
 import type { VoiceCommand } from "./voice-calls.js";
@@ -38,7 +39,9 @@ export type EventMessage =
 	| { t: "threadDeleted"; space: string }
 	| { t: "communityDeleted"; community: string }
 	| { t: "authz"; change: AuthzChange }
-	| { t: "voiceCommand"; node: string; command: VoiceCommand };
+	| { t: "voiceCommand"; node: string; command: VoiceCommand }
+	| { t: "clusterOrder"; order: ClusterOrder }
+	| { t: "clusterOrderResult"; result: OrderResult };
 
 export type Announcer = {
 	toCommunity(community: string, frame: ServerFrame): void;
@@ -62,6 +65,7 @@ export type Announcer = {
 	threadDeleted(space: string): void;
 	communityDeleted(community: string): void;
 	voiceCommand(node: string, command: VoiceCommand): void;
+	clusterOrderResult(result: OrderResult): void;
 };
 
 export const silentAnnouncer: Announcer = {
@@ -77,6 +81,7 @@ export const silentAnnouncer: Announcer = {
 	threadDeleted: () => {},
 	communityDeleted: () => {},
 	voiceCommand: () => {},
+	clusterOrderResult: () => {},
 };
 
 export const busAnnouncer = (bus: Pick<EventBus<EventMessage>, "publish">): Announcer => {
@@ -107,6 +112,7 @@ export const busAnnouncer = (bus: Pick<EventBus<EventMessage>, "publish">): Anno
 		threadDeleted: (space) => bus.publish({ t: "threadDeleted", space }),
 		communityDeleted: (community) => bus.publish({ t: "communityDeleted", community }),
 		voiceCommand: (node, command) => bus.publish({ t: "voiceCommand", node, command }),
+		clusterOrderResult: (result) => bus.publish({ t: "clusterOrderResult", result }),
 	};
 };
 

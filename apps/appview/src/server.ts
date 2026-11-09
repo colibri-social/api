@@ -60,6 +60,19 @@ export const createAppServer = (
 
 	const app = server.routes;
 	app.use(corsMiddleware(ctx.config.corsOrigins));
+	app.use((req: Request, res: Response, next: () => void) => {
+		if (!ctx.drain.parked) {
+			next();
+
+			return;
+		}
+
+		res.status(503).json({
+			status: "maintenance",
+			did: ctx.config.APPVIEW_DID,
+			...(req.path === "/health" ? {} : { error: "NodeParked" }),
+		});
+	});
 
 	const auth = authVerifiers(ctx);
 	const deps = { server, ctx, auth };

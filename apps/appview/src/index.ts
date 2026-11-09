@@ -6,6 +6,9 @@ import { ActivitySweeper } from "./activity.js";
 import { busAnnouncer, type EventMessage } from "./announce.js";
 import { type EventBus, memoryBus, postgresBus } from "./bus.js";
 import { healCategoryOrders } from "./category-order.js";
+import { type ClusterNode, startClusterNode } from "./cluster/node.js";
+import { parkedState } from "./cluster/orders.js";
+import type { ParkMode } from "./cluster/protocol.js";
 import { describeConfig, loadConfig } from "./config.js";
 import { type AppContext, createContext } from "./context.js";
 import { drainGraceMs, hasPeers, waitForConnections } from "./drain.js";
@@ -151,12 +154,36 @@ const main = async (): Promise<void> => {
 	const events = new EventServer(ctx);
 	const voice = new VoiceServer(ctx);
 	ctx.voiceRoster = voice;
+
+	let holdsMain = false;
+	let cluster: ClusterNode | null = null;
+	let onDrainOrder: (mode: ParkMode, graceMinutes: number | undefined) => void = () => {};
+	let onResumeOrder: () => void = () => {};
+
+	cluster = await startClusterNode({
+		ctx,
+		roles,
+		isMain: () => holdsMain,
+		load: () => ({
+			connections: events.connectionCount + voice.connectionCount,
+			activeCalls: ctx.voice?.channels.length ?? 0,
+		}),
+		onDrain: (mode, graceMinutes) => onDrainOrder(mode, graceMinutes),
+		onResume: () => onResumeOrder(),
+	});
+
+	if (cluster?.parked) {
+		ctx.drain.park();
+		ctx.log.warn({ node: ctx.nodeId }, "node.parked");
+	}
+
 	const stopDelivery = bus.subscribe(
 		eventDelivery({
 			ctx,
 			events,
 			authz: (change) => ctx.authzChanges.deliver(change),
 			voice: (command) => voice.apply(command),
+			cluster: async (order) => cluster?.order(order),
 		}),
 	);
 
@@ -172,11 +199,11 @@ const main = async (): Promise<void> => {
 		ctx.log.info({ port: config.PORT, host: config.HOST }, "listening");
 	});
 
-	if (roles.has("live")) {
+	if (roles.has("live") && !ctx.drain.parked) {
 		events.attach(http);
 	}
 
-	if (roles.has("voice")) {
+	if (roles.has("voice") && !ctx.drain.parked) {
 		voice.attach(http);
 	}
 
@@ -201,16 +228,24 @@ const main = async (): Promise<void> => {
 		return events.connectionCount + voice.connectionCount;
 	};
 
-	const drain = async (): Promise<void> => {
+	const drain = async (graceMinutes = config.DRAIN_GRACE_MINUTES): Promise<void> => {
 		const peers = await hasPeers(ctx.database, ctx.nodeId).catch((error: unknown) => {
 			ctx.log.warn({ err: error }, "drain.peerCheckFailed");
 
 			return false;
 		});
-		const graceMs = drainGraceMs(config.DRAIN_GRACE_MINUTES, peers);
+		const graceMs = drainGraceMs(graceMinutes, peers);
 		const deadline = new Date(Date.now() + graceMs);
+		const wasParked = ctx.drain.parked;
 
 		ctx.drain.begin(deadline);
+
+		if (!wasParked) {
+			await cluster
+				?.setState("draining", deadline)
+				.catch((error: unknown) => ctx.log.warn({ err: error }, "cluster.stateFailed"));
+		}
+
 		events.announceDrain(deadline);
 		void voice
 			.beginMigration(deadline)
@@ -257,6 +292,10 @@ const main = async (): Promise<void> => {
 			process.exit(1);
 		}, SHUTDOWN_DEADLINE_MS);
 
+		await step("cluster", async () => {
+			if (!ctx.drain.parked) await cluster?.setState("down", null);
+			await cluster?.stop();
+		});
 		await step("pipeline", () => disconnectPipeline());
 		await step("error-reporting", () => stopErrorReporting());
 		await step("main-jobs", () => mainJobs?.stop());
@@ -280,6 +319,10 @@ const main = async (): Promise<void> => {
 			lock: ctx.database.advisoryLock(MAIN_LOCK_KEY),
 			onAcquired: async () => {
 				ctx.log.info("main.acquired");
+				holdsMain = true;
+				await cluster
+					?.becameMain()
+					.catch((error: unknown) => ctx.log.warn({ err: error }, "cluster.claimMainFailed"));
 				mainJobs = await startMainJobs(ctx, events);
 			},
 			onLost: (error) => {
@@ -291,6 +334,32 @@ const main = async (): Promise<void> => {
 			},
 		});
 	}
+
+	let parking = false;
+
+	onDrainOrder = (mode, graceMinutes) => {
+		if (parking || shuttingDown) {
+			return;
+		}
+
+		parking = true;
+		ctx.log.info({ mode, graceMinutes }, "node.parking");
+
+		void (async () => {
+			await step("drain", () => drain(graceMinutes));
+			await step("events", () => events.close());
+			await step("voice", () => voice.close());
+			ctx.drain.park();
+			await step("park", () => cluster?.setState(parkedState(mode), null));
+			cluster?.report({ t: "drained", mode });
+			ctx.log.info({ mode }, "node.parked");
+		})();
+	};
+
+	onResumeOrder = () => {
+		ctx.log.info("node.resuming");
+		void shutdown("resume");
+	};
 
 	process.on("SIGTERM", () => void shutdown("SIGTERM"));
 	process.on("SIGINT", () => void shutdown("SIGINT"));

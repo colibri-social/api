@@ -7,6 +7,7 @@ import {
 	threadFrameForBridges,
 } from "./announce.js";
 import { type BusDelivery, REPLAY_WAIT_MS } from "./bus.js";
+import type { ClusterOrder } from "./cluster/orders.js";
 import type { AppContext } from "./context.js";
 import { ActorViews } from "./views/actor.js";
 import { ChannelViews } from "./views/channel.js";
@@ -19,13 +20,14 @@ export type DeliveryDeps = {
 	events: EventServer;
 	authz: (change: AuthzChange) => void;
 	voice?: (command: VoiceCommand) => Promise<void>;
+	cluster?: (order: ClusterOrder) => Promise<void>;
 };
 
 const readsDatabase = (message: EventMessage): boolean => {
 	return message.t === "thread" || message.t === "communityPermission";
 };
 
-export const eventDelivery = ({ ctx, events, authz, voice }: DeliveryDeps) => {
+export const eventDelivery = ({ ctx, events, authz, voice, cluster }: DeliveryDeps) => {
 	const actors = new ActorViews(ctx);
 	const channels = new ChannelViews(ctx, actors);
 	const threads = new ThreadViews(ctx, channels);
@@ -140,6 +142,12 @@ export const eventDelivery = ({ ctx, events, authz, voice }: DeliveryDeps) => {
 					await voice(message.command);
 				}
 
+				return;
+			case "clusterOrder":
+				await cluster?.(message.order);
+
+				return;
+			case "clusterOrderResult":
 				return;
 		}
 	};

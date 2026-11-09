@@ -802,6 +802,7 @@ export const nodes = sqliteTable(
 		connections: integer("connections").notNull().default(0),
 		activeCalls: integer("active_calls").notNull().default(0),
 		drainDeadline: timestamp("drain_deadline"),
+		secretHash: text("secret_hash"),
 		registeredAt: timestamp("registered_at").notNull(),
 		heartbeatAt: timestamp("heartbeat_at"),
 	},

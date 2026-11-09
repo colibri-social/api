@@ -1,0 +1,1 @@
+ALTER TABLE "nodes" ADD COLUMN "secret_hash" text;

@@ -45,6 +45,7 @@ import {
 import { GAME_CACHE_MAX_ENTRIES, GAME_CACHE_TTL_MS, type GameEntry } from "./activity-game.js";
 import { type Announcer, silentAnnouncer } from "./announce.js";
 import { type AuthzChanges, createAuthzChanges } from "./authz-changes.js";
+import { createRegistry } from "./cluster/registry.js";
 import type { Config } from "./config.js";
 import { createDrainState } from "./drain.js";
 import { HostOAuth } from "./host-oauth.js";
@@ -318,6 +319,8 @@ export const createContext = async (config: Config) => {
 	return {
 		nodeId,
 		drain: createDrainState(),
+		clustered: Boolean(config.NODE_ID),
+		registry: createRegistry(database),
 		voiceCalls: createVoiceCalls({ database, nodeId, region: config.NODE_REGION }),
 		turn: turnCredentialsFor(config, log),
 		announce: silentAnnouncer as Announcer,

@@ -14,6 +14,16 @@ import { createAppServer } from "./server.js";
 const never = new Promise<void>(() => {});
 
 describe("createDrainState", () => {
+	it("counts a parked node as draining", () => {
+		const state = createDrainState();
+
+		state.park();
+
+		expect(state.parked).toBe(true);
+		expect(state.draining).toBe(true);
+		expect(state.deadline).toBeNull();
+	});
+
 	it("starts idle and keeps the first deadline", () => {
 		const state = createDrainState();
 		const first = new Date("2026-11-07T12:00:00Z");

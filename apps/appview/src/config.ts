@@ -101,6 +101,17 @@ export const configSchema = z.object({
 		.url()
 		.optional()
 		.or(z.literal("").transform(() => undefined)),
+	NODE_PUBLIC_URL: z
+		.url()
+		.optional()
+		.or(z.literal("").transform(() => undefined)),
+	NODE_TAILNET_URL: z
+		.url()
+		.optional()
+		.or(z.literal("").transform(() => undefined)),
+	CLUSTER_PORT: z.coerce.number().int().min(1).max(65535).default(3100),
+	CLUSTER_JOIN_TOKEN: optionalString,
+	NODE_SECRET_FILE: z.string().default("./data/node-secret"),
 	DRAIN_GRACE_MINUTES: z.coerce.number().nonnegative().default(120),
 	WRITE_QUEUE_SECONDS: z.coerce.number().int().nonnegative().default(90),
 	MESSAGE_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(180),

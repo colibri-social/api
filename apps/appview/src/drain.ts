@@ -10,7 +10,9 @@ export type DrainReason = "update" | "maintenance" | "retire";
 export type DrainState = {
 	readonly draining: boolean;
 	readonly deadline: Date | null;
+	readonly parked: boolean;
 	begin: (deadline: Date) => void;
+	park: () => void;
 };
 
 export type DrainOutcome = "empty" | "deadline" | "skipped";
@@ -25,16 +27,23 @@ export type WaitForConnectionsOptions = {
 
 export const createDrainState = (): DrainState => {
 	let deadline: Date | null = null;
+	let parked = false;
 
 	return {
 		get draining() {
-			return deadline !== null;
+			return deadline !== null || parked;
 		},
 		get deadline() {
 			return deadline;
 		},
+		get parked() {
+			return parked;
+		},
 		begin: (at) => {
 			deadline ??= at;
+		},
+		park: () => {
+			parked = true;
 		},
 	};
 };
