@@ -1,12 +1,8 @@
-import {
-	createServer,
-	type IncomingMessage,
-	type Server,
-	type ServerResponse,
-} from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { Logger } from "../logger.js";
 import {
+	CONFIG_PATH,
 	CONTROL_PATH,
 	JOIN_PATH,
 	joinRequestSchema,
@@ -30,6 +26,7 @@ export type ControlServerDeps = {
 	isMain: () => boolean;
 	onFrame?: (nodeId: string, frame: NodeFrame) => void;
 	routes?: (request: IncomingMessage, response: ServerResponse) => boolean;
+	config?: (nodeId: string) => Promise<Record<string, string>>;
 };
 
 type Link = {
@@ -54,11 +51,7 @@ const readBody = async (request: IncomingMessage): Promise<string> => {
 	return Buffer.concat(chunks).toString("utf8");
 };
 
-const respond = (
-	response: ServerResponse,
-	status: number,
-	body: unknown,
-): void => {
+const respond = (response: ServerResponse, status: number, body: unknown): void => {
 	response.writeHead(status, { "content-type": "application/json" });
 	response.end(JSON.stringify(body));
 };
@@ -93,9 +86,7 @@ export class ControlServer {
 						return;
 					}
 
-					this.wss.handleUpgrade(request, socket, head, (ws) =>
-						this.accept(nodeId, ws),
-					);
+					this.wss.handleUpgrade(request, socket, head, (ws) => this.accept(nodeId, ws));
 				})
 				.catch(() => socket.destroy());
 		});
@@ -143,24 +134,35 @@ export class ControlServer {
 		await new Promise<void>((resolve) => this.http.close(() => resolve()));
 	}
 
-	private async handle(
-		request: IncomingMessage,
-		response: ServerResponse,
-	): Promise<void> {
+	private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
 		if (this.deps.routes?.(request, response)) {
 			return;
 		}
 
 		const path = new URL(request.url ?? "/", "http://localhost").pathname;
+		const known =
+			(request.method === "POST" && path === JOIN_PATH) ||
+			(request.method === "GET" && path === CONFIG_PATH);
 
-		if (request.method !== "POST" || path !== JOIN_PATH) {
+		if (!known) {
 			respond(response, 404, { error: "NotFound" });
 
 			return;
 		}
 
 		if (!this.deps.isMain()) {
-			respond(response, 503, { error: "NotMain" });
+			const main = await this.deps.registry.mainNode().catch(() => null);
+
+			respond(response, 503, {
+				error: "NotMain",
+				main: main && main.id !== this.deps.nodeId ? main.tailnetUrl : null,
+			});
+
+			return;
+		}
+
+		if (path === CONFIG_PATH) {
+			await this.serveConfig(request, response);
 
 			return;
 		}
@@ -177,10 +179,7 @@ export class ControlServer {
 		const joined = await this.deps.registry.redeem(token, address);
 
 		if (!joined) {
-			this.deps.log.warn(
-				{ publicUrl: address.publicUrl },
-				"cluster.joinRejected",
-			);
+			this.deps.log.warn({ publicUrl: address.publicUrl }, "cluster.joinRejected");
 			respond(response, 401, { error: "InvalidJoinToken" });
 
 			return;
@@ -188,6 +187,29 @@ export class ControlServer {
 
 		this.deps.log.info({ node: joined.id }, "cluster.joined");
 		respond(response, 200, joined);
+	}
+
+	private async serveConfig(request: IncomingMessage, response: ServerResponse): Promise<void> {
+		const nodeId = headerOf(request, NODE_ID_HEADER);
+		const secret = headerOf(request, NODE_SECRET_HEADER);
+
+		if (!nodeId || !secret || !(await this.deps.registry.verify(nodeId, secret))) {
+			respond(response, 401, { error: "Unauthorized" });
+
+			return;
+		}
+
+		const node = await this.deps.registry.node(nodeId);
+		const shared = (await this.deps.config?.(nodeId)) ?? {};
+
+		respond(response, 200, {
+			values: {
+				...shared,
+				...(node
+					? { NODE_ID: node.id, NODE_REGION: node.region, ROLES: node.roles.join(",") }
+					: {}),
+			},
+		});
 	}
 
 	private async upgrade(request: IncomingMessage): Promise<string | null> {

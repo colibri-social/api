@@ -142,6 +142,21 @@ importers:
         specifier: 'catalog:'
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(vite@8.2.2(@types/node@26.2.0)(esbuild@0.28.2)(tsx@4.23.12)(yaml@2.9.0))
 
+  apps/admin:
+    dependencies:
+      '@colibri-social/appview':
+        specifier: workspace:*
+        version: link:../appview
+      '@colibri-social/appview-db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@colibri-social/community':
+        specifier: workspace:*
+        version: link:../../packages/community
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(pg@8.23.0)
+
   apps/appview:
     dependencies:
       '@atproto/crypto':

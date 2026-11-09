@@ -1,0 +1,32 @@
+{
+	"name": "@colibri-social/admin",
+	"version": "0.0.0",
+	"description": "colibri-admin, the command line for running a cluster of Colibri AppView nodes.",
+	"type": "module",
+	"private": true,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"bin": {
+		"colibri-admin": "./dist/index.js"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc --build",
+		"clean": "tsc --build --clean"
+	},
+	"dependencies": {
+		"@colibri-social/appview": "workspace:*",
+		"@colibri-social/appview-db": "workspace:*",
+		"@colibri-social/community": "workspace:*",
+		"drizzle-orm": "catalog:"
+	}
+}

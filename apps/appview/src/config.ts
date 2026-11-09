@@ -20,7 +20,7 @@ const optionalString = z
 	.optional()
 	.or(z.literal("").transform(() => undefined));
 
-const NODE_ROLES = [
+export const NODE_ROLES = [
 	"main",
 	"failover",
 	"api",

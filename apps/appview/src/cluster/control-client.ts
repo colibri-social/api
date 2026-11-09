@@ -101,10 +101,7 @@ export class ControlClient {
 		});
 
 		socket.on("unexpected-response", (_request, response) => {
-			this.deps.log.warn(
-				{ main: base, status: response.statusCode },
-				"cluster.linkRefused",
-			);
+			this.deps.log.warn({ main: base, status: response.statusCode }, "cluster.linkRefused");
 		});
 
 		socket.on("error", () => {});

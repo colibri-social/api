@@ -21,7 +21,8 @@
 			"@colibri-social/emoji": ["./packages/emoji/src/index.ts"],
 			"@colibri-social/voice": ["./packages/voice/src/index.ts"],
 			"@colibri-social/bridge-core": ["./packages/bridge-core/src/index.ts"],
-			"@colibri-social/bridge-discord": ["./packages/bridge-discord/src/index.ts"]
+			"@colibri-social/bridge-discord": ["./packages/bridge-discord/src/index.ts"],
+			"@colibri-social/appview/cluster": ["./apps/appview/src/cluster/index.ts"]
 		}
 	},
 	"include": [

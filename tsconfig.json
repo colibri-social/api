@@ -17,6 +17,7 @@
 		{ "path": "./packages/bridge-discord" },
 		{ "path": "./apps/appview" },
 		{ "path": "./apps/migrate" },
+		{ "path": "./apps/admin" },
 		{ "path": "./apps/bridge" }
 	]
 }

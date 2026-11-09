@@ -47,9 +47,9 @@ afterEach(async () => {
 const join2 = async () => {
 	const token = await registry.createJoinToken({ id: "eu-2", region: "eu", roles: ["api"] });
 	const file = join(directory, "node-secret");
-	const secret = await joinCluster({ file, mainUrl, token, address: ADDRESS });
+	const credentials = await joinCluster({ file, mainUrl, token, address: ADDRESS });
 
-	return { secret, file, token };
+	return { secret: credentials?.secret ?? "", credentials, file, token };
 };
 
 const link = (secret: string) => {
@@ -70,11 +70,13 @@ const link = (secret: string) => {
 
 describe("joining", () => {
 	it("trades a join token for a secret it keeps on disk", async () => {
-		const { secret, file, token } = await join2();
+		const { credentials, file, token } = await join2();
 
-		expect(secret).toBeTruthy();
-		expect(readFileSync(file, "utf8").trim()).toBe(secret);
-		expect(await joinCluster({ file, mainUrl, token: "spent", address: ADDRESS })).toBe(secret);
+		expect(credentials).toMatchObject({ id: "eu-2" });
+		expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(credentials);
+		expect(await joinCluster({ file, mainUrl, token: "spent", address: ADDRESS })).toEqual(
+			credentials,
+		);
 		expect(await registry.redeem(token, ADDRESS)).toBeNull();
 	});
 
@@ -94,7 +96,7 @@ describe("joining", () => {
 describe("control link", () => {
 	it("connects with the node secret and carries orders", async () => {
 		const { secret } = await join2();
-		const { frames } = link(secret ?? "");
+		const { frames } = link(secret);
 
 		await vi.waitFor(() => expect(frames).toEqual([{ t: "welcome", mainNodeId: "eu-1" }]));
 		expect(server.linked).toEqual(["eu-2"]);
@@ -114,7 +116,7 @@ describe("control link", () => {
 
 	it("reconnects after the link drops", async () => {
 		const { secret } = await join2();
-		const { frames } = link(secret ?? "");
+		const { frames } = link(secret);
 
 		await vi.waitFor(() => expect(server.linked).toEqual(["eu-2"]));
 		await server.close();

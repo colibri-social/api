@@ -36,18 +36,13 @@ export const nodeAddress = (ctx: AppContext): NodeAddress => {
 
 	return {
 		publicUrl: config.NODE_PUBLIC_URL ?? config.PUBLIC_URL,
-		tailnetUrl:
-			config.NODE_TAILNET_URL ?? `http://${hostname()}:${config.CLUSTER_PORT}`,
-		...(config.SFU_ANNOUNCED_IP
-			? { announcedIp: config.SFU_ANNOUNCED_IP }
-			: {}),
+		tailnetUrl: config.NODE_TAILNET_URL ?? `http://${hostname()}:${config.CLUSTER_PORT}`,
+		...(config.SFU_ANNOUNCED_IP ? { announcedIp: config.SFU_ANNOUNCED_IP } : {}),
 		version: resolveVersion(),
 	};
 };
 
-export const startClusterNode = async (
-	deps: ClusterNodeDeps,
-): Promise<ClusterNode | null> => {
+export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNode | null> => {
 	const { ctx, roles } = deps;
 	const { config, registry, log } = ctx;
 
@@ -63,7 +58,7 @@ export const startClusterNode = async (
 
 	const address = nodeAddress(ctx);
 
-	const secret = roles.has("main")
+	const credentials = roles.has("main")
 		? null
 		: await joinCluster({
 				file: config.NODE_SECRET_FILE,
@@ -75,10 +70,7 @@ export const startClusterNode = async (
 	const state = await registry.register(identity, address);
 	const parked = state === "maintenance" || state === "retired";
 
-	log.info(
-		{ node: identity.id, region: identity.region, state },
-		"cluster.registered",
-	);
+	log.info({ node: identity.id, region: identity.region, state }, "cluster.registered");
 
 	const control =
 		roles.has("main") || roles.has("failover")
@@ -87,6 +79,7 @@ export const startClusterNode = async (
 					log,
 					nodeId: ctx.nodeId,
 					isMain: deps.isMain,
+					config: () => ctx.clusterConfig.values(),
 					onFrame: (nodeId, frame) =>
 						log.info({ node: nodeId, mode: frame.mode }, "cluster.drained"),
 				})
@@ -98,6 +91,7 @@ export const startClusterNode = async (
 		log.info({ port }, "cluster.listening");
 	}
 
+	const secret = credentials?.secret ?? null;
 	const link = secret
 		? new ControlClient({
 				nodeId: ctx.nodeId,
@@ -106,9 +100,7 @@ export const startClusterNode = async (
 				mainUrl: async () => {
 					const main = await registry.mainNode();
 
-					return main && main.id !== ctx.nodeId
-						? main.tailnetUrl
-						: (config.MAIN_NODE_URL ?? null);
+					return main && main.id !== ctx.nodeId ? main.tailnetUrl : (config.MAIN_NODE_URL ?? null);
 				},
 				onFrame: (frame) => {
 					if (frame.t === "drain") deps.onDrain(frame.mode, frame.graceMinutes);
@@ -126,9 +118,7 @@ export const startClusterNode = async (
 	const heartbeat = setInterval(() => {
 		void registry
 			.heartbeat(ctx.nodeId, { ...deps.load(), version: address.version })
-			.catch((error: unknown) =>
-				log.warn({ err: error }, "cluster.heartbeatFailed"),
-			);
+			.catch((error: unknown) => log.warn({ err: error }, "cluster.heartbeatFailed"));
 	}, HEARTBEAT_MS);
 
 	heartbeat.unref?.();
@@ -138,8 +128,7 @@ export const startClusterNode = async (
 		report: (frame) => {
 			link?.send(frame);
 		},
-		setState: (next, drainDeadline) =>
-			registry.setState(ctx.nodeId, next, drainDeadline),
+		setState: (next, drainDeadline) => registry.setState(ctx.nodeId, next, drainDeadline),
 		order: async (order) => {
 			if (!deps.isMain()) {
 				return;
@@ -154,10 +143,7 @@ export const startClusterNode = async (
 				order,
 			);
 
-			log.info(
-				{ ...result, kind: order.kind, node: order.node },
-				"cluster.order",
-			);
+			log.info({ ...result, kind: order.kind, node: order.node }, "cluster.order");
 			ctx.announce.clusterOrderResult(result);
 		},
 		becameMain: () => registry.claimMain(ctx.nodeId),

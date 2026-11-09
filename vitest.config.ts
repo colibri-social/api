@@ -5,17 +5,29 @@ import { defineConfig } from "vitest/config";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 
-const workspaceAliases = () =>
-	Object.fromEntries(
-		["packages", "apps"].flatMap((group) =>
-			readdirSync(join(root, group), { withFileTypes: true })
-				.filter((entry) => entry.isDirectory())
-				.map((entry) => [
-					`@colibri-social/${entry.name === "db" ? "appview-db" : entry.name}`,
-					join(root, group, entry.name, "src/index.ts"),
-				]),
-		),
-	);
+const subpathAliases = [
+	{
+		find: "@colibri-social/appview/cluster",
+		replacement: join(root, "apps/appview/src/cluster/index.ts"),
+	},
+	{ find: "@colibri-social/appview/config", replacement: join(root, "apps/appview/src/config.ts") },
+	{
+		find: "@colibri-social/appview/context",
+		replacement: join(root, "apps/appview/src/context.ts"),
+	},
+];
+
+const workspaceAliases = () => [
+	...subpathAliases,
+	...["packages", "apps"].flatMap((group) =>
+		readdirSync(join(root, group), { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => ({
+				find: `@colibri-social/${entry.name === "db" ? "appview-db" : entry.name}`,
+				replacement: join(root, group, entry.name, "src/index.ts"),
+			})),
+	),
+];
 
 export default defineConfig({
 	resolve: { alias: workspaceAliases() },

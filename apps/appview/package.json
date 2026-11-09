@@ -19,6 +19,11 @@
 			"types": "./dist/context.d.ts",
 			"colibri-source": "./src/context.ts",
 			"default": "./dist/context.js"
+		},
+		"./cluster": {
+			"types": "./dist/cluster/index.d.ts",
+			"colibri-source": "./src/cluster/index.ts",
+			"default": "./dist/cluster/index.js"
 		}
 	},
 	"main": "./dist/index.js",

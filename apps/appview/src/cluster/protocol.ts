@@ -4,6 +4,8 @@ export const CONTROL_PATH = "/cluster/control";
 
 export const JOIN_PATH = "/cluster/join";
 
+export const CONFIG_PATH = "/cluster/config";
+
 export const NODE_ID_HEADER = "x-colibri-node";
 
 export const NODE_SECRET_HEADER = "x-colibri-node-secret";
@@ -44,6 +46,15 @@ export const joinResponseSchema = z.object({
 });
 
 export type JoinResponse = z.infer<typeof joinResponseSchema>;
+
+export const configResponseSchema = z.object({
+	values: z.record(z.string(), z.string()),
+});
+
+export const notMainSchema = z.object({
+	error: z.literal("NotMain"),
+	main: z.string().nullable(),
+});
 
 export const parseFrame = <T>(schema: z.ZodType<T>, raw: string): T | null => {
 	try {

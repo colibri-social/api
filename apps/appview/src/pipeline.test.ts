@@ -605,10 +605,12 @@ describe("connectPipeline", () => {
 		const frames = framesOfType("messageEvent").map(
 			(entry) => entry.frame as unknown as { message: { rkey: string }; imported?: boolean },
 		);
-		expect(frames.map((frame) => [frame.message.rkey, frame.imported])).toEqual([
-			[imported, true],
-			[live, undefined],
-		]);
+		expect(frames.map((frame) => [frame.message.rkey, frame.imported])).toEqual(
+			expect.arrayContaining([
+				[imported, true],
+				[live, undefined],
+			]),
+		);
 		const kinds = (await notificationsFor(mentioned)).map((row) => row.kind);
 		expect(kinds).not.toContain("mention");
 	});

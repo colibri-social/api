@@ -14,6 +14,7 @@ RUN apt-get update \
 		python3-pip \
 	&& rm -rf /var/lib/apt/lists/*
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY apps/admin/package.json apps/admin/
 COPY apps/appview/package.json apps/appview/
 COPY apps/bridge/package.json apps/bridge/
 COPY apps/migrate/package.json apps/migrate/
@@ -49,7 +50,9 @@ COPY --from=build /app/packages ./packages
 COPY --from=build /app/apps ./apps
 COPY --from=build /app/package.json ./package.json
 
-RUN mkdir -p /data && chown colibri:colibri /data
+RUN chmod +x apps/admin/dist/index.js \
+	&& ln -s /app/apps/admin/dist/index.js /usr/local/bin/colibri-admin \
+	&& mkdir -p /data && chown colibri:colibri /data
 USER colibri
 VOLUME ["/data"]
 ENV DATABASE_URL=file:/data/colibri.db

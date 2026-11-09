@@ -1,6 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { JOIN_PATH, type JoinRequest, joinResponseSchema } from "./protocol.js";
+import { z } from "zod";
+import { JOIN_PATH, type JoinRequest, type JoinResponse, joinResponseSchema } from "./protocol.js";
+
+export type NodeCredentials = JoinResponse;
 
 export type JoinOptions = {
 	file: string;
@@ -10,23 +13,28 @@ export type JoinOptions = {
 	fetch?: typeof fetch;
 };
 
-export const readNodeSecret = async (file: string): Promise<string | null> => {
+export const readNodeCredentials = async (file: string): Promise<NodeCredentials | null> => {
 	try {
-		const secret = (await readFile(file, "utf8")).trim();
+		const parsed = joinResponseSchema.safeParse(JSON.parse(await readFile(file, "utf8")));
 
-		return secret === "" ? null : secret;
+		return parsed.success ? parsed.data : null;
 	} catch {
 		return null;
 	}
 };
 
-export const saveNodeSecret = async (file: string, secret: string): Promise<void> => {
+export const saveNodeCredentials = async (
+	file: string,
+	credentials: NodeCredentials,
+): Promise<void> => {
 	await mkdir(dirname(file), { recursive: true });
-	await writeFile(file, `${secret}\n`, { mode: 0o600 });
+	await writeFile(file, `${JSON.stringify(credentials)}\n`, { mode: 0o600 });
 };
 
-export const joinCluster = async (options: JoinOptions): Promise<string | null> => {
-	const stored = await readNodeSecret(options.file);
+const errorSchema = z.object({ error: z.string() });
+
+export const joinCluster = async (options: JoinOptions): Promise<NodeCredentials | null> => {
+	const stored = await readNodeCredentials(options.file);
 
 	if (stored) {
 		return stored;
@@ -45,12 +53,16 @@ export const joinCluster = async (options: JoinOptions): Promise<string | null> 
 	});
 
 	if (!response.ok) {
-		throw new Error(`the main node refused the join token (${response.status})`);
+		const body = errorSchema.safeParse(await response.json().catch(() => null));
+
+		throw new Error(
+			`the main node refused the join token (${response.status}${body.success ? ` ${body.data.error}` : ""})`,
+		);
 	}
 
 	const joined = joinResponseSchema.parse(await response.json());
 
-	await saveNodeSecret(options.file, joined.secret);
+	await saveNodeCredentials(options.file, joined);
 
-	return joined.secret;
+	return joined;
 };

@@ -6,6 +6,7 @@ import { ActivitySweeper } from "./activity.js";
 import { busAnnouncer, type EventMessage } from "./announce.js";
 import { type EventBus, memoryBus, postgresBus } from "./bus.js";
 import { healCategoryOrders } from "./category-order.js";
+import { resolveClusterEnv } from "./cluster/boot.js";
 import { type ClusterNode, startClusterNode } from "./cluster/node.js";
 import { parkedState } from "./cluster/orders.js";
 import type { ParkMode } from "./cluster/protocol.js";
@@ -117,7 +118,11 @@ const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<Main
 };
 
 const main = async (): Promise<void> => {
-	const config = loadConfig();
+	const config = loadConfig(
+		await resolveClusterEnv(process.env, {
+			log: (message) => process.stderr.write(`cluster: ${message}\n`),
+		}),
+	);
 	installFatalHandlers(createLogger(config));
 	const reporting = startErrorReporting(config, `appview@${resolveVersion()}`);
 	const ctx = await createContext(config);
