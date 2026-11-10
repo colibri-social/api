@@ -36,7 +36,6 @@ beforeEach(async () => {
 		registry,
 		config: createConfigStore(database, await SecretBox.fromBase64(SecretBox.generateKeyBase64())),
 		sendOrder: vi.fn(async (order) => ({ id: order.id, ok: true, message: "eu-2 is draining" })),
-		removeNode: vi.fn(async () => {}),
 		setRolloutPaused: vi.fn(async () => {}),
 		readFile: vi.fn(async () => ""),
 		now: () => new Date("2026-11-09T12:00:30Z"),
@@ -144,15 +143,40 @@ describe("node commands", () => {
 		).rejects.toThrow(UsageError);
 	});
 
-	it("removes only retired nodes unless forced", async () => {
-		await register("eu-2");
+	it("asks the main node to remove a node", async () => {
+		await nodeRemove(admin, { id: "eu-2", force: true });
 
-		await expect(nodeRemove(admin, { id: "eu-2", force: false })).rejects.toThrow(/--retire/);
+		expect(admin.sendOrder).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "deprovision", node: "eu-2", force: true }),
+		);
+	});
 
-		await registry.setState("eu-2", "retired");
-		await nodeRemove(admin, { id: "eu-2", force: false });
+	it("hands a new node to the main node for provisioning when given its address", async () => {
+		await nodeAdd(admin, {
+			id: "eu-2",
+			region: "eu",
+			roles: "api,live",
+			publicUrl: "https://eu-2.nodes.colibri.social",
+			ip: "203.0.113.7",
+			workers: "8",
+		});
 
-		expect(admin.removeNode).toHaveBeenCalledWith("eu-2");
+		expect(admin.sendOrder).toHaveBeenCalledWith(
+			expect.objectContaining({
+				kind: "provision",
+				node: "eu-2",
+				ip: "203.0.113.7",
+				roles: ["api", "live"],
+				workers: 8,
+				joinToken: expect.any(String),
+			}),
+		);
+	});
+
+	it("needs a public URL to provision", async () => {
+		await expect(
+			nodeAdd(admin, { id: "eu-2", region: "eu", roles: "api", ip: "203.0.113.7" }),
+		).rejects.toThrow(UsageError);
 	});
 });
 

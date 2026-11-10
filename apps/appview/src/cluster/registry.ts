@@ -56,6 +56,7 @@ export type Registry = {
 	accepting: () => Promise<NodeRow[]>;
 	mayLeave: (id: string) => Promise<LeaveDecision>;
 	claimMain: (id: string) => Promise<void>;
+	remove: (id: string) => Promise<void>;
 	mainNode: () => Promise<NodeRow | null>;
 };
 
@@ -270,6 +271,12 @@ export const createRegistry = (
 					target: tables.clusterState.id,
 					set: { mainNodeId: id, updatedAt: at },
 				});
+		},
+		remove: async (id) => {
+			await primary.delete(tables.voiceParticipants).where(eq(tables.voiceParticipants.nodeId, id));
+			await primary.delete(tables.voiceCalls).where(eq(tables.voiceCalls.nodeId, id));
+			await primary.delete(tables.nodeJoinTokens).where(eq(tables.nodeJoinTokens.nodeId, id));
+			await primary.delete(nodes).where(eq(nodes.id, id));
 		},
 		mainNode: async () => {
 			const [state] = await primary

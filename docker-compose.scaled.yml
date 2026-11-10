@@ -1,0 +1,145 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=16
+      - -c
+      - max_replication_slots=16
+      - -c
+      - wal_keep_size=2GB
+      - -c
+      - hot_standby=on
+      - -c
+      - max_connections=300
+    environment:
+      POSTGRES_USER: colibri
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: colibri
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:?set POSTGRES_REPLICATION_PASSWORD}
+    ports:
+      - "${TAILNET_IP:-127.0.0.1}:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U colibri -d colibri"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    volumes:
+      - ./deploy/postgres/primary-init.sh:/docker-entrypoint-initdb.d/10-replication.sh:ro
+      - postgres-data:/var/lib/postgresql
+
+  appview:
+    image: ${IMAGE:-ghcr.io/colibri-social/api:stable}
+    restart: unless-stopped
+    stop_grace_period: 125m
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      ROLES: ${ROLES:-main,api,live,voice}
+      DATABASE_URL: postgres://colibri:${POSTGRES_PASSWORD}@postgres:5432/colibri
+      NODE_TAILNET_URL: http://${TAILNET_HOST:-localhost}:3100
+      SSH_KEY_FILE: /run/secrets/colibri_ssh_key
+    ports:
+      - "${TAILNET_IP:-127.0.0.1}:3100:3100"
+      - "40000-40031:40000-40031/udp"
+      - "40000-40031:40000-40031/tcp"
+    volumes:
+      - appview-data:/data
+    secrets:
+      - colibri_ssh_key
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    command: caddy reverse-proxy --from ${PUBLIC_HOST:?set PUBLIC_HOST} --to appview:3000
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+    depends_on:
+      - appview
+
+  replica:
+    image: postgres:18-alpine
+    profiles: [local-cluster]
+    entrypoint: ["/bin/sh", "/replica-entrypoint.sh"]
+    environment:
+      PRIMARY_HOST: postgres
+      REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      REPLICATION_SLOT: local_sub
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U colibri"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+    volumes:
+      - ./deploy/ansible/templates/replica-entrypoint.sh:/replica-entrypoint.sh:ro
+      - replica-data:/var/lib/postgresql
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  sub:
+    image: ${IMAGE:-ghcr.io/colibri-social/api:stable}
+    profiles: [local-cluster]
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      MAIN_NODE_URL: http://appview:3100
+      CLUSTER_JOIN_TOKEN: ${SUB_JOIN_TOKEN:-}
+      NODE_PUBLIC_URL: http://localhost:3001
+      NODE_TAILNET_URL: http://sub:3100
+      NODE_SECRET_FILE: /data/node-secret
+      DATABASE_URL: postgres://colibri:${POSTGRES_PASSWORD}@postgres:5432/colibri
+      DATABASE_READ_URL: postgres://colibri:${POSTGRES_PASSWORD}@replica:5432/colibri
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - sub-data:/data
+    depends_on:
+      replica:
+        condition: service_healthy
+
+  voice:
+    image: ${IMAGE:-ghcr.io/colibri-social/api:stable}
+    profiles: [local-cluster]
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      MAIN_NODE_URL: http://appview:3100
+      CLUSTER_JOIN_TOKEN: ${VOICE_JOIN_TOKEN:-}
+      NODE_PUBLIC_URL: http://localhost:3002
+      NODE_TAILNET_URL: http://voice:3100
+      NODE_SECRET_FILE: /data/node-secret
+      DATABASE_URL: postgres://colibri:${POSTGRES_PASSWORD}@postgres:5432/colibri
+      SFU_RTC_PORT: 41000
+    ports:
+      - "127.0.0.1:3002:3000"
+      - "41000-41003:41000-41003/udp"
+      - "41000-41003:41000-41003/tcp"
+    volumes:
+      - voice-data:/data
+
+secrets:
+  colibri_ssh_key:
+    file: ${SSH_KEY_PATH:-./data/ssh/id_ed25519}
+
+volumes:
+  postgres-data:
+  appview-data:
+  caddy-data:
+  replica-data:
+  sub-data:
+  voice-data:

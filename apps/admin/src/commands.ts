@@ -15,7 +15,6 @@ export type Admin = {
 	registry: Registry;
 	config: ConfigStore;
 	sendOrder: (order: ClusterOrder) => Promise<OrderResult>;
-	removeNode: (id: string) => Promise<void>;
 	setRolloutPaused: (paused: boolean) => Promise<void>;
 	readFile: (path: string) => Promise<string>;
 	now: () => Date;
@@ -37,7 +36,9 @@ export const parseRoles = (value: string): NodeRole[] => {
 				.filter(Boolean),
 		),
 	];
-	const unknown = roles.filter((role) => !(NODE_ROLES as readonly string[]).includes(role));
+	const unknown = roles.filter(
+		(role) => !(NODE_ROLES as readonly string[]).includes(role),
+	);
 
 	if (roles.length === 0 || unknown.length > 0) {
 		throw new UsageError(
@@ -72,13 +73,18 @@ const age = (since: string | null, now: Date): string => {
 		return "never";
 	}
 
-	const seconds = Math.max(0, Math.round((now.getTime() - new Date(since).getTime()) / 1000));
+	const seconds = Math.max(
+		0,
+		Math.round((now.getTime() - new Date(since).getTime()) / 1000),
+	);
 
 	if (seconds < 120) {
 		return `${seconds}s ago`;
 	}
 
-	return seconds < 7200 ? `${Math.round(seconds / 60)}m ago` : `${Math.round(seconds / 3600)}h ago`;
+	return seconds < 7200
+		? `${Math.round(seconds / 60)}m ago`
+		: `${Math.round(seconds / 3600)}h ago`;
 };
 
 export const formatTable = (rows: readonly (readonly string[])[]): string[] => {
@@ -95,7 +101,10 @@ export const formatTable = (rows: readonly (readonly string[])[]): string[] => {
 };
 
 export const nodeList = async (admin: Admin): Promise<void> => {
-	const [nodes, main] = await Promise.all([admin.registry.list(), admin.registry.mainNode()]);
+	const [nodes, main] = await Promise.all([
+		admin.registry.list(),
+		admin.registry.mainNode(),
+	]);
 
 	if (nodes.length === 0) {
 		admin.print("No nodes are registered.");
@@ -116,7 +125,16 @@ export const nodeList = async (admin: Admin): Promise<void> => {
 	]);
 
 	for (const line of formatTable([
-		["NODE", "REGION", "ROLES", "STATE", "HEARTBEAT", "SOCKETS", "CALLS", "VERSION"],
+		[
+			"NODE",
+			"REGION",
+			"ROLES",
+			"STATE",
+			"HEARTBEAT",
+			"SOCKETS",
+			"CALLS",
+			"VERSION",
+		],
 		...rows,
 	])) {
 		admin.print(line);
@@ -124,40 +142,6 @@ export const nodeList = async (admin: Admin): Promise<void> => {
 
 	admin.print("");
 	admin.print("* holds the main role");
-};
-
-export const nodeAdd = async (
-	admin: Admin,
-	options: { id: string; region: string; roles: string; publicUrl?: string },
-): Promise<void> => {
-	if (!NODE_ID.test(options.id)) {
-		throw new UsageError(
-			`${options.id} is not a node ID. Use lowercase letters, digits and dashes`,
-		);
-	}
-
-	const roles = parseRoles(options.roles);
-	const existing = await admin.registry.node(options.id);
-
-	if (existing && existing.state !== "retired") {
-		throw new RefusedError(`${options.id} is already registered and ${existing.state}`);
-	}
-
-	const token = await admin.registry.createJoinToken({
-		id: options.id,
-		region: options.region,
-		roles,
-	});
-	const main = await admin.registry.mainNode();
-
-	admin.print(`Join token for ${options.id}, valid for one hour and usable once:`);
-	admin.print("");
-	admin.print(`MAIN_NODE_URL=${main?.tailnetUrl ?? "<tailnet URL of the main node>"}`);
-	admin.print(`CLUSTER_JOIN_TOKEN=${token}`);
-	admin.print(`NODE_PUBLIC_URL=${options.publicUrl ?? "<public URL of the new node>"}`);
-	admin.print("NODE_TAILNET_URL=<tailnet URL of the new node, on CLUSTER_PORT>");
-	admin.print("");
-	admin.print("The node gets its ID, region, roles and the shared settings from the main node.");
 };
 
 const runOrder = async (admin: Admin, order: ClusterOrder): Promise<void> => {
@@ -170,9 +154,96 @@ const runOrder = async (admin: Admin, order: ClusterOrder): Promise<void> => {
 	admin.print(result.message);
 };
 
+export const nodeAdd = async (
+	admin: Admin,
+	options: {
+		id: string;
+		region: string;
+		roles: string;
+		publicUrl?: string;
+		ip?: string;
+		workers?: string;
+	},
+): Promise<void> => {
+	if (options.ip && !options.publicUrl) {
+		throw new UsageError("provisioning with --ip needs --public-url");
+	}
+
+	if (!NODE_ID.test(options.id)) {
+		throw new UsageError(
+			`${options.id} is not a node ID. Use lowercase letters, digits and dashes`,
+		);
+	}
+
+	const roles = parseRoles(options.roles);
+	const existing = await admin.registry.node(options.id);
+
+	if (existing && existing.state !== "retired") {
+		throw new RefusedError(
+			`${options.id} is already registered and ${existing.state}`,
+		);
+	}
+
+	const token = await admin.registry.createJoinToken({
+		id: options.id,
+		region: options.region,
+		roles,
+	});
+
+	if (options.ip && options.publicUrl) {
+		const workers =
+			options.workers === undefined ? undefined : Number(options.workers);
+
+		if (workers !== undefined && (!Number.isInteger(workers) || workers < 1)) {
+			throw new UsageError(`${options.workers} is not a worker count`);
+		}
+
+		await runOrder(admin, {
+			kind: "provision",
+			id: randomUUID(),
+			node: options.id,
+			ip: options.ip,
+			region: options.region,
+			roles,
+			publicUrl: options.publicUrl,
+			joinToken: token,
+			...(workers === undefined ? {} : { workers }),
+		});
+
+		return;
+	}
+
+	const main = await admin.registry.mainNode();
+
+	admin.print(
+		`Join token for ${options.id}, valid for one hour and usable once:`,
+	);
+	admin.print("");
+	admin.print(
+		`MAIN_NODE_URL=${main?.tailnetUrl ?? "<tailnet URL of the main node>"}`,
+	);
+	admin.print(`CLUSTER_JOIN_TOKEN=${token}`);
+	admin.print(
+		`NODE_PUBLIC_URL=${options.publicUrl ?? "<public URL of the new node>"}`,
+	);
+	admin.print(
+		"NODE_TAILNET_URL=<tailnet URL of the new node, on CLUSTER_PORT>",
+	);
+	admin.print("");
+	admin.print(
+		"The node gets its ID, region, roles and the shared settings from the main node.",
+	);
+};
+
 export const nodeShutdown = async (
 	admin: Admin,
-	options: { id: string; maintenance: boolean; retire: boolean; grace?: string; force: boolean },
+	options: {
+		id: string;
+		maintenance: boolean;
+		retire: boolean;
+		grace?: string;
+		force: boolean;
+	},
 ): Promise<void> => {
 	if (options.maintenance === options.retire) {
 		throw new UsageError("pass exactly one of --maintenance or --retire");
@@ -183,7 +254,9 @@ export const nodeShutdown = async (
 		id: randomUUID(),
 		node: options.id,
 		mode: options.retire ? "retire" : "maintenance",
-		...(options.grace === undefined ? {} : { graceMinutes: parseGrace(options.grace) }),
+		...(options.grace === undefined
+			? {}
+			: { graceMinutes: parseGrace(options.grace) }),
 		...(options.force ? { force: true } : {}),
 	});
 };
@@ -196,27 +269,16 @@ export const nodeRemove = async (
 	admin: Admin,
 	options: { id: string; force: boolean },
 ): Promise<void> => {
-	const [node, main] = await Promise.all([
-		admin.registry.node(options.id),
-		admin.registry.mainNode(),
-	]);
+	await runOrder(admin, {
+		kind: "deprovision",
+		id: randomUUID(),
+		node: options.id,
+		...(options.force ? { force: true } : {}),
+	});
+};
 
-	if (!node) {
-		throw new RefusedError(`no node is called ${options.id}`);
-	}
-
-	if (node.id === main?.id) {
-		throw new RefusedError(`${options.id} is the main node and can't be removed`);
-	}
-
-	if (node.state !== "retired" && !options.force) {
-		throw new RefusedError(
-			`${options.id} is ${node.state}. Retire it with colibri-admin node shutdown ${options.id} --retire first, or pass --force`,
-		);
-	}
-
-	await admin.removeNode(options.id);
-	admin.print(`Removed ${options.id} from the registry.`);
+export const nodeRecover = async (admin: Admin, id: string): Promise<void> => {
+	await runOrder(admin, { kind: "recover", id: randomUUID(), node: id });
 };
 
 export const rollout = async (admin: Admin, paused: boolean): Promise<void> => {
@@ -238,7 +300,11 @@ export const configList = async (admin: Admin): Promise<void> => {
 	}
 };
 
-export const configSet = async (admin: Admin, key: string, value: string): Promise<void> => {
+export const configSet = async (
+	admin: Admin,
+	key: string,
+	value: string,
+): Promise<void> => {
 	if (!isSharedKey(key)) {
 		throw new RefusedError(`${key} is not a setting every node shares`);
 	}
@@ -257,11 +323,16 @@ export const configImport = async (
 	admin: Admin,
 	options: { file: string; dryRun: boolean },
 ): Promise<void> => {
-	const entries = Object.entries(parseEnv(await admin.readFile(options.file))).filter(
-		(entry): entry is [string, string] => typeof entry[1] === "string" && entry[1] !== "",
+	const entries = Object.entries(
+		parseEnv(await admin.readFile(options.file)),
+	).filter(
+		(entry): entry is [string, string] =>
+			typeof entry[1] === "string" && entry[1] !== "",
 	);
 	const shared = entries.filter(([key]) => isSharedKey(key));
-	const skipped = entries.filter(([key]) => !isSharedKey(key)).map(([key]) => key);
+	const skipped = entries
+		.filter(([key]) => !isSharedKey(key))
+		.map(([key]) => key);
 
 	if (!options.dryRun) {
 		for (const [key, value] of shared) {

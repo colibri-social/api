@@ -1,5 +1,6 @@
 services:
   appview:
+    image: ${IMAGE:-ghcr.io/colibri-social/api:stable}
     build: .
     restart: unless-stopped
     stop_grace_period: 45s
@@ -21,6 +22,18 @@ services:
       interval: 10s
       timeout: 3s
       retries: 6
+
+  updater:
+    image: docker:27-cli
+    profiles: [updater]
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/stack/deploy/updater/update.sh"]
+    environment:
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-colibri}
+      UPDATE_INTERVAL_SECONDS: ${UPDATE_INTERVAL_SECONDS:-21600}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/stack:ro
 
 volumes:
   appview-data:

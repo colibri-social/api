@@ -21,6 +21,11 @@ export const NODE_LOCAL_KEYS: ReadonlySet<string> = new Set([
 	"SFU_LISTEN_IP",
 	"SFU_WORKER_COUNT",
 	"SFU_RTC_PORT",
+	"SSH_KEY_FILE",
+	"TAILSCALE_AUTH_KEY",
+	"POSTGRES_REPLICATION_PASSWORD",
+	"REGISTRY_TOKEN",
+	"ANSIBLE_DIR",
 ]);
 
 const sealedSchema = z.object({ c: z.string(), n: z.string() });

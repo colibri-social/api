@@ -1,0 +1,91 @@
+- name: Bootstrap a Colibri node
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    stack_dir: /opt/colibri
+  tasks:
+    - name: Install base packages
+      ansible.builtin.apt:
+        name: [ca-certificates, curl, ufw]
+        update_cache: true
+
+    - name: Install Docker
+      ansible.builtin.shell: curl -fsSL https://get.docker.com | sh
+      args:
+        creates: /usr/bin/docker
+
+    - name: Install Tailscale
+      ansible.builtin.shell: curl -fsSL https://tailscale.com/install.sh | sh
+      args:
+        creates: /usr/bin/tailscale
+
+    - name: Join the tailnet
+      ansible.builtin.command: >-
+        tailscale up --authkey={{ tailscale_auth_key }} --hostname={{ node_id }} --ssh=false
+      register: tailscale_up
+      changed_when: tailscale_up.rc == 0
+      no_log: true
+
+    - name: Read the tailnet address
+      ansible.builtin.command: tailscale ip -4
+      register: tailnet_ip
+      changed_when: false
+
+    - name: Firewall defaults
+      ansible.builtin.shell: |
+        ufw default deny incoming
+        ufw default allow outgoing
+        ufw allow 22/tcp
+        ufw allow 80/tcp
+        ufw allow 443/tcp
+        ufw allow 443/udp
+        ufw allow in on tailscale0
+      changed_when: true
+
+    - name: Open the SFU ports
+      ansible.builtin.shell: |
+        ufw allow {{ rtc_port }}:{{ (rtc_port | int) + (rtc_workers | int) - 1 }}/udp
+        ufw allow {{ rtc_port }}:{{ (rtc_port | int) + (rtc_workers | int) - 1 }}/tcp
+      when: "'voice' in node_roles"
+      changed_when: true
+
+    - name: Turn on the firewall
+      ansible.builtin.command: ufw --force enable
+      changed_when: true
+
+    - name: Create the stack directory
+      ansible.builtin.file:
+        path: "{{ stack_dir }}"
+        state: directory
+        mode: "0750"
+
+    - name: Write the stack
+      ansible.builtin.template:
+        src: "../templates/{{ item.src }}"
+        dest: "{{ stack_dir }}/{{ item.dest }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { src: compose.yml.j2, dest: docker-compose.yml, mode: "0640" }
+        - { src: env.j2, dest: .env, mode: "0600" }
+        - { src: Caddyfile.j2, dest: Caddyfile, mode: "0644" }
+      no_log: true
+
+    - name: Write the replica entrypoint
+      ansible.builtin.copy:
+        src: ../templates/replica-entrypoint.sh
+        dest: "{{ stack_dir }}/replica-entrypoint.sh"
+        mode: "0755"
+      when: postgres | bool
+
+    - name: Log in to the registry
+      ansible.builtin.shell: echo "{{ registry_token }}" | docker login ghcr.io -u "{{ registry_user }}" --password-stdin
+      when: registry_token is defined and registry_token
+      no_log: true
+      changed_when: true
+
+    - name: Start the stack
+      ansible.builtin.command: docker compose up -d --pull always
+      args:
+        chdir: "{{ stack_dir }}"
+      changed_when: true

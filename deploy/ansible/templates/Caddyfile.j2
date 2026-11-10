@@ -1,0 +1,4 @@
+{{ public_host }} {
+	encode zstd gzip
+	reverse_proxy appview:3000
+}

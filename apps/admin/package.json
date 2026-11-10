@@ -26,7 +26,6 @@
 	"dependencies": {
 		"@colibri-social/appview": "workspace:*",
 		"@colibri-social/appview-db": "workspace:*",
-		"@colibri-social/community": "workspace:*",
-		"drizzle-orm": "catalog:"
+		"@colibri-social/community": "workspace:*"
 	}
 }

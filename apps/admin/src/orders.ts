@@ -2,6 +2,7 @@ import {
 	type ClusterOrder,
 	type EventBus,
 	type EventMessage,
+	ORDER_TIMEOUTS_MS,
 	type OrderResult,
 	postgresBus,
 } from "@colibri-social/appview/cluster";
@@ -12,7 +13,7 @@ export const ORDER_TIMEOUT_MS = 30_000;
 export const sendOrder = (
 	bus: Pick<EventBus<EventMessage>, "publish" | "subscribe">,
 	order: ClusterOrder,
-	timeoutMs = ORDER_TIMEOUT_MS,
+	timeoutMs = ORDER_TIMEOUTS_MS[order.kind] ?? ORDER_TIMEOUT_MS,
 ): Promise<OrderResult> => {
 	return new Promise((resolve) => {
 		const timer = setTimeout(() => {

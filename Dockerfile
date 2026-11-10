@@ -40,15 +40,25 @@ RUN pnpm build
 
 FROM base AS runtime
 ENV NODE_ENV=production
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
+ENV ANSIBLE_CONFIG=/app/deploy/ansible/ansible.cfg
+ARG ANSIBLE_CORE_VERSION=2.18.1
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends ca-certificates tini \
-	&& rm -rf /var/lib/apt/lists/* \
+	&& apt-get install -y --no-install-recommends \
+		ca-certificates \
+		tini \
+		python3 \
+		python3-pip \
+		openssh-client \
+	&& pip3 install --no-cache-dir "ansible-core==${ANSIBLE_CORE_VERSION}" \
+	&& rm -rf /var/lib/apt/lists/* /root/.cache \
 	&& useradd --system --create-home --shell /usr/sbin/nologin colibri
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/apps ./apps
 COPY --from=build /app/package.json ./package.json
+COPY deploy/ansible ./deploy/ansible
 
 RUN chmod +x apps/admin/dist/index.js \
 	&& ln -s /app/apps/admin/dist/index.js /usr/local/bin/colibri-admin \

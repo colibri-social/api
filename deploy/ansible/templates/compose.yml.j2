@@ -1,0 +1,66 @@
+services:
+  appview:
+    image: ${IMAGE}
+    restart: unless-stopped
+    stop_grace_period: {{ (drain_minutes | int) + 2 }}m
+    env_file:
+      - path: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      NODE_SECRET_FILE: /data/node-secret
+    ports:
+      - "${TAILNET_IP}:${CLUSTER_PORT}:${CLUSTER_PORT}"
+{% if 'voice' in node_roles %}
+      - "{{ rtc_port }}-{{ (rtc_port | int) + (rtc_workers | int) - 1 }}:{{ rtc_port }}-{{ (rtc_port | int) + (rtc_workers | int) - 1 }}/udp"
+      - "{{ rtc_port }}-{{ (rtc_port | int) + (rtc_workers | int) - 1 }}:{{ rtc_port }}-{{ (rtc_port | int) + (rtc_workers | int) - 1 }}/tcp"
+{% endif %}
+    volumes:
+      - appview-data:/data
+{% if postgres %}
+    depends_on:
+      postgres:
+        condition: service_healthy
+{% endif %}
+
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - appview
+{% if postgres %}
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/replica-entrypoint.sh"]
+    environment:
+      PRIMARY_HOST: ${PRIMARY_HOST}
+      REPLICATION_PASSWORD: ${REPLICATION_PASSWORD}
+      REPLICATION_SLOT: ${REPLICATION_SLOT}
+    ports:
+      - "${TAILNET_IP}:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U {{ db_user }}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 6h
+    volumes:
+      - ./replica-entrypoint.sh:/replica-entrypoint.sh:ro
+      - postgres-data:/var/lib/postgresql
+{% endif %}
+
+volumes:
+  appview-data:
+  caddy-data:
+{% if postgres %}
+  postgres-data:
+{% endif %}

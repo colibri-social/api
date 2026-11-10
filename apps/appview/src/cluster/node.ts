@@ -3,11 +3,13 @@ import { hostname } from "node:os";
 import type { NodeRole, NodeState, WriteMode } from "@colibri-social/appview-db";
 import type { AppContext } from "../context.js";
 import { resolveVersion } from "../routes/server.js";
+import { createAnsibleRunner } from "./ansible.js";
 import { ControlClient } from "./control-client.js";
 import { ControlServer } from "./control-server.js";
 import { joinCluster } from "./node-secret.js";
 import { type ClusterOrder, handleOrder } from "./orders.js";
 import type { NodeFrame, ParkMode } from "./protocol.js";
+import { missingForProvisioning, provisionVars } from "./provisioning.js";
 import type { NodeAddress, NodeIdentity } from "./registry.js";
 import { WriteProxy } from "./write-proxy.js";
 
@@ -133,6 +135,15 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 
 	link?.start();
 
+	const ansible = roles.has("main")
+		? createAnsibleRunner({
+				directory: config.ANSIBLE_DIR,
+				user: config.SSH_USER,
+				keyFile: config.SSH_KEY_FILE,
+				log,
+			})
+		: undefined;
+
 	const heartbeat = setInterval(() => {
 		void registry
 			.heartbeat(ctx.nodeId, { ...deps.load(), version: address.version })
@@ -157,6 +168,16 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 					registry,
 					self: ctx.nodeId,
 					send: (nodeId, frame) => control?.send(nodeId, frame) ?? false,
+					...(ansible ? { ansible } : {}),
+					provisioning: {
+						missing: (nodeRoles) => missingForProvisioning(config, nodeRoles),
+						vars: async (target) =>
+							provisionVars(config, { tailnetUrl: address.tailnetUrl }, target),
+						removeNode: (id) => registry.remove(id),
+					},
+					background: (work) => {
+						void work.catch((error: unknown) => log.warn({ err: error }, "ansible.runFailed"));
+					},
 				},
 				order,
 			);

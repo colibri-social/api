@@ -124,3 +124,107 @@ describe("resume orders", () => {
 		expect((await handleOrder(deps, { kind: "resume", id: "o8", node: "eu-3" })).ok).toBe(false);
 	});
 });
+
+describe("Ansible orders", () => {
+	const withAnsible = (ok = true) => {
+		const run = vi.fn(async () => ({ ok, code: ok ? 0 : 2, tail: ["fatal: unreachable"] }));
+		const removeNode = vi.fn(async () => {});
+		const background = vi.fn();
+
+		return {
+			run,
+			removeNode,
+			background,
+			deps: {
+				...deps,
+				ansible: { run, busy: false },
+				provisioning: {
+					missing: (): string[] => [],
+					vars: async () => ({ node_id: "eu-4" }),
+					removeNode,
+				},
+				background,
+			} satisfies OrderDeps,
+		};
+	};
+
+	it("starts provisioning in the background and answers at once", async () => {
+		const { deps: ansibleDeps, run, background } = withAnsible();
+		const result = await handleOrder(ansibleDeps, {
+			kind: "provision",
+			id: "p1",
+			node: "eu-4",
+			ip: "203.0.113.7",
+			region: "eu",
+			roles: ["api"],
+			publicUrl: "https://eu-4.test",
+			joinToken: "t",
+		});
+
+		expect(result.ok).toBe(true);
+		expect(run).toHaveBeenCalledWith({
+			playbook: "bootstrap",
+			host: "203.0.113.7",
+			vars: { node_id: "eu-4" },
+		});
+		expect(background).toHaveBeenCalled();
+	});
+
+	it("refuses to provision without the main node's secrets", async () => {
+		const { deps: ansibleDeps } = withAnsible();
+
+		ansibleDeps.provisioning.missing = () => ["TAILSCALE_AUTH_KEY"];
+
+		const result = await handleOrder(ansibleDeps, {
+			kind: "provision",
+			id: "p2",
+			node: "eu-4",
+			ip: "203.0.113.7",
+			region: "eu",
+			roles: ["api"],
+			publicUrl: "https://eu-4.test",
+			joinToken: "t",
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			message: "the main node is missing TAILSCALE_AUTH_KEY",
+		});
+	});
+
+	it("removes a retired node over the tailnet, then forgets it", async () => {
+		const { deps: ansibleDeps, run, removeNode } = withAnsible();
+
+		await deps.registry.setState("eu-3", "retired");
+
+		const result = await handleOrder(ansibleDeps, { kind: "deprovision", id: "d1", node: "eu-3" });
+
+		expect(result.ok).toBe(true);
+		expect(run).toHaveBeenCalledWith({ playbook: "remove", host: "eu-3", vars: {} });
+		expect(removeNode).toHaveBeenCalledWith("eu-3");
+	});
+
+	it("keeps a node whose removal failed unless forced", async () => {
+		const { deps: ansibleDeps, removeNode } = withAnsible(false);
+
+		await deps.registry.setState("eu-3", "retired");
+
+		expect(
+			(await handleOrder(ansibleDeps, { kind: "deprovision", id: "d2", node: "eu-3" })).ok,
+		).toBe(false);
+		expect(removeNode).not.toHaveBeenCalled();
+		expect(
+			(await handleOrder(ansibleDeps, { kind: "deprovision", id: "d3", node: "eu-3", force: true }))
+				.ok,
+		).toBe(true);
+	});
+
+	it("refuses to remove a node that still runs", async () => {
+		const { deps: ansibleDeps, run } = withAnsible();
+
+		expect(
+			(await handleOrder(ansibleDeps, { kind: "deprovision", id: "d4", node: "eu-3" })).ok,
+		).toBe(false);
+		expect(run).not.toHaveBeenCalled();
+	});
+});

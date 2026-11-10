@@ -1,0 +1,38 @@
+- name: Rebuild a node's Postgres as a replica of the current primary
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    stack_dir: /opt/colibri
+  tasks:
+    - name: Stop the AppView and Postgres
+      ansible.builtin.command: docker compose stop appview postgres
+      args:
+        chdir: "{{ stack_dir }}"
+      changed_when: true
+
+    - name: Point the replica at the current primary
+      ansible.builtin.lineinfile:
+        path: "{{ stack_dir }}/.env"
+        regexp: "^{{ item.key }}="
+        line: "{{ item.key }}={{ item.value }}"
+      loop:
+        - { key: PRIMARY_HOST, value: "{{ primary_host }}" }
+        - { key: DATABASE_URL, value: "postgres://{{ db_user }}:{{ db_password }}@{{ primary_host }}:5432/{{ db_name }}" }
+      no_log: true
+
+    - name: Drop the old data
+      ansible.builtin.command: docker compose rm -fsv postgres
+      args:
+        chdir: "{{ stack_dir }}"
+      changed_when: true
+
+    - name: Remove the data volume
+      ansible.builtin.shell: docker volume rm "$(basename {{ stack_dir }})_postgres-data" || true
+      changed_when: true
+
+    - name: Start again, which takes a fresh base backup
+      ansible.builtin.command: docker compose up -d
+      args:
+        chdir: "{{ stack_dir }}"
+      changed_when: true

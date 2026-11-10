@@ -40,6 +40,7 @@ carries the `openssl` lines that generate the two secrets.
 | `packages/voice`         | mediasoup voice SFU                                                                                                          |
 | `apps/appview`           | The server                                                                                                                   |
 | `apps/migrate`           | One-shot migration of repo-backed communities onto spaces                                                                    |
+| `apps/admin`             | `colibri-admin`, the command line for a cluster of AppView nodes                                                             |
 
 ```sh
 cp .env.example .env    # required, see Getting started
@@ -57,6 +58,93 @@ at whatever `PDS_URL` names. Three overlays compose on top of it:
 
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.pds.yml up
+```
+
+### Keeping a single AppView up to date
+
+The `updater` profile adds a container that pulls `ghcr.io/colibri-social/api:stable` every six
+hours and restarts the AppView when a new image arrived. The AppView drains for 15 seconds
+before it stops.
+
+```sh
+docker compose --profile updater up -d
+```
+
+`IMAGE` picks another tag, `UPDATE_INTERVAL_SECONDS` another interval.
+
+## Running a cluster
+
+A cluster has one main node holding the Postgres primary and any number of sub, failover and
+voice nodes. All nodes share a Tailscale tailnet. The main node provisions the others over SSH
+with the Ansible playbooks in `deploy/ansible`, which ship inside the image.
+
+### The main node
+
+1. Join the server to your tailnet and note its tailnet name and address.
+2. Put an SSH key for the other servers at `./data/ssh/id_ed25519`, or point `SSH_KEY_PATH` at it.
+   Add its public half to every server you order.
+3. Fill `.env` with the usual settings plus the cluster ones:
+
+   ```sh
+   NODE_ID=hel-1
+   NODE_REGION=eu
+   TAILNET_HOST=hel-1
+   TAILNET_IP=100.64.0.1
+   PUBLIC_HOST=api.example.com
+   POSTGRES_PASSWORD=...
+   POSTGRES_REPLICATION_PASSWORD=...
+   TAILSCALE_AUTH_KEY=tskey-auth-...
+   ```
+
+4. Start it:
+
+   ```sh
+   docker compose -f docker-compose.scaled.yml up -d
+   ```
+
+5. Store the settings every node shares:
+
+   ```sh
+   docker compose -f docker-compose.scaled.yml exec -T appview colibri-admin config import - < .env
+   ```
+
+   Settings that describe one node stay out.
+
+### Adding a node
+
+```sh
+colibri-admin node add eu-2 --region eu --roles api,live,voice \
+  --public-url https://eu-2.nodes.example.com --ip 203.0.113.7
+```
+
+The main node installs Docker, Tailscale, a firewall, Caddy and the AppView on the server. Sub
+and failover nodes also get a Postgres replica. The node joins with a one-time token and takes
+the shared settings from the main node. `colibri-admin node list` shows it as `active` once it
+heartbeats. Without `--ip`, `node add` prints the settings for setting the node up by hand.
+
+### Taking a node out
+
+```sh
+colibri-admin node shutdown eu-2 --maintenance --grace 15m
+colibri-admin node resume eu-2
+colibri-admin node shutdown eu-2 --retire
+colibri-admin node remove eu-2
+```
+
+A shutdown keeps the quorum floor unless you pass `--force`. A node in maintenance answers
+every request with 503 until it is resumed. `node remove` deletes the stack and its volumes from
+a retired node and forgets it. `node recover eu-2` restarts a node's stack.
+
+### A local cluster
+
+The `local-cluster` profile runs a replica, a sub node and a voice node next to the main node
+on one machine.
+
+```sh
+docker compose -f docker-compose.scaled.yml up -d
+docker compose -f docker-compose.scaled.yml exec appview colibri-admin node add sub-1 --region local --roles api,live
+docker compose -f docker-compose.scaled.yml exec appview colibri-admin node add voice-1 --region local --roles voice
+SUB_JOIN_TOKEN=... VOICE_JOIN_TOKEN=... docker compose -f docker-compose.scaled.yml --profile local-cluster up -d
 ```
 
 ## Commands
@@ -151,6 +239,9 @@ the account still lives here after that, the AppView sets a new password nobody
 sees.
 
 ## Releasing
+
+Every push to `main` publishes `ghcr.io/colibri-social/api:edge`. A push that changes the
+version of `@colibri-social/appview` also publishes that version and `stable`.
 
 Three packages are published from here: `@colibri-social/lexicons`,
 `@colibri-social/space` and `@colibri-social/space-sync`.

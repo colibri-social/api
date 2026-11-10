@@ -1,0 +1,32 @@
+- name: Update the AppView on a node
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    stack_dir: /opt/colibri
+  tasks:
+    - name: Point the stack at the new image
+      ansible.builtin.lineinfile:
+        path: "{{ stack_dir }}/.env"
+        regexp: "^IMAGE="
+        line: "IMAGE={{ image }}"
+
+    - name: Pull the image
+      ansible.builtin.command: docker compose pull appview
+      args:
+        chdir: "{{ stack_dir }}"
+      changed_when: true
+
+    - name: Restart the AppView
+      ansible.builtin.command: docker compose up -d appview
+      args:
+        chdir: "{{ stack_dir }}"
+      changed_when: true
+      when: not (detach | default(false) | bool)
+
+    - name: Restart the AppView after this run ends
+      ansible.builtin.shell: nohup setsid sh -c 'sleep 5 && docker compose up -d appview' >/dev/null 2>&1 &
+      args:
+        chdir: "{{ stack_dir }}"
+      changed_when: true
+      when: detach | default(false) | bool

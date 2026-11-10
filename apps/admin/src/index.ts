@@ -8,7 +8,6 @@ import {
 } from "@colibri-social/appview/cluster";
 import { openDatabase } from "@colibri-social/appview-db";
 import { SecretBox } from "@colibri-social/community";
-import { eq } from "drizzle-orm";
 import {
 	type Admin,
 	configImport,
@@ -17,6 +16,7 @@ import {
 	configUnset,
 	nodeAdd,
 	nodeList,
+	nodeRecover,
 	nodeRemove,
 	nodeResume,
 	nodeShutdown,
@@ -30,14 +30,16 @@ const USAGE = `colibri-admin, run it inside the AppView container of the main no
 
   node list
   node add <id> --region <region> --roles <roles> [--public-url <url>]
+                   [--ip <public ip> [--workers <n>]]
   node shutdown <id> --maintenance|--retire [--grace 15m] [--force]
   node resume <id>
+  node recover <id>
   node remove <id> [--force]
   rollout pause|resume
   config list
   config set <KEY> <value>
   config unset <KEY>
-  config import <file> [--dry-run]`;
+  config import <file|-> [--dry-run]`;
 
 const fail = (message: string, code: number): never => {
 	process.stderr.write(`${message}\n`);
@@ -59,6 +61,8 @@ const main = async (): Promise<void> => {
 			region: { type: "string" },
 			roles: { type: "string" },
 			"public-url": { type: "string" },
+			ip: { type: "string" },
+			workers: { type: "string" },
 			maintenance: { type: "boolean", default: false },
 			retire: { type: "boolean", default: false },
 			grace: { type: "string" },
@@ -90,12 +94,6 @@ const main = async (): Promise<void> => {
 
 			return sendOrder(bus, order);
 		},
-		removeNode: async (id) => {
-			await primary.delete(tables.voiceParticipants).where(eq(tables.voiceParticipants.nodeId, id));
-			await primary.delete(tables.voiceCalls).where(eq(tables.voiceCalls.nodeId, id));
-			await primary.delete(tables.nodeJoinTokens).where(eq(tables.nodeJoinTokens.nodeId, id));
-			await primary.delete(tables.nodes).where(eq(tables.nodes.id, id));
-		},
 		setRolloutPaused: async (paused) => {
 			const updatedAt = new Date().toISOString();
 
@@ -107,7 +105,17 @@ const main = async (): Promise<void> => {
 					set: { rolloutPaused: paused, updatedAt },
 				});
 		},
-		readFile: (path) => readFile(path, "utf8"),
+		readFile: async (path) => {
+			if (path !== "-") {
+				return readFile(path, "utf8");
+			}
+
+			const chunks: Buffer[] = [];
+
+			for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+
+			return Buffer.concat(chunks).toString("utf8");
+		},
 		now: () => new Date(),
 		print: (line) => process.stdout.write(`${line}\n`),
 	};
@@ -122,6 +130,8 @@ const main = async (): Promise<void> => {
 					region: required(values.region, "--region"),
 					roles: required(values.roles, "--roles"),
 					...(values["public-url"] ? { publicUrl: values["public-url"] } : {}),
+					...(values.ip ? { ip: values.ip } : {}),
+					...(values.workers ? { workers: values.workers } : {}),
 				});
 			case "node shutdown":
 				return nodeShutdown(admin, {
@@ -133,6 +143,8 @@ const main = async (): Promise<void> => {
 				});
 			case "node resume":
 				return nodeResume(admin, required(first, "<id>"));
+			case "node recover":
+				return nodeRecover(admin, required(first, "<id>"));
 			case "node remove":
 				return nodeRemove(admin, { id: required(first, "<id>"), force: values.force });
 			case "rollout pause":
