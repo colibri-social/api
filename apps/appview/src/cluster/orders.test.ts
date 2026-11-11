@@ -219,6 +219,67 @@ describe("Ansible orders", () => {
 		).toBe(true);
 	});
 
+	it("sets the node's DNS record before provisioning", async () => {
+		const { deps: ansibleDeps, run } = withAnsible();
+		const put = vi.fn(async () => {});
+		const result = await handleOrder(
+			{ ...ansibleDeps, dns: { put, remove: vi.fn(async () => true) } },
+			{
+				kind: "provision",
+				id: "p3",
+				node: "eu-4",
+				ip: "203.0.113.7",
+				region: "eu",
+				roles: ["api"],
+				publicUrl: "https://eu-4.test",
+				joinToken: "t",
+			},
+		);
+
+		expect(result.ok).toBe(true);
+		expect(put).toHaveBeenCalledWith("eu-4", "eu-4.test", "203.0.113.7");
+		expect(run).toHaveBeenCalled();
+	});
+
+	it("refuses to provision when the DNS record can't be set", async () => {
+		const { deps: ansibleDeps, run } = withAnsible();
+		const put = vi.fn(async () => {
+			throw new Error("eu-4.test already has a DNS record that Colibri doesn't manage");
+		});
+		const result = await handleOrder(
+			{ ...ansibleDeps, dns: { put, remove: vi.fn(async () => true) } },
+			{
+				kind: "provision",
+				id: "p4",
+				node: "eu-4",
+				ip: "203.0.113.7",
+				region: "eu",
+				roles: ["api"],
+				publicUrl: "https://eu-4.test",
+				joinToken: "t",
+			},
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.message).toMatch(/doesn't manage/);
+		expect(run).not.toHaveBeenCalled();
+	});
+
+	it("removes the DNS record of a removed node", async () => {
+		const { deps: ansibleDeps } = withAnsible();
+		const remove = vi.fn(async () => true);
+
+		await deps.registry.setState("eu-3", "retired");
+
+		const result = await handleOrder(
+			{ ...ansibleDeps, dns: { put: vi.fn(async () => {}), remove } },
+			{ kind: "deprovision", id: "d5", node: "eu-3" },
+		);
+
+		expect(result).toMatchObject({ ok: true, message: "removed eu-3" });
+		expect(remove).toHaveBeenCalledWith("eu-3.test");
+	});
+
 	it("refuses to remove a node that still runs", async () => {
 		const { deps: ansibleDeps, run } = withAnsible();
 

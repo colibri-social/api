@@ -9,7 +9,7 @@ import { healCategoryOrders } from "./category-order.js";
 import { resolveClusterEnv } from "./cluster/boot.js";
 import { type ClusterNode, startClusterNode } from "./cluster/node.js";
 import { parkedState } from "./cluster/orders.js";
-import type { ParkMode } from "./cluster/protocol.js";
+import type { DrainMode } from "./cluster/protocol.js";
 import { describeConfig, loadConfig } from "./config.js";
 import { type AppContext, createContext } from "./context.js";
 import { drainGraceMs, hasPeers, waitForConnections } from "./drain.js";
@@ -31,6 +31,8 @@ import { EventServer } from "./ws/events.js";
 import { VoiceServer } from "./ws/voice.js";
 
 const SHUTDOWN_DEADLINE_MS = 15_000;
+
+const UPDATE_HOLD_MS = 15 * 60_000;
 
 const PRESENCE_RECONCILE_MS = 60_000;
 
@@ -162,7 +164,7 @@ const main = async (): Promise<void> => {
 
 	let holdsMain = false;
 	let cluster: ClusterNode | null = null;
-	let onDrainOrder: (mode: ParkMode, graceMinutes: number | undefined) => void = () => {};
+	let onDrainOrder: (mode: DrainMode, graceMinutes: number | undefined) => void = () => {};
 	let onResumeOrder: () => void = () => {};
 
 	cluster = await startClusterNode({
@@ -357,6 +359,15 @@ const main = async (): Promise<void> => {
 			await step("events", () => events.close());
 			await step("voice", () => voice.close());
 			ctx.drain.park();
+
+			if (mode === "update") {
+				cluster?.report({ t: "drained", mode });
+				ctx.log.info({ holdMs: UPDATE_HOLD_MS }, "node.awaitingUpdate");
+				setTimeout(() => void shutdown("update-hold"), UPDATE_HOLD_MS).unref();
+
+				return;
+			}
+
 			await step("park", () => cluster?.setState(parkedState(mode), null));
 			cluster?.report({ t: "drained", mode });
 			ctx.log.info({ mode }, "node.parked");

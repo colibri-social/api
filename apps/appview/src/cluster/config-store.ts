@@ -26,6 +26,7 @@ export const NODE_LOCAL_KEYS: ReadonlySet<string> = new Set([
 	"POSTGRES_REPLICATION_PASSWORD",
 	"REGISTRY_TOKEN",
 	"ANSIBLE_DIR",
+	"STACK_DIR",
 ]);
 
 const sealedSchema = z.object({ c: z.string(), n: z.string() });

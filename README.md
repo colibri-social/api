@@ -135,6 +135,42 @@ A shutdown keeps the quorum floor unless you pass `--force`. A node in maintenan
 every request with 503 until it is resumed. `node remove` deletes the stack and its volumes from
 a retired node and forgets it. `node recover eu-2` restarts a node's stack.
 
+### Updates
+
+The main node checks the `NODE_IMAGE` tag (`ghcr.io/colibri-social/api:stable` by default) every
+`UPDATE_POLL_MINUTES` (default 15, `0` turns it off). When nodes run an older version than the
+image's `org.opencontainers.image.version` label, it updates them one at a time: sub nodes first,
+then the failover node, then itself. Each node pulls the image pinned by digest, drains for up to
+`DRAIN_GRACE_MINUTES` while the quorum floor holds, restarts and must report the new version
+within 10 minutes. A failed step pauses rollouts until `colibri-admin rollout resume`. A node
+that drained for an update and isn't restarted within 15 minutes restarts on its current image.
+
+The main node updates itself over SSH too. Keep its stack in `STACK_DIR` (default `/opt/colibri`),
+set `COMPOSE_FILE=docker-compose.scaled.yml` and `TAILNET_HOST` in its `.env`, and add the SSH
+key's public half to the main server's own `authorized_keys`. Writes pause while the main node
+restarts. Sub nodes hold them for `WRITE_QUEUE_SECONDS`.
+
+### Cloudflare
+
+With `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` set, `node add --ip` creates an A record for
+the node's public host (DNS only, named after the node in its comment) and `node remove` deletes
+it. Records the main node didn't create are left alone, and `node add` refuses to replace one.
+
+Add `CLOUDFLARE_ACCOUNT_ID` and the ID of an existing load balancer on the API host as
+`CLOUDFLARE_LB_ID`, and the main node keeps it in step with the registry every minute:
+
+- One pool per region, named `colibri-<region>`, holds the `api` nodes of that region. Active
+  nodes are enabled, the others are disabled, and retired nodes are left out. Each origin sends
+  the node's own host as `Host`. A pool without nodes is deleted.
+- A shared monitor checks `GET /health` for a 200.
+- The load balancer uses geo steering. `CLOUDFLARE_GEO_REGIONS` maps regions to Cloudflare
+  region codes, for example `eu=WEU,EEU;us=ENAM,WNAM`. Every pool is a default pool, with the
+  main node's region first and as the fallback.
+
+The token needs DNS edit on the zone, and Load Balancing edit on the zone and the account. A
+node whose public host is the API host is left out of the pools, so give the main node its own
+`NODE_PUBLIC_URL`.
+
 ### A local cluster
 
 The `local-cluster` profile runs a replica, a sub node and a voice node next to the main node

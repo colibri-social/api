@@ -122,3 +122,14 @@ describe("mayLeave", () => {
 		expect(await registry.mayLeave("eu-1")).toMatchObject({ allowed: false });
 	});
 });
+
+describe("rollout pause", () => {
+	it("starts unpaused and stays paused once paused", async () => {
+		expect(await registry.rolloutPaused()).toBe(false);
+
+		await registry.pauseRollout();
+		await registry.claimMain("eu-1");
+
+		expect(await registry.rolloutPaused()).toBe(true);
+	});
+});

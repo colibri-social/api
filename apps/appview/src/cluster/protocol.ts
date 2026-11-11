@@ -12,8 +12,12 @@ export const NODE_SECRET_HEADER = "x-colibri-node-secret";
 
 export type ParkMode = "maintenance" | "retire";
 
+export type DrainMode = ParkMode | "update";
+
+const drainModeSchema = z.enum(["maintenance", "retire", "update"]);
+
 export const nodeFrameSchema = z.discriminatedUnion("t", [
-	z.object({ t: z.literal("drained"), mode: z.enum(["maintenance", "retire"]) }),
+	z.object({ t: z.literal("drained"), mode: drainModeSchema }),
 ]);
 
 export type NodeFrame = z.infer<typeof nodeFrameSchema>;
@@ -22,7 +26,7 @@ export const mainFrameSchema = z.discriminatedUnion("t", [
 	z.object({ t: z.literal("welcome"), mainNodeId: z.string() }),
 	z.object({
 		t: z.literal("drain"),
-		mode: z.enum(["maintenance", "retire"]),
+		mode: drainModeSchema,
 		graceMinutes: z.number().nonnegative().optional(),
 	}),
 	z.object({ t: z.literal("resume") }),

@@ -45,6 +45,10 @@ export type OrderDeps = {
 		removeNode: (id: string) => Promise<void>;
 	};
 	background?: (work: Promise<unknown>) => void;
+	dns?: {
+		put: (node: string, host: string, ip: string) => Promise<void>;
+		remove: (host: string) => Promise<boolean>;
+	};
 };
 
 const tailOf = (result: PlaybookResult): string => {
@@ -191,6 +195,18 @@ const provision = async (
 		...(order.workers === undefined ? {} : { workers: order.workers }),
 	});
 
+	if (deps.dns) {
+		const host = new URL(order.publicUrl).hostname;
+		const failure = await deps.dns.put(order.node, host, order.ip).then(
+			() => null,
+			(error: unknown) => (error instanceof Error ? error.message : String(error)),
+		);
+
+		if (failure) {
+			return refused(order, `setting the DNS record for ${host} failed: ${failure}`);
+		}
+	}
+
 	runInBackground(deps, ansible, "bootstrap", order.ip, vars);
 
 	return done(order, `provisioning ${order.node} at ${order.ip}. Follow it with node list`);
@@ -260,6 +276,21 @@ const deprovision = async (
 	}
 
 	await deps.provisioning.removeNode(order.node);
+
+	const host = new URL(target.publicUrl).hostname;
+	const dnsFailure = deps.dns
+		? await deps.dns.remove(host).then(
+				() => null,
+				(error: unknown) => (error instanceof Error ? error.message : String(error)),
+			)
+		: null;
+
+	if (dnsFailure) {
+		return done(
+			order,
+			`removed ${order.node}, but its DNS record for ${host} is still there: ${dnsFailure}`,
+		);
+	}
 
 	return done(order, `removed ${order.node}`);
 };

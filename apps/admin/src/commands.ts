@@ -36,9 +36,7 @@ export const parseRoles = (value: string): NodeRole[] => {
 				.filter(Boolean),
 		),
 	];
-	const unknown = roles.filter(
-		(role) => !(NODE_ROLES as readonly string[]).includes(role),
-	);
+	const unknown = roles.filter((role) => !(NODE_ROLES as readonly string[]).includes(role));
 
 	if (roles.length === 0 || unknown.length > 0) {
 		throw new UsageError(
@@ -73,18 +71,13 @@ const age = (since: string | null, now: Date): string => {
 		return "never";
 	}
 
-	const seconds = Math.max(
-		0,
-		Math.round((now.getTime() - new Date(since).getTime()) / 1000),
-	);
+	const seconds = Math.max(0, Math.round((now.getTime() - new Date(since).getTime()) / 1000));
 
 	if (seconds < 120) {
 		return `${seconds}s ago`;
 	}
 
-	return seconds < 7200
-		? `${Math.round(seconds / 60)}m ago`
-		: `${Math.round(seconds / 3600)}h ago`;
+	return seconds < 7200 ? `${Math.round(seconds / 60)}m ago` : `${Math.round(seconds / 3600)}h ago`;
 };
 
 export const formatTable = (rows: readonly (readonly string[])[]): string[] => {
@@ -101,10 +94,7 @@ export const formatTable = (rows: readonly (readonly string[])[]): string[] => {
 };
 
 export const nodeList = async (admin: Admin): Promise<void> => {
-	const [nodes, main] = await Promise.all([
-		admin.registry.list(),
-		admin.registry.mainNode(),
-	]);
+	const [nodes, main] = await Promise.all([admin.registry.list(), admin.registry.mainNode()]);
 
 	if (nodes.length === 0) {
 		admin.print("No nodes are registered.");
@@ -125,16 +115,7 @@ export const nodeList = async (admin: Admin): Promise<void> => {
 	]);
 
 	for (const line of formatTable([
-		[
-			"NODE",
-			"REGION",
-			"ROLES",
-			"STATE",
-			"HEARTBEAT",
-			"SOCKETS",
-			"CALLS",
-			"VERSION",
-		],
+		["NODE", "REGION", "ROLES", "STATE", "HEARTBEAT", "SOCKETS", "CALLS", "VERSION"],
 		...rows,
 	])) {
 		admin.print(line);
@@ -179,9 +160,7 @@ export const nodeAdd = async (
 	const existing = await admin.registry.node(options.id);
 
 	if (existing && existing.state !== "retired") {
-		throw new RefusedError(
-			`${options.id} is already registered and ${existing.state}`,
-		);
+		throw new RefusedError(`${options.id} is already registered and ${existing.state}`);
 	}
 
 	const token = await admin.registry.createJoinToken({
@@ -191,8 +170,7 @@ export const nodeAdd = async (
 	});
 
 	if (options.ip && options.publicUrl) {
-		const workers =
-			options.workers === undefined ? undefined : Number(options.workers);
+		const workers = options.workers === undefined ? undefined : Number(options.workers);
 
 		if (workers !== undefined && (!Number.isInteger(workers) || workers < 1)) {
 			throw new UsageError(`${options.workers} is not a worker count`);
@@ -215,24 +193,14 @@ export const nodeAdd = async (
 
 	const main = await admin.registry.mainNode();
 
-	admin.print(
-		`Join token for ${options.id}, valid for one hour and usable once:`,
-	);
+	admin.print(`Join token for ${options.id}, valid for one hour and usable once:`);
 	admin.print("");
-	admin.print(
-		`MAIN_NODE_URL=${main?.tailnetUrl ?? "<tailnet URL of the main node>"}`,
-	);
+	admin.print(`MAIN_NODE_URL=${main?.tailnetUrl ?? "<tailnet URL of the main node>"}`);
 	admin.print(`CLUSTER_JOIN_TOKEN=${token}`);
-	admin.print(
-		`NODE_PUBLIC_URL=${options.publicUrl ?? "<public URL of the new node>"}`,
-	);
-	admin.print(
-		"NODE_TAILNET_URL=<tailnet URL of the new node, on CLUSTER_PORT>",
-	);
+	admin.print(`NODE_PUBLIC_URL=${options.publicUrl ?? "<public URL of the new node>"}`);
+	admin.print("NODE_TAILNET_URL=<tailnet URL of the new node, on CLUSTER_PORT>");
 	admin.print("");
-	admin.print(
-		"The node gets its ID, region, roles and the shared settings from the main node.",
-	);
+	admin.print("The node gets its ID, region, roles and the shared settings from the main node.");
 };
 
 export const nodeShutdown = async (
@@ -254,9 +222,7 @@ export const nodeShutdown = async (
 		id: randomUUID(),
 		node: options.id,
 		mode: options.retire ? "retire" : "maintenance",
-		...(options.grace === undefined
-			? {}
-			: { graceMinutes: parseGrace(options.grace) }),
+		...(options.grace === undefined ? {} : { graceMinutes: parseGrace(options.grace) }),
 		...(options.force ? { force: true } : {}),
 	});
 };
@@ -300,11 +266,7 @@ export const configList = async (admin: Admin): Promise<void> => {
 	}
 };
 
-export const configSet = async (
-	admin: Admin,
-	key: string,
-	value: string,
-): Promise<void> => {
+export const configSet = async (admin: Admin, key: string, value: string): Promise<void> => {
 	if (!isSharedKey(key)) {
 		throw new RefusedError(`${key} is not a setting every node shares`);
 	}
@@ -323,16 +285,11 @@ export const configImport = async (
 	admin: Admin,
 	options: { file: string; dryRun: boolean },
 ): Promise<void> => {
-	const entries = Object.entries(
-		parseEnv(await admin.readFile(options.file)),
-	).filter(
-		(entry): entry is [string, string] =>
-			typeof entry[1] === "string" && entry[1] !== "",
+	const entries = Object.entries(parseEnv(await admin.readFile(options.file))).filter(
+		(entry): entry is [string, string] => typeof entry[1] === "string" && entry[1] !== "",
 	);
 	const shared = entries.filter(([key]) => isSharedKey(key));
-	const skipped = entries
-		.filter(([key]) => !isSharedKey(key))
-		.map(([key]) => key);
+	const skipped = entries.filter(([key]) => !isSharedKey(key)).map(([key]) => key);
 
 	if (!options.dryRun) {
 		for (const [key, value] of shared) {

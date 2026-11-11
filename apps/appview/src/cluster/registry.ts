@@ -58,6 +58,8 @@ export type Registry = {
 	claimMain: (id: string) => Promise<void>;
 	remove: (id: string) => Promise<void>;
 	mainNode: () => Promise<NodeRow | null>;
+	rolloutPaused: () => Promise<boolean>;
+	pauseRollout: () => Promise<void>;
 };
 
 const hash = (value: string): string => {
@@ -286,6 +288,26 @@ export const createRegistry = (
 				.limit(1);
 
 			return state?.mainNodeId ? node(state.mainNodeId) : null;
+		},
+		rolloutPaused: async () => {
+			const [state] = await primary
+				.select({ paused: tables.clusterState.rolloutPaused })
+				.from(tables.clusterState)
+				.where(eq(tables.clusterState.id, CLUSTER_STATE_ID))
+				.limit(1);
+
+			return state?.paused ?? false;
+		},
+		pauseRollout: async () => {
+			const at = now().toISOString();
+
+			await primary
+				.insert(tables.clusterState)
+				.values({ id: CLUSTER_STATE_ID, rolloutPaused: true, updatedAt: at })
+				.onConflictDoUpdate({
+					target: tables.clusterState.id,
+					set: { rolloutPaused: true, updatedAt: at },
+				});
 		},
 	};
 };

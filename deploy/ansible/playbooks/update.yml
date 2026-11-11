@@ -22,11 +22,11 @@
       args:
         chdir: "{{ stack_dir }}"
       changed_when: true
-      when: not (detach | default(false) | bool)
+      when: not (detach | default(false) | bool) and not (pull_only | default(false) | bool)
 
     - name: Restart the AppView after this run ends
       ansible.builtin.shell: nohup setsid sh -c 'sleep 5 && docker compose up -d appview' >/dev/null 2>&1 &
       args:
         chdir: "{{ stack_dir }}"
       changed_when: true
-      when: detach | default(false) | bool
+      when: (detach | default(false) | bool) and not (pull_only | default(false) | bool)
