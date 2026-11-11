@@ -1,5 +1,6 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PlaybookRun } from "./ansible.js";
 import { handleOrder, type OrderDeps } from "./orders.js";
 import { createRegistry } from "./registry.js";
 
@@ -127,7 +128,11 @@ describe("resume orders", () => {
 
 describe("Ansible orders", () => {
 	const withAnsible = (ok = true) => {
-		const run = vi.fn(async () => ({ ok, code: ok ? 0 : 2, tail: ["fatal: unreachable"] }));
+		const run = vi.fn(async (_run: PlaybookRun) => ({
+			ok,
+			code: ok ? 0 : 2,
+			tail: ["fatal: unreachable"],
+		}));
 		const removeNode = vi.fn(async () => {});
 		const background = vi.fn();
 
@@ -317,6 +322,87 @@ describe("Ansible orders", () => {
 			message: "the main node is missing KUMA_PUBLIC_URL",
 		});
 		expect(run).not.toHaveBeenCalled();
+	});
+
+	it("deploys monitoring, stores the remote write URL and starts Alloy on every node", async () => {
+		const { deps: ansibleDeps, run, background } = withAnsible();
+		const setRemoteWriteUrl = vi.fn(async () => {});
+		const result = await handleOrder(
+			{
+				...ansibleDeps,
+				monitoring: {
+					vars: () => ({ grafana_admin_password: "pw", stack_dir: "/srv/colibri" }),
+					remoteWriteUrl: () => null,
+					setRemoteWriteUrl,
+					alloyVars: (node, self, url) => ({ node: node.id, self, url }),
+				},
+			},
+			{ kind: "deployMonitoring", id: "m1", node: "eu-2" },
+		);
+
+		expect(result.ok).toBe(true);
+		expect(result.message).toMatch(/http:\/\/eu-2:3300/);
+
+		await background.mock.calls[0]?.[0];
+
+		expect(setRemoteWriteUrl).toHaveBeenCalledWith("http://eu-2:9090/api/v1/write");
+		expect(run.mock.calls.map(([call]) => [call.playbook, call.host, call.vars])).toEqual([
+			["monitoring", "eu-2", { grafana_admin_password: "pw", stack_dir: "/opt/colibri" }],
+			["alloy", "eu-1", { node: "eu-1", self: true, url: "http://eu-2:9090/api/v1/write" }],
+			["alloy", "eu-2", { node: "eu-2", self: false, url: "http://eu-2:9090/api/v1/write" }],
+			["alloy", "eu-3", { node: "eu-3", self: false, url: "http://eu-2:9090/api/v1/write" }],
+		]);
+	});
+
+	it("refuses to deploy monitoring without a Grafana password", async () => {
+		const { deps: ansibleDeps, run } = withAnsible();
+		const result = await handleOrder(
+			{
+				...ansibleDeps,
+				monitoring: {
+					vars: () => null,
+					remoteWriteUrl: () => null,
+					setRemoteWriteUrl: vi.fn(async () => {}),
+					alloyVars: () => ({}),
+				},
+			},
+			{ kind: "deployMonitoring", id: "m2", node: "eu-2" },
+		);
+
+		expect(result).toMatchObject({
+			ok: false,
+			message: "the main node is missing GRAFANA_ADMIN_PASSWORD",
+		});
+		expect(run).not.toHaveBeenCalled();
+	});
+
+	it("starts Alloy on a new node once monitoring exists", async () => {
+		const { deps: ansibleDeps, run, background } = withAnsible();
+
+		await handleOrder(
+			{
+				...ansibleDeps,
+				monitoring: {
+					vars: () => null,
+					remoteWriteUrl: () => "http://eu-2:9090/api/v1/write",
+					setRemoteWriteUrl: vi.fn(async () => {}),
+					alloyVars: (node) => ({ node: node.id }),
+				},
+			},
+			{
+				kind: "provision",
+				id: "p5",
+				node: "eu-3",
+				ip: "203.0.113.7",
+				region: "eu",
+				roles: ["api"],
+				publicUrl: "https://eu-3.test",
+				joinToken: "t",
+			},
+		);
+		await background.mock.calls[0]?.[0];
+
+		expect(run.mock.calls.map(([call]) => call.playbook)).toEqual(["bootstrap", "alloy"]);
 	});
 
 	it("refuses to remove a node that still runs", async () => {

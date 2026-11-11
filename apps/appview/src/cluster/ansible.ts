@@ -11,6 +11,8 @@ export const PLAYBOOKS = [
 	"rejoin-replica",
 	"remove",
 	"uptime-kuma",
+	"monitoring",
+	"alloy",
 ] as const;
 
 export type Playbook = (typeof PLAYBOOKS)[number];

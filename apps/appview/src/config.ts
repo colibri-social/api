@@ -127,6 +127,18 @@ export const configSchema = z.object({
 	CLOUDFLARE_ZONE_ID: optionalString,
 	CLOUDFLARE_LB_ID: optionalString,
 	CLOUDFLARE_GEO_REGIONS: optionalString,
+	PROMETHEUS_REMOTE_WRITE_URL: z
+		.url()
+		.optional()
+		.or(z.literal("").transform(() => undefined)),
+	GRAFANA_ADMIN_PASSWORD: optionalString,
+	ALERT_WEBHOOK_URL: z
+		.url()
+		.optional()
+		.or(z.literal("").transform(() => undefined)),
+	PROMETHEUS_IMAGE: z.string().trim().min(1).default("prom/prometheus:v3.15.1"),
+	GRAFANA_IMAGE: z.string().trim().min(1).default("grafana/grafana:13.2.5"),
+	ALLOY_IMAGE: z.string().trim().min(1).default("grafana/alloy:v1.21.2"),
 	KUMA_URL: z
 		.url()
 		.optional()

@@ -2,7 +2,7 @@ import type { NodeRole } from "@colibri-social/appview-db";
 import type { AnsibleRunner, Playbook, PlaybookResult } from "./ansible.js";
 import type { MainFrame, ParkMode } from "./protocol.js";
 import type { ProvisionTarget } from "./provisioning.js";
-import type { Registry } from "./registry.js";
+import type { NodeRow, Registry } from "./registry.js";
 
 export type ClusterOrder =
 	| {
@@ -27,7 +27,8 @@ export type ClusterOrder =
 	  }
 	| { kind: "recover"; id: string; node: string }
 	| { kind: "deprovision"; id: string; node: string; force?: boolean }
-	| { kind: "deployStatus"; id: string; node: string };
+	| { kind: "deployStatus"; id: string; node: string }
+	| { kind: "deployMonitoring"; id: string; node: string };
 
 export type OrderResult = {
 	id: string;
@@ -50,6 +51,12 @@ export type OrderDeps = {
 		put: (node: string, host: string, ip: string) => Promise<void>;
 		remove: (host: string) => Promise<boolean>;
 		alias?: (host: string, target: string) => Promise<void>;
+	};
+	monitoring?: {
+		vars: () => Record<string, unknown> | null;
+		remoteWriteUrl: () => string | null;
+		setRemoteWriteUrl: (url: string) => Promise<void>;
+		alloyVars: (node: NodeRow, self: boolean, url: string) => Record<string, unknown>;
 	};
 	status?: {
 		vars: (node: { id: string; self: boolean }) => Record<string, unknown> | null;
@@ -160,6 +167,27 @@ const resume = async (
 	);
 };
 
+const hostOf = (url: string): string => {
+	return new URL(url).hostname;
+};
+
+const startAlloy = async (
+	deps: OrderDeps,
+	ansible: AnsibleRunner,
+	node: NodeRow,
+	url: string,
+): Promise<PlaybookResult | null> => {
+	if (!deps.monitoring) {
+		return null;
+	}
+
+	return ansible.run({
+		playbook: "alloy",
+		host: hostOf(node.tailnetUrl),
+		vars: deps.monitoring.alloyVars(node, node.id === deps.self, url),
+	});
+};
+
 const runInBackground = (
 	deps: OrderDeps,
 	ansible: AnsibleRunner,
@@ -211,6 +239,26 @@ const provision = async (
 		if (failure) {
 			return refused(order, `setting the DNS record for ${host} failed: ${failure}`);
 		}
+	}
+
+	const remoteWrite = deps.monitoring?.remoteWriteUrl() ?? null;
+
+	if (remoteWrite) {
+		const work = ansible
+			.run({ playbook: "bootstrap", host: order.ip, vars })
+			.then(async (result) => {
+				const node = result.ok ? await deps.registry.node(order.node) : null;
+
+				return node ? ((await startAlloy(deps, ansible, node, remoteWrite)) ?? result) : result;
+			});
+
+		if (deps.background) {
+			deps.background(work);
+		} else {
+			void work.catch(() => {});
+		}
+
+		return done(order, `provisioning ${order.node} at ${order.ip}. Follow it with node list`);
 	}
 
 	runInBackground(deps, ansible, "bootstrap", order.ip, vars);
@@ -343,6 +391,64 @@ const deployStatus = async (
 	);
 };
 
+const deployMonitoring = async (
+	deps: OrderDeps,
+	order: Extract<ClusterOrder, { kind: "deployMonitoring" }>,
+): Promise<OrderResult> => {
+	const target = await deps.registry.node(order.node);
+
+	if (!target) {
+		return refused(order, `no node is called ${order.node}`);
+	}
+
+	const { ansible, monitoring } = deps;
+
+	if (!ansible || !monitoring) {
+		return refused(order, "this main node can't run Ansible");
+	}
+
+	const vars = monitoring.vars();
+
+	if (!vars) {
+		return refused(order, "the main node is missing GRAFANA_ADMIN_PASSWORD");
+	}
+
+	const host = hostOf(target.tailnetUrl);
+	const url = `http://${host}:9090/api/v1/write`;
+	const work = (async () => {
+		const deployed = await ansible.run({
+			playbook: "monitoring",
+			host,
+			vars: { ...vars, stack_dir: target.id === deps.self ? vars.stack_dir : "/opt/colibri" },
+		});
+
+		if (!deployed.ok) {
+			return deployed;
+		}
+
+		await monitoring.setRemoteWriteUrl(url);
+
+		for (const node of await deps.registry.list()) {
+			if (node.state === "retired") continue;
+
+			await startAlloy(deps, ansible, node, url);
+		}
+
+		return deployed;
+	})();
+
+	if (deps.background) {
+		deps.background(work);
+	} else {
+		void work.catch(() => {});
+	}
+
+	return done(
+		order,
+		`deploying Prometheus and Grafana to ${order.node}, then Alloy to every node. Grafana will be at http://${host}:3300`,
+	);
+};
+
 export const ORDER_TIMEOUTS_MS: Record<ClusterOrder["kind"], number> = {
 	shutdown: 30_000,
 	resume: 30_000,
@@ -350,6 +456,7 @@ export const ORDER_TIMEOUTS_MS: Record<ClusterOrder["kind"], number> = {
 	recover: 30_000,
 	deprovision: 10 * 60_000,
 	deployStatus: 30_000,
+	deployMonitoring: 30_000,
 };
 
 export const handleOrder = (deps: OrderDeps, order: ClusterOrder): Promise<OrderResult> => {
@@ -366,5 +473,7 @@ export const handleOrder = (deps: OrderDeps, order: ClusterOrder): Promise<Order
 			return deprovision(deps, order);
 		case "deployStatus":
 			return deployStatus(deps, order);
+		case "deployMonitoring":
+			return deployMonitoring(deps, order);
 	}
 };

@@ -1,0 +1,379 @@
+{
+	"uid": "colibri-postgres",
+	"title": "Colibri Postgres",
+	"tags": [
+		"colibri"
+	],
+	"timezone": "browser",
+	"schemaVersion": 39,
+	"version": 1,
+	"editable": false,
+	"refresh": "30s",
+	"time": {
+		"from": "now-6h",
+		"to": "now"
+	},
+	"templating": {
+		"list": [
+			{
+				"name": "node",
+				"label": "Node",
+				"type": "query",
+				"datasource": {
+					"type": "prometheus",
+					"uid": "colibri-prometheus"
+				},
+				"query": {
+					"query": "label_values(pg_up, node)",
+					"refId": "node"
+				},
+				"definition": "label_values(pg_up, node)",
+				"refresh": 2,
+				"includeAll": true,
+				"multi": true,
+				"current": {
+					"text": "All",
+					"value": "$__all"
+				},
+				"allValue": ".*"
+			}
+		]
+	},
+	"panels": [
+		{
+			"type": "stat",
+			"title": "Last backup",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 0,
+				"w": 6,
+				"h": 4
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "time() - max(colibri_backup_last_success_timestamp_seconds)",
+					"legendFormat": "age"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "s"
+				},
+				"overrides": []
+			},
+			"options": {
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					]
+				},
+				"colorMode": "value",
+				"graphMode": "none"
+			},
+			"id": 1
+		},
+		{
+			"type": "stat",
+			"title": "PDS health",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 6,
+				"y": 0,
+				"w": 6,
+				"h": 4
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "min by (job) (probe_success)",
+					"legendFormat": "up"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {},
+				"overrides": []
+			},
+			"options": {
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					]
+				},
+				"colorMode": "value",
+				"graphMode": "none"
+			},
+			"description": "1 when the PDS health check and describeServer answer",
+			"id": 2
+		},
+		{
+			"type": "timeseries",
+			"title": "Replication lag",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 12,
+				"y": 0,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "max by (node) (pg_replication_lag_seconds{node=~\"$node\"})",
+					"legendFormat": "{{node}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "s"
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 3
+		},
+		{
+			"type": "timeseries",
+			"title": "Connections",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 4,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum by (node, state) (pg_stat_activity_count{node=~\"$node\"})",
+					"legendFormat": "{{node}} {{state}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 4
+		},
+		{
+			"type": "timeseries",
+			"title": "Database size",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 12,
+				"y": 8,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "max by (node, datname) (pg_database_size_bytes{node=~\"$node\",datname!~\"template.*|postgres\"})",
+					"legendFormat": "{{node}} {{datname}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "bytes"
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 5
+		},
+		{
+			"type": "timeseries",
+			"title": "Transactions",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 12,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum by (node) (rate(pg_stat_database_xact_commit{node=~\"$node\"}[5m]))",
+					"legendFormat": "{{node}} commits"
+				},
+				{
+					"refId": "B",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum by (node) (rate(pg_stat_database_xact_rollback{node=~\"$node\"}[5m]))",
+					"legendFormat": "{{node}} rollbacks"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "ops"
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 6
+		},
+		{
+			"type": "timeseries",
+			"title": "Time spent in queries",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 12,
+				"y": 16,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum by (node) (rate(pg_stat_database_active_time_seconds_total{node=~\"$node\"}[5m]))",
+					"legendFormat": "{{node}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "s"
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"description": "Seconds of query execution per second across all backends",
+			"id": 7
+		},
+		{
+			"type": "timeseries",
+			"title": "PDS probe duration",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 20,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "max by (job) (probe_duration_seconds)",
+					"legendFormat": "{{job}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "s"
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 8
+		}
+	]
+}

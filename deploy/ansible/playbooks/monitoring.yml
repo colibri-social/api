@@ -1,0 +1,68 @@
+- name: Run Prometheus and Grafana
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    monitoring_dir: /opt/monitoring
+    observability_dir: "{{ playbook_dir }}/../../observability"
+  tasks:
+    - name: Read the tailnet address
+      ansible.builtin.command: tailscale ip -4
+      register: tailnet_ip
+      changed_when: false
+
+    - name: Create the monitoring directories
+      ansible.builtin.file:
+        path: "{{ monitoring_dir }}/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - prometheus
+        - grafana
+        - grafana/provisioning/alerting
+
+    - name: Copy the Prometheus config
+      ansible.builtin.copy:
+        src: "{{ observability_dir }}/prometheus/"
+        dest: "{{ monitoring_dir }}/prometheus/"
+        mode: "0644"
+
+    - name: Copy the Grafana provisioning and dashboards
+      ansible.builtin.copy:
+        src: "{{ observability_dir }}/grafana/"
+        dest: "{{ monitoring_dir }}/grafana/"
+        mode: "0644"
+        directory_mode: "0755"
+
+    - name: Write the alert contact point
+      ansible.builtin.template:
+        src: ../templates/contact-points.yml.j2
+        dest: "{{ monitoring_dir }}/grafana/provisioning/alerting/contact-points.yml"
+        mode: "0640"
+      when: alert_webhook_url | default('') | length > 0
+      no_log: true
+
+    - name: Remove the alert contact point
+      ansible.builtin.file:
+        path: "{{ monitoring_dir }}/grafana/provisioning/alerting/contact-points.yml"
+        state: absent
+      when: alert_webhook_url | default('') | length == 0
+
+    - name: Write the Grafana admin password
+      ansible.builtin.copy:
+        content: "{{ grafana_admin_password }}"
+        dest: "{{ monitoring_dir }}/grafana-admin-password"
+        mode: "0640"
+      no_log: true
+
+    - name: Write the monitoring stack
+      ansible.builtin.template:
+        src: ../templates/monitoring-compose.yml.j2
+        dest: "{{ monitoring_dir }}/compose.yml"
+        mode: "0644"
+
+    - name: Start Prometheus and Grafana
+      ansible.builtin.command: docker compose up -d --pull always --force-recreate
+      args:
+        chdir: "{{ monitoring_dir }}"
+      changed_when: true

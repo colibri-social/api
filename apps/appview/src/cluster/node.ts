@@ -14,7 +14,7 @@ import { connectKuma, createKumaSync } from "./kuma.js";
 import { joinCluster } from "./node-secret.js";
 import { type ClusterOrder, handleOrder } from "./orders.js";
 import type { DrainMode, NodeFrame } from "./protocol.js";
-import { missingForProvisioning, provisionVars } from "./provisioning.js";
+import { missingForProvisioning, needsPostgres, provisionVars } from "./provisioning.js";
 import type { NodeAddress, NodeIdentity } from "./registry.js";
 import { createRollout, type Rollout } from "./rollout.js";
 import { WriteProxy } from "./write-proxy.js";
@@ -260,6 +260,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 					log,
 				})
 			: null;
+	let remoteWriteUrl = config.PROMETHEUS_REMOTE_WRITE_URL ?? null;
 	const statusHost = config.KUMA_PUBLIC_URL ? new URL(config.KUMA_PUBLIC_URL).hostname : null;
 	const kumaSync = kuma
 		? createKumaSync({
@@ -327,6 +328,30 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 						vars: async (target) =>
 							provisionVars(config, { tailnetUrl: address.tailnetUrl }, target),
 						removeNode: (id) => registry.remove(id),
+					},
+					monitoring: {
+						vars: () =>
+							config.GRAFANA_ADMIN_PASSWORD
+								? {
+										grafana_admin_password: config.GRAFANA_ADMIN_PASSWORD,
+										alert_webhook_url: config.ALERT_WEBHOOK_URL ?? "",
+										grafana_image: config.GRAFANA_IMAGE,
+										prometheus_image: config.PROMETHEUS_IMAGE,
+										stack_dir: config.STACK_DIR,
+									}
+								: null,
+						remoteWriteUrl: () => remoteWriteUrl,
+						setRemoteWriteUrl: async (url) => {
+							await ctx.clusterConfig.set("PROMETHEUS_REMOTE_WRITE_URL", url);
+							remoteWriteUrl = url;
+						},
+						alloyVars: (node, self, url) => ({
+							remote_write_url: url,
+							alloy_image: config.ALLOY_IMAGE,
+							postgres: self || needsPostgres(node.roles),
+							probes: self,
+							stack_dir: self ? config.STACK_DIR : "/opt/colibri",
+						}),
 					},
 					status: {
 						host: statusHost,

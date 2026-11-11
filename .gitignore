@@ -12,3 +12,4 @@ apps/bridge/data/
 *.sqlite-shm
 *.sqlite-wal
 caddy-sites/
+/alloy/

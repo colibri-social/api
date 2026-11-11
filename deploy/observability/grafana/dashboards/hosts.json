@@ -1,0 +1,654 @@
+{
+	"uid": "colibri-hosts",
+	"title": "Colibri hosts",
+	"tags": [
+		"colibri"
+	],
+	"timezone": "browser",
+	"schemaVersion": 39,
+	"version": 2,
+	"editable": false,
+	"refresh": "30s",
+	"time": {
+		"from": "now-6h",
+		"to": "now"
+	},
+	"templating": {
+		"list": [
+			{
+				"name": "node",
+				"label": "Node",
+				"type": "query",
+				"datasource": {
+					"type": "prometheus",
+					"uid": "colibri-prometheus"
+				},
+				"query": {
+					"query": "label_values(node_load1, node)",
+					"refId": "node"
+				},
+				"definition": "label_values(node_load1, node)",
+				"refresh": 2,
+				"includeAll": true,
+				"multi": true,
+				"current": {
+					"text": "All",
+					"value": "$__all"
+				},
+				"allValue": ".*"
+			}
+		]
+	},
+	"panels": [
+		{
+			"type": "timeseries",
+			"title": "CPU busy",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 0,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "1 - avg by (node) (rate(node_cpu_seconds_total{node=~\"$node\",mode=\"idle\"}[5m]))",
+					"legendFormat": "{{node}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "percentunit"
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 1
+		},
+		{
+			"type": "timeseries",
+			"title": "Load (1 min)",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 12,
+				"y": 0,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "node_load1{node=~\"$node\"}",
+					"legendFormat": "{{node}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 2
+		},
+		{
+			"type": "timeseries",
+			"title": "Memory used",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 8,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "1 - node_memory_MemAvailable_bytes{node=~\"$node\"} / node_memory_MemTotal_bytes{node=~\"$node\"}",
+					"legendFormat": "{{node}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "percentunit"
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 3
+		},
+		{
+			"type": "timeseries",
+			"title": "Disk used",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 12,
+				"y": 8,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "1 - node_filesystem_avail_bytes{node=~\"$node\",fstype!~\"erofs|squashfs|iso9660\"} / node_filesystem_size_bytes{node=~\"$node\",fstype!~\"erofs|squashfs|iso9660\"}",
+					"legendFormat": "{{node}} {{mountpoint}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "percentunit"
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 4
+		},
+		{
+			"type": "timeseries",
+			"title": "Network in",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 16,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum by (node) (rate(node_network_receive_bytes_total{node=~\"$node\",device!~\"lo|docker.*|veth.*|br-.*|tailscale.*\"}[5m]))",
+					"legendFormat": "{{node}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "Bps"
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 5,
+			"description": "Public interfaces only. Tailnet, Docker and loopback traffic is left out."
+		},
+		{
+			"type": "timeseries",
+			"title": "Network out",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 12,
+				"y": 16,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum by (node) (rate(node_network_transmit_bytes_total{node=~\"$node\",device!~\"lo|docker.*|veth.*|br-.*|tailscale.*\"}[5m]))",
+					"legendFormat": "{{node}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "Bps"
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 6,
+			"description": "Public interfaces only. Tailnet, Docker and loopback traffic is left out."
+		},
+		{
+			"type": "stat",
+			"title": "Ingress in range",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 24,
+				"w": 6,
+				"h": 4
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum(increase(node_network_receive_bytes_total{node=~\"$node\",device!~\"lo|docker.*|veth.*|br-.*|tailscale.*\"}[$__range]))",
+					"legendFormat": "all nodes",
+					"instant": true
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "bytes"
+				},
+				"overrides": []
+			},
+			"options": {
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					]
+				},
+				"colorMode": "value",
+				"graphMode": "none"
+			},
+			"description": "Public interfaces only. Tailnet, Docker and loopback traffic is left out.",
+			"id": 7
+		},
+		{
+			"type": "stat",
+			"title": "Egress in range",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 6,
+				"y": 24,
+				"w": 6,
+				"h": 4
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum(increase(node_network_transmit_bytes_total{node=~\"$node\",device!~\"lo|docker.*|veth.*|br-.*|tailscale.*\"}[$__range]))",
+					"legendFormat": "all nodes",
+					"instant": true
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "bytes"
+				},
+				"overrides": []
+			},
+			"options": {
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					]
+				},
+				"colorMode": "value",
+				"graphMode": "none"
+			},
+			"description": "Public interfaces only. Tailnet, Docker and loopback traffic is left out.",
+			"id": 8
+		},
+		{
+			"type": "stat",
+			"title": "Ingress, last 30 days",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 12,
+				"y": 24,
+				"w": 6,
+				"h": 4
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum(increase(node_network_receive_bytes_total{node=~\"$node\",device!~\"lo|docker.*|veth.*|br-.*|tailscale.*\"}[30d]))",
+					"legendFormat": "all nodes",
+					"instant": true
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "bytes"
+				},
+				"overrides": []
+			},
+			"options": {
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					]
+				},
+				"colorMode": "value",
+				"graphMode": "none"
+			},
+			"description": "Public interfaces only. Tailnet, Docker and loopback traffic is left out.",
+			"id": 9
+		},
+		{
+			"type": "stat",
+			"title": "Egress, last 30 days",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 18,
+				"y": 24,
+				"w": 6,
+				"h": 4
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum(increase(node_network_transmit_bytes_total{node=~\"$node\",device!~\"lo|docker.*|veth.*|br-.*|tailscale.*\"}[30d]))",
+					"legendFormat": "all nodes",
+					"instant": true
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "bytes"
+				},
+				"overrides": []
+			},
+			"options": {
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					]
+				},
+				"colorMode": "value",
+				"graphMode": "none"
+			},
+			"description": "Public interfaces only. Tailnet, Docker and loopback traffic is left out.",
+			"id": 10
+		},
+		{
+			"type": "bargauge",
+			"title": "Traffic by node in range",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 28,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum by (node) (increase(node_network_receive_bytes_total{node=~\"$node\",device!~\"lo|docker.*|veth.*|br-.*|tailscale.*\"}[$__range]))",
+					"legendFormat": "{{node}} in",
+					"instant": true
+				},
+				{
+					"refId": "B",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum by (node) (increase(node_network_transmit_bytes_total{node=~\"$node\",device!~\"lo|docker.*|veth.*|br-.*|tailscale.*\"}[$__range]))",
+					"legendFormat": "{{node}} out",
+					"instant": true
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "bytes"
+				},
+				"overrides": []
+			},
+			"options": {},
+			"description": "Public interfaces only. Tailnet, Docker and loopback traffic is left out.",
+			"id": 11
+		},
+		{
+			"type": "bargauge",
+			"title": "Traffic by node, last 30 days",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 12,
+				"y": 28,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum by (node) (increase(node_network_receive_bytes_total{node=~\"$node\",device!~\"lo|docker.*|veth.*|br-.*|tailscale.*\"}[30d]))",
+					"legendFormat": "{{node}} in",
+					"instant": true
+				},
+				{
+					"refId": "B",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum by (node) (increase(node_network_transmit_bytes_total{node=~\"$node\",device!~\"lo|docker.*|veth.*|br-.*|tailscale.*\"}[30d]))",
+					"legendFormat": "{{node}} out",
+					"instant": true
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "bytes"
+				},
+				"overrides": []
+			},
+			"options": {},
+			"description": "Public interfaces only. Tailnet, Docker and loopback traffic is left out.",
+			"id": 12
+		},
+		{
+			"type": "timeseries",
+			"title": "Daily ingress",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 36,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum by (node) (increase(node_network_receive_bytes_total{node=~\"$node\",device!~\"lo|docker.*|veth.*|br-.*|tailscale.*\"}[1d]))",
+					"legendFormat": "{{node}}",
+					"interval": "1d"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "bytes",
+					"custom": {
+						"drawStyle": "bars",
+						"fillOpacity": 80,
+						"stacking": {
+							"mode": "normal"
+						}
+					}
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"description": "Public interfaces only. Tailnet, Docker and loopback traffic is left out. Each point is the 24 hours before it.",
+			"timeFrom": "30d",
+			"id": 13
+		},
+		{
+			"type": "timeseries",
+			"title": "Daily egress",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 12,
+				"y": 36,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum by (node) (increase(node_network_transmit_bytes_total{node=~\"$node\",device!~\"lo|docker.*|veth.*|br-.*|tailscale.*\"}[1d]))",
+					"legendFormat": "{{node}}",
+					"interval": "1d"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "bytes",
+					"custom": {
+						"drawStyle": "bars",
+						"fillOpacity": 80,
+						"stacking": {
+							"mode": "normal"
+						}
+					}
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"description": "Public interfaces only. Tailnet, Docker and loopback traffic is left out. Each point is the 24 hours before it.",
+			"timeFrom": "30d",
+			"id": 14
+		}
+	]
+}

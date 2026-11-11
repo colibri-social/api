@@ -1,0 +1,22 @@
+prometheus.exporter.blackbox "pds" {
+	config = "{ modules: { http_2xx: { prober: http, timeout: 10s, http: { preferred_ip_protocol: ip4 } } } }"
+
+	target {
+		name    = "pds_health"
+		address = sys.env("PDS_URL") + "/xrpc/_health"
+		module  = "http_2xx"
+	}
+
+	target {
+		name    = "pds_describe_server"
+		address = sys.env("PDS_URL") + "/xrpc/com.atproto.server.describeServer"
+		module  = "http_2xx"
+	}
+}
+
+prometheus.scrape "pds" {
+	targets         = prometheus.exporter.blackbox.pds.targets
+	forward_to      = [prometheus.remote_write.monitoring.receiver]
+	job_name        = "pds"
+	scrape_interval = "60s"
+}

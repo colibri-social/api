@@ -1,0 +1,14 @@
+prometheus.exporter.postgres "local" {
+	data_source_names = [sys.env("POSTGRES_EXPORTER_DSN")]
+
+	autodiscovery {
+		enabled = false
+	}
+}
+
+prometheus.scrape "postgres" {
+	targets         = prometheus.exporter.postgres.local.targets
+	forward_to      = [prometheus.remote_write.monitoring.receiver]
+	job_name        = "postgres"
+	scrape_interval = "30s"
+}

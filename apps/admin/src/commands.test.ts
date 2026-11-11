@@ -6,6 +6,7 @@ import {
 	type Admin,
 	configImport,
 	formatTable,
+	monitoringDeploy,
 	nodeAdd,
 	nodeList,
 	nodeRemove,
@@ -149,6 +150,14 @@ describe("node commands", () => {
 
 		expect(admin.sendOrder).toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "deprovision", node: "eu-2", force: true }),
+		);
+	});
+
+	it("asks the main node to deploy monitoring", async () => {
+		await monitoringDeploy(admin, "fsn-1");
+
+		expect(admin.sendOrder).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "deployMonitoring", node: "fsn-1" }),
 		);
 	});
 

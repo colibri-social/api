@@ -46,6 +46,7 @@ services:
       DATABASE_URL: postgres://colibri:${POSTGRES_PASSWORD}@postgres:5432/colibri
       NODE_TAILNET_URL: http://${TAILNET_HOST:-localhost}:3100
       SSH_KEY_FILE: /run/secrets/colibri_ssh_key
+      METRICS_HOST: 0.0.0.0
     ports:
       - "${TAILNET_IP:-127.0.0.1}:3100:3100"
       - "40000-40031:40000-40031/udp"
@@ -73,6 +74,26 @@ services:
       - caddy-data:/data
     depends_on:
       - appview
+
+  alloy:
+    image: ${ALLOY_IMAGE:-grafana/alloy:v1.21.2}
+    profiles: [monitoring]
+    restart: unless-stopped
+    command: ["run", "--storage.path=/var/lib/alloy/data", "/etc/alloy"]
+    pid: host
+    environment:
+      PROMETHEUS_REMOTE_WRITE_URL: ${PROMETHEUS_REMOTE_WRITE_URL:-}
+      NODE_ID: ${NODE_ID:-main}
+      NODE_REGION: ${NODE_REGION:-}
+      PDS_URL: ${PDS_URL:-}
+      POSTGRES_EXPORTER_DSN: postgres://colibri:${POSTGRES_PASSWORD}@postgres:5432/colibri?sslmode=disable
+    volumes:
+      - ./alloy:/etc/alloy:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+      - /var/lib/colibri/metrics:/host/textfile:ro
+      - alloy-data:/var/lib/alloy/data
 
   replica:
     image: postgres:18-alpine
@@ -143,6 +164,7 @@ volumes:
   postgres-data:
   appview-data:
   caddy-data:
+  alloy-data:
   replica-data:
   sub-data:
   voice-data:

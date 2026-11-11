@@ -14,6 +14,7 @@ import {
 	configList,
 	configSet,
 	configUnset,
+	monitoringDeploy,
 	nodeAdd,
 	nodeList,
 	nodeRecover,
@@ -38,6 +39,7 @@ const USAGE = `colibri-admin, run it inside the AppView container of the main no
   node remove <id> [--force]
   rollout pause|resume
   status deploy <node>
+  monitoring deploy <node>
   config list
   config set <KEY> <value>
   config unset <KEY>
@@ -145,6 +147,8 @@ const main = async (): Promise<void> => {
 				});
 			case "node resume":
 				return nodeResume(admin, required(first, "<id>"));
+			case "monitoring deploy":
+				return monitoringDeploy(admin, required(first, "<node>"));
 			case "status deploy":
 				return statusDeploy(admin, required(first, "<node>"));
 			case "node recover":

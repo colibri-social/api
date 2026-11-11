@@ -1,0 +1,45 @@
+- name: Send a node's metrics to Prometheus
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    stack_dir: /opt/colibri
+    observability_dir: "{{ playbook_dir }}/../../observability"
+  tasks:
+    - name: Create the Alloy directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ stack_dir }}/alloy"
+        - /var/lib/colibri/metrics
+
+    - name: Copy the Alloy config
+      ansible.builtin.copy:
+        src: "{{ observability_dir }}/alloy/{{ item }}.alloy"
+        dest: "{{ stack_dir }}/alloy/{{ item }}.alloy"
+        mode: "0644"
+      loop: "{{ ['base'] + (['postgres'] if postgres | default(false) | bool else []) + (['probes'] if probes | default(false) | bool else []) }}"
+
+    - name: Remove Alloy modules this node doesn't run
+      ansible.builtin.file:
+        path: "{{ stack_dir }}/alloy/{{ item }}.alloy"
+        state: absent
+      loop: "{{ (['postgres'] if not (postgres | default(false) | bool) else []) + (['probes'] if not (probes | default(false) | bool) else []) }}"
+
+    - name: Point Alloy at Prometheus
+      ansible.builtin.lineinfile:
+        path: "{{ stack_dir }}/.env"
+        regexp: "^{{ item.key }}="
+        line: "{{ item.key }}={{ item.value }}"
+      loop:
+        - { key: PROMETHEUS_REMOTE_WRITE_URL, value: "{{ remote_write_url }}" }
+        - { key: COMPOSE_PROFILES, value: monitoring }
+        - { key: ALLOY_IMAGE, value: "{{ alloy_image }}" }
+
+    - name: Start Alloy
+      ansible.builtin.command: docker compose up -d alloy
+      args:
+        chdir: "{{ stack_dir }}"
+      changed_when: true

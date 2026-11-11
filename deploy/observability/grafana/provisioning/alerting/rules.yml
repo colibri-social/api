@@ -1,0 +1,188 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: colibri
+    folder: Colibri
+    interval: 1m
+    rules:
+      - uid: colibri-node-missing
+        title: Node missing
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: colibri-prometheus
+            model:
+              refId: A
+              instant: true
+              expr: 'time() - max by (node) (max_over_time(timestamp(colibri_drain_state)[1h:1m]))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [120]
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.node }} hasn''t reported metrics for over 2 minutes.'
+      - uid: colibri-replication-lag
+        title: Replication lag
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: colibri-prometheus
+            model:
+              refId: A
+              instant: true
+              expr: 'max by (node) (pg_replication_lag_seconds)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [30]
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: 'The Postgres replica on {{ $labels.node }} is {{ humanize $values.A.Value }} s behind the primary.'
+      - uid: colibri-backup-age
+        title: Backup too old
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: colibri-prometheus
+            model:
+              refId: A
+              instant: true
+              expr: 'time() - max by (stanza) (colibri_backup_last_success_timestamp_seconds)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [93600]
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: 'The last pgBackRest backup finished over 26 hours ago.'
+      - uid: colibri-disk-full
+        title: Disk almost full
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: colibri-prometheus
+            model:
+              refId: A
+              instant: true
+              expr: 'max by (node, mountpoint) (1 - node_filesystem_avail_bytes{fstype!~"erofs|squashfs|iso9660"} / node_filesystem_size_bytes{fstype!~"erofs|squashfs|iso9660"})'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.85]
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.mountpoint }} on {{ $labels.node }} is over 85% full.'
+      - uid: colibri-xrpc-errors
+        title: XRPC errors
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: colibri-prometheus
+            model:
+              refId: A
+              instant: true
+              expr: 'sum by (node) (rate(colibri_xrpc_duration_seconds_count{status=~"5.."}[5m])) / clamp_min(sum by (node) (rate(colibri_xrpc_duration_seconds_count[5m])), 0.1)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.02]
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Over 2% of XRPC requests on {{ $labels.node }} fail with a 5xx.'
+      - uid: colibri-read-only
+        title: Read-only mode
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: colibri-prometheus
+            model:
+              refId: A
+              instant: true
+              expr: 'max by (node) (colibri_write_mode)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [1.5]
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.node }} refuses writes because it can''t reach the main node.'

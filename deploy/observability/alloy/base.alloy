@@ -1,0 +1,39 @@
+prometheus.remote_write "monitoring" {
+	endpoint {
+		url = sys.env("PROMETHEUS_REMOTE_WRITE_URL")
+	}
+
+	external_labels = {
+		node   = sys.env("NODE_ID"),
+		region = coalesce(sys.env("NODE_REGION"), "default"),
+	}
+}
+
+prometheus.exporter.unix "host" {
+	procfs_path = "/host/proc"
+	sysfs_path  = "/host/sys"
+	rootfs_path = "/host/root"
+
+	filesystem {
+		mount_points_exclude = "^/(dev|proc|run|sys|var/lib/docker/.+)($|/)"
+		fs_types_exclude     = "^(autofs|binfmt_misc|cgroup2?|configfs|debugfs|devpts|devtmpfs|erofs|iso9660|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|pstore|securityfs|squashfs|sysfs|tmpfs|tracefs)$"
+	}
+
+	textfile {
+		directory = "/host/textfile"
+	}
+}
+
+prometheus.scrape "host" {
+	targets         = prometheus.exporter.unix.host.targets
+	forward_to      = [prometheus.remote_write.monitoring.receiver]
+	job_name        = "host"
+	scrape_interval = "30s"
+}
+
+prometheus.scrape "appview" {
+	targets         = [{ "__address__" = coalesce(sys.env("APPVIEW_METRICS_ADDRESS"), "appview:9464") }]
+	forward_to      = [prometheus.remote_write.monitoring.receiver]
+	job_name        = "appview"
+	scrape_interval = "15s"
+}

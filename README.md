@@ -210,6 +210,51 @@ Once `KUMA_URL` is set, the main node keeps Kuma in step with the registry every
 On a fresh Kuma, the main node creates the account from `KUMA_USERNAME` and `KUMA_PASSWORD`. Keep
 2FA off for that account.
 
+### Monitoring
+
+Prometheus and Grafana run next to any node's stack, and Grafana Alloy on every node sends them
+metrics. Set a Grafana password, optionally a webhook for alerts, then deploy:
+
+```sh
+colibri-admin config set GRAFANA_ADMIN_PASSWORD ...
+colibri-admin config set ALERT_WEBHOOK_URL https://ntfy.example.com/colibri
+colibri-admin monitoring deploy fsn-1
+```
+
+`monitoring deploy` starts Prometheus (`PROMETHEUS_IMAGE`) and Grafana (`GRAFANA_IMAGE`) on the
+node's tailnet address, stores `PROMETHEUS_REMOTE_WRITE_URL`, then starts Alloy (`ALLOY_IMAGE`) on
+every node. Nodes added later get Alloy during provisioning. Grafana is at
+`http://<tailnet address>:3300`, user `admin`. Prometheus keeps 90 days.
+
+Alloy collects:
+
+- Host CPU, memory, disk and network, including traffic totals per node on the public
+  interfaces.
+- The AppView's metrics from `METRICS_PORT`.
+- Postgres connections, database size, transactions, query time and replication lag, on nodes
+  with a Postgres replica and on the main node.
+- On the main node, probes of `PDS_URL` at `/xrpc/_health` and
+  `/xrpc/com.atproto.server.describeServer`.
+- Any `.prom` file in `/var/lib/colibri/metrics`. `deploy/observability/pgbackrest-age.sh` writes
+  the time of the last pgBackRest backup there. Run it from cron on the Postgres primary after
+  each backup.
+
+Grafana has four dashboards (cluster, hosts with daily and 30-day ingress and egress, voice and
+Postgres) and sends these alerts to
+`ALERT_WEBHOOK_URL`:
+
+| Alert | Fires when |
+| --- | --- |
+| Node missing | A node hasn't reported for 2 minutes |
+| Replication lag | A replica is over 30 seconds behind for 2 minutes |
+| Backup too old | The last backup finished over 26 hours ago |
+| Disk almost full | A filesystem is over 85% full for 10 minutes |
+| XRPC errors | Over 2% of a node's XRPC requests fail with a 5xx for 5 minutes |
+| Read-only mode | A node refuses writes because it can't reach the main node |
+
+On the main node, add `COMPOSE_FILE=docker-compose.scaled.yml` to `.env` so Alloy starts with the
+`monitoring` profile.
+
 ### A local cluster
 
 The `local-cluster` profile runs a replica, a sub node and a voice node next to the main node

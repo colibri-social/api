@@ -9,6 +9,7 @@ services:
       HOST: 0.0.0.0
       PORT: 3000
       NODE_SECRET_FILE: /data/node-secret
+      METRICS_HOST: 0.0.0.0
     ports:
       - "${TAILNET_IP}:${CLUSTER_PORT}:${CLUSTER_PORT}"
 {% if 'voice' in node_roles %}
@@ -36,6 +37,27 @@ services:
       - caddy-data:/data
     depends_on:
       - appview
+
+  alloy:
+    image: ${ALLOY_IMAGE:-grafana/alloy:v1.21.2}
+    profiles: [monitoring]
+    restart: unless-stopped
+    command: ["run", "--storage.path=/var/lib/alloy/data", "/etc/alloy"]
+    pid: host
+    environment:
+      PROMETHEUS_REMOTE_WRITE_URL: ${PROMETHEUS_REMOTE_WRITE_URL:-}
+      NODE_ID: ${NODE_ID}
+      NODE_REGION: ${NODE_REGION:-}
+{% if postgres %}
+      POSTGRES_EXPORTER_DSN: "postgres://{{ db_user | urlencode | replace('/', '%2F') }}:{{ db_password | urlencode | replace('/', '%2F') }}@postgres:5432/{{ db_name }}?sslmode=disable"
+{% endif %}
+    volumes:
+      - ./alloy:/etc/alloy:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+      - /var/lib/colibri/metrics:/host/textfile:ro
+      - alloy-data:/var/lib/alloy/data
 {% if postgres %}
 
   postgres:
@@ -62,6 +84,7 @@ services:
 volumes:
   appview-data:
   caddy-data:
+  alloy-data:
 {% if postgres %}
   postgres-data:
 {% endif %}
