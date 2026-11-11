@@ -1,5 +1,21 @@
 # @colibri-social/admin
 
+## 0.1.1
+
+### Patch Changes
+
+- 7447c85: Show where each node runs on the status page. Nodes have an optional location, set with `colibri-admin node add --location "Helsinki, Finland"` or `colibri-admin node location <id> [<text>]`, and listed by `node list`. Status page monitors use it as their name and fall back to the node ID. A changed location renames the monitor in place, so its uptime history stays. Region groups are titled by area (Europe, North America, South America, Asia, Oceania, Middle East, Africa) in that order, after the API. Adds a `location` column to `nodes` and `node_join_tokens`.
+- 7447c85: Add `colibri-admin rollout now [--grace 2m]`. It resumes paused rollouts and updates every node to the `stable` image at once, one at a time under the quorum rule. Each node drains for the given grace in place of `DRAIN_GRACE_MINUTES`, so clients and calls move to other nodes before it restarts, and the main node stops itself after the same grace. A node that quorum holds back is retried every 10 seconds for up to 10 minutes.
+- Updated dependencies [bd5b9ff]
+- Updated dependencies [7447c85]
+- Updated dependencies [f1f8ff4]
+- Updated dependencies [7447c85]
+- Updated dependencies [7447c85]
+- Updated dependencies [206525d]
+  - @colibri-social/appview@2.37.1
+  - @colibri-social/appview-db@0.23.1
+  - @colibri-social/community@2.15.3
+
 ## 0.1.0
 
 ### Minor Changes

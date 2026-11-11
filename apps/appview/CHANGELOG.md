@@ -1,5 +1,21 @@
 # @colibri-social/appview
 
+## 2.37.1
+
+### Patch Changes
+
+- bd5b9ff: Use mediasoup's kernel6 prebuilt worker in the image. On build hosts with a 7.x kernel, mediasoup picked the kernel7 worker, which needs a newer glibc than the image has, and compiled the worker from source on every uncached build. The Dockerfile now downloads the worker for `MEDIASOUP_VERSION` and points `MEDIASOUP_WORKER_BIN` at it, and fails the build when the installed mediasoup version differs.
+- 7447c85: Show where each node runs on the status page. Nodes have an optional location, set with `colibri-admin node add --location "Helsinki, Finland"` or `colibri-admin node location <id> [<text>]`, and listed by `node list`. Status page monitors use it as their name and fall back to the node ID. A changed location renames the monitor in place, so its uptime history stays. Region groups are titled by area (Europe, North America, South America, Asia, Oceania, Middle East, Africa) in that order, after the API. Adds a `location` column to `nodes` and `node_join_tokens`.
+- f1f8ff4: `node add --ip` now says that the node shows up in `node list` only after bootstrap finishes, and points at the AppView logs to follow it.
+- 7447c85: Add `colibri-admin rollout now [--grace 2m]`. It resumes paused rollouts and updates every node to the `stable` image at once, one at a time under the quorum rule. Each node drains for the given grace in place of `DRAIN_GRACE_MINUTES`, so clients and calls move to other nodes before it restarts, and the main node stops itself after the same grace. A node that quorum holds back is retried every 10 seconds for up to 10 minutes.
+- 7447c85: Redesign the status page. `deploy/uptime-kuma/status.css` gives it Colibri's type, colors and layout in light and dark, with readable incident and maintenance cards in every style. The main node now sets the page title to "Colibri status", adds a description and footer links, uploads the Colibri logo when the page still has Kuma's, refreshes the page every 60 seconds and hides tags and certificate expiry.
+- 206525d: Give `PUBLIC_HOST` and `API_HOST` their own Traefik routers, so each name gets its own certificate. With one router, a failed challenge for the API host behind the Cloudflare load balancer also left the node's own name without a certificate.
+- Updated dependencies [7447c85]
+  - @colibri-social/appview-db@0.23.1
+  - @colibri-social/community@2.15.3
+  - @colibri-social/notifications@1.10.1
+  - @colibri-social/projections@1.15.3
+
 ## 2.37.0
 
 ### Minor Changes
