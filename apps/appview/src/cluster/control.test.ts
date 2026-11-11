@@ -124,8 +124,13 @@ describe("control link", () => {
 		server = new ControlServer({ registry, log, nodeId: "eu-1", isMain: () => true });
 		await server.listen(Number(new URL(mainUrl).port), "127.0.0.1");
 
-		await vi.waitFor(() => expect(server.linked).toEqual(["eu-2"]), { timeout: 5_000 });
-		expect(frames.filter((frame) => frame.t === "welcome")).toHaveLength(2);
+		await vi.waitFor(
+			() => {
+				expect(server.linked).toEqual(["eu-2"]);
+				expect(frames.filter((frame) => frame.t === "welcome")).toHaveLength(2);
+			},
+			{ timeout: 5_000 },
+		);
 	});
 });
 
