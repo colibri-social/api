@@ -81,6 +81,40 @@ minutes in the last day, each rounded to `0`, `1-10`, `11-100`, `101-1k`, `1k-10
 first start logs a notice, and the first heartbeat goes out an hour later. Set
 `COLIBRI_TELEMETRY_DISABLED=1` or `DO_NOT_TRACK=1` to turn it off.
 
+## Moving from libSQL to Postgres
+
+`colibri-admin db copy` copies every table from a libSQL database into Postgres and checks the row
+counts. The AppView has to be stopped while it runs, and the libSQL database has to be on the
+current migrations.
+
+1. Update to this version and let the AppView start once on libSQL, so it applies its migrations.
+2. Stop the AppView and start Postgres:
+
+   ```sh
+   docker compose stop appview
+   docker compose -f docker-compose.scaled.yml up -d postgres
+   ```
+
+3. Copy the data:
+
+   ```sh
+   docker compose -f docker-compose.scaled.yml run --rm --no-deps appview \
+     colibri-admin db copy --from file:/data/colibri.db \
+     --to "postgres://colibri:$POSTGRES_PASSWORD@postgres:5432/colibri"
+   ```
+
+   The copy creates the Postgres tables. It refuses a target that already has rows. Pass
+   `--truncate` to empty it first.
+
+4. Start the AppView on Postgres:
+
+   ```sh
+   docker compose -f docker-compose.scaled.yml up -d
+   ```
+
+The libSQL file stays in the data volume, so you can go back by starting `docker-compose.yml`
+again.
+
 ## Running a cluster
 
 A cluster has one main node holding the Postgres primary and any number of sub, failover and

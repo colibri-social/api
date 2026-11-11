@@ -26,6 +26,7 @@ import {
 	statusDeploy,
 	UsageError,
 } from "./commands.js";
+import { CopyRefusedError, copyDatabase } from "./db-copy.js";
 import { openOrderBus, sendOrder } from "./orders.js";
 
 const USAGE = `colibri-admin, run it inside the AppView container of the main node
@@ -43,7 +44,8 @@ const USAGE = `colibri-admin, run it inside the AppView container of the main no
   config list
   config set <KEY> <value>
   config unset <KEY>
-  config import <file|-> [--dry-run]`;
+  config import <file|-> [--dry-run]
+  db copy --from <libSQL url> --to <Postgres url> [--truncate]`;
 
 const fail = (message: string, code: number): never => {
 	process.stderr.write(`${message}\n`);
@@ -56,6 +58,48 @@ const required = (value: string | undefined, name: string): string => {
 	}
 
 	return value;
+};
+
+const runDbCommand = async (
+	command: string | undefined,
+	values: { from?: string | undefined; to?: string | undefined; truncate?: boolean },
+): Promise<number> => {
+	if (command !== "copy" || !values.from || !values.to) {
+		process.stderr.write(`db copy needs --from and --to\n\n${USAGE}\n`);
+
+		return 2;
+	}
+
+	const source = openDatabase({ url: values.from, maxConnections: 2 });
+	const target = openDatabase({ url: values.to, maxConnections: 4 });
+	const started = Date.now();
+
+	try {
+		const copied = await copyDatabase({
+			source,
+			target,
+			truncate: values.truncate ?? false,
+			print: (line) => process.stdout.write(`${line}\n`),
+		});
+		const rows = copied.reduce((total, table) => total + table.rows, 0);
+
+		process.stdout.write(
+			`Copied ${rows} rows in ${copied.length} tables in ${Math.round((Date.now() - started) / 1000)} s. Row counts match.\n`,
+		);
+
+		return 0;
+	} catch (error) {
+		if (error instanceof CopyRefusedError) {
+			process.stderr.write(`${error.message}\n`);
+
+			return 1;
+		}
+
+		throw error;
+	} finally {
+		await source.close();
+		await target.close();
+	}
 };
 
 const main = async (): Promise<void> => {
@@ -72,6 +116,9 @@ const main = async (): Promise<void> => {
 			grace: { type: "string" },
 			force: { type: "boolean", default: false },
 			"dry-run": { type: "boolean", default: false },
+			from: { type: "string" },
+			to: { type: "string" },
+			truncate: { type: "boolean", default: false },
 			help: { type: "boolean", default: false },
 		},
 	});
@@ -80,6 +127,10 @@ const main = async (): Promise<void> => {
 	if (values.help || !group) {
 		process.stdout.write(`${USAGE}\n`);
 		process.exit(values.help ? 0 : 2);
+	}
+
+	if (group === "db") {
+		process.exit(await runDbCommand(command, values));
 	}
 
 	const url = process.env.DATABASE_URL ?? fail("DATABASE_URL is not set", 2);
