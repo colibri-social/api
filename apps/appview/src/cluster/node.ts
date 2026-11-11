@@ -1,5 +1,7 @@
+import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { hostname } from "node:os";
+import { resolve } from "node:path";
 import type { NodeRole, NodeState, WriteMode } from "@colibri-social/appview-db";
 import type { AppContext } from "../context.js";
 import { resolveVersion } from "../routes/server.js";
@@ -8,6 +10,7 @@ import { type Cloudflare, createCloudflare, parseGeoRegions } from "./cloudflare
 import { ControlClient } from "./control-client.js";
 import { ControlServer } from "./control-server.js";
 import { resolveImage } from "./image-source.js";
+import { connectKuma, createKumaSync } from "./kuma.js";
 import { joinCluster } from "./node-secret.js";
 import { type ClusterOrder, handleOrder } from "./orders.js";
 import type { DrainMode, NodeFrame } from "./protocol.js";
@@ -248,6 +251,43 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 
 	poolTimer?.unref?.();
 
+	const kuma =
+		roles.has("main") && config.KUMA_URL && config.KUMA_USERNAME && config.KUMA_PASSWORD
+			? connectKuma({
+					url: config.KUMA_URL,
+					username: config.KUMA_USERNAME,
+					password: config.KUMA_PASSWORD,
+					log,
+				})
+			: null;
+	const statusHost = config.KUMA_PUBLIC_URL ? new URL(config.KUMA_PUBLIC_URL).hostname : null;
+	const kumaSync = kuma
+		? createKumaSync({
+				api: kuma,
+				slug: config.KUMA_STATUS_SLUG,
+				title: "Colibri",
+				statusHost,
+				css: () => readFile(resolve(config.ANSIBLE_DIR, "../uptime-kuma/status.css"), "utf8"),
+				apiUrl: config.PUBLIC_URL,
+				log,
+			})
+		: null;
+
+	const kumaTimer = kumaSync
+		? setInterval(() => {
+				if (!deps.isMain()) {
+					return;
+				}
+
+				void registry
+					.list()
+					.then((nodes) => kumaSync.sync(nodes))
+					.catch((error: unknown) => log.warn({ err: error }, "kuma.syncFailed"));
+			}, POOL_SYNC_MS)
+		: null;
+
+	kumaTimer?.unref?.();
+
 	const heartbeat = setInterval(() => {
 		void registry
 			.heartbeat(ctx.nodeId, { ...deps.load(), version: address.version })
@@ -278,6 +318,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 								dns: {
 									put: (node, host, ip) => cloudflare.putNodeRecord(node, host, ip),
 									remove: (host) => cloudflare.removeNodeRecord(host),
+									alias: (host, target) => cloudflare.putAlias(host, target),
 								},
 							}
 						: {}),
@@ -286,6 +327,17 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 						vars: async (target) =>
 							provisionVars(config, { tailnetUrl: address.tailnetUrl }, target),
 						removeNode: (id) => registry.remove(id),
+					},
+					status: {
+						host: statusHost,
+						vars: (node) =>
+							statusHost
+								? {
+										kuma_image: config.KUMA_IMAGE,
+										status_host: statusHost,
+										stack_dir: node.self ? config.STACK_DIR : "/opt/colibri",
+									}
+								: null,
 					},
 					background: (work) => {
 						void work.catch((error: unknown) => log.warn({ err: error }, "ansible.runFailed"));
@@ -302,6 +354,8 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 			clearInterval(heartbeat);
 			if (rolloutTimer) clearInterval(rolloutTimer);
 			if (poolTimer) clearInterval(poolTimer);
+			if (kumaTimer) clearInterval(kumaTimer);
+			kuma?.close();
 			ctx.writeProxy?.stop();
 			link?.stop();
 			await control?.close();

@@ -51,9 +51,7 @@ type Manifest = {
 };
 
 const isRegistryHost = (segment: string): boolean => {
-	return (
-		segment.includes(".") || segment.includes(":") || segment === "localhost"
-	);
+	return segment.includes(".") || segment.includes(":") || segment === "localhost";
 };
 
 export const parseImageRef = (image: string): ImageRef => {
@@ -116,23 +114,16 @@ export const resolveImage = async (
 		const params = challengeParams(challenge ?? "");
 
 		if (!params.realm) {
-			throw new Error(
-				`${ref.registry} asked for credentials without a token realm`,
-			);
+			throw new Error(`${ref.registry} asked for credentials without a token realm`);
 		}
 
 		const url = new URL(params.realm);
 
 		if (params.service) url.searchParams.set("service", params.service);
-		url.searchParams.set(
-			"scope",
-			params.scope ?? `repository:${ref.repository}:pull`,
-		);
+		url.searchParams.set("scope", params.scope ?? `repository:${ref.repository}:pull`);
 
 		const basic = options.credentials
-			? Buffer.from(
-					`${options.credentials.user}:${options.credentials.token}`,
-				).toString("base64")
+			? Buffer.from(`${options.credentials.user}:${options.credentials.token}`).toString("base64")
 			: null;
 
 		const response = await request(url, {
@@ -141,9 +132,7 @@ export const resolveImage = async (
 		});
 
 		if (!response.ok) {
-			throw new Error(
-				`${ref.registry} refused a pull token with ${response.status}`,
-			);
+			throw new Error(`${ref.registry} refused a pull token with ${response.status}`);
 		}
 
 		const body = (await response.json()) as {
@@ -186,18 +175,13 @@ export const resolveImage = async (
 		}
 
 		if (!response.ok) {
-			throw new Error(
-				`${ref.registry} answered ${response.status} for ${ref.repository}${path}`,
-			);
+			throw new Error(`${ref.registry} answered ${response.status} for ${ref.repository}${path}`);
 		}
 
 		return response;
 	};
 
-	const top = await get(`/manifests/${ref.reference}`, [
-		...INDEX_TYPES,
-		...MANIFEST_TYPES,
-	]);
+	const top = await get(`/manifests/${ref.reference}`, [...INDEX_TYPES, ...MANIFEST_TYPES]);
 	const topBody = Buffer.from(await top.arrayBuffer());
 	const digest =
 		top.headers.get("docker-content-digest") ??
@@ -218,9 +202,7 @@ export const resolveImage = async (
 			);
 		}
 
-		manifest = (await (
-			await get(`/manifests/${match.digest}`, MANIFEST_TYPES)
-		).json()) as Manifest;
+		manifest = (await (await get(`/manifests/${match.digest}`, MANIFEST_TYPES)).json()) as Manifest;
 	}
 
 	const configDigest = manifest.config?.digest;

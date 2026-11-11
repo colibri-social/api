@@ -127,6 +127,18 @@ export const configSchema = z.object({
 	CLOUDFLARE_ZONE_ID: optionalString,
 	CLOUDFLARE_LB_ID: optionalString,
 	CLOUDFLARE_GEO_REGIONS: optionalString,
+	KUMA_URL: z
+		.url()
+		.optional()
+		.or(z.literal("").transform(() => undefined)),
+	KUMA_USERNAME: optionalString,
+	KUMA_PASSWORD: optionalString,
+	KUMA_PUBLIC_URL: z
+		.url()
+		.optional()
+		.or(z.literal("").transform(() => undefined)),
+	KUMA_STATUS_SLUG: z.string().trim().min(1).default("colibri"),
+	KUMA_IMAGE: z.string().trim().min(1).default("louislam/uptime-kuma:2.5.7-slim"),
 	DRAIN_GRACE_MINUTES: z.coerce.number().nonnegative().default(120),
 	WRITE_QUEUE_SECONDS: z.coerce.number().int().nonnegative().default(90),
 	MESSAGE_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(180),

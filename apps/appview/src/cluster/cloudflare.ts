@@ -5,6 +5,8 @@ export const CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
 
 export const RECORD_COMMENT_PREFIX = "colibri node";
 
+export const ALIAS_COMMENT_PREFIX = "colibri status";
+
 export const POOL_PREFIX = "colibri-";
 
 export const MONITOR_DESCRIPTION = "colibri /health";
@@ -43,6 +45,7 @@ export type Cloudflare = {
 	readonly managesPools: boolean;
 	putNodeRecord: (node: string, host: string, ip: string) => Promise<void>;
 	removeNodeRecord: (host: string) => Promise<boolean>;
+	putAlias: (host: string, target: string) => Promise<void>;
 	syncPools: (nodes: readonly NodeRow[]) => Promise<void>;
 };
 
@@ -101,9 +104,7 @@ export const parseGeoRegions = (value: string | undefined): GeoRegions => {
 		const [region, codes] = trimmed.split("=");
 
 		if (!region?.trim() || !codes) {
-			throw new Error(
-				`"${trimmed}" in CLOUDFLARE_GEO_REGIONS needs the form region=CODE,CODE`,
-			);
+			throw new Error(`"${trimmed}" in CLOUDFLARE_GEO_REGIONS needs the form region=CODE,CODE`);
 		}
 
 		const list = codes
@@ -113,9 +114,7 @@ export const parseGeoRegions = (value: string | undefined): GeoRegions => {
 
 		for (const code of list) {
 			if (!CLOUDFLARE_REGIONS.has(code)) {
-				throw new Error(
-					`${code} in CLOUDFLARE_GEO_REGIONS is not a Cloudflare region`,
-				);
+				throw new Error(`${code} in CLOUDFLARE_GEO_REGIONS is not a Cloudflare region`);
 			}
 		}
 
@@ -169,19 +168,11 @@ const originKey = (origins: readonly Origin[]): string => {
 	return JSON.stringify(
 		[...origins]
 			.sort((a, b) => a.name.localeCompare(b.name))
-			.map((origin) => [
-				origin.name,
-				origin.address,
-				origin.enabled,
-				origin.header?.Host ?? [],
-			]),
+			.map((origin) => [origin.name, origin.address, origin.enabled, origin.header?.Host ?? []]),
 	);
 };
 
-const sameList = (
-	a: readonly string[] | undefined,
-	b: readonly string[],
-): boolean => {
+const sameList = (a: readonly string[] | undefined, b: readonly string[]): boolean => {
 	return JSON.stringify(a ?? []) === JSON.stringify(b);
 };
 
@@ -203,11 +194,7 @@ export const createCloudflare = (options: CloudflareOptions): Cloudflare => {
 	const request = options.fetch ?? fetch;
 	const { accountId, loadBalancerId } = options;
 
-	const api = async <T>(
-		method: string,
-		path: string,
-		body?: unknown,
-	): Promise<T> => {
+	const api = async <T>(method: string, path: string, body?: unknown): Promise<T> => {
 		const response = await request(`${CLOUDFLARE_API}${path}`, {
 			method,
 			headers: {
@@ -218,9 +205,7 @@ export const createCloudflare = (options: CloudflareOptions): Cloudflare => {
 			signal: AbortSignal.timeout(15_000),
 		});
 
-		const envelope = (await response
-			.json()
-			.catch(() => null)) as Envelope<T> | null;
+		const envelope = (await response.json().catch(() => null)) as Envelope<T> | null;
 
 		if (!response.ok || !envelope?.success) {
 			const detail = envelope?.errors?.map((error) => error.message).join(", ");
@@ -233,10 +218,10 @@ export const createCloudflare = (options: CloudflareOptions): Cloudflare => {
 		return envelope.result;
 	};
 
-	const records = (host: string) => {
+	const records = (host: string, type = "A") => {
 		return api<DnsRecord[]>(
 			"GET",
-			`/zones/${options.zoneId}/dns_records?type=A&name=${encodeURIComponent(host)}`,
+			`/zones/${options.zoneId}/dns_records?type=${type}&name=${encodeURIComponent(host)}`,
 		);
 	};
 
@@ -244,35 +229,50 @@ export const createCloudflare = (options: CloudflareOptions): Cloudflare => {
 		return (record.comment ?? "").startsWith(RECORD_COMMENT_PREFIX);
 	};
 
+	const putRecord = async (
+		host: string,
+		body: Record<string, unknown>,
+		managed: (record: DnsRecord) => boolean,
+	): Promise<void> => {
+		const existing = [...(await records(host, "A")), ...(await records(host, "CNAME"))];
+
+		if (existing.some((record) => !managed(record))) {
+			throw new Error(`${host} already has a DNS record that Colibri doesn't manage`);
+		}
+
+		const [current, ...extra] = existing.filter((record) => record.type === body.type);
+
+		if (current) {
+			await api<DnsRecord>("PATCH", `/zones/${options.zoneId}/dns_records/${current.id}`, body);
+		} else {
+			await api<DnsRecord>("POST", `/zones/${options.zoneId}/dns_records`, body);
+		}
+
+		for (const record of [...extra, ...existing.filter((record) => record.type !== body.type)]) {
+			await api<unknown>("DELETE", `/zones/${options.zoneId}/dns_records/${record.id}`);
+		}
+	};
+
 	const monitorId = async (): Promise<string> => {
-		const monitors = await api<Monitor[]>(
-			"GET",
-			`/accounts/${accountId}/load_balancers/monitors`,
-		);
-		const existing = monitors.find(
-			(monitor) => monitor.description === MONITOR_DESCRIPTION,
-		);
+		const monitors = await api<Monitor[]>("GET", `/accounts/${accountId}/load_balancers/monitors`);
+		const existing = monitors.find((monitor) => monitor.description === MONITOR_DESCRIPTION);
 
 		if (existing) {
 			return existing.id;
 		}
 
-		const created = await api<Monitor>(
-			"POST",
-			`/accounts/${accountId}/load_balancers/monitors`,
-			{
-				type: "https",
-				method: "GET",
-				path: "/health",
-				expected_codes: "200",
-				interval: 60,
-				timeout: 5,
-				retries: 2,
-				follow_redirects: false,
-				allow_insecure: false,
-				description: MONITOR_DESCRIPTION,
-			},
-		);
+		const created = await api<Monitor>("POST", `/accounts/${accountId}/load_balancers/monitors`, {
+			type: "https",
+			method: "GET",
+			path: "/health",
+			expected_codes: "200",
+			interval: 60,
+			timeout: 5,
+			retries: 2,
+			follow_redirects: false,
+			allow_insecure: false,
+			description: MONITOR_DESCRIPTION,
+		});
 
 		options.log.info({ monitor: created.id }, "cloudflare.monitorCreated");
 
@@ -289,17 +289,14 @@ export const createCloudflare = (options: CloudflareOptions): Cloudflare => {
 		const wanted = desiredOrigins(nodes, balancer.name);
 
 		if (wanted.size === 0) {
-			options.log.warn(
-				{ loadBalancer: balancer.name },
-				"cloudflare.noApiNodes",
-			);
+			options.log.warn({ loadBalancer: balancer.name }, "cloudflare.noApiNodes");
 
 			return;
 		}
 
-		const pools = (
-			await api<Pool[]>("GET", `/accounts/${accountId}/load_balancers/pools`)
-		).filter((pool) => pool.name.startsWith(POOL_PREFIX));
+		const pools = (await api<Pool[]>("GET", `/accounts/${accountId}/load_balancers/pools`)).filter(
+			(pool) => pool.name.startsWith(POOL_PREFIX),
+		);
 
 		const monitor = await monitorId();
 		const poolIds = new Map<string, string>();
@@ -309,53 +306,32 @@ export const createCloudflare = (options: CloudflareOptions): Cloudflare => {
 			const existing = pools.find((pool) => pool.name === name);
 
 			if (!existing) {
-				const created = await api<Pool>(
-					"POST",
-					`/accounts/${accountId}/load_balancers/pools`,
-					{
-						name,
-						description: `Colibri nodes in ${region}`,
-						enabled: true,
-						monitor,
-						origins,
-					},
-				);
+				const created = await api<Pool>("POST", `/accounts/${accountId}/load_balancers/pools`, {
+					name,
+					description: `Colibri nodes in ${region}`,
+					enabled: true,
+					monitor,
+					origins,
+				});
 
-				options.log.info(
-					{ pool: name, origins: origins.length },
-					"cloudflare.poolCreated",
-				);
+				options.log.info({ pool: name, origins: origins.length }, "cloudflare.poolCreated");
 				poolIds.set(region, created.id);
 				continue;
 			}
 
 			poolIds.set(region, existing.id);
 
-			if (
-				originKey(existing.origins) !== originKey(origins) ||
-				existing.monitor !== monitor
-			) {
-				await api<Pool>(
-					"PATCH",
-					`/accounts/${accountId}/load_balancers/pools/${existing.id}`,
-					{
-						origins,
-						monitor,
-					},
-				);
-				options.log.info(
-					{ pool: name, origins: origins.length },
-					"cloudflare.poolUpdated",
-				);
+			if (originKey(existing.origins) !== originKey(origins) || existing.monitor !== monitor) {
+				await api<Pool>("PATCH", `/accounts/${accountId}/load_balancers/pools/${existing.id}`, {
+					origins,
+					monitor,
+				});
+				options.log.info({ pool: name, origins: origins.length }, "cloudflare.poolUpdated");
 			}
 		}
 
 		const regions = [...poolIds.keys()].sort((a, b) =>
-			a === options.mainRegion
-				? -1
-				: b === options.mainRegion
-					? 1
-					: a.localeCompare(b),
+			a === options.mainRegion ? -1 : b === options.mainRegion ? 1 : a.localeCompare(b),
 		);
 		const defaultPools = regions.flatMap((region) => poolIds.get(region) ?? []);
 		const fallback = defaultPools[0] ?? balancer.fallback_pool;
@@ -390,10 +366,7 @@ export const createCloudflare = (options: CloudflareOptions): Cloudflare => {
 		for (const pool of pools) {
 			if (defaultPools.includes(pool.id)) continue;
 
-			await api<unknown>(
-				"DELETE",
-				`/accounts/${accountId}/load_balancers/pools/${pool.id}`,
-			);
+			await api<unknown>("DELETE", `/accounts/${accountId}/load_balancers/pools/${pool.id}`);
 			options.log.info({ pool: pool.name }, "cloudflare.poolRemoved");
 		}
 	};
@@ -401,56 +374,40 @@ export const createCloudflare = (options: CloudflareOptions): Cloudflare => {
 	return {
 		managesPools: Boolean(accountId && loadBalancerId),
 		putNodeRecord: async (node, host, ip) => {
-			const existing = await records(host);
-			const foreign = existing.find((record) => !ours(record));
-
-			if (foreign) {
-				throw new Error(
-					`${host} already has a DNS record that Colibri doesn't manage`,
-				);
-			}
-
-			const body = {
-				type: "A",
-				name: host,
-				content: ip,
-				proxied: false,
-				ttl: 60,
-				comment: `${RECORD_COMMENT_PREFIX} ${node}`,
-			};
-			const [current, ...extra] = existing;
-
-			if (current) {
-				await api<DnsRecord>(
-					"PATCH",
-					`/zones/${options.zoneId}/dns_records/${current.id}`,
-					body,
-				);
-			} else {
-				await api<DnsRecord>(
-					"POST",
-					`/zones/${options.zoneId}/dns_records`,
-					body,
-				);
-			}
-
-			for (const record of extra) {
-				await api<unknown>(
-					"DELETE",
-					`/zones/${options.zoneId}/dns_records/${record.id}`,
-				);
-			}
-
+			await putRecord(
+				host,
+				{
+					type: "A",
+					name: host,
+					content: ip,
+					proxied: false,
+					ttl: 60,
+					comment: `${RECORD_COMMENT_PREFIX} ${node}`,
+				},
+				ours,
+			);
 			options.log.info({ node, host, ip }, "cloudflare.recordSet");
+		},
+		putAlias: async (host, target) => {
+			await putRecord(
+				host,
+				{
+					type: "CNAME",
+					name: host,
+					content: target,
+					proxied: false,
+					ttl: 60,
+					comment: ALIAS_COMMENT_PREFIX,
+				},
+				(record) => (record.comment ?? "").startsWith(ALIAS_COMMENT_PREFIX),
+			);
+			options.log.info({ host, target }, "cloudflare.aliasSet");
 		},
 		removeNodeRecord: async (host) => {
 			const existing = (await records(host)).filter(ours);
 
 			for (const record of existing) {
-				await api<unknown>(
-					"DELETE",
-					`/zones/${options.zoneId}/dns_records/${record.id}`,
-				);
+				await api<unknown>("DELETE", `/zones/${options.zoneId}/dns_records/${record.id}`);
 			}
 
 			if (existing.length > 0) {

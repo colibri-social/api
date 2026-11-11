@@ -76,7 +76,13 @@ const fakeCloudflare = () => {
 
 		if (path.startsWith("/zones/z1/dns_records")) {
 			if (method === "GET") {
-				return ok(records.filter((record) => record.name === url.searchParams.get("name")));
+				return ok(
+					records.filter(
+						(record) =>
+							record.name === url.searchParams.get("name") &&
+							record.type === url.searchParams.get("type"),
+					),
+				);
 			}
 
 			return collection(records, "/zones/z1/dns_records");
@@ -170,6 +176,23 @@ describe("node records", () => {
 
 		expect(await cloudflare.removeNodeRecord("eu-1.nodes.colibri.test")).toBe(true);
 		expect(api.records).toEqual([]);
+	});
+
+	it("points the status host at a node with a CNAME", async () => {
+		const api = fakeCloudflare();
+		const cloudflare = client(api);
+
+		await cloudflare.putAlias("status.colibri.test", "eu-1.nodes.colibri.test");
+		await cloudflare.putAlias("status.colibri.test", "fsn-1.nodes.colibri.test");
+
+		expect(api.records).toEqual([
+			expect.objectContaining({
+				type: "CNAME",
+				name: "status.colibri.test",
+				content: "fsn-1.nodes.colibri.test",
+				comment: "colibri status",
+			}),
+		]);
 	});
 
 	it("leaves records it doesn't manage alone", async () => {

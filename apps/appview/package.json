@@ -64,14 +64,15 @@
 		"hono": "catalog:",
 		"pg": "catalog:",
 		"pino": "catalog:",
+		"socket.io-client": "catalog:",
 		"ws": "catalog:",
 		"youtubei.js": "^18.0.0",
 		"zod": "catalog:"
 	},
 	"devDependencies": {
+		"@types/express": "^5.0.0",
 		"@types/pg": "catalog:",
 		"@types/ws": "catalog:",
-		"pino-pretty": "catalog:",
-		"@types/express": "^5.0.0"
+		"pino-pretty": "catalog:"
 	}
 }

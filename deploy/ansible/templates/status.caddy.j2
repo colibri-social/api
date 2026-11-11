@@ -1,0 +1,8 @@
+{{ status_host }} {
+	encode zstd gzip
+
+	@admin path /socket.io/* /dashboard* /settings* /add* /edit/* /manage-status-page* /setup* /metrics*
+	respond @admin 404
+
+	reverse_proxy uptime-kuma:3001
+}

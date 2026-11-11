@@ -22,6 +22,7 @@ import {
 	nodeShutdown,
 	RefusedError,
 	rollout,
+	statusDeploy,
 	UsageError,
 } from "./commands.js";
 import { openOrderBus, sendOrder } from "./orders.js";
@@ -36,6 +37,7 @@ const USAGE = `colibri-admin, run it inside the AppView container of the main no
   node recover <id>
   node remove <id> [--force]
   rollout pause|resume
+  status deploy <node>
   config list
   config set <KEY> <value>
   config unset <KEY>
@@ -143,6 +145,8 @@ const main = async (): Promise<void> => {
 				});
 			case "node resume":
 				return nodeResume(admin, required(first, "<id>"));
+			case "status deploy":
+				return statusDeploy(admin, required(first, "<node>"));
 			case "node recover":
 				return nodeRecover(admin, required(first, "<id>"));
 			case "node remove":

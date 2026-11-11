@@ -61,12 +61,15 @@ services:
   caddy:
     image: caddy:2.10
     restart: unless-stopped
-    command: caddy reverse-proxy --from ${PUBLIC_HOST:?set PUBLIC_HOST} --to appview:3000
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST}
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
     volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-sites:/etc/caddy/sites:ro
       - caddy-data:/data
     depends_on:
       - appview

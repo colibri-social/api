@@ -1,0 +1,20 @@
+services:
+  uptime-kuma:
+    image: {{ kuma_image }}
+    restart: unless-stopped
+    environment:
+      UPTIME_KUMA_DB_TYPE: sqlite
+    ports:
+      - "{{ tailnet_ip.stdout }}:3001:3001"
+    volumes:
+      - uptime-kuma-data:/app/data
+    networks:
+      - colibri
+
+volumes:
+  uptime-kuma-data:
+
+networks:
+  colibri:
+    name: {{ stack_dir | basename }}_default
+    external: true

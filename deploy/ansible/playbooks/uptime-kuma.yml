@@ -1,0 +1,48 @@
+- name: Run Uptime Kuma next to a node's stack
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    stack_dir: /opt/colibri
+    kuma_dir: /opt/uptime-kuma
+  tasks:
+    - name: Read the tailnet address
+      ansible.builtin.command: tailscale ip -4
+      register: tailnet_ip
+      changed_when: false
+
+    - name: Create the Uptime Kuma directory
+      ansible.builtin.file:
+        path: "{{ kuma_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write the Uptime Kuma stack
+      ansible.builtin.template:
+        src: ../templates/uptime-kuma-compose.yml.j2
+        dest: "{{ kuma_dir }}/compose.yml"
+        mode: "0644"
+
+    - name: Start Uptime Kuma
+      ansible.builtin.command: docker compose up -d --pull always
+      args:
+        chdir: "{{ kuma_dir }}"
+      changed_when: true
+
+    - name: Create the Caddy sites directory
+      ansible.builtin.file:
+        path: "{{ stack_dir }}/caddy-sites"
+        state: directory
+        mode: "0755"
+
+    - name: Serve the status page
+      ansible.builtin.template:
+        src: ../templates/status.caddy.j2
+        dest: "{{ stack_dir }}/caddy-sites/status.caddy"
+        mode: "0644"
+
+    - name: Reload Caddy
+      ansible.builtin.command: docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+      args:
+        chdir: "{{ stack_dir }}"
+      changed_when: true

@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { Logger } from "../logger.js";
 
-export const PLAYBOOKS = ["bootstrap", "update", "recover", "rejoin-replica", "remove"] as const;
+export const PLAYBOOKS = [
+	"bootstrap",
+	"update",
+	"recover",
+	"rejoin-replica",
+	"remove",
+	"uptime-kuma",
+] as const;
 
 export type Playbook = (typeof PLAYBOOKS)[number];
 

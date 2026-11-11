@@ -1,0 +1,171 @@
+@import url("https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,400..700;1,400..700&display=swap");
+@import url("https://api.fontshare.com/v2/css?f[]=stardom@400&display=swap");
+
+:root {
+	--colibri-background: #f7f7f8;
+	--colibri-foreground: #0b0b0c;
+	--colibri-card: #ffffff;
+	--colibri-secondary: #ededee;
+	--colibri-muted-foreground: #606065;
+	--colibri-primary: #8e51ff;
+	--colibri-primary-highlight: #733add;
+	--colibri-border: rgb(0 0 0 / 0.1);
+	--colibri-success: #127035;
+	--colibri-warning: #925004;
+	--colibri-destructive: #bc1e2f;
+	--colibri-info: #1960b4;
+	--bs-primary: var(--colibri-success);
+	--bs-primary-rgb: 18, 112, 53;
+	--bs-danger: var(--colibri-destructive);
+	--bs-danger-rgb: 188, 30, 47;
+	--bs-warning: var(--colibri-warning);
+	--bs-warning-rgb: 146, 80, 4;
+	--maintenance: var(--colibri-info);
+	--bs-body-font-family: "Hanken Grotesk", Arial, sans-serif;
+	--bs-link-color: var(--colibri-primary);
+	--bs-link-hover-color: var(--colibri-primary-highlight);
+}
+
+:root:has(body.dark) {
+	--colibri-background: #080808;
+	--colibri-foreground: #ffffff;
+	--colibri-card: #0f0f0f;
+	--colibri-secondary: #232323;
+	--colibri-muted-foreground: #a1a1a1;
+	--colibri-primary-highlight: #a579ff;
+	--colibri-border: rgb(255 255 255 / 0.08);
+	--colibri-success: #4ade80;
+	--colibri-warning: #ffd857;
+	--colibri-destructive: #ff585b;
+	--colibri-info: #5cadff;
+	--bs-primary-rgb: 74, 222, 128;
+	--bs-danger-rgb: 255, 88, 91;
+	--bs-warning-rgb: 255, 216, 87;
+}
+
+body,
+body.dark {
+	background: var(--colibri-background);
+	color: var(--colibri-foreground);
+	font-family: "Hanken Grotesk", Arial, sans-serif;
+}
+
+.title-flex,
+.title-flex .title,
+h1 {
+	font-family: Stardom, Georgia, serif;
+	font-weight: 400;
+	letter-spacing: -0.01em;
+	color: var(--colibri-foreground);
+}
+
+.description,
+.refresh-info,
+.date,
+.custom-footer-text,
+.past-incidents-title,
+.incident-date-header,
+.no-monitor-msg {
+	color: var(--colibri-muted-foreground);
+}
+
+.shadow-box,
+body.dark .shadow-box {
+	background: var(--colibri-card);
+	border: 1px solid var(--colibri-border);
+	border-radius: 12px;
+	box-shadow: none;
+}
+
+.monitor-list .item,
+body.dark .monitor-list .item {
+	border-radius: 10px;
+}
+
+.monitor-list .item:hover,
+body.dark .monitor-list .item:hover {
+	background: var(--colibri-secondary);
+}
+
+.group-title,
+.group-title span {
+	font-family: Stardom, Georgia, serif;
+	font-weight: 400;
+	color: var(--colibri-foreground);
+}
+
+.item-name {
+	font-weight: 500;
+	color: var(--colibri-foreground);
+}
+
+.overall-status {
+	font-weight: 600;
+}
+
+.overall-status .ok {
+	color: var(--colibri-success);
+}
+
+.overall-status .danger {
+	color: var(--colibri-destructive);
+}
+
+.badge.bg-primary {
+	background-color: var(--colibri-success) !important;
+	color: var(--colibri-background);
+}
+
+.badge.bg-danger {
+	background-color: var(--colibri-destructive) !important;
+}
+
+.badge.bg-warning {
+	background-color: var(--colibri-warning) !important;
+	color: var(--colibri-background);
+}
+
+.hp-bar-big {
+	--beat-empty-color: var(--colibri-secondary);
+}
+
+.incident {
+	border-radius: 12px;
+}
+
+.incident.bg-info,
+.incident.bg-primary {
+	background: var(--colibri-primary) !important;
+	color: #ffffff;
+}
+
+.incident.bg-danger {
+	background: var(--colibri-destructive) !important;
+	color: #ffffff;
+}
+
+.incident.bg-warning {
+	background: var(--colibri-warning) !important;
+	color: var(--colibri-background);
+}
+
+.bg-maintenance {
+	background: var(--colibri-info) !important;
+	color: #ffffff;
+}
+
+.btn-primary {
+	background: var(--colibri-primary);
+	border-color: var(--colibri-primary);
+	color: #ffffff;
+	border-radius: 10px;
+}
+
+.btn-primary:hover {
+	background: var(--colibri-primary-highlight);
+	border-color: var(--colibri-primary-highlight);
+}
+
+a {
+	color: var(--colibri-primary);
+}

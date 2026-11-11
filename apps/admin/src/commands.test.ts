@@ -13,6 +13,7 @@ import {
 	parseGrace,
 	parseRoles,
 	RefusedError,
+	statusDeploy,
 	UsageError,
 } from "./commands.js";
 
@@ -148,6 +149,14 @@ describe("node commands", () => {
 
 		expect(admin.sendOrder).toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "deprovision", node: "eu-2", force: true }),
+		);
+	});
+
+	it("asks the main node to deploy Uptime Kuma", async () => {
+		await statusDeploy(admin, "fsn-1");
+
+		expect(admin.sendOrder).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "deployStatus", node: "fsn-1" }),
 		);
 	});
 

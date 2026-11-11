@@ -71,6 +71,12 @@
         - { src: Caddyfile.j2, dest: Caddyfile, mode: "0644" }
       no_log: true
 
+    - name: Create the Caddy sites directory
+      ansible.builtin.file:
+        path: "{{ stack_dir }}/caddy-sites"
+        state: directory
+        mode: "0755"
+
     - name: Write the replica entrypoint
       ansible.builtin.copy:
         src: ../templates/replica-entrypoint.sh

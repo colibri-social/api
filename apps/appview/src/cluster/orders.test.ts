@@ -280,6 +280,45 @@ describe("Ansible orders", () => {
 		expect(remove).toHaveBeenCalledWith("eu-3.test");
 	});
 
+	it("deploys Uptime Kuma to a node and points the status host at it", async () => {
+		const { deps: ansibleDeps, run } = withAnsible();
+		const alias = vi.fn(async () => {});
+		const result = await handleOrder(
+			{
+				...ansibleDeps,
+				dns: { put: vi.fn(async () => {}), remove: vi.fn(async () => true), alias },
+				status: {
+					host: "status.test",
+					vars: (target) => ({ status_host: "status.test", self: target.self }),
+				},
+			},
+			{ kind: "deployStatus", id: "s1", node: "eu-1" },
+		);
+
+		expect(result.ok).toBe(true);
+		expect(result.message).toMatch(/KUMA_URL to http:\/\/eu-1:3001/);
+		expect(alias).toHaveBeenCalledWith("status.test", "eu-1.test");
+		expect(run).toHaveBeenCalledWith({
+			playbook: "uptime-kuma",
+			host: "eu-1",
+			vars: { status_host: "status.test", self: true },
+		});
+	});
+
+	it("refuses to deploy Uptime Kuma without a status host", async () => {
+		const { deps: ansibleDeps, run } = withAnsible();
+		const result = await handleOrder(
+			{ ...ansibleDeps, status: { host: null, vars: () => null } },
+			{ kind: "deployStatus", id: "s2", node: "eu-2" },
+		);
+
+		expect(result).toMatchObject({
+			ok: false,
+			message: "the main node is missing KUMA_PUBLIC_URL",
+		});
+		expect(run).not.toHaveBeenCalled();
+	});
+
 	it("refuses to remove a node that still runs", async () => {
 		const { deps: ansibleDeps, run } = withAnsible();
 

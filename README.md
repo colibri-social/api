@@ -171,6 +171,36 @@ The token needs DNS edit on the zone, and Load Balancing edit on the zone and th
 node whose public host is the API host is left out of the pools, so give the main node its own
 `NODE_PUBLIC_URL`.
 
+### Status page
+
+Uptime Kuma runs next to any node's stack and serves the public status page. Set the status page
+host and the account the main node should use, then deploy it:
+
+```sh
+colibri-admin config set KUMA_PUBLIC_URL https://status.example.com
+colibri-admin config set KUMA_USERNAME colibri
+colibri-admin config set KUMA_PASSWORD ...
+colibri-admin status deploy fsn-1
+colibri-admin config set KUMA_URL http://<fsn-1 tailnet address>:3001
+```
+
+`status deploy` starts Kuma (`KUMA_IMAGE`, default `louislam/uptime-kuma:2.5.7-slim`) with its
+port on the tailnet address only, and adds the status host to the node's Caddy. With Cloudflare
+set up, it also points the status host at the node with a CNAME. The public host serves the status
+page and answers 404 for the dashboard, settings and socket paths. Open the dashboard at
+`KUMA_URL` over the tailnet.
+
+Once `KUMA_URL` is set, the main node keeps Kuma in step with the registry every minute:
+
+- An HTTP monitor for the API host and one for each node that isn't retired, all on `/health`.
+  Nodes in maintenance or draining are paused. Monitors of retired nodes are deleted. Monitors the
+  main node didn't create are left alone.
+- The `KUMA_STATUS_SLUG` status page (default `colibri`) lists the API first, then one group per
+  region with its nodes, styled with `deploy/uptime-kuma/status.css`.
+
+On a fresh Kuma, the main node creates the account from `KUMA_USERNAME` and `KUMA_PASSWORD`. Keep
+2FA off for that account.
+
 ### A local cluster
 
 The `local-cluster` profile runs a replica, a sub node and a voice node next to the main node

@@ -26,7 +26,8 @@ export type ClusterOrder =
 			workers?: number;
 	  }
 	| { kind: "recover"; id: string; node: string }
-	| { kind: "deprovision"; id: string; node: string; force?: boolean };
+	| { kind: "deprovision"; id: string; node: string; force?: boolean }
+	| { kind: "deployStatus"; id: string; node: string };
 
 export type OrderResult = {
 	id: string;
@@ -48,6 +49,11 @@ export type OrderDeps = {
 	dns?: {
 		put: (node: string, host: string, ip: string) => Promise<void>;
 		remove: (host: string) => Promise<boolean>;
+		alias?: (host: string, target: string) => Promise<void>;
+	};
+	status?: {
+		vars: (node: { id: string; self: boolean }) => Record<string, unknown> | null;
+		host: string | null;
 	};
 };
 
@@ -295,12 +301,55 @@ const deprovision = async (
 	return done(order, `removed ${order.node}`);
 };
 
+const deployStatus = async (
+	deps: OrderDeps,
+	order: Extract<ClusterOrder, { kind: "deployStatus" }>,
+): Promise<OrderResult> => {
+	const target = await deps.registry.node(order.node);
+
+	if (!target) {
+		return refused(order, `no node is called ${order.node}`);
+	}
+
+	if (!deps.ansible) {
+		return refused(order, "this main node can't run Ansible");
+	}
+
+	const vars = deps.status?.vars({ id: target.id, self: target.id === deps.self });
+
+	if (!vars || !deps.status?.host) {
+		return refused(order, "the main node is missing KUMA_PUBLIC_URL");
+	}
+
+	const statusHost = deps.status.host;
+
+	if (deps.dns?.alias) {
+		const nodeHost = new URL(target.publicUrl).hostname;
+		const failure = await deps.dns.alias(statusHost, nodeHost).then(
+			() => null,
+			(error: unknown) => (error instanceof Error ? error.message : String(error)),
+		);
+
+		if (failure) {
+			return refused(order, `pointing ${statusHost} at ${nodeHost} failed: ${failure}`);
+		}
+	}
+
+	runInBackground(deps, deps.ansible, "uptime-kuma", new URL(target.tailnetUrl).hostname, vars);
+
+	return done(
+		order,
+		`deploying Uptime Kuma to ${order.node}. Set KUMA_URL to http://${new URL(target.tailnetUrl).hostname}:3001`,
+	);
+};
+
 export const ORDER_TIMEOUTS_MS: Record<ClusterOrder["kind"], number> = {
 	shutdown: 30_000,
 	resume: 30_000,
 	provision: 30_000,
 	recover: 30_000,
 	deprovision: 10 * 60_000,
+	deployStatus: 30_000,
 };
 
 export const handleOrder = (deps: OrderDeps, order: ClusterOrder): Promise<OrderResult> => {
@@ -315,5 +364,7 @@ export const handleOrder = (deps: OrderDeps, order: ClusterOrder): Promise<Order
 			return recover(deps, order);
 		case "deprovision":
 			return deprovision(deps, order);
+		case "deployStatus":
+			return deployStatus(deps, order);
 	}
 };

@@ -11,3 +11,4 @@ apps/bridge/data/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+caddy-sites/

@@ -247,6 +247,10 @@ export const nodeRecover = async (admin: Admin, id: string): Promise<void> => {
 	await runOrder(admin, { kind: "recover", id: randomUUID(), node: id });
 };
 
+export const statusDeploy = async (admin: Admin, id: string): Promise<void> => {
+	await runOrder(admin, { kind: "deployStatus", id: randomUUID(), node: id });
+};
+
 export const rollout = async (admin: Admin, paused: boolean): Promise<void> => {
 	await admin.setRolloutPaused(paused);
 	admin.print(paused ? "Rollouts are paused." : "Rollouts are running.");
