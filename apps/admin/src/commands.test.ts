@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	type Admin,
 	configImport,
+	dbFailback,
 	formatTable,
 	monitoringDeploy,
 	nodeAdd,
@@ -150,6 +151,14 @@ describe("node commands", () => {
 
 		expect(admin.sendOrder).toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "deprovision", node: "eu-2", force: true }),
+		);
+	});
+
+	it("asks the main node to fail back", async () => {
+		await dbFailback(admin, "hel-1");
+
+		expect(admin.sendOrder).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "failback", node: "hel-1" }),
 		);
 	});
 

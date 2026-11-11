@@ -28,7 +28,8 @@ export type ClusterOrder =
 	| { kind: "recover"; id: string; node: string }
 	| { kind: "deprovision"; id: string; node: string; force?: boolean }
 	| { kind: "deployStatus"; id: string; node: string }
-	| { kind: "deployMonitoring"; id: string; node: string };
+	| { kind: "deployMonitoring"; id: string; node: string }
+	| { kind: "failback"; id: string; node: string };
 
 export type OrderResult = {
 	id: string;
@@ -45,6 +46,7 @@ export type OrderDeps = {
 		missing: (roles: readonly NodeRole[]) => string[];
 		vars: (target: ProvisionTarget) => Promise<Record<string, unknown>>;
 		removeNode: (id: string) => Promise<void>;
+		spreadDatabaseHosts?: () => Promise<void>;
 	};
 	background?: (work: Promise<unknown>) => void;
 	dns?: {
@@ -52,6 +54,7 @@ export type OrderDeps = {
 		remove: (host: string) => Promise<boolean>;
 		alias?: (host: string, target: string) => Promise<void>;
 	};
+	failback?: (target: string | undefined) => Promise<{ ok: boolean; message: string }>;
 	monitoring?: {
 		vars: () => Record<string, unknown> | null;
 		remoteWriteUrl: () => string | null;
@@ -242,26 +245,28 @@ const provision = async (
 	}
 
 	const remoteWrite = deps.monitoring?.remoteWriteUrl() ?? null;
-
-	if (remoteWrite) {
-		const work = ansible
-			.run({ playbook: "bootstrap", host: order.ip, vars })
-			.then(async (result) => {
-				const node = result.ok ? await deps.registry.node(order.node) : null;
-
-				return node ? ((await startAlloy(deps, ansible, node, remoteWrite)) ?? result) : result;
-			});
-
-		if (deps.background) {
-			deps.background(work);
-		} else {
-			void work.catch(() => {});
+	const standby = order.roles.includes("failover");
+	const work = ansible.run({ playbook: "bootstrap", host: order.ip, vars }).then(async (result) => {
+		if (!result.ok) {
+			return result;
 		}
 
-		return done(order, `provisioning ${order.node} at ${order.ip}. Follow it with node list`);
-	}
+		if (standby) {
+			await provisioning.spreadDatabaseHosts?.().catch(() => undefined);
+		}
 
-	runInBackground(deps, ansible, "bootstrap", order.ip, vars);
+		const node = remoteWrite ? await deps.registry.node(order.node) : null;
+
+		return node && remoteWrite
+			? ((await startAlloy(deps, ansible, node, remoteWrite)) ?? result)
+			: result;
+	});
+
+	if (deps.background) {
+		deps.background(work);
+	} else {
+		void work.catch(() => {});
+	}
 
 	return done(order, `provisioning ${order.node} at ${order.ip}. Follow it with node list`);
 };
@@ -449,6 +454,19 @@ const deployMonitoring = async (
 	);
 };
 
+const failback = async (
+	deps: OrderDeps,
+	order: Extract<ClusterOrder, { kind: "failback" }>,
+): Promise<OrderResult> => {
+	if (!deps.failback) {
+		return refused(order, "this main node has no Postgres to hand over");
+	}
+
+	const result = await deps.failback(order.node === "" ? undefined : order.node);
+
+	return result.ok ? done(order, result.message) : refused(order, result.message);
+};
+
 export const ORDER_TIMEOUTS_MS: Record<ClusterOrder["kind"], number> = {
 	shutdown: 30_000,
 	resume: 30_000,
@@ -457,6 +475,7 @@ export const ORDER_TIMEOUTS_MS: Record<ClusterOrder["kind"], number> = {
 	deprovision: 10 * 60_000,
 	deployStatus: 30_000,
 	deployMonitoring: 30_000,
+	failback: 3 * 60_000,
 };
 
 export const handleOrder = (deps: OrderDeps, order: ClusterOrder): Promise<OrderResult> => {
@@ -475,5 +494,7 @@ export const handleOrder = (deps: OrderDeps, order: ClusterOrder): Promise<Order
 			return deployStatus(deps, order);
 		case "deployMonitoring":
 			return deployMonitoring(deps, order);
+		case "failback":
+			return failback(deps, order);
 	}
 };

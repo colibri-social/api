@@ -9,14 +9,22 @@ import { createAnsibleRunner } from "./ansible.js";
 import { type Cloudflare, createCloudflare, parseGeoRegions } from "./cloudflare.js";
 import { ControlClient } from "./control-client.js";
 import { ControlServer } from "./control-server.js";
+import { runFailback } from "./failback.js";
+import { askAlive, createFailoverWatch, FAILOVER_CHECK_MS, watchPrimary } from "./failover.js";
+import { createFencing, FENCE_CHECK_MS } from "./fencing.js";
 import { createHandover, type DeferState, shouldDefer } from "./handover.js";
 import { resolveImage } from "./image-source.js";
 import { connectKuma, createKumaSync } from "./kuma.js";
 import { joinCluster, ownCredentials } from "./node-secret.js";
 import { type ClusterOrder, handleOrder } from "./orders.js";
 import { ALIVE_PATH, type Alive, aliveSchema, type DrainMode, type NodeFrame } from "./protocol.js";
-import { missingForProvisioning, needsPostgres, provisionVars } from "./provisioning.js";
-import type { NodeAddress, NodeIdentity } from "./registry.js";
+import {
+	databaseHostRuns,
+	missingForProvisioning,
+	needsPostgres,
+	provisionVars,
+} from "./provisioning.js";
+import type { NodeAddress, NodeIdentity, NodeRow } from "./registry.js";
 import { createRollout, type Rollout } from "./rollout.js";
 import { WriteProxy } from "./write-proxy.js";
 
@@ -147,25 +155,30 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 		});
 	};
 
-	const control =
-		roles.has("main") || roles.has("failover")
-			? new ControlServer({
-					registry,
-					log,
-					nodeId: ctx.nodeId,
-					isMain: deps.isMain,
-					draining: () => ctx.drain.draining,
-					config: () => ctx.clusterConfig.values(),
-					app: deps.app,
-					onFrame: (nodeId, frame) => {
-						log.info({ node: nodeId, mode: frame.mode }, "cluster.drained");
-
-						if (frame.mode === "update") {
-							for (const done of [...(drainWaiters.get(nodeId) ?? [])]) done();
-						}
-					},
-				})
+	const primaryWatch =
+		ctx.database.dialect === "postgres"
+			? watchPrimary({ ping: () => ctx.database.ping(), log })
 			: null;
+
+	const control = ctx.clustered
+		? new ControlServer({
+				registry,
+				log,
+				nodeId: ctx.nodeId,
+				isMain: deps.isMain,
+				draining: () => ctx.drain.draining,
+				primaryDownSince: () => primaryWatch?.downSince ?? null,
+				config: () => ctx.clusterConfig.values(),
+				app: deps.app,
+				onFrame: (nodeId, frame) => {
+					log.info({ node: nodeId, mode: frame.mode }, "cluster.drained");
+
+					if (frame.mode === "update") {
+						for (const done of [...(drainWaiters.get(nodeId) ?? [])]) done();
+					}
+				},
+			})
+		: null;
 
 	if (control) {
 		const port = await control.listen(config.CLUSTER_PORT, config.HOST);
@@ -384,6 +397,82 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 
 	handoverTimer?.unref?.();
 
+	const localUrl = config.LOCAL_POSTGRES_URL ?? config.DATABASE_READ_URL ?? null;
+	const postgresUrl = ctx.database.dialect === "postgres" ? config.DATABASE_URL : null;
+	const ownTailnetHost = new URL(address.tailnetUrl).hostname;
+
+	const rejoin = ansible
+		? async (node: NodeRow | null, primaryHosts: string[]) => {
+				const self = node === null;
+				const host = self ? ownTailnetHost : new URL(node.tailnetUrl).hostname;
+				const result = await ansible.run({
+					playbook: "rejoin-replica",
+					host,
+					vars: {
+						primary_hosts: primaryHosts.join(","),
+						stack_dir: self ? config.STACK_DIR : "/opt/colibri",
+						detach: self,
+					},
+				});
+
+				if (!result.ok) {
+					log.error(
+						{ node: node?.id ?? ctx.nodeId, tail: result.tail.slice(-10) },
+						"failover.rejoinFailed",
+					);
+				}
+
+				return result.ok;
+			}
+		: undefined;
+
+	const failoverWatch =
+		roles.has("failover") && localUrl && postgresUrl
+			? createFailoverWatch({
+					nodeId: ctx.nodeId,
+					localUrl,
+					databaseUrl: postgresUrl,
+					afterMs: config.FAILOVER_AFTER_SECONDS * 1_000,
+					primary: () => primaryWatch?.downSince ?? null,
+					nodes: () => registry.list(),
+					ask: (node) => askAlive(node),
+					onPromoted: () => log.warn({ node: ctx.nodeId }, "failover.nowPrimary"),
+					log,
+				})
+			: null;
+
+	void failoverWatch?.refresh();
+
+	const failoverTimer = failoverWatch
+		? setInterval(() => void failoverWatch.tick(), FAILOVER_CHECK_MS)
+		: null;
+
+	failoverTimer?.unref?.();
+
+	const fencing =
+		mainCapable && localUrl && postgresUrl
+			? createFencing({
+					nodeId: ctx.nodeId,
+					localUrl,
+					databaseUrl: postgresUrl,
+					ownTailnetHost,
+					isMain: deps.isMain,
+					nodes: () => registry.list(),
+					...(rejoin ? { rejoin } : {}),
+					log,
+				})
+			: null;
+
+	const fencingTimer = fencing
+		? setInterval(() => {
+				void fencing
+					.tick()
+					.catch((error: unknown) => log.warn({ err: error }, "failover.fenceCheckFailed"));
+			}, FENCE_CHECK_MS)
+		: null;
+
+	fencingTimer?.unref?.();
+
 	const heartbeat = setInterval(() => {
 		void registry
 			.heartbeat(ctx.nodeId, { ...deps.load(), version: address.version })
@@ -409,6 +498,22 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 					self: ctx.nodeId,
 					send,
 					...(ansible ? { ansible } : {}),
+					...(postgresUrl
+						? {
+								failback: (target: string | undefined) =>
+									runFailback(
+										{
+											self: ctx.nodeId,
+											localUrl,
+											databaseUrl: postgresUrl,
+											nodes: () => registry.list(),
+											yieldMain: deps.yieldMain,
+											log,
+										},
+										target,
+									),
+							}
+						: {}),
 					...(cloudflare
 						? {
 								dns: {
@@ -421,8 +526,38 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 					provisioning: {
 						missing: (nodeRoles) => missingForProvisioning(config, nodeRoles),
 						vars: async (target) =>
-							provisionVars(config, { tailnetUrl: address.tailnetUrl }, target),
+							provisionVars(
+								config,
+								{
+									tailnetUrl: address.tailnetUrl,
+									standbyHosts: (await registry.list())
+										.filter(
+											(node) =>
+												node.id !== target.node &&
+												node.id !== ctx.nodeId &&
+												node.state !== "retired" &&
+												(node.roles.includes("main") || node.roles.includes("failover")),
+										)
+										.map((node) => new URL(node.tailnetUrl).hostname),
+								},
+								target,
+							),
 						removeNode: (id) => registry.remove(id),
+						spreadDatabaseHosts: async () => {
+							if (!ansible) return;
+
+							const nodes = (await registry.list()).filter((node) => node.state !== "retired");
+
+							for (const run of databaseHostRuns(config, nodes, ctx.nodeId)) {
+								const result = await ansible.run({
+									playbook: "database-hosts",
+									host: run.host,
+									vars: run.vars,
+								});
+
+								if (!result.ok) log.warn({ node: run.node }, "failover.databaseHostsFailed");
+							}
+						},
 					},
 					monitoring: {
 						vars: () =>
@@ -479,6 +614,9 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 		},
 		stop: async () => {
 			clearInterval(heartbeat);
+			primaryWatch?.stop();
+			if (failoverTimer) clearInterval(failoverTimer);
+			if (fencingTimer) clearInterval(fencingTimer);
 			if (rolloutTimer) clearInterval(rolloutTimer);
 			if (poolTimer) clearInterval(poolTimer);
 			if (kumaTimer) clearInterval(kumaTimer);

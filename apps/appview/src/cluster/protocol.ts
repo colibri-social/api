@@ -62,6 +62,7 @@ export const aliveSchema = z.object({
 	node: z.string(),
 	main: z.boolean(),
 	draining: z.boolean(),
+	primaryDownSince: z.number().nullable().optional(),
 });
 
 export type Alive = z.infer<typeof aliveSchema>;

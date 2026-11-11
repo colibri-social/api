@@ -13,6 +13,7 @@ export const PLAYBOOKS = [
 	"uptime-kuma",
 	"monitoring",
 	"alloy",
+	"database-hosts",
 ] as const;
 
 export type Playbook = (typeof PLAYBOOKS)[number];

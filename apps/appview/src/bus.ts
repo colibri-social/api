@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Database } from "@colibri-social/appview-db";
+import { type Database, resolvePrimaryUrl } from "@colibri-social/appview-db";
 import { eq } from "drizzle-orm";
 import pg from "pg";
 
@@ -133,8 +133,12 @@ export const postgresBus = async <M>({
 		await dispatch(handlers, { message, origin: envelope.o, lsn: envelope.l, local: false }, log);
 	};
 
+	const target = async (): Promise<string> => {
+		return (await database.primaryUrl()) ?? resolvePrimaryUrl(url);
+	};
+
 	const listen = async (): Promise<void> => {
-		const client = new pg.Client({ connectionString: url });
+		const client = new pg.Client({ connectionString: await target() });
 
 		client.on("notification", (notification) => {
 			if (notification.channel === BUS_CHANNEL) {
@@ -184,7 +188,7 @@ export const postgresBus = async <M>({
 			return publisher;
 		}
 
-		const client = new pg.Client({ connectionString: url });
+		const client = new pg.Client({ connectionString: await target() });
 
 		client.on("error", (error) => {
 			log.warn({ err: error }, "bus.publisherFailed");
@@ -228,6 +232,25 @@ export const postgresBus = async <M>({
 
 	await listen();
 
+	const stopFollowing = database.onPrimaryChange((primary) => {
+		log.warn(
+			{ host: new URL(primary.replace(/^postgres(ql)?:/, "http:")).hostname },
+			"bus.primaryChanged",
+		);
+
+		const stalePublisher = publisher;
+
+		publisher = null;
+		void stalePublisher?.end().catch(() => {});
+
+		const staleListener = listener;
+
+		if (staleListener) {
+			reconnect(staleListener);
+			void staleListener.end().catch(() => {});
+		}
+	});
+
 	return {
 		nodeId,
 		publish: (message) => {
@@ -248,6 +271,7 @@ export const postgresBus = async <M>({
 		},
 		close: async () => {
 			closed = true;
+			stopFollowing();
 			handlers.clear();
 			await queue;
 

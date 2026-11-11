@@ -17,6 +17,7 @@ export const NODE_LOCAL_KEYS: ReadonlySet<string> = new Set([
 	"PORT",
 	"HOST",
 	"DATABASE_READ_URL",
+	"LOCAL_POSTGRES_URL",
 	"SFU_ANNOUNCED_IP",
 	"SFU_LISTEN_IP",
 	"SFU_WORKER_COUNT",

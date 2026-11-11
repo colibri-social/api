@@ -330,6 +330,39 @@ Postgres) and sends these alerts to
 On the main node, add `COMPOSE_FILE=docker-compose.scaled.yml` to `.env` so Alloy starts with the
 `monitoring` profile.
 
+### Database failover
+
+Every node lists the Postgres hosts that can be primary in `DATABASE_URL`, for example
+`postgres://colibri:...@100.64.0.1:5432,100.64.0.2:5432/colibri`. The AppView connects to the
+host that accepts writes and has the highest epoch, and moves its connections, its locks and the
+event bus when that changes. Replicas get the same list in `primary_conninfo` with
+`target_session_attrs=read-write`. When a failover node joins, the main node writes the new list
+into every node's `.env` and points the running replicas at it. AppViews pick up the new
+`DATABASE_URL` when they next restart.
+
+The failover node promotes its own Postgres when the primary has been unreachable for
+`FAILOVER_AFTER_SECONDS` (default 60), and more than half of the nodes without the `main` or
+`failover` role report the same. Each node answers `GET /cluster/alive` on `CLUSTER_PORT` with
+the time it lost the primary. Promotion raises the cluster epoch, creates replication slots for
+the other nodes, and the failover node's AppView takes the main role. Without such a node to
+confirm the outage, nothing is promoted on its own. Run `colibri-admin db promote` inside the
+failover node's AppView container to promote by hand. It refuses while any host still accepts
+writes.
+
+A primary that comes back with a lower epoch is fenced: it turns read-only and drops its
+connections. A node with the SSH key rebuilds its own Postgres as a replica of the current
+primary with the `rejoin-replica` playbook, and the main node does the same for other nodes with
+the `main` or `failover` role.
+
+`colibri-admin db failback [<node>]` moves the primary back to a node with the `main` role
+during a quiet moment. The current primary turns read-only, waits up to 30 seconds for the target
+to replay everything, and the target is promoted with the next epoch and takes the main role.
+The old primary is then rebuilt as its replica. Writes fail for the few seconds this takes, and
+sub nodes hold them in their write queue.
+
+On the main node, set `REPLICATION_SLOT` in `.env` to its ID with underscores, for example
+`hel_1`, so it can be rebuilt as a replica.
+
 ### A local cluster
 
 The `local-cluster` profile runs a replica, a sub node and a voice node next to the main node

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { missingForProvisioning, needsPostgres, provisionVars } from "./provisioning.js";
+import {
+	databaseHostRuns,
+	databaseHosts,
+	databaseParts,
+	missingForProvisioning,
+	needsPostgres,
+	provisionVars,
+} from "./provisioning.js";
+import type { NodeRow } from "./registry.js";
 
 const config = {
 	DATABASE_URL: "postgres://colibri:p%40ss@postgres:5432/colibri",
@@ -41,6 +49,8 @@ describe("provisionVars", () => {
 			drain_minutes: 120,
 			postgres: true,
 			primary_host: "hel-1",
+			db_hosts: ["hel-1"],
+			primary_hosts: ["hel-1"],
 			replication_password: "repl",
 			tailscale_auth_key: "tskey-auth-x",
 			db_user: "colibri",
@@ -72,5 +82,81 @@ describe("missingForProvisioning", () => {
 			),
 		).toEqual(["TAILSCALE_AUTH_KEY", "POSTGRES_REPLICATION_PASSWORD", "DATABASE_URL (Postgres)"]);
 		expect(missingForProvisioning(config, ["voice"])).toEqual([]);
+	});
+});
+
+describe("database hosts", () => {
+	const row = (id: string, roles: NodeRow["roles"]): NodeRow => {
+		return {
+			id,
+			region: "eu",
+			roles,
+			publicUrl: `https://${id}.test`,
+			tailnetUrl: `http://${id}:3100`,
+			version: "1",
+			state: "active",
+			connections: 0,
+			activeCalls: 0,
+			heartbeatAt: null,
+			drainDeadline: null,
+		};
+	};
+
+	it("lists every host that can be primary, with the failover node's own database last", () => {
+		const main = { tailnetUrl: "http://hel-1:3100", standbyHosts: ["fsn-2"] };
+
+		expect(databaseHosts(main, ["api"])).toEqual({
+			dbHosts: ["hel-1", "fsn-2"],
+			primaryHosts: ["hel-1", "fsn-2"],
+		});
+		expect(databaseHosts(main, ["failover", "api"])).toEqual({
+			dbHosts: ["hel-1", "fsn-2", "postgres"],
+			primaryHosts: ["hel-1", "fsn-2"],
+		});
+	});
+
+	it("reads the credentials from a multi-host URL", () => {
+		expect(databaseParts("postgres://col:p%40ss@hel-1:5432,fsn-1:5432/colibri")).toEqual({
+			db_user: "col",
+			db_password: "p@ss",
+			db_name: "colibri",
+		});
+	});
+
+	it("points every node at all primary hosts when a failover node joins", () => {
+		const runs = databaseHostRuns(
+			{
+				DATABASE_URL: "postgres://col:pw@postgres:5432/colibri",
+				POSTGRES_REPLICATION_PASSWORD: "repl",
+				STACK_DIR: "/srv/colibri",
+			},
+			[
+				row("hel-1", ["main", "api"]),
+				row("fsn-1", ["failover", "api"]),
+				row("eu-2", ["api"]),
+				row("voice-1", ["voice"]),
+			],
+			"hel-1",
+		);
+		const byNode = Object.fromEntries(runs.map((run) => [run.node, run.vars]));
+
+		expect(byNode["hel-1"]).toMatchObject({
+			stack_dir: "/srv/colibri",
+			postgres: true,
+			database_url: "postgres://col:pw@fsn-1:5432,postgres:5432/colibri",
+			primary_hosts: "fsn-1",
+		});
+		expect(byNode["fsn-1"]).toMatchObject({
+			database_url: "postgres://col:pw@hel-1:5432,postgres:5432/colibri",
+			primary_hosts: "hel-1",
+		});
+		expect(byNode["eu-2"]).toMatchObject({
+			postgres: true,
+			database_url: "postgres://col:pw@hel-1:5432,fsn-1:5432/colibri",
+			primary_hosts: "hel-1,fsn-1",
+			primary_conninfo:
+				"host=hel-1,fsn-1 port=5432,5432 user=replicator password=repl target_session_attrs=read-write connect_timeout=5",
+		});
+		expect(byNode["voice-1"]).toMatchObject({ postgres: false });
 	});
 });

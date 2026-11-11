@@ -255,6 +255,10 @@ export const monitoringDeploy = async (admin: Admin, id: string): Promise<void> 
 	await runOrder(admin, { kind: "deployMonitoring", id: randomUUID(), node: id });
 };
 
+export const dbFailback = async (admin: Admin, node: string | undefined): Promise<void> => {
+	await runOrder(admin, { kind: "failback", id: randomUUID(), node: node ?? "" });
+};
+
 export const rollout = async (admin: Admin, paused: boolean): Promise<void> => {
 	await admin.setRolloutPaused(paused);
 	admin.print(paused ? "Rollouts are paused." : "Rollouts are running.");

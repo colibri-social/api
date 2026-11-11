@@ -7,8 +7,10 @@ import {
 	connectKuma,
 	createConfigStore,
 	createRegistry,
+	promoteLocal,
+	slotName,
 } from "@colibri-social/appview/cluster";
-import { openDatabase } from "@colibri-social/appview-db";
+import { hostUrls, openDatabase, pickPrimary, probeHost } from "@colibri-social/appview-db";
 import { SecretBox } from "@colibri-social/community";
 import {
 	type Admin,
@@ -16,6 +18,7 @@ import {
 	configList,
 	configSet,
 	configUnset,
+	dbFailback,
 	monitoringDeploy,
 	nodeAdd,
 	nodeList,
@@ -67,7 +70,9 @@ const USAGE = `colibri-admin, run it inside the AppView container of the main no
   config set <KEY> <value>
   config unset <KEY>
   config import <file|-> [--dry-run]
-  db copy --from <libSQL url> --to <Postgres url> [--truncate]`;
+  db copy --from <libSQL url> --to <Postgres url> [--truncate]
+  db failback [<node>]
+  db promote`;
 
 const fail = (message: string, code: number): never => {
 	process.stderr.write(`${message}\n`);
@@ -82,10 +87,69 @@ const required = (value: string | undefined, name: string): string => {
 	return value;
 };
 
+const promoteHere = async (): Promise<number> => {
+	const localUrl = process.env.LOCAL_POSTGRES_URL || process.env.DATABASE_READ_URL;
+	const databaseUrl = process.env.DATABASE_URL;
+	const nodeId = process.env.NODE_ID;
+
+	if (!localUrl || !databaseUrl || !nodeId) {
+		process.stderr.write(
+			"db promote runs on a failover node with LOCAL_POSTGRES_URL or DATABASE_READ_URL, DATABASE_URL and NODE_ID\n",
+		);
+
+		return 2;
+	}
+
+	const primary = pickPrimary(
+		await Promise.all(hostUrls(databaseUrl).map((url) => probeHost(url))),
+	);
+
+	if (primary) {
+		process.stderr.write(
+			"A primary still accepts writes. Fail over only when it's gone, or use db failback\n",
+		);
+
+		return 1;
+	}
+
+	const local = openDatabase({ url: localUrl, maxConnections: 1 });
+	const slots = await local.primary
+		.select({ id: local.tables.nodes.id, state: local.tables.nodes.state })
+		.from(local.tables.nodes)
+		.then((rows) =>
+			rows
+				.filter((row) => row.id !== nodeId && row.state !== "retired")
+				.map((row) => slotName(row.id)),
+		)
+		.catch(() => [] as string[])
+		.finally(() => local.close());
+
+	try {
+		const epoch = await promoteLocal({
+			localUrl,
+			nodeId,
+			slots,
+			log: { info: () => {}, warn: () => {} },
+		});
+
+		process.stdout.write(`Promoted this node's Postgres. The cluster is on epoch ${epoch}.\n`);
+
+		return 0;
+	} catch (error) {
+		process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+
+		return 1;
+	}
+};
+
 const runDbCommand = async (
 	command: string | undefined,
 	values: { from?: string | undefined; to?: string | undefined; truncate?: boolean },
 ): Promise<number> => {
+	if (command === "promote") {
+		return promoteHere();
+	}
+
 	if (command !== "copy" || !values.from || !values.to) {
 		process.stderr.write(`db copy needs --from and --to\n\n${USAGE}\n`);
 
@@ -158,7 +222,7 @@ const main = async (): Promise<void> => {
 		process.exit(values.help ? 0 : 2);
 	}
 
-	if (group === "db") {
+	if (group === "db" && command !== "failback") {
 		process.exit(await runDbCommand(command, values));
 	}
 
@@ -333,6 +397,8 @@ const main = async (): Promise<void> => {
 				return nodeRecover(admin, required(first, "<id>"));
 			case "node remove":
 				return nodeRemove(admin, { id: required(first, "<id>"), force: values.force });
+			case "db failback":
+				return dbFailback(admin, first);
 			case "rollout pause":
 				return rollout(admin, true);
 			case "rollout resume":

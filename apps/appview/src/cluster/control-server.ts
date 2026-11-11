@@ -28,6 +28,7 @@ export type ControlServerDeps = {
 	nodeId: string;
 	isMain: () => boolean;
 	draining?: () => boolean;
+	primaryDownSince?: () => number | null;
 	onFrame?: (nodeId: string, frame: NodeFrame) => void;
 	routes?: (request: IncomingMessage, response: ServerResponse) => boolean;
 	config?: (nodeId: string) => Promise<Record<string, string>>;
@@ -154,6 +155,7 @@ export class ControlServer {
 				node: this.deps.nodeId,
 				main: this.deps.isMain(),
 				draining: this.deps.draining?.() ?? false,
+				primaryDownSince: this.deps.primaryDownSince?.() ?? null,
 			} satisfies Alive);
 
 			return;

@@ -2,25 +2,15 @@ services:
   postgres:
     image: postgres:18-alpine
     restart: unless-stopped
-    command:
-      - postgres
-      - -c
-      - wal_level=replica
-      - -c
-      - max_wal_senders=16
-      - -c
-      - max_replication_slots=16
-      - -c
-      - wal_keep_size=2GB
-      - -c
-      - hot_standby=on
-      - -c
-      - max_connections=300
+    entrypoint: ["/bin/sh", "/replica-entrypoint.sh"]
     environment:
       POSTGRES_USER: colibri
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: colibri
       POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:?set POSTGRES_REPLICATION_PASSWORD}
+      REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      PRIMARY_HOST: ${PRIMARY_HOST:-}
+      REPLICATION_SLOT: ${REPLICATION_SLOT:-main}
     ports:
       - "${TAILNET_IP:-127.0.0.1}:5432:5432"
     healthcheck:
@@ -29,6 +19,7 @@ services:
       timeout: 2s
       retries: 15
     volumes:
+      - ./deploy/ansible/templates/replica-entrypoint.sh:/replica-entrypoint.sh:ro
       - ./deploy/postgres/primary-init.sh:/docker-entrypoint-initdb.d/10-replication.sh:ro
       - postgres-data:/var/lib/postgresql
 
@@ -43,7 +34,8 @@ services:
       HOST: 0.0.0.0
       PORT: 3000
       ROLES: ${ROLES:-main,api,live,voice}
-      DATABASE_URL: postgres://colibri:${POSTGRES_PASSWORD}@postgres:5432/colibri
+      DATABASE_URL: ${DATABASE_URL:-postgres://colibri:${POSTGRES_PASSWORD}@postgres:5432/colibri}
+      LOCAL_POSTGRES_URL: postgres://colibri:${POSTGRES_PASSWORD}@postgres:5432/colibri
       NODE_TAILNET_URL: http://${TAILNET_HOST:-localhost}:3100
       SSH_KEY_FILE: /run/secrets/colibri_ssh_key
       METRICS_HOST: 0.0.0.0

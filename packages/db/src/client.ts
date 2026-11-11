@@ -5,6 +5,8 @@ import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import { withReplicas } from "drizzle-orm/pg-core";
 import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 import pg from "pg";
+import { FollowingPool } from "./following.js";
+import { isMultiHost } from "./hosts.js";
 import { type AdvisoryLock, grantedLock, postgresAdvisoryLock } from "./lock.js";
 import { schema as pgTables } from "./schema/pg.js";
 import { type Schema, schema as sqliteTables } from "./schema/sqlite.js";
@@ -20,6 +22,8 @@ export type Database = {
 	dialect: Dialect;
 	ping: () => Promise<void>;
 	advisoryLock: (key: number) => AdvisoryLock;
+	primaryUrl: () => Promise<string | null>;
+	onPrimaryChange: (listener: (url: string) => void) => () => void;
 	waitForReplay: (lsn: string, timeoutMs: number) => Promise<boolean>;
 	close: () => Promise<void>;
 };
@@ -48,6 +52,8 @@ const openSqlite = ({ url, authToken }: DatabaseOptions): Database => {
 			await db.run(sql`select 1`);
 		},
 		advisoryLock: () => grantedLock(),
+		primaryUrl: async () => null,
+		onPrimaryChange: () => () => {},
 		waitForReplay: async () => true,
 		close: async () => client.close(),
 	};
@@ -55,7 +61,8 @@ const openSqlite = ({ url, authToken }: DatabaseOptions): Database => {
 
 const openPostgres = ({ url, maxConnections, readUrl }: DatabaseOptions): Database => {
 	const max = maxConnections ?? 20;
-	const pool = new pg.Pool({ connectionString: url, max });
+	const following = isMultiHost(url) ? new FollowingPool({ url, max }) : null;
+	const pool = following ?? new pg.Pool({ connectionString: url, max });
 	const primary = drizzlePg(pool, { schema: pgTables });
 	const readPool = readUrl ? new pg.Pool({ connectionString: readUrl, max }) : null;
 	const db = readPool
@@ -70,7 +77,10 @@ const openPostgres = ({ url, maxConnections, readUrl }: DatabaseOptions): Databa
 		ping: async () => {
 			await primary.execute(sql`select 1`);
 		},
-		advisoryLock: (key) => postgresAdvisoryLock(url, key),
+		advisoryLock: (key) =>
+			postgresAdvisoryLock(following ? () => following.primaryUrl() : url, key),
+		primaryUrl: async () => (following ? following.primaryUrl() : url),
+		onPrimaryChange: (listener) => following?.onSwitch(listener) ?? (() => {}),
 		waitForReplay: (lsn, timeoutMs) => {
 			return readPool ? waitForReplay(readPool, lsn, timeoutMs) : Promise.resolve(true);
 		},

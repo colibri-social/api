@@ -4,35 +4,33 @@
   gather_facts: false
   vars:
     stack_dir: /opt/colibri
+    detach: false
   tasks:
-    - name: Stop the AppView and Postgres
-      ansible.builtin.command: docker compose stop appview postgres
-      args:
-        chdir: "{{ stack_dir }}"
-      changed_when: true
-
-    - name: Point the replica at the current primary
+    - name: Point the replica at the primary hosts
       ansible.builtin.lineinfile:
         path: "{{ stack_dir }}/.env"
-        regexp: "^{{ item.key }}="
-        line: "{{ item.key }}={{ item.value }}"
-      loop:
-        - { key: PRIMARY_HOST, value: "{{ primary_host }}" }
-        - { key: DATABASE_URL, value: "postgres://{{ db_user }}:{{ db_password }}@{{ primary_host }}:5432/{{ db_name }}" }
-      no_log: true
+        regexp: "^PRIMARY_HOST="
+        line: "PRIMARY_HOST={{ primary_hosts }}"
 
-    - name: Drop the old data
-      ansible.builtin.command: docker compose rm -fsv postgres
-      args:
-        chdir: "{{ stack_dir }}"
-      changed_when: true
+    - name: Write the rebuild script
+      ansible.builtin.copy:
+        dest: "{{ stack_dir }}/rejoin-replica.sh"
+        mode: "0700"
+        content: |
+          #!/bin/sh
+          set -eu
+          cd "{{ stack_dir }}"
+          docker compose stop appview postgres
+          docker compose rm -fsv postgres
+          docker volume rm "$(basename "{{ stack_dir }}")_postgres-data" || true
+          docker compose up -d
 
-    - name: Remove the data volume
-      ansible.builtin.shell: docker volume rm "$(basename {{ stack_dir }})_postgres-data" || true
+    - name: Rebuild now
+      ansible.builtin.command: "{{ stack_dir }}/rejoin-replica.sh"
       changed_when: true
+      when: not (detach | bool)
 
-    - name: Start again, which takes a fresh base backup
-      ansible.builtin.command: docker compose up -d
-      args:
-        chdir: "{{ stack_dir }}"
+    - name: Rebuild after this run ends
+      ansible.builtin.shell: nohup setsid sh -c 'sleep 5 && {{ stack_dir }}/rejoin-replica.sh' >/dev/null 2>&1 &
       changed_when: true
+      when: detach | bool

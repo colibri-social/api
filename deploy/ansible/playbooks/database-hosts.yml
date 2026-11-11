@@ -1,0 +1,40 @@
+- name: Point a node at every Postgres host that can be primary
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    stack_dir: /opt/colibri
+    postgres: false
+  tasks:
+    - name: Write the database settings
+      ansible.builtin.lineinfile:
+        path: "{{ stack_dir }}/.env"
+        regexp: "^{{ item.key }}="
+        line: "{{ item.key }}={{ item.value }}"
+      loop: "{{ [{'key': 'DATABASE_URL', 'value': database_url}] + ([{'key': 'PRIMARY_HOST', 'value': primary_hosts}] if postgres | bool else []) }}"
+      no_log: true
+
+    - name: Point the running replica at the primary hosts
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - exec
+          - -T
+          - postgres
+          - psql
+          - -U
+          - "{{ db_user }}"
+          - -d
+          - "{{ db_name }}"
+          - -v
+          - ON_ERROR_STOP=1
+          - -c
+          - "ALTER SYSTEM SET primary_conninfo = '{{ primary_conninfo }}'"
+          - -c
+          - "SELECT pg_reload_conf()"
+      args:
+        chdir: "{{ stack_dir }}"
+      changed_when: true
+      when: postgres | bool
+      no_log: true

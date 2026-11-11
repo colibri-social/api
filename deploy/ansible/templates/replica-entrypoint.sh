@@ -1,27 +1,35 @@
 #!/bin/sh
 set -eu
 
-if [ ! -s "$PGDATA/PG_VERSION" ]; then
+conninfo() {
+	hosts=$(printf '%s' "$PRIMARY_HOST" | tr -d ' ')
+	ports=$(printf '%s' "$hosts" | awk -F, '{ for (i = 1; i <= NF; i++) printf "%s5432", (i > 1 ? "," : "") }')
+	printf 'host=%s port=%s user=replicator target_session_attrs=read-write connect_timeout=5' "$hosts" "$ports"
+}
+
+if [ -n "${PRIMARY_HOST:-}" ] && [ ! -s "$PGDATA/PG_VERSION" ]; then
 	mkdir -p "$PGDATA"
 	chown postgres:postgres "$PGDATA"
 	chmod 700 "$PGDATA"
-	until PGPASSWORD="$REPLICATION_PASSWORD" pg_isready -h "$PRIMARY_HOST" -p 5432 -U replicator; do
+	export PGPASSWORD="$REPLICATION_PASSWORD"
+	source=$(conninfo)
+
+	until psql -d "$source dbname=postgres" -Atc "select 1" >/dev/null 2>&1; do
 		sleep 2
 	done
-	export PGPASSWORD="$REPLICATION_PASSWORD"
 
-	if ! gosu postgres pg_basebackup -h "$PRIMARY_HOST" -p 5432 -U replicator \
-		-D "$PGDATA" -R -X stream -C -S "$REPLICATION_SLOT"; then
+	if ! gosu postgres pg_basebackup -d "$source" -D "$PGDATA" -R -X stream -C -S "$REPLICATION_SLOT"; then
 		find "$PGDATA" -mindepth 1 -delete
-		gosu postgres pg_basebackup -h "$PRIMARY_HOST" -p 5432 -U replicator \
-			-D "$PGDATA" -R -X stream -S "$REPLICATION_SLOT"
+		gosu postgres pg_basebackup -d "$source" -D "$PGDATA" -R -X stream -S "$REPLICATION_SLOT"
 	fi
 
 	unset PGPASSWORD
 fi
 
 exec docker-entrypoint.sh postgres \
+	-c wal_level=replica \
 	-c hot_standby=on \
+	-c wal_keep_size="${WAL_KEEP_SIZE:-2GB}" \
 	-c max_connections="${MAX_CONNECTIONS:-300}" \
 	-c max_wal_senders=16 \
 	-c max_replication_slots=16

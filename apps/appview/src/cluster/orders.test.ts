@@ -405,6 +405,43 @@ describe("Ansible orders", () => {
 		expect(run.mock.calls.map(([call]) => call.playbook)).toEqual(["bootstrap", "alloy"]);
 	});
 
+	it("spreads the database hosts once a failover node is provisioned", async () => {
+		const { deps: ansibleDeps, background } = withAnsible();
+		const spreadDatabaseHosts = vi.fn(async () => {});
+
+		await handleOrder(
+			{
+				...ansibleDeps,
+				provisioning: { ...ansibleDeps.provisioning, spreadDatabaseHosts },
+			},
+			{
+				kind: "provision",
+				id: "p6",
+				node: "fsn-1",
+				ip: "203.0.113.9",
+				region: "eu",
+				roles: ["failover", "api"],
+				publicUrl: "https://fsn-1.test",
+				joinToken: "t",
+			},
+		);
+		await background.mock.calls[0]?.[0];
+
+		expect(spreadDatabaseHosts).toHaveBeenCalledTimes(1);
+	});
+
+	it("passes failback to the main node's database", async () => {
+		const failback = vi.fn(async () => ({ ok: true, message: "hel-1 is the primary again" }));
+		const result = await handleOrder(
+			{ ...deps, failback },
+			{ kind: "failback", id: "f1", node: "" },
+		);
+
+		expect(result).toMatchObject({ ok: true, message: "hel-1 is the primary again" });
+		expect(failback).toHaveBeenCalledWith(undefined);
+		expect((await handleOrder(deps, { kind: "failback", id: "f2", node: "hel-1" })).ok).toBe(false);
+	});
+
 	it("refuses to remove a node that still runs", async () => {
 		const { deps: ansibleDeps, run } = withAnsible();
 

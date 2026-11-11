@@ -93,6 +93,8 @@ export const configSchema = z.object({
 	DATABASE_AUTH_TOKEN: optionalString,
 	DATABASE_MAX_CONNECTIONS: z.coerce.number().int().positive().default(20),
 	DATABASE_READ_URL: optionalString,
+	LOCAL_POSTGRES_URL: optionalString,
+	FAILOVER_AFTER_SECONDS: z.coerce.number().int().positive().default(60),
 
 	ROLES: rolesList,
 	NODE_ID: optionalString,

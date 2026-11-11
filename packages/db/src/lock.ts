@@ -40,7 +40,10 @@ export const grantedLock = (): AdvisoryLock => {
 	};
 };
 
-export const postgresAdvisoryLock = (url: string, key: number): AdvisoryLock => {
+export const postgresAdvisoryLock = (
+	url: string | (() => Promise<string>),
+	key: number,
+): AdvisoryLock => {
 	const listeners = new Set<(error: unknown) => void>();
 	let client: pg.Client | null = null;
 	let held = false;
@@ -67,7 +70,9 @@ export const postgresAdvisoryLock = (url: string, key: number): AdvisoryLock => 
 				return true;
 			}
 
-			const candidate = new pg.Client({ connectionString: url });
+			const candidate = new pg.Client({
+				connectionString: typeof url === "string" ? url : await url(),
+			});
 
 			await candidate.connect();
 
