@@ -1,11 +1,25 @@
+ARG MEDIASOUP_VERSION=3.26.0
+
 FROM node:24-bookworm-slim AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
 WORKDIR /app
 
+FROM base AS mediasoup-worker
+ARG MEDIASOUP_VERSION
+ARG TARGETARCH
+ADD https://github.com/versatica/mediasoup/releases/download/${MEDIASOUP_VERSION}/mediasoup-worker-${MEDIASOUP_VERSION}-linux-x64-kernel6.tgz /tmp/worker-amd64.tgz
+ADD https://github.com/versatica/mediasoup/releases/download/${MEDIASOUP_VERSION}/mediasoup-worker-${MEDIASOUP_VERSION}-linux-arm64-kernel6.tgz /tmp/worker-arm64.tgz
+RUN mkdir -p /opt/mediasoup \
+	&& tar -xzf "/tmp/worker-${TARGETARCH}.tgz" -C /opt/mediasoup \
+	&& env -i /opt/mediasoup/mediasoup-worker >/dev/null 2>&1; test $? -eq 41
+
 FROM base AS deps
+ARG MEDIASOUP_VERSION
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
+ENV MEDIASOUP_WORKER_BIN=/opt/mediasoup/mediasoup-worker
+COPY --from=mediasoup-worker /opt/mediasoup /opt/mediasoup
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
 		ca-certificates \
@@ -33,7 +47,9 @@ COPY packages/space/package.json packages/space/
 COPY packages/space-sync/package.json packages/space-sync/
 COPY packages/telemetry/package.json packages/telemetry/
 COPY packages/voice/package.json packages/voice/
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile \
+	&& installed="$(cd packages/voice && node -p "require('./node_modules/mediasoup/package.json').version")" \
+	&& if [ "$installed" != "$MEDIASOUP_VERSION" ]; then echo "mediasoup $installed is installed, set MEDIASOUP_VERSION in the Dockerfile to match" >&2; exit 1; fi
 
 FROM deps AS build
 COPY . .
@@ -55,6 +71,8 @@ RUN apt-get update \
 	&& rm -rf /var/lib/apt/lists/* /root/.cache \
 	&& useradd --system --create-home --shell /usr/sbin/nologin colibri
 
+ENV MEDIASOUP_WORKER_BIN=/opt/mediasoup/mediasoup-worker
+COPY --from=mediasoup-worker /opt/mediasoup /opt/mediasoup
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/apps ./apps
