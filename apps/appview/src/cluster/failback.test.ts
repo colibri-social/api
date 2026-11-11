@@ -35,7 +35,11 @@ const deps = (answers: Record<string, Record<string, unknown>>) => {
 		self: "fsn-1",
 		localUrl: "postgres://u:p@local:5432/db",
 		databaseUrl: "postgres://u:p@hel-1:5432,local:5432/db",
-		nodes: async () => [row("hel-1", ["main"]), row("fsn-1", ["failover"])],
+		nodes: async () => [
+			row("hel-1", ["main"]),
+			row("fsn-1", ["failover"]),
+			row("eu-2", ["api", "live"]),
+		],
 		yieldMain: vi.fn(async () => true),
 		log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 		connect: fakeConnect(answers),
@@ -57,6 +61,15 @@ describe("runFailback", () => {
 
 		expect(result.ok).toBe(false);
 		expect(result.message).toMatch(/isn't a streaming replica/);
+	});
+
+	it("refuses a switchover to a node that can't hold the main role", async () => {
+		const result = await runFailback(deps({ local: { recovery: false, epoch: 1 } }), "eu-2");
+
+		expect(result).toEqual({
+			ok: false,
+			message: "eu-2 can't hold the main role. Pick a node with the main or failover role",
+		});
 	});
 
 	it("refuses an unknown target and a node without a local Postgres", async () => {

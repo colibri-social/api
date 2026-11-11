@@ -255,6 +255,10 @@ export const monitoringDeploy = async (admin: Admin, id: string): Promise<void> 
 	await runOrder(admin, { kind: "deployMonitoring", id: randomUUID(), node: id });
 };
 
+export const dbSwitchover = async (admin: Admin, node: string): Promise<void> => {
+	await runOrder(admin, { kind: "failback", id: randomUUID(), node });
+};
+
 export const dbFailback = async (admin: Admin, node: string | undefined): Promise<void> => {
 	await runOrder(admin, { kind: "failback", id: randomUUID(), node: node ?? "" });
 };

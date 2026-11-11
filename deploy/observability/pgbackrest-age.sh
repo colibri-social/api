@@ -7,7 +7,7 @@ target="$directory/pgbackrest.prom"
 
 mkdir -p "$directory"
 
-stop=$(pgbackrest --stanza="$stanza" --output=json info | python3 -c '
+stop=$(${PGBACKREST_CMD:-pgbackrest} --stanza="$stanza" --output=json info | python3 -c '
 import json, sys
 backups = [b for s in json.load(sys.stdin) for b in s.get("backup", []) if not b.get("error")]
 print(max((b["timestamp"]["stop"] for b in backups), default=0))

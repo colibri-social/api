@@ -139,11 +139,25 @@ with the Ansible playbooks in `deploy/ansible`, which ship inside the image.
    TAILSCALE_AUTH_KEY=tskey-auth-...
    ```
 
-4. Start it:
+4. Start it with Caddy in front, which takes ports 80 and 443:
 
    ```sh
-   docker compose -f docker-compose.scaled.yml up -d
+   docker compose -f docker-compose.scaled.yml --profile caddy up -d
    ```
+
+   On a server where Traefik already holds those ports, for example under Dokploy, leave Caddy out
+   and route through Traefik with `deploy/traefik/compose.traefik.yml` instead:
+
+   ```sh
+   COMPOSE_FILE=docker-compose.scaled.yml:deploy/traefik/compose.traefik.yml
+   TRAEFIK_NETWORK=dokploy-network
+   TRAEFIK_CERT_RESOLVER=letsencrypt
+   API_HOST=api.example.com
+   ```
+
+   With those in `.env`, `docker compose up -d` joins the AppView to Traefik's network and routes
+   `PUBLIC_HOST` and `API_HOST` to it over HTTPS. `TRAEFIK_ENTRYPOINT` defaults to `websecure`.
+   The status page needs Caddy, so deploy Uptime Kuma to a node that runs it.
 
 5. Store the settings every node shares:
 
@@ -360,8 +374,47 @@ to replay everything, and the target is promoted with the next epoch and takes t
 The old primary is then rebuilt as its replica. Writes fail for the few seconds this takes, and
 sub nodes hold them in their write queue.
 
+`colibri-admin db switchover <node>` does the same in either direction, for example to move the
+primary to the failover box before maintenance on the Helsinki host. The target needs the `main`
+or `failover` role. A failover node keeps the main role while its own Postgres is the primary, and
+hands it back to a `main` node only after `db failback` has moved the primary there.
+
 On the main node, set `REPLICATION_SLOT` in `.env` to its ID with underscores, for example
 `hel_1`, so it can be rebuilt as a replica.
+
+### Backups
+
+The main node and the failover node run `ghcr.io/colibri-social/postgres:18` (`POSTGRES_IMAGE`),
+the official Postgres image with pgBackRest added. With `BACKUP_REPO_HOST` set, the primary
+archives its WAL to an SFTP repository, such as a Hetzner Storage Box, at most
+`ARCHIVE_TIMEOUT` seconds (default 300) behind. Backups are encrypted with `BACKUP_CIPHER_PASS`
+and compressed with zstd, and the last 4 full backups are kept.
+
+| Setting | Default | What it is |
+| --- | --- | --- |
+| `BACKUP_REPO_HOST` | unset | The SFTP host, for example `u123456.your-storagebox.de` |
+| `BACKUP_REPO_PORT` | `23` | The SFTP port. Storage Boxes use 23 |
+| `BACKUP_REPO_USER` | unset | The SFTP user |
+| `BACKUP_REPO_PATH` | `/colibri` | The repository folder |
+| `BACKUP_CIPHER_PASS` | unset | The encryption passphrase. Keep a copy outside the cluster, because backups can't be read without it |
+
+The SSH key goes in `data/backup/key` and `data/backup/key.pub` on the main node, without a
+passphrase. `node add` copies the key and the settings to the failover node and schedules its
+backups. On the main node, add the same schedule to cron:
+
+```sh
+30 2 * * * root STACK_DIR=/opt/colibri /opt/colibri/deploy/postgres/backup.sh >> /var/log/colibri-backup.log 2>&1
+*/15 * * * * root cd /opt/colibri && PGBACKREST_CMD="docker compose exec -T -u postgres postgres pgbackrest" deploy/observability/pgbackrest-age.sh
+```
+
+`backup.sh` runs only where Postgres is the primary. It creates the stanza on first use, takes a
+full backup on Sundays (UTC) and an incremental one on other days. Pass `full`, `diff` or `incr`
+to choose. The second line keeps the backup age metric up to date.
+
+To restore, start the Postgres image on an empty data volume with the same `PGBACKREST_*`
+settings, without `BACKUP_REPO_HOST` so the copy doesn't archive into the repository, and run
+`pgbackrest restore` as the `postgres` user before starting Postgres. Add `--type=time
+--target="2026-11-11 18:00:00+00"` to stop at a point in time.
 
 ### A local cluster
 

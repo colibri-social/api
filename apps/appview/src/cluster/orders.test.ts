@@ -431,13 +431,13 @@ describe("Ansible orders", () => {
 	});
 
 	it("passes failback to the main node's database", async () => {
-		const failback = vi.fn(async () => ({ ok: true, message: "hel-1 is the primary again" }));
+		const failback = vi.fn(async () => ({ ok: true, message: "hel-1 is the primary now" }));
 		const result = await handleOrder(
 			{ ...deps, failback },
 			{ kind: "failback", id: "f1", node: "" },
 		);
 
-		expect(result).toMatchObject({ ok: true, message: "hel-1 is the primary again" });
+		expect(result).toMatchObject({ ok: true, message: "hel-1 is the primary now" });
 		expect(failback).toHaveBeenCalledWith(undefined);
 		expect((await handleOrder(deps, { kind: "failback", id: "f2", node: "hel-1" })).ok).toBe(false);
 	});

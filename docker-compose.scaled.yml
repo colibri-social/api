@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:18-alpine
+    image: ${POSTGRES_IMAGE:-ghcr.io/colibri-social/postgres:18}
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/replica-entrypoint.sh"]
     environment:
@@ -11,6 +11,23 @@ services:
       REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
       PRIMARY_HOST: ${PRIMARY_HOST:-}
       REPLICATION_SLOT: ${REPLICATION_SLOT:-main}
+      PGBACKREST_STANZA: colibri
+      PGBACKREST_PG1_PATH: /var/lib/postgresql/18/docker
+      PGBACKREST_PG1_USER: colibri
+      PGBACKREST_REPO1_TYPE: sftp
+      PGBACKREST_REPO1_SFTP_HOST: ${BACKUP_REPO_HOST:-}
+      PGBACKREST_REPO1_SFTP_HOST_PORT: ${BACKUP_REPO_PORT:-23}
+      PGBACKREST_REPO1_SFTP_HOST_USER: ${BACKUP_REPO_USER:-}
+      PGBACKREST_REPO1_SFTP_HOST_KEY_CHECK_TYPE: accept-new
+      PGBACKREST_REPO1_SFTP_HOST_KEY_HASH_TYPE: sha256
+      PGBACKREST_REPO1_SFTP_PRIVATE_KEY_FILE: /var/lib/postgresql/.pgbackrest/key
+      PGBACKREST_REPO1_SFTP_PUBLIC_KEY_FILE: /var/lib/postgresql/.pgbackrest/key.pub
+      PGBACKREST_REPO1_PATH: ${BACKUP_REPO_PATH:-/colibri}
+      PGBACKREST_REPO1_RETENTION_FULL: "4"
+      PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
+      PGBACKREST_REPO1_CIPHER_PASS: ${BACKUP_CIPHER_PASS:-}
+      PGBACKREST_COMPRESS_TYPE: zst
+      PGBACKREST_START_FAST: "y"
     ports:
       - "${TAILNET_IP:-127.0.0.1}:5432:5432"
     healthcheck:
@@ -21,6 +38,7 @@ services:
     volumes:
       - ./deploy/ansible/templates/replica-entrypoint.sh:/replica-entrypoint.sh:ro
       - ./deploy/postgres/primary-init.sh:/docker-entrypoint-initdb.d/10-replication.sh:ro
+      - ./data/backup:/run/backup:ro
       - postgres-data:/var/lib/postgresql
 
   appview:
@@ -38,6 +56,7 @@ services:
       LOCAL_POSTGRES_URL: postgres://colibri:${POSTGRES_PASSWORD}@postgres:5432/colibri
       NODE_TAILNET_URL: http://${TAILNET_HOST:-localhost}:3100
       SSH_KEY_FILE: /run/secrets/colibri_ssh_key
+      BACKUP_SSH_KEY_FILE: /run/backup/key
       METRICS_HOST: 0.0.0.0
       BLOB_DISK_CACHE_DIR: /data/blob-cache
       NODE_SECRET_FILE: /data/node-secret
@@ -47,6 +66,7 @@ services:
       - "40000-40031:40000-40031/tcp"
     volumes:
       - appview-data:/data
+      - ./data/backup:/run/backup:ro
     secrets:
       - colibri_ssh_key
     depends_on:
@@ -55,6 +75,7 @@ services:
 
   caddy:
     image: caddy:2.10
+    profiles: [caddy]
     restart: unless-stopped
     environment:
       PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST}

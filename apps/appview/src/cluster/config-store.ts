@@ -28,6 +28,7 @@ export const NODE_LOCAL_KEYS: ReadonlySet<string> = new Set([
 	"REGISTRY_TOKEN",
 	"ANSIBLE_DIR",
 	"STACK_DIR",
+	"BACKUP_SSH_KEY_FILE",
 	"METRICS_HOST",
 	"METRICS_PORT",
 	"BLOB_DISK_CACHE_DIR",

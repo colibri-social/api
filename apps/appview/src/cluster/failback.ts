@@ -76,6 +76,13 @@ export const runFailback = async (
 		};
 	}
 
+	if (!target.roles.includes("main") && !target.roles.includes("failover")) {
+		return {
+			ok: false,
+			message: `${target.id} can't hold the main role. Pick a node with the main or failover role`,
+		};
+	}
+
 	const targetUrl = nodeDatabaseUrl(deps.databaseUrl, target);
 	const local = await single<{ recovery: boolean; epoch: number | null }>(
 		connect,
@@ -176,7 +183,7 @@ export const runFailback = async (
 	return {
 		ok: true,
 		message: handedOver
-			? `${target.id} is the primary again. This node's Postgres is rebuilt as its replica`
-			: `${target.id} is the primary again, but it hasn't taken the main role yet`,
+			? `${target.id} is the primary now. This node's Postgres is rebuilt as its replica`
+			: `${target.id} is the primary now, but it hasn't taken the main role yet`,
 	};
 };

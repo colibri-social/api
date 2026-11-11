@@ -1,0 +1,18 @@
+services:
+  appview:
+    networks:
+      - default
+      - traefik
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${TRAEFIK_NETWORK:-dokploy-network}
+      traefik.http.routers.colibri.rule: Host(`${PUBLIC_HOST:?set PUBLIC_HOST}`) || Host(`${API_HOST:-${PUBLIC_HOST}}`)
+      traefik.http.routers.colibri.entrypoints: ${TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.colibri.tls: "true"
+      traefik.http.routers.colibri.tls.certresolver: ${TRAEFIK_CERT_RESOLVER:-letsencrypt}
+      traefik.http.services.colibri.loadbalancer.server.port: "3000"
+
+networks:
+  traefik:
+    name: ${TRAEFIK_NETWORK:-dokploy-network}
+    external: true

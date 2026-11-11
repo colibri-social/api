@@ -26,7 +26,26 @@ if [ -n "${PRIMARY_HOST:-}" ] && [ ! -s "$PGDATA/PG_VERSION" ]; then
 	unset PGPASSWORD
 fi
 
-exec docker-entrypoint.sh postgres \
+backup_dir=/var/lib/postgresql/.pgbackrest
+mkdir -p "$backup_dir" /var/lib/postgresql/.ssh
+if [ -s /run/backup/key ]; then
+	cp /run/backup/key "$backup_dir/key"
+	chmod 600 "$backup_dir/key"
+fi
+if [ -s /run/backup/key.pub ]; then
+	cp /run/backup/key.pub "$backup_dir/key.pub"
+fi
+chown -R postgres:postgres "$backup_dir" /var/lib/postgresql/.ssh
+chmod 700 /var/lib/postgresql/.ssh
+
+set --
+if [ -n "${PGBACKREST_REPO1_SFTP_HOST:-}" ] && command -v pgbackrest >/dev/null 2>&1; then
+	set -- -c archive_mode=on \
+		-c "archive_command=pgbackrest --stanza=${PGBACKREST_STANZA:-colibri} archive-push %p" \
+		-c archive_timeout="${ARCHIVE_TIMEOUT:-300}"
+fi
+
+exec docker-entrypoint.sh postgres "$@" \
 	-c wal_level=replica \
 	-c hot_standby=on \
 	-c wal_keep_size="${WAL_KEEP_SIZE:-2GB}" \

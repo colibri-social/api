@@ -88,6 +88,32 @@ describe("createHandover", () => {
 		expect(yieldMain).toHaveBeenCalledWith("hel-1");
 	});
 
+	it("keeps the main role while its own Postgres is the primary", async () => {
+		let clock = NOW;
+		const yieldMain = vi.fn(async () => true);
+		const handover = createHandover({
+			registry: {
+				list: async () => [
+					row("hel-1", { roles: ["main"], heartbeatAt: new Date(clock).toISOString() }),
+				],
+			},
+			self: "fsn-1",
+			version: "2.0.0",
+			yieldMain,
+			busy: () => false,
+			holdsPrimary: async () => true,
+			log: { info: vi.fn(), warn: vi.fn() },
+			now: () => clock,
+			stableMs: 1_000,
+		});
+
+		await handover.tick();
+		clock += 5_000;
+
+		expect(await handover.tick()).toBe("holdingPrimary");
+		expect(yieldMain).not.toHaveBeenCalled();
+	});
+
 	it("waits for a main node on the same version", async () => {
 		const { handover, yieldMain, advance } = setup([
 			row("hel-1", { roles: ["main"], version: "1.9.0" }),

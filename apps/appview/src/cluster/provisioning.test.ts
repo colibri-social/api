@@ -19,9 +19,59 @@ const config = {
 	POSTGRES_REPLICATION_PASSWORD: "repl",
 	REGISTRY_USER: undefined,
 	REGISTRY_TOKEN: undefined,
+	POSTGRES_IMAGE: "ghcr.io/colibri-social/postgres:18",
+	BACKUP_REPO_HOST: undefined,
+	BACKUP_REPO_PORT: 23,
+	BACKUP_REPO_USER: undefined,
+	BACKUP_REPO_PATH: "/colibri",
+	BACKUP_CIPHER_PASS: undefined,
 };
 
 describe("provisionVars", () => {
+	it("gives only the failover node the backup settings and keys", () => {
+		const withBackups = {
+			...config,
+			BACKUP_REPO_HOST: "u1.your-storagebox.de",
+			BACKUP_REPO_USER: "u1",
+			BACKUP_CIPHER_PASS: "secret",
+		};
+		const keys = { key: "PRIVATE", publicKey: "PUBLIC" };
+		const target = (roles: ("failover" | "api" | "live")[]) => ({
+			node: "fsn-1",
+			region: "eu",
+			roles,
+			publicUrl: "https://fsn-1.nodes.colibri.social",
+		});
+
+		expect(
+			provisionVars(
+				withBackups,
+				{ tailnetUrl: "http://hel-1:3100" },
+				target(["failover", "api"]),
+				keys,
+			),
+		).toMatchObject({
+			backup_repo_host: "u1.your-storagebox.de",
+			backup_repo_port: 23,
+			backup_repo_user: "u1",
+			backup_repo_path: "/colibri",
+			backup_cipher_pass: "secret",
+			backup_key: "PRIVATE",
+			backup_public_key: "PUBLIC",
+		});
+		expect(
+			provisionVars(
+				withBackups,
+				{ tailnetUrl: "http://hel-1:3100" },
+				target(["api", "live"]),
+				keys,
+			),
+		).not.toHaveProperty("backup_repo_host");
+		expect(
+			provisionVars(withBackups, { tailnetUrl: "http://hel-1:3100" }, target(["failover"]), null),
+		).not.toHaveProperty("backup_repo_host");
+	});
+
 	it("describes the node and points it at the main node's database over the tailnet", () => {
 		expect(
 			provisionVars(
@@ -36,6 +86,7 @@ describe("provisionVars", () => {
 				},
 			),
 		).toEqual({
+			postgres_image: "ghcr.io/colibri-social/postgres:18",
 			node_id: "eu-2",
 			node_region: "eu",
 			node_roles: ["api", "live", "voice"],

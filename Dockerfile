@@ -62,6 +62,7 @@ COPY --from=build /app/package.json ./package.json
 COPY deploy/ansible ./deploy/ansible
 COPY deploy/uptime-kuma ./deploy/uptime-kuma
 COPY deploy/observability ./deploy/observability
+COPY deploy/postgres ./deploy/postgres
 
 RUN chmod +x apps/admin/dist/index.js \
 	&& ln -s /app/apps/admin/dist/index.js /usr/local/bin/colibri-admin \

@@ -41,8 +41,16 @@
         dest: "{{ stack_dir }}/caddy-sites/status.caddy"
         mode: "0644"
 
+    - name: Find the running services
+      ansible.builtin.command: docker compose ps --services --status running
+      args:
+        chdir: "{{ stack_dir }}"
+      register: running_services
+      changed_when: false
+
     - name: Reload Caddy
       ansible.builtin.command: docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
       args:
         chdir: "{{ stack_dir }}"
       changed_when: true
+      when: "'caddy' in running_services.stdout_lines"

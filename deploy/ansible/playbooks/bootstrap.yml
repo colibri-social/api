@@ -84,6 +84,45 @@
         mode: "0755"
       when: postgres | bool
 
+    - name: Create the backup key directory
+      ansible.builtin.file:
+        path: "{{ stack_dir }}/backup"
+        state: directory
+        mode: "0700"
+      when: postgres | bool
+
+    - name: Write the backup SSH key
+      ansible.builtin.copy:
+        content: "{{ item.content }}"
+        dest: "{{ stack_dir }}/backup/{{ item.name }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { name: key, content: "{{ backup_key | default('') }}", mode: "0600" }
+        - { name: key.pub, content: "{{ backup_public_key | default('') }}", mode: "0644" }
+      when: backup_repo_host is defined
+      no_log: true
+
+    - name: Copy the backup scripts
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ stack_dir }}/{{ item.dest }}"
+        mode: "0755"
+      loop:
+        - { src: ../../postgres/backup.sh, dest: backup.sh }
+        - { src: ../../observability/pgbackrest-age.sh, dest: pgbackrest-age.sh }
+      when: backup_repo_host is defined
+
+    - name: Schedule backups and the backup age check
+      ansible.builtin.copy:
+        dest: /etc/cron.d/colibri-backup
+        mode: "0644"
+        content: |
+          SHELL=/bin/sh
+          PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          30 2 * * * root STACK_DIR={{ stack_dir }} DB_USER={{ db_user }} {{ stack_dir }}/backup.sh >> /var/log/colibri-backup.log 2>&1
+          */15 * * * * root cd {{ stack_dir }} && PGBACKREST_CMD="docker compose exec -T -u postgres postgres pgbackrest" {{ stack_dir }}/pgbackrest-age.sh >/dev/null 2>&1
+      when: backup_repo_host is defined
+
     - name: Log in to the registry
       ansible.builtin.shell: echo "{{ registry_token }}" | docker login ghcr.io -u "{{ registry_user }}" --password-stdin
       when: registry_token is defined and registry_token

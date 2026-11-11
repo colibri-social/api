@@ -9,7 +9,13 @@ export const UNCLAIMED_MS = 30_000;
 
 export type DeferState = { unclaimedSince: number | null };
 
-export type HandoverOutcome = "none" | "busy" | "waiting" | "handedBack" | "failed";
+export type HandoverOutcome =
+	| "none"
+	| "busy"
+	| "holdingPrimary"
+	| "waiting"
+	| "handedBack"
+	| "failed";
 
 export type HandoverDeps = {
 	registry: Pick<Registry, "list">;
@@ -17,6 +23,7 @@ export type HandoverDeps = {
 	version: string;
 	yieldMain: (target: string) => Promise<boolean>;
 	busy: () => boolean;
+	holdsPrimary?: () => Promise<boolean>;
 	log: Pick<Logger, "info" | "warn">;
 	now?: () => number;
 	stableMs?: number;
@@ -81,6 +88,10 @@ export const createHandover = (deps: HandoverDeps): Handover => {
 		tick: async () => {
 			if (deps.busy()) {
 				return "busy";
+			}
+
+			if (await (deps.holdsPrimary?.() ?? Promise.resolve(false)).catch(() => false)) {
+				return "holdingPrimary";
 			}
 
 			const at = now();

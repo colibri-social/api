@@ -14,6 +14,11 @@ export type ProvisionTarget = {
 	workers?: number;
 };
 
+export type BackupKeys = {
+	key: string;
+	publicKey: string;
+};
+
 export type MainAddress = {
 	tailnetUrl: string;
 	standbyHosts?: string[];
@@ -61,11 +66,37 @@ export const provisionVars = (
 		| "POSTGRES_REPLICATION_PASSWORD"
 		| "REGISTRY_USER"
 		| "REGISTRY_TOKEN"
+		| "POSTGRES_IMAGE"
+		| "BACKUP_REPO_HOST"
+		| "BACKUP_REPO_PORT"
+		| "BACKUP_REPO_USER"
+		| "BACKUP_REPO_PATH"
+		| "BACKUP_CIPHER_PASS"
 	>,
 	main: MainAddress,
 	target: ProvisionTarget,
+	backupKeys: BackupKeys | null = null,
 ): Record<string, unknown> => {
+	const backups =
+		target.roles.includes("failover") &&
+		backupKeys !== null &&
+		config.BACKUP_REPO_HOST &&
+		config.BACKUP_REPO_USER &&
+		config.BACKUP_CIPHER_PASS
+			? {
+					backup_repo_host: config.BACKUP_REPO_HOST,
+					backup_repo_port: config.BACKUP_REPO_PORT,
+					backup_repo_user: config.BACKUP_REPO_USER,
+					backup_repo_path: config.BACKUP_REPO_PATH,
+					backup_cipher_pass: config.BACKUP_CIPHER_PASS,
+					backup_key: backupKeys.key,
+					backup_public_key: backupKeys.publicKey,
+				}
+			: {};
+
 	return {
+		postgres_image: config.POSTGRES_IMAGE,
+		...backups,
 		node_id: target.node,
 		node_region: target.region,
 		node_roles: target.roles,

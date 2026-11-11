@@ -84,7 +84,7 @@ export const createAppServer = (
 	app.use((req: Request, res: Response, next: (error?: unknown) => void) => {
 		const proxy = ctx.writeProxy;
 
-		if (!proxy || !proxy.forwarding || !isWrite(req) || ctx.drain.parked) {
+		if (!proxy?.forwarding || !isWrite(req) || ctx.drain.parked) {
 			next();
 
 			return;

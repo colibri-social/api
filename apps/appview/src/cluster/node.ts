@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { hostname } from "node:os";
 import { resolve } from "node:path";
 import type { NodeRole, NodeState, WriteMode } from "@colibri-social/appview-db";
+import pg from "pg";
 import type { AppContext } from "../context.js";
 import { resolveVersion } from "../routes/server.js";
 import { createAnsibleRunner } from "./ansible.js";
@@ -19,6 +20,7 @@ import { joinCluster, ownCredentials } from "./node-secret.js";
 import { type ClusterOrder, handleOrder } from "./orders.js";
 import { ALIVE_PATH, type Alive, aliveSchema, type DrainMode, type NodeFrame } from "./protocol.js";
 import {
+	type BackupKeys,
 	databaseHostRuns,
 	missingForProvisioning,
 	needsPostgres,
@@ -96,6 +98,15 @@ const startCloudflare = (ctx: AppContext): Cloudflare | null => {
 
 		return null;
 	}
+};
+
+const readBackupKeys = async (file: string): Promise<BackupKeys | null> => {
+	const [key, publicKey] = await Promise.all([
+		readFile(file, "utf8").catch(() => null),
+		readFile(`${file}.pub`, "utf8").catch(() => null),
+	]);
+
+	return key && publicKey ? { key, publicKey } : null;
 };
 
 export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNode | null> => {
@@ -371,6 +382,30 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 
 	kumaTimer?.unref?.();
 
+	const localUrl = config.LOCAL_POSTGRES_URL ?? config.DATABASE_READ_URL ?? null;
+
+	const localIsPrimary = async (): Promise<boolean> => {
+		if (!localUrl) {
+			return false;
+		}
+
+		const client = new pg.Client({ connectionString: localUrl, connectionTimeoutMillis: 3_000 });
+
+		client.on("error", () => {});
+
+		try {
+			await client.connect();
+
+			const result = await client.query<{ recovery: boolean }>(
+				"select pg_is_in_recovery() as recovery",
+			);
+
+			return result.rows[0]?.recovery === false;
+		} finally {
+			await client.end().catch(() => {});
+		}
+	};
+
 	const handover =
 		roles.has("failover") && !roles.has("main")
 			? createHandover({
@@ -379,6 +414,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 					version: address.version,
 					yieldMain: deps.yieldMain,
 					busy: () => rollout?.running ?? false,
+					holdsPrimary: localIsPrimary,
 					log,
 				})
 			: null;
@@ -397,7 +433,6 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 
 	handoverTimer?.unref?.();
 
-	const localUrl = config.LOCAL_POSTGRES_URL ?? config.DATABASE_READ_URL ?? null;
 	const postgresUrl = ctx.database.dialect === "postgres" ? config.DATABASE_URL : null;
 	const ownTailnetHost = new URL(address.tailnetUrl).hostname;
 
@@ -541,6 +576,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 										.map((node) => new URL(node.tailnetUrl).hostname),
 								},
 								target,
+								await readBackupKeys(config.BACKUP_SSH_KEY_FILE),
 							),
 						removeNode: (id) => registry.remove(id),
 						spreadDatabaseHosts: async () => {

@@ -6,6 +6,7 @@ import {
 	type Admin,
 	configImport,
 	dbFailback,
+	dbSwitchover,
 	formatTable,
 	monitoringDeploy,
 	nodeAdd,
@@ -151,6 +152,14 @@ describe("node commands", () => {
 
 		expect(admin.sendOrder).toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "deprovision", node: "eu-2", force: true }),
+		);
+	});
+
+	it("asks the main node to switch the primary over", async () => {
+		await dbSwitchover(admin, "fsn-1");
+
+		expect(admin.sendOrder).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "failback", node: "fsn-1" }),
 		);
 	});
 

@@ -62,10 +62,29 @@ services:
 {% if postgres %}
 
   postgres:
-    image: postgres:18-alpine
+    image: {{ postgres_image | default('ghcr.io/colibri-social/postgres:18') }}
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/replica-entrypoint.sh"]
     environment:
+{% if backup_repo_host is defined %}
+      PGBACKREST_STANZA: colibri
+      PGBACKREST_PG1_PATH: /var/lib/postgresql/18/docker
+      PGBACKREST_PG1_USER: {{ db_user | to_json }}
+      PGBACKREST_REPO1_TYPE: sftp
+      PGBACKREST_REPO1_SFTP_HOST: {{ backup_repo_host | to_json }}
+      PGBACKREST_REPO1_SFTP_HOST_PORT: "{{ backup_repo_port }}"
+      PGBACKREST_REPO1_SFTP_HOST_USER: {{ backup_repo_user | to_json }}
+      PGBACKREST_REPO1_SFTP_HOST_KEY_CHECK_TYPE: accept-new
+      PGBACKREST_REPO1_SFTP_HOST_KEY_HASH_TYPE: sha256
+      PGBACKREST_REPO1_SFTP_PRIVATE_KEY_FILE: /var/lib/postgresql/.pgbackrest/key
+      PGBACKREST_REPO1_SFTP_PUBLIC_KEY_FILE: /var/lib/postgresql/.pgbackrest/key.pub
+      PGBACKREST_REPO1_PATH: {{ backup_repo_path | to_json }}
+      PGBACKREST_REPO1_RETENTION_FULL: "4"
+      PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
+      PGBACKREST_REPO1_CIPHER_PASS: ${BACKUP_CIPHER_PASS}
+      PGBACKREST_COMPRESS_TYPE: zst
+      PGBACKREST_START_FAST: "y"
+{% endif %}
       PRIMARY_HOST: ${PRIMARY_HOST}
       REPLICATION_PASSWORD: ${REPLICATION_PASSWORD}
       REPLICATION_SLOT: ${REPLICATION_SLOT}
@@ -79,6 +98,7 @@ services:
       start_period: 6h
     volumes:
       - ./replica-entrypoint.sh:/replica-entrypoint.sh:ro
+      - ./backup:/run/backup:ro
       - postgres-data:/var/lib/postgresql
 {% endif %}
 
