@@ -1,7 +1,14 @@
 import sharp from "sharp";
 import type { AllowedMimeType } from "./mime.js";
 
-export const VARIANTS = ["thumbnail", "avatar", "banner", "spaceBanner", "full"] as const;
+export const VARIANTS = [
+	"thumbnail",
+	"timeline",
+	"avatar",
+	"banner",
+	"spaceBanner",
+	"full",
+] as const;
 
 export type Variant = (typeof VARIANTS)[number];
 
@@ -37,6 +44,7 @@ type Bounds = {
 
 const boundsFor = (variant: Exclude<Variant, "full">): Bounds => {
 	if (variant === "thumbnail") return { width: 320, height: 320, fit: "inside" };
+	if (variant === "timeline") return { width: 1280, height: 1280, fit: "inside" };
 	if (variant === "avatar") return { width: 256, height: 256, fit: "cover" };
 	if (variant === "spaceBanner") return { width: 1500, height: 750, fit: "cover" };
 	return { width: 1500, height: 500, fit: "cover" };

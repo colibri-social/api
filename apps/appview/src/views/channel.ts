@@ -1,4 +1,5 @@
 import type { BridgedAttribution, ReactionEmojiRef, Schema } from "@colibri-social/appview-db";
+import { isResizableImage, type Variant } from "@colibri-social/blobs";
 import {
 	type ActorAuthz,
 	type CategoryAudience,
@@ -138,14 +139,21 @@ export class ChannelViews {
 		private readonly actors: ActorViews,
 	) {}
 
-	private blobUrl(did: string, cid: string, space: string, viewer: string | null): string {
-		return this.actors.spaceBlobUrl(did, cid, space, viewer);
+	private blobUrl(
+		did: string,
+		cid: string,
+		space: string,
+		viewer: string | null,
+		variant?: Variant,
+	): string {
+		return this.actors.spaceBlobUrl(did, cid, space, viewer, variant);
 	}
 
-	private repoBlobUrl(did: string, cid: string): string {
+	private repoBlobUrl(did: string, cid: string, variant?: Variant): string {
 		const url = new URL("/xrpc/social.colibri.beta.blob.get", this.ctx.config.PUBLIC_URL);
 		url.searchParams.set("did", did);
 		url.searchParams.set("cid", cid);
+		if (variant) url.searchParams.set("variant", variant);
 		return url.toString();
 	}
 
@@ -161,7 +169,13 @@ export class ChannelViews {
 		const signAll = (attachments: readonly AttachmentView[]): AttachmentView[] =>
 			attachments.map(
 				(attachment) =>
-					({ ...attachment, url: asUri(this.signFor(attachment.url, viewer)) }) as AttachmentView,
+					({
+						...attachment,
+						url: asUri(this.signFor(attachment.url, viewer)),
+						...(attachment.previewUrl
+							? { previewUrl: asUri(this.signFor(attachment.previewUrl, viewer)) }
+							: {}),
+					}) as AttachmentView,
 			);
 		const author =
 			message.author.bridge && message.author.avatar
@@ -201,10 +215,15 @@ export class ChannelViews {
 			const cid = blobCid(item.blob);
 			const mimeType = item.blob?.mimeType;
 			if (!cid || !mimeType) continue;
+			const link = (variant?: Variant) =>
+				asUri(
+					fromRepo
+						? this.repoBlobUrl(author, cid, variant)
+						: this.blobUrl(author, cid, space, viewer, variant),
+				);
 			out.push({
-				url: asUri(
-					fromRepo ? this.repoBlobUrl(author, cid) : this.blobUrl(author, cid, space, viewer),
-				),
+				url: link(),
+				...(isResizableImage(mimeType) ? { previewUrl: link("timeline") } : {}),
 				name: item.name,
 				mimeType,
 				size: item.blob?.size,

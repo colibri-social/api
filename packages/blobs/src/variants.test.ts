@@ -39,6 +39,26 @@ describe("renderVariant", () => {
 		expect(rendered.mimeType).toBe("application/pdf");
 	});
 
+	it("fits a timeline preview inside 1280px as WebP", async () => {
+		const wide = await renderVariant(await stillImage(2560, 1000), "image/png", "timeline");
+		const tall = await renderVariant(await stillImage(900, 3000), "image/jpeg", "timeline");
+		const small = await renderVariant(await stillImage(640, 480), "image/png", "timeline");
+
+		expect(wide.mimeType).toBe("image/webp");
+		expect(await dimensionsOf(wide.bytes)).toEqual({ width: 1280, height: 500 });
+		expect(await dimensionsOf(tall.bytes)).toEqual({ width: 384, height: 1280 });
+		expect(await dimensionsOf(small.bytes)).toEqual({ width: 640, height: 480 });
+	});
+
+	it("keeps a timeline preview of an animated GIF animated", async () => {
+		const rendered = await renderVariant(await animatedGif(1600, 800, 3), "image/gif", "timeline");
+		const metadata = await sharp(rendered.bytes, { animated: true }).metadata();
+
+		expect(rendered.mimeType).toBe("image/gif");
+		expect(metadata.pages).toBe(3);
+		expect(metadata.width).toBe(1280);
+	});
+
 	it("constrains a thumbnail to a 320px max edge", async () => {
 		const bytes = await stillImage(1024, 512);
 		const rendered = await renderVariant(bytes, "image/png", "thumbnail");

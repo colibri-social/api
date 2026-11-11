@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Secp256k1Keypair } from "@atproto/crypto";
 import { type Database, openDatabase } from "@colibri-social/appview-db";
-import { BlobCache, BlobService } from "@colibri-social/blobs";
+import { BlobCache, BlobService, DiskVariantCache } from "@colibri-social/blobs";
 import {
 	admitCommunityWrites,
 	Bridges,
@@ -264,6 +264,17 @@ export const createContext = async (config: Config) => {
 			hostFor: async (did) => (await identity.resolveDid(did)).pds ?? config.PDS_URL,
 		},
 		cache: new BlobCache({ maxBytes: config.BLOB_CACHE_MAX_BYTES }),
+		...(config.BLOB_DISK_CACHE_MAX_BYTES > 0
+			? {
+					disk: new DiskVariantCache({
+						directory: config.BLOB_DISK_CACHE_DIR,
+						maxBytes: config.BLOB_DISK_CACHE_MAX_BYTES,
+					}),
+				}
+			: {}),
+		...(config.BLOB_RENDER_CONCURRENCY
+			? { renderConcurrency: config.BLOB_RENDER_CONCURRENCY }
+			: {}),
 	});
 
 	const gifs = config.KLIPY_API_KEY ? createGifsClient({ apiKey: config.KLIPY_API_KEY }) : null;

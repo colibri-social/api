@@ -9,6 +9,7 @@ services:
       HOST: 0.0.0.0
       PORT: 3000
       NODE_SECRET_FILE: /data/node-secret
+      BLOB_DISK_CACHE_DIR: /data/blob-cache
       METRICS_HOST: 0.0.0.0
     ports:
       - "${TAILNET_IP}:${CLUSTER_PORT}:${CLUSTER_PORT}"

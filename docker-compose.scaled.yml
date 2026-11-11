@@ -47,6 +47,8 @@ services:
       NODE_TAILNET_URL: http://${TAILNET_HOST:-localhost}:3100
       SSH_KEY_FILE: /run/secrets/colibri_ssh_key
       METRICS_HOST: 0.0.0.0
+      BLOB_DISK_CACHE_DIR: /data/blob-cache
+      NODE_SECRET_FILE: /data/node-secret
     ports:
       - "${TAILNET_IP:-127.0.0.1}:3100:3100"
       - "40000-40031:40000-40031/udp"

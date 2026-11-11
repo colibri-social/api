@@ -1,4 +1,5 @@
 import type { BridgedAttribution } from "@colibri-social/appview-db";
+import type { Variant } from "@colibri-social/blobs";
 import { mapWithConcurrency } from "@colibri-social/identity";
 import {
 	asDid,
@@ -125,11 +126,18 @@ export class ActorViews {
 		return { colibri, bsky };
 	}
 
-	spaceBlobUrl(did: string, cid: string, space: string, viewer: string | null): string {
+	spaceBlobUrl(
+		did: string,
+		cid: string,
+		space: string,
+		viewer: string | null,
+		variant?: Variant,
+	): string {
 		const url = new URL("/xrpc/social.colibri.beta.blob.get", this.ctx.config.PUBLIC_URL);
 		url.searchParams.set("did", did);
 		url.searchParams.set("cid", cid);
 		url.searchParams.set("space", space);
+		if (variant) url.searchParams.set("variant", variant);
 		return viewer ? this.signForViewer(url.toString(), viewer) : url.toString();
 	}
 

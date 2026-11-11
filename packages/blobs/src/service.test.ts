@@ -1,11 +1,35 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { cidForRawBytes } from "@atproto/lex-data";
 import type { SpaceClient, SpaceHostResolver } from "@colibri-social/space";
 import { XrpcError } from "@colibri-social/space";
 import sharp from "sharp";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BlobCache } from "./cache.js";
+import { DiskVariantCache } from "./disk-cache.js";
 import { BlobNotFoundError, BlobUpstreamError } from "./errors.js";
 import { BlobService } from "./service.js";
+
+const renderLoad = vi.hoisted(() => ({ current: 0, peak: 0 }));
+
+vi.mock("./variants.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./variants.js")>();
+
+	return {
+		...actual,
+		renderVariant: async (...args: Parameters<typeof actual.renderVariant>) => {
+			renderLoad.current += 1;
+			renderLoad.peak = Math.max(renderLoad.peak, renderLoad.current);
+
+			try {
+				return await actual.renderVariant(...args);
+			} finally {
+				renderLoad.current -= 1;
+			}
+		},
+	};
+});
 
 const DID = "did:plc:7fkdlwjqmzcuvvpjbztkyyyy";
 const HOST = "https://pds.test";
@@ -437,5 +461,105 @@ describe("BlobService", () => {
 		const result = await service.fetch({ did: DID, cid: blobCid });
 		expect(result).toMatchObject({ status: "stream", mimeType: "application/octet-stream" });
 		if (result.status === "stream") expect(joined(await drain(result.stream))).toEqual(blob);
+	});
+});
+
+describe("BlobService variants", () => {
+	let bytes: Uint8Array;
+	let cid: string;
+	let directory: string;
+
+	beforeEach(async () => {
+		bytes = new Uint8Array(
+			await sharp({
+				create: { width: 2000, height: 1000, channels: 3, background: { r: 9, g: 8, b: 7 } },
+			})
+				.png()
+				.toBuffer(),
+		);
+		cid = (await cidForRawBytes(bytes)).toString();
+		directory = await mkdtemp(join(tmpdir(), "colibri-variants-"));
+	});
+
+	afterEach(async () => {
+		await rm(directory, { recursive: true, force: true });
+	});
+
+	it("serves a variant from disk after a restart without fetching the original", async () => {
+		const first = fakeSpaceClient(() => new Response(bytes));
+		const before = new BlobService({
+			spaceClient: first.client,
+			hosts: staticHosts(),
+			disk: new DiskVariantCache({ directory }),
+		});
+		const rendered = await before.fetch({ did: DID, cid, space: SPACE, variant: "timeline" });
+
+		await new Promise((resolve) => setTimeout(resolve, 50));
+
+		const second = fakeSpaceClient(() => new Response(bytes));
+		const after = new BlobService({
+			spaceClient: second.client,
+			hosts: staticHosts(),
+			disk: new DiskVariantCache({ directory }),
+		});
+		const served = await after.fetch({ did: DID, cid, space: SPACE, variant: "timeline" });
+
+		expect(second.callCount()).toBe(0);
+		expect(served.status).toBe("ok");
+		expect(rendered.status).toBe("ok");
+
+		if (served.status === "ok" && rendered.status === "ok") {
+			expect(served.mimeType).toBe("image/webp");
+			expect(Buffer.from(served.bytes).equals(Buffer.from(rendered.bytes))).toBe(true);
+		}
+	});
+
+	it("renders each variant once for concurrent requests", async () => {
+		const { client, callCount } = fakeSpaceClient(() => new Response(bytes));
+		const service = new BlobService({ spaceClient: client, hosts: staticHosts() });
+		const results = await Promise.all(
+			Array.from({ length: 4 }, () =>
+				service.fetch({ did: DID, cid, space: SPACE, variant: "timeline" }),
+			),
+		);
+
+		expect(callCount()).toBe(1);
+		expect(results.every((result) => result.status === "ok")).toBe(true);
+	});
+
+	it("runs no more renders at once than allowed", async () => {
+		renderLoad.peak = 0;
+
+		const others = await Promise.all(
+			[1, 2, 3].map(async (shade) => {
+				const image = new Uint8Array(
+					await sharp({
+						create: { width: 1800, height: 900, channels: 3, background: { r: shade, g: 0, b: 0 } },
+					})
+						.png()
+						.toBuffer(),
+				);
+
+				return { image, cid: (await cidForRawBytes(image)).toString() };
+			}),
+		);
+		const byCid = new Map(others.map((other) => [other.cid, other.image]));
+		const client = {
+			getBlob: async (_space: string, _host: string, _did: string, blobCid: string) =>
+				new Response(byCid.get(blobCid)),
+		} as unknown as SpaceClient;
+		const service = new BlobService({
+			spaceClient: client,
+			hosts: staticHosts(),
+			renderConcurrency: 1,
+		});
+		const results = await Promise.all(
+			others.map((other) =>
+				service.fetch({ did: DID, cid: other.cid, space: SPACE, variant: "timeline" }),
+			),
+		);
+
+		expect(results.map((result) => result.status)).toEqual(["ok", "ok", "ok"]);
+		expect(renderLoad.peak).toBe(1);
 	});
 });

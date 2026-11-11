@@ -11,6 +11,7 @@ services:
       HOST: 0.0.0.0
       PORT: 3000
       DATABASE_URL: ${DATABASE_URL:-file:/data/colibri.db}
+      BLOB_DISK_CACHE_DIR: /data/blob-cache
     ports:
       - "40000-40031:40000-40031/udp"
       - "40000-40031:40000-40031/tcp"

@@ -29,6 +29,9 @@ export const NODE_LOCAL_KEYS: ReadonlySet<string> = new Set([
 	"STACK_DIR",
 	"METRICS_HOST",
 	"METRICS_PORT",
+	"BLOB_DISK_CACHE_DIR",
+	"BLOB_DISK_CACHE_MAX_BYTES",
+	"BLOB_RENDER_CONCURRENCY",
 ]);
 
 const sealedSchema = z.object({ c: z.string(), n: z.string() });

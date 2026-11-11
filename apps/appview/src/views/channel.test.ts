@@ -13,6 +13,7 @@ import { nextTid } from "@colibri-social/space";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AppContext } from "../context.js";
+import { verifyMediaGrant } from "../media-token.js";
 import { handleListSummaries } from "../routes/channel.js";
 import { ActorViews } from "./actor.js";
 import { ChannelViews } from "./channel.js";
@@ -30,6 +31,7 @@ const SECOND_THREAD_SKEY = "3lkthreadtest01";
 const SECOND_THREAD = threadSpace(COMMUNITY, SECOND_THREAD_SKEY);
 const NOW = "2026-08-23T00:00:00.000Z";
 const ATTACHMENT_CID = "bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiibsojllbf5xhqzy6a";
+const VIEWER = "did:plc:viewerpreviews";
 
 let database: TestDatabase;
 let ctx: AppContext;
@@ -888,6 +890,81 @@ describe("ChannelViews attachments", () => {
 		const [attachment] = messages[0]?.attachments ?? [];
 		expect(attachment?.url).toContain(`cid=${ATTACHMENT_CID}`);
 		expect(attachment?.url).not.toContain("object");
+	});
+
+	it("adds a timeline preview to images and none to other files", async () => {
+		const rkey = nextTid();
+
+		await putMessage(rkey, {
+			attachments: [
+				{
+					name: "shot.png",
+					blob: { $type: "blob", ref: { $link: ATTACHMENT_CID }, mimeType: "image/png", size: 1 },
+				},
+				{
+					name: "notes.pdf",
+					blob: {
+						$type: "blob",
+						ref: { $link: ATTACHMENT_CID },
+						mimeType: "application/pdf",
+						size: 1,
+					},
+				},
+			],
+		});
+
+		const { messages } = await views.messages(SPACE, null, { limit: 1 });
+		const [image, file] = messages[0]?.attachments ?? [];
+		const preview = new URL(String(image?.previewUrl));
+
+		expect(preview.searchParams.get("variant")).toBe("timeline");
+		expect(preview.searchParams.get("cid")).toBe(ATTACHMENT_CID);
+		expect(preview.searchParams.get("space")).toBe(SPACE);
+		expect(new URL(String(image?.url)).searchParams.has("variant")).toBe(false);
+		expect(file?.previewUrl).toBeUndefined();
+	});
+
+	it("signs the preview for the viewer the same way as the original", async () => {
+		const key = "11".repeat(32);
+
+		(ctx.config as unknown as Record<string, unknown>).SIGNING_KEY = key;
+
+		const rkey = nextTid();
+
+		await putMessage(rkey, {
+			attachments: [
+				{
+					name: "shot.png",
+					blob: { $type: "blob", ref: { $link: ATTACHMENT_CID }, mimeType: "image/png", size: 1 },
+				},
+			],
+		});
+
+		const { messages } = await views.messages(SPACE, null, { limit: 1 });
+		const signed = views.forViewer(
+			messages[0] as social.colibri.beta.channel.defs.MessageView,
+			VIEWER,
+		);
+		const [attachment] = signed.attachments;
+		const preview = new URL(String(attachment?.previewUrl));
+		const grant = (viewer: string) => {
+			return {
+				did: String(preview.searchParams.get("did")),
+				cid: ATTACHMENT_CID,
+				space: SPACE,
+				viewer,
+			};
+		};
+		const now = Math.floor(Date.now() / 1000);
+		const expiresAt = Number(preview.searchParams.get("exp"));
+		const signature = String(preview.searchParams.get("sig"));
+
+		expect(preview.searchParams.get("viewer")).toBe(VIEWER);
+		expect(preview.searchParams.get("variant")).toBe("timeline");
+		expect(verifyMediaGrant(key, grant(VIEWER), expiresAt, signature, now)).toBe(true);
+		expect(verifyMediaGrant(key, grant("did:plc:someoneelse"), expiresAt, signature, now)).toBe(
+			false,
+		);
 	});
 
 	it("passes the spoiler flag through and omits it when unset", async () => {

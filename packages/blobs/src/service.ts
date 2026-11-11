@@ -1,7 +1,9 @@
+import { availableParallelism } from "node:os";
 import type { SpaceClient, SpaceHostResolver, SpaceRefString } from "@colibri-social/space";
 import { XrpcError } from "@colibri-social/space";
 import type { BlobCacheEntry } from "./cache.js";
 import { BlobCache, blobCacheKey } from "./cache.js";
+import type { DiskVariantCache } from "./disk-cache.js";
 import { BlobNotFoundError, BlobRejectedError, BlobUpstreamError } from "./errors.js";
 import { isDownloadMimeType, sniffServedType } from "./mime.js";
 import { applyRange, parseRange } from "./range.js";
@@ -49,6 +51,8 @@ export type BlobServiceOptions = {
 	spaceClient: SpaceClient;
 	hosts: SpaceHostResolver;
 	cache?: BlobCache;
+	disk?: DiskVariantCache;
+	renderConcurrency?: number;
 	fetch?: typeof globalThis.fetch;
 	maxBlobBytes?: number;
 };
@@ -177,8 +181,16 @@ export class BlobService {
 	private readonly fetchImpl: typeof globalThis.fetch;
 	private readonly maxBlobBytes: number;
 	private readonly inflight = new Map<string, Promise<BlobCacheEntry | null>>();
+	private readonly rendering = new Map<string, Promise<BlobCacheEntry>>();
+	private readonly renderWaiters: (() => void)[] = [];
+	private readonly disk: DiskVariantCache | undefined;
+	private readonly renderConcurrency: number;
+	private renders = 0;
 
 	constructor(options: BlobServiceOptions) {
+		this.disk = options.disk;
+		this.renderConcurrency =
+			options.renderConcurrency ?? Math.max(1, Math.floor(availableParallelism() / 2));
 		this.spaceClient = options.spaceClient;
 		this.hosts = options.hosts;
 		this.cache = options.cache ?? new BlobCache();
@@ -192,6 +204,16 @@ export class BlobService {
 		const cached = this.cache.get({ ...key, variant });
 		if (cached) return toBlobResult(cached, params.range);
 
+		if (variant !== "full" && this.disk) {
+			const stored = await this.disk.get({ ...key, variant }).catch(() => undefined);
+
+			if (stored) {
+				this.cache.set({ ...key, variant }, stored);
+
+				return toBlobResult(stored, params.range);
+			}
+		}
+
 		const original = await this.original(key, variant !== "full", params.range ?? null);
 		if (original.kind === "stream") return toStreamResult(original, params.range ?? null);
 		if (variant === "full") return toBlobResult(original.entry, params.range);
@@ -199,10 +221,59 @@ export class BlobService {
 			throw new BlobRejectedError("mimeNotAllowed", "this blob has no previews");
 		}
 
-		const rendered = await renderVariant(original.entry.bytes, original.entry.mimeType, variant);
-		const entry: BlobCacheEntry = { bytes: rendered.bytes, mimeType: rendered.mimeType };
-		this.cache.set({ ...key, variant }, entry);
+		const entry = await this.render(key, variant, original.entry);
+
 		return toBlobResult(entry, params.range);
+	}
+
+	private render(
+		key: OriginalKey,
+		variant: Variant,
+		original: BlobCacheEntry,
+	): Promise<BlobCacheEntry> {
+		const id = blobCacheKey({ ...key, variant });
+		const pending = this.rendering.get(id);
+
+		if (pending) {
+			return pending;
+		}
+
+		const work = (async () => {
+			await this.renderSlot();
+
+			try {
+				const rendered = await renderVariant(original.bytes, original.mimeType, variant);
+				const entry: BlobCacheEntry = { bytes: rendered.bytes, mimeType: rendered.mimeType };
+
+				this.cache.set({ ...key, variant }, entry);
+				void this.disk?.set({ ...key, variant }, entry).catch(() => undefined);
+
+				return entry;
+			} finally {
+				this.renders -= 1;
+				this.renderWaiters.shift()?.();
+			}
+		})();
+
+		this.rendering.set(id, work);
+		void work.finally(() => this.rendering.delete(id)).catch(() => undefined);
+
+		return work;
+	}
+
+	private renderSlot(): Promise<void> {
+		if (this.renders < this.renderConcurrency) {
+			this.renders += 1;
+
+			return Promise.resolve();
+		}
+
+		return new Promise((resolve) => {
+			this.renderWaiters.push(() => {
+				this.renders += 1;
+				resolve();
+			});
+		});
 	}
 
 	private async original(

@@ -1,4 +1,5 @@
 export * from "./cache.js";
+export * from "./disk-cache.js";
 export * from "./errors.js";
 export * from "./mime.js";
 export * from "./range.js";

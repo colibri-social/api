@@ -215,6 +215,7 @@ export const configSchema = z.object({
 		.int()
 		.nonnegative()
 		.default(10 * 1024 * 1024 * 1024),
+	BLOB_RENDER_CONCURRENCY: z.coerce.number().int().positive().optional(),
 
 	VAPID_PUBLIC_KEY: optionalString,
 	VAPID_PRIVATE_KEY: optionalString,
