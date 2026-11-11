@@ -218,7 +218,13 @@ export const nodeKey = (id: string): string => {
 
 export const desiredMonitors = (nodes: readonly NodeRow[], apiUrl: string): DesiredMonitor[] => {
 	const monitors: DesiredMonitor[] = [
-		{ key: API_KEY, name: "API", url: healthUrl(apiUrl), active: true, group: API_GROUP },
+		{
+			key: API_KEY,
+			name: "API",
+			url: healthUrl(apiUrl),
+			active: true,
+			group: API_GROUP,
+		},
 	];
 
 	for (const node of [...nodes].sort((a, b) => a.id.localeCompare(b.id))) {
@@ -240,7 +246,13 @@ export const planMonitors = (
 	existing: readonly KumaMonitor[],
 	desired: readonly DesiredMonitor[],
 ): MonitorPlan => {
-	const plan: MonitorPlan = { add: [], rename: [], remove: [], pause: [], resume: [] };
+	const plan: MonitorPlan = {
+		add: [],
+		rename: [],
+		remove: [],
+		pause: [],
+		resume: [],
+	};
 	const wanted = new Map(desired.map((monitor) => [monitor.key, monitor]));
 	const kept = new Set<string>();
 
@@ -353,7 +365,11 @@ export const connectKuma = (options: {
 }): KumaApi => {
 	const socket =
 		options.socket ??
-		io(options.url, { transports: ["websocket"], reconnection: true, autoConnect: true });
+		io(options.url, {
+			transports: ["websocket"],
+			reconnection: true,
+			autoConnect: true,
+		});
 	let latest: KumaMonitor[] = [];
 	let latestMaintenances: KumaMaintenance[] = [];
 	let ready: Promise<void> | null = null;
@@ -512,7 +528,10 @@ export const connectKuma = (options: {
 		editIncident: async (slug, id, incident) => {
 			await authed();
 
-			const answer = await call("editIncident", slug, id, { pin: true, ...incident });
+			const answer = await call("editIncident", slug, id, {
+				pin: true,
+				...incident,
+			});
 
 			if (!answer.incident) {
 				throw new Error("Uptime Kuma didn't return the incident");
@@ -574,8 +593,7 @@ export const connectKuma = (options: {
 	};
 };
 
-export const STATUS_PAGE_DESCRIPTION =
-	"Live status of the servers that run Colibri. Each one is checked every minute.";
+export const STATUS_PAGE_DESCRIPTION = "Live status of the Colibri Quickwing network.";
 
 export const STATUS_PAGE_FOOTER =
 	"[colibri.social](https://colibri.social) · [Open Colibri](https://colibri.social/app)";
@@ -589,7 +607,11 @@ export const createKumaSync = (options: KumaSyncOptions) => {
 		const monitors = await options.api.monitors();
 		const groups = statusGroups(desired, monitors);
 		const css = await options.css();
-		const fingerprint = JSON.stringify({ groups, css, host: options.statusHost });
+		const fingerprint = JSON.stringify({
+			groups,
+			css,
+			host: options.statusHost,
+		});
 
 		if (fingerprint === savedPage) {
 			return;
