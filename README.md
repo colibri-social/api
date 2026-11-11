@@ -72,6 +72,15 @@ docker compose --profile updater up -d
 
 `IMAGE` picks another tag, `UPDATE_INTERVAL_SECONDS` another interval.
 
+## Telemetry
+
+Once a day, the main node sends an anonymous heartbeat to `COLIBRI_TELEMETRY_URL`. It holds a
+random instance ID, the version, flavor and roles, the database and Node major versions, the OS,
+whether voice is set up, and the number of nodes, Spaces, users seen in the last 30 days and voice
+minutes in the last day, each rounded to `0`, `1-10`, `11-100`, `101-1k`, `1k-10k` or `10k+`. The
+first start logs a notice, and the first heartbeat goes out an hour later. Set
+`COLIBRI_TELEMETRY_DISABLED=1` or `DO_NOT_TRACK=1` to turn it off.
+
 ## Running a cluster
 
 A cluster has one main node holding the Postgres primary and any number of sub, failover and

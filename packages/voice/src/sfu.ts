@@ -17,6 +17,7 @@ import {
 	type ProducerSnapshot,
 	type ServerVoiceState,
 	type TransportDirection,
+	type TransportSample,
 	type VoicePatch,
 	VoiceRoom,
 	type VoiceSharing,
@@ -24,7 +25,12 @@ import {
 	type VoiceStateOrigin,
 } from "./room.js";
 import { TypedEmitter } from "./typed-emitter.js";
-import { type PooledRouter, WorkerPool, type WorkerPoolLike } from "./worker-pool.js";
+import {
+	type PooledRouter,
+	WorkerPool,
+	type WorkerPoolLike,
+	type WorkerUsage,
+} from "./worker-pool.js";
 
 export type VoiceSfuEvents = {
 	"room-created": [{ channel: string }];
@@ -48,6 +54,13 @@ export type VoiceSfuEvents = {
 	"codec-unsupported": [{ channel: string; did: string; producerId: string }];
 	"speaking-changed": [{ channel: string; did: string; speaking: boolean }];
 	"voice-state-changed": [{ channel: string; did: string; origin: VoiceStateOrigin } & VoiceState];
+};
+
+export type VoiceSfuStats = {
+	calls: number;
+	participants: number;
+	transports: TransportSample[];
+	workers: WorkerUsage[];
 };
 
 export type VoiceSfuDependencies = {
@@ -236,6 +249,18 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 
 	supersede(channel: string, did: string): void {
 		this.rooms.get(channel)?.dropMedia(did);
+	}
+
+	async stats(): Promise<VoiceSfuStats> {
+		const rooms = [...this.rooms.values()];
+		const transports = (await Promise.all(rooms.map((room) => room.transportStats()))).flat();
+
+		return {
+			calls: rooms.length,
+			participants: rooms.reduce((total, room) => total + room.participantDids.length, 0),
+			transports,
+			workers: (await this.workerPool.usage?.().catch(() => [])) ?? [],
+		};
 	}
 
 	listParticipants(channel: string): string[] {

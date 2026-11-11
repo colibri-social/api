@@ -78,6 +78,14 @@ export type ServerVoiceState = {
 
 export type ModerationStore = Map<string, ServerVoiceState>;
 
+export type TransportSample = {
+	iceState: string;
+	recvBitrate: number;
+	sendBitrate: number;
+	lossReceived: number;
+	lossSent: number;
+};
+
 export type ParticipantLeftReason = "superseded" | "channelGone";
 
 export type VoiceRoomEvents = {
@@ -330,6 +338,27 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 
 	get participantDids(): string[] {
 		return [...this.participants.keys()];
+	}
+
+	async transportStats(): Promise<TransportSample[]> {
+		const transports = [...this.participants.values()].flatMap((participant) => [
+			...participant.transports.values(),
+		]);
+		const samples = await Promise.all(
+			transports.map(async (transport) => {
+				const [stats] = await transport.getStats().catch(() => []);
+
+				return {
+					iceState: transport.iceState,
+					recvBitrate: stats?.recvBitrate ?? 0,
+					sendBitrate: stats?.sendBitrate ?? 0,
+					lossReceived: stats?.rtpPacketLossReceived ?? 0,
+					lossSent: stats?.rtpPacketLossSent ?? 0,
+				};
+			}),
+		);
+
+		return samples;
 	}
 
 	get isClosed(): boolean {

@@ -32,7 +32,8 @@
 		"@atproto/lex-data": "catalog:",
 		"@atproto/space": "catalog:",
 		"@atproto/syntax": "catalog:",
-		"@colibri-social/space": "workspace:*"
+		"@colibri-social/space": "workspace:*",
+		"@opentelemetry/api": "catalog:"
 	},
 	"devDependencies": {
 		"@atproto/crypto": "catalog:"

@@ -27,6 +27,8 @@ export const NODE_LOCAL_KEYS: ReadonlySet<string> = new Set([
 	"REGISTRY_TOKEN",
 	"ANSIBLE_DIR",
 	"STACK_DIR",
+	"METRICS_HOST",
+	"METRICS_PORT",
 ]);
 
 const sealedSchema = z.object({ c: z.string(), n: z.string() });

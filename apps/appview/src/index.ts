@@ -1,6 +1,7 @@
 import { type AdvisoryLock, holdLock, type LockHolder } from "@colibri-social/appview-db";
 import { asDid, asSpaceRef } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
+import type { VoiceSfuStats } from "@colibri-social/voice";
 import { lt } from "drizzle-orm";
 import { ActivitySweeper } from "./activity.js";
 import { busAnnouncer, type EventMessage } from "./announce.js";
@@ -19,6 +20,7 @@ import { healOwnerRolePermissions } from "./heal.js";
 import { Jetstream } from "./jetstream.js";
 import { claimClockId, MAIN_LOCK_KEY } from "./locks.js";
 import { createLogger } from "./logger.js";
+import { observe, startMetrics } from "./metrics.js";
 import { migrationJobs } from "./migrations.js";
 import { connectPipeline } from "./pipeline.js";
 import { healProfilePolicies } from "./profile-policies.js";
@@ -26,6 +28,7 @@ import { resyncBrokenCids } from "./resync-broken-cids.js";
 import { resolveVersion } from "./routes/server.js";
 import { installFatalHandlers, startErrorReporting, stopErrorReporting } from "./sentry.js";
 import { createAppServer } from "./server.js";
+import { startTelemetry } from "./telemetry.js";
 import type { ParticipantRow } from "./voice-calls.js";
 import { EventServer } from "./ws/events.js";
 import { VoiceServer } from "./ws/voice.js";
@@ -73,6 +76,21 @@ const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<Main
 	activities.start();
 	handOvers.start();
 
+	const telemetry = startTelemetry({
+		database: ctx.database,
+		log: ctx.log,
+		enabled: ctx.config.telemetryEnabled,
+		url: ctx.config.COLIBRI_TELEMETRY_URL,
+		version: resolveVersion(),
+		flavor: ctx.config.APPVIEW_FLAVOR,
+		roles: ctx.config.ROLES,
+		voice: ctx.config.VOICE_ENABLED,
+		nodes: async () =>
+			ctx.clustered
+				? (await ctx.registry.list()).filter((node) => node.state !== "retired").length
+				: 1,
+	});
+
 	void healOwnerRolePermissions(ctx).catch((error: unknown) =>
 		ctx.log.warn({ err: error }, "heal.ownerPermissionsSweepFailed"),
 	);
@@ -112,11 +130,90 @@ const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<Main
 	return {
 		stop: async () => {
 			clearInterval(housekeeping);
+			telemetry.stop();
 			await jetstream.stop();
 			await activities.stop();
 			await handOvers.stop();
 		},
 	};
+};
+
+const WRITE_MODES = { normal: 0, queued: 1, readOnly: 2 } as const;
+
+const VOICE_STATS_TTL_MS = 5_000;
+
+const observeNode = (ctx: AppContext, events: EventServer, voice: VoiceServer): void => {
+	let voiceStats: { at: number; stats: Promise<VoiceSfuStats | null> } | null = null;
+
+	const sfuStats = (): Promise<VoiceSfuStats | null> => {
+		if (!ctx.voice) {
+			return Promise.resolve(null);
+		}
+
+		if (!voiceStats || Date.now() - voiceStats.at > VOICE_STATS_TTL_MS) {
+			voiceStats = { at: Date.now(), stats: ctx.voice.stats().catch(() => null) };
+		}
+
+		return voiceStats.stats;
+	};
+
+	observe("connections", () => [
+		{ value: events.connectionCount, attributes: { kind: "events" } },
+		{ value: voice.connectionCount, attributes: { kind: "voice" } },
+	]);
+	observe("drainState", () => [{ value: ctx.drain.parked ? 2 : ctx.drain.draining ? 1 : 0 }]);
+	observe("writeMode", () => [{ value: WRITE_MODES[ctx.writeProxy?.mode ?? "normal"] }]);
+	observe("writeQueue", () => [{ value: ctx.writeProxy?.waiting ?? 0 }]);
+
+	if (!ctx.voice) {
+		return;
+	}
+
+	observe("voiceCalls", async () => [{ value: (await sfuStats())?.calls ?? 0 }]);
+	observe("voiceParticipants", async () => [{ value: (await sfuStats())?.participants ?? 0 }]);
+	observe("sfuWorkerCpu", async () =>
+		((await sfuStats())?.workers ?? []).map((usage) => ({
+			value: usage.cpuSeconds,
+			attributes: { worker: usage.worker },
+		})),
+	);
+	observe("sfuBitrate", async () => {
+		const transports = (await sfuStats())?.transports ?? [];
+
+		return [
+			{
+				value: transports.reduce((total, sample) => total + sample.recvBitrate, 0),
+				attributes: { direction: "in" },
+			},
+			{
+				value: transports.reduce((total, sample) => total + sample.sendBitrate, 0),
+				attributes: { direction: "out" },
+			},
+		];
+	});
+	observe("sfuPacketLoss", async () => {
+		const transports = (await sfuStats())?.transports ?? [];
+
+		return [
+			{
+				value: Math.max(0, ...transports.map((sample) => sample.lossReceived)),
+				attributes: { direction: "in" },
+			},
+			{
+				value: Math.max(0, ...transports.map((sample) => sample.lossSent)),
+				attributes: { direction: "out" },
+			},
+		];
+	});
+	observe("sfuTransports", async () => {
+		const states = new Map<string, number>();
+
+		for (const sample of (await sfuStats())?.transports ?? []) {
+			states.set(sample.iceState, (states.get(sample.iceState) ?? 0) + 1);
+		}
+
+		return [...states].map(([state, value]) => ({ value, attributes: { ice: state } }));
+	});
 };
 
 const main = async (): Promise<void> => {
@@ -180,6 +277,17 @@ const main = async (): Promise<void> => {
 		onWriteMode: (mode) => events.announceWriteState(mode),
 		app: server.router,
 	});
+
+	const metricsHandle =
+		config.METRICS_PORT > 0
+			? startMetrics({
+					host: config.METRICS_HOST,
+					port: config.METRICS_PORT,
+					attributes: { node: ctx.nodeId, region: config.NODE_REGION ?? "default" },
+				})
+			: null;
+
+	observeNode(ctx, events, voice);
 
 	if (cluster?.parked) {
 		ctx.drain.park();
@@ -317,6 +425,7 @@ const main = async (): Promise<void> => {
 		await step("clock", () => clockLock?.release());
 		await step("voice", () => voice.close());
 		await step("http", () => http.close());
+		await step("metrics", () => metricsHandle?.stop());
 		await step("context", () => ctx.close());
 
 		clearTimeout(deadline);

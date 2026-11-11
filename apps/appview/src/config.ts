@@ -242,6 +242,10 @@ export const configSchema = z.object({
 		.or(z.literal("").transform(() => undefined)),
 
 	SENTRY_DSN: optionalString,
+	SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
+	METRICS_HOST: z.string().trim().min(1).default("127.0.0.1"),
+	METRICS_PORT: z.coerce.number().int().min(0).max(65535).default(9464),
+	COLIBRI_TELEMETRY_URL: z.url().default("https://telemetry.colibri.social/v1/heartbeat"),
 	ADMIN_PASSWORD: optionalString,
 
 	COLIBRI_TELEMETRY_DISABLED: optOut,

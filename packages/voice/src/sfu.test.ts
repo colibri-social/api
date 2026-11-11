@@ -258,3 +258,38 @@ describe("VoiceSfu stored moderation", () => {
 		expect(sfu.getVoiceState(CHANNEL_A, "did:plc:a")).toMatchObject({ serverMuted: false });
 	});
 });
+
+describe("VoiceSfu stats", () => {
+	it("reports calls, participants, transports and worker CPU", async () => {
+		const workerPool = {
+			...fakeWorkerPool(),
+			usage: vi.fn(async () => [{ worker: 0, cpuSeconds: 2 }]),
+		};
+		const sfu = await VoiceSfu.create({ roomGraceMs: 1_000 }, { workerPool });
+
+		await sfu.createTransport(CHANNEL_A, "did:plc:a", "send");
+		await sfu.createTransport(CHANNEL_A, "did:plc:b", "recv");
+
+		expect(await sfu.stats()).toEqual({
+			calls: 1,
+			participants: 2,
+			transports: [
+				{
+					iceState: "completed",
+					recvBitrate: 64_000,
+					sendBitrate: 32_000,
+					lossReceived: 0.01,
+					lossSent: 0,
+				},
+				{
+					iceState: "completed",
+					recvBitrate: 64_000,
+					sendBitrate: 32_000,
+					lossReceived: 0.01,
+					lossSent: 0,
+				},
+			],
+			workers: [{ worker: 0, cpuSeconds: 2 }],
+		});
+	});
+});

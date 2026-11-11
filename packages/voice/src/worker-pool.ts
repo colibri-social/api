@@ -27,8 +27,14 @@ export interface RouterProvider {
 	createRouter(options: RouterOptions, placement?: RouterPlacement): Promise<PooledRouter>;
 }
 
+export type WorkerUsage = {
+	worker: number;
+	cpuSeconds: number;
+};
+
 export interface WorkerPoolLike extends RouterProvider {
 	close(): Promise<void>;
+	usage?(): Promise<WorkerUsage[]>;
 }
 
 export type WorkerPoolEvents = {
@@ -171,6 +177,18 @@ export class WorkerPool extends TypedEmitter<WorkerPoolEvents> implements Worker
 		const basePort = this.listen.basePort;
 
 		return this.slots.map((_, index) => basePort + index);
+	}
+
+	async usage(): Promise<WorkerUsage[]> {
+		const samples = await Promise.all(
+			this.slots.map(async (slot, worker) => {
+				const usage = await slot.worker.getResourceUsage().catch(() => null);
+
+				return usage ? [{ worker, cpuSeconds: (usage.ru_utime + usage.ru_stime) / 1000 }] : [];
+			}),
+		);
+
+		return samples.flat();
 	}
 
 	async createRouter(

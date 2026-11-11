@@ -1,5 +1,6 @@
 import type { IceServer } from "@colibri-social/voice";
 import { z } from "zod";
+import { count } from "./metrics.js";
 
 export const TURN_CREDENTIAL_TTL_SECONDS = 24 * 60 * 60;
 
@@ -67,11 +68,14 @@ export const cloudflareTurn = (options: CloudflareTurnOptions): TurnCredentials 
 
 				if (!response.ok) {
 					options.log.warn({ status: response.status }, "voice.turnCredentialsFailed");
+					count("turnCredentials", { outcome: "failed" });
 
 					return [];
 				}
 
 				const body = responseSchema.parse(await response.json());
+
+				count("turnCredentials", { outcome: "issued" });
 
 				return body.iceServers.flatMap((server) => {
 					const kept = withoutBlockedPorts(server);
@@ -80,6 +84,7 @@ export const cloudflareTurn = (options: CloudflareTurnOptions): TurnCredentials 
 				});
 			} catch (error) {
 				options.log.warn({ err: error }, "voice.turnCredentialsFailed");
+				count("turnCredentials", { outcome: "failed" });
 
 				return [];
 			}

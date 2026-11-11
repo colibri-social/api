@@ -86,6 +86,10 @@ export function createFakeTransport() {
 		id: id("transport"),
 		connect: vi.fn(async () => {}),
 		setMaxIncomingBitrate: vi.fn(async (_bitrate: number) => {}),
+		iceState: "completed",
+		getStats: vi.fn(async () => [
+			{ recvBitrate: 64_000, sendBitrate: 32_000, rtpPacketLossReceived: 0.01 },
+		]),
 		close: vi.fn(() => {
 			for (const producer of producers.values()) producer.emit("transportclose");
 			emitter.emit("transportclose");
@@ -160,6 +164,7 @@ export function createFakeWorker(pid: number, options: { autoExit?: boolean } = 
 		}),
 		exitSubprocess,
 		createRouter: vi.fn(async () => createFakeRouter()),
+		getResourceUsage: vi.fn(async () => ({ ru_utime: 1_500, ru_stime: 500 })),
 		createWebRtcServer: vi.fn(async (options: unknown) => ({
 			id: id("webrtc-server"),
 			options,

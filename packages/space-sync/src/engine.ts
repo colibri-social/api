@@ -1,5 +1,6 @@
 import type { KemKeyResolver, SpaceClient, SpaceCredentials } from "@colibri-social/space";
 import { SpaceCredentialError, XrpcError } from "@colibri-social/space";
+import { SpanStatusCode, trace } from "@opentelemetry/api";
 import { Emitter } from "./emitter.js";
 import { KeyedWorkQueue } from "./queue.js";
 import { RepoSync } from "./repo-sync.js";
@@ -62,6 +63,8 @@ const REGISTRATION_RETRY_BASE_MS = 5_000;
 const REGISTRATION_RETRY_MAX_MS = 60_000;
 const DEFAULT_RENEW_MARGIN_MS = 120_000;
 const DEFAULT_CHASE_ATTEMPTS = 3;
+
+const tracer = trace.getTracer("colibri-space-sync");
 
 const backoffFor = (failures: number, maxMs: number) =>
 	Math.min(maxMs, 2 ** Math.min(failures, 10) * 1000);
@@ -520,8 +523,33 @@ export class SpaceSyncEngine {
 		this.emit("spaceDeleted", space);
 	}
 
-	private async syncOne(key: string): Promise<void> {
+	private syncOne(key: string): Promise<void> {
 		const { space, author } = decodeKey(key);
+
+		return tracer.startActiveSpan(
+			"space.syncRepo",
+			{ attributes: { "space.uri": space, "repo.did": author } },
+			async (span) => {
+				try {
+					return await this.syncRepo(key, space, author);
+				} catch (error) {
+					span.setStatus({ code: SpanStatusCode.ERROR });
+
+					throw error;
+				} finally {
+					span.end();
+				}
+			},
+		);
+	}
+
+	get queueStats(): { pending: number; running: number } {
+		const { pending, running } = this.queue.stats;
+
+		return { pending, running };
+	}
+
+	private async syncRepo(key: string, space: string, author: string): Promise<void> {
 		const target = this.targets.get(key);
 		const startedAt = Date.now();
 

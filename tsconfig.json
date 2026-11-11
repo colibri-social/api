@@ -13,6 +13,7 @@
 		{ "path": "./packages/embeds" },
 		{ "path": "./packages/emoji" },
 		{ "path": "./packages/voice" },
+		{ "path": "./packages/telemetry" },
 		{ "path": "./packages/bridge-core" },
 		{ "path": "./packages/bridge-discord" },
 		{ "path": "./apps/appview" },

@@ -4,6 +4,7 @@ import { authVerifiers } from "./auth.js";
 import { isWrite } from "./cluster/write-proxy.js";
 import type { AppContext } from "./context.js";
 import { corsMiddleware } from "./cors.js";
+import { record, xrpcMethod } from "./metrics.js";
 import { registerActorRoutes } from "./routes/actor.js";
 import { registerActorWriteRoutes } from "./routes/actor-write.js";
 import { asyncHandler } from "./routes/async-handler.js";
@@ -60,6 +61,25 @@ export const createAppServer = (
 	});
 
 	const app = server.routes;
+	app.use((req: Request, res: Response, next: () => void) => {
+		const method = xrpcMethod(req.path);
+
+		if (!method) {
+			next();
+
+			return;
+		}
+
+		const started = performance.now();
+
+		res.once("finish", () => {
+			record("xrpcDuration", (performance.now() - started) / 1000, {
+				method: res.statusCode === 501 ? "other" : method,
+				status: res.statusCode,
+			});
+		});
+		next();
+	});
 	app.use(corsMiddleware(ctx.config.corsOrigins));
 	app.use((req: Request, res: Response, next: (error?: unknown) => void) => {
 		const proxy = ctx.writeProxy;

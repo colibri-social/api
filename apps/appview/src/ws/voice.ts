@@ -4,15 +4,19 @@ import { ServiceAuthError } from "@colibri-social/identity";
 import { asDid, asSpaceRef, SPACE_TYPES, social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import type { VoiceSfu } from "@colibri-social/voice";
+import { trace } from "@opentelemetry/api";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { AppContext } from "../context.js";
 import { fireAndForget } from "../fire-and-forget.js";
+import { record } from "../metrics.js";
 import { participantStateIn, voiceStateIn } from "../views/voice-state.js";
 import type { VoiceCommand } from "../voice-calls.js";
 import { bearerToken, selectSubprotocol } from "./auth.js";
 import type { ServerFrame } from "./events.js";
 import { channelTopic, TopicIndex } from "./topics.js";
 import { candidateOf, type Migration, pickTarget, type RttResult } from "./voice-migration.js";
+
+const tracer = trace.getTracer("colibri-appview");
 
 const VOICE_PATH = "/xrpc/social.colibri.beta.voice.subscribeSignals";
 const HEARTBEAT_MS = 30_000;
@@ -511,7 +515,20 @@ export class VoiceServer {
 
 		connection.channel = frame.channel;
 		this.topics.subscribe(connection, [channelTopic(frame.channel)]);
-		await voice.join(frame.channel, connection.did);
+		const joinStarted = performance.now();
+
+		await tracer.startActiveSpan(
+			"voice.join",
+			{ attributes: { "voice.channel": frame.channel } },
+			async (span) => {
+				try {
+					await voice.join(frame.channel, connection.did);
+				} finally {
+					span.end();
+				}
+			},
+		);
+		record("voiceJoinDuration", (performance.now() - joinStarted) / 1000);
 		this.send(connection, {
 			$type: "social.colibri.beta.voice.defs#joined",
 			channel: frame.channel,
@@ -695,10 +712,18 @@ export class VoiceServer {
 		}
 
 		try {
-			const transport = await voice.createTransport(
-				connection.channel,
-				connection.did,
-				frame.direction,
+			const channel = connection.channel;
+			const direction = frame.direction;
+			const transport = await tracer.startActiveSpan(
+				"voice.createTransport",
+				{ attributes: { "voice.channel": channel, "voice.direction": direction } },
+				async (span) => {
+					try {
+						return await voice.createTransport(channel, connection.did, direction);
+					} finally {
+						span.end();
+					}
+				},
 			);
 			const iceServers = [...(await this.ctx.turn.iceServers()), ...voice.iceServers];
 			this.send(connection, {

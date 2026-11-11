@@ -8,6 +8,38 @@ let reporting = false;
 let fatalLogger: Logger | undefined;
 let handlingFatal = false;
 
+export const SLOW_TRANSACTION_SECONDS = 1;
+
+type TransactionLike = {
+	start_timestamp?: number;
+	timestamp?: number;
+	contexts?: { trace?: { status?: string; data?: Record<string, unknown> } };
+};
+
+export const skipsTracing = (name: string, attributes: Record<string, unknown> = {}): boolean => {
+	const path = String(attributes["url.path"] ?? attributes["http.target"] ?? "");
+
+	return name.endsWith("/health") || path === "/health" || path.startsWith("/health?");
+};
+
+export const keepsTransaction = (
+	event: TransactionLike,
+	sampleRate: number,
+	random: () => number = Math.random,
+): boolean => {
+	const duration = (event.timestamp ?? 0) - (event.start_timestamp ?? 0);
+	const trace = event.contexts?.trace;
+	const code = Number(trace?.data?.["http.response.status_code"] ?? 0);
+	const failed =
+		code >= 500 ||
+		(code === 0 &&
+			trace?.status !== undefined &&
+			trace.status !== "ok" &&
+			trace.status !== "unset");
+
+	return failed || duration >= SLOW_TRANSACTION_SECONDS || random() < sampleRate;
+};
+
 export const startErrorReporting = (config: Config, release: string): boolean => {
 	if (!config.SENTRY_DSN) return false;
 
@@ -15,11 +47,24 @@ export const startErrorReporting = (config: Config, release: string): boolean =>
 		dsn: config.SENTRY_DSN,
 		environment: config.NODE_ENV,
 		release,
-		tracesSampleRate: 0,
 		sendDefaultPii: false,
+		enableLogs: true,
+		integrations: [Sentry.pinoIntegration({ log: { levels: ["info", "warn", "error", "fatal"] } })],
+		tracesSampler: ({ name, attributes }) => {
+			return skipsTracing(name, attributes ?? {}) ? 0 : 1;
+		},
+		beforeSendTransaction: (event) => {
+			return keepsTransaction(event, config.SENTRY_TRACES_SAMPLE_RATE) ? event : null;
+		},
 	});
 	Sentry.setTag("appview.flavor", config.APPVIEW_FLAVOR);
 	Sentry.setTag("appview.did", config.APPVIEW_DID);
+
+	if (config.NODE_ID) {
+		Sentry.setTag("node.id", config.NODE_ID);
+		Sentry.setTag("node.region", config.NODE_REGION ?? "default");
+		Sentry.setTag("node.roles", config.ROLES.join(","));
+	}
 
 	reporting = true;
 	return true;

@@ -3,11 +3,14 @@ import {
 	createSenders,
 	type DeliveryOptions,
 	deliverRead,
+	type PushSender,
 	type ReadFanout,
 	resolveReadTarget,
 	type Senders,
 } from "@colibri-social/notifications";
+import { SpanStatusCode, trace } from "@opentelemetry/api";
 import type { AppContext } from "./context.js";
+import { count } from "./metrics.js";
 import { notificationDeps } from "./notification-deps.js";
 
 export const MARK_READ_NSID = "social.colibri.beta.notification.markReadFromNotification";
@@ -28,9 +31,41 @@ export const markReadUrl = (publicUrl: string): string =>
 
 const deliveries = new WeakMap<object, PushDelivery>();
 
+const tracer = trace.getTracer("colibri-appview");
+
+export const measuredSenders = (senders: Senders): Senders => {
+	return Object.fromEntries(
+		Object.entries(senders).map(([provider, sender]) => [
+			provider,
+			{
+				send: (subscription, payload) =>
+					tracer.startActiveSpan("push.send", { attributes: { provider } }, async (span) => {
+						try {
+							const outcome = await sender.send(subscription, payload);
+
+							count("pushDeliveries", { provider, outcome });
+							span.setAttribute("push.outcome", outcome);
+
+							if (outcome === "failed") span.setStatus({ code: SpanStatusCode.ERROR });
+
+							return outcome;
+						} catch (error) {
+							count("pushDeliveries", { provider, outcome: "failed" });
+							span.setStatus({ code: SpanStatusCode.ERROR });
+
+							throw error;
+						} finally {
+							span.end();
+						}
+					}),
+			} satisfies PushSender,
+		]),
+	) as Senders;
+};
+
 const createPushDelivery = (ctx: AppContext): PushDelivery => {
 	const enabled = ctx.config.pushProviders.length > 0;
-	const senders: Senders = enabled ? createSenders(ctx.config.notifications) : {};
+	const senders: Senders = enabled ? measuredSenders(createSenders(ctx.config.notifications)) : {};
 	const options: DeliveryOptions = ctx.config.PUSH_ACTION_SECRET
 		? {
 				readAction: {

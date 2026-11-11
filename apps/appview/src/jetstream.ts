@@ -10,6 +10,7 @@ import type { AppContext } from "./context.js";
 import { applyEmojiChange, isEmojiTracked } from "./emoji.js";
 import { announceEmoji } from "./emoji-library.js";
 import { JETSTREAM_SUBPROTOCOL, jetstreamEndpoint } from "./jetstream-url.js";
+import { count, observe } from "./metrics.js";
 import { ActorViews } from "./views/actor.js";
 
 const CURSOR_KEY = "jetstream.cursor";
@@ -111,6 +112,7 @@ export type JetstreamOptions = {
 export class Jetstream {
 	private socket: WebSocket | null = null;
 	private cursor: number | null = null;
+	private stopLag: (() => void) | null = null;
 	private savedCursor: number | null = null;
 	private sinceSave = 0;
 	private attempt = 0;
@@ -128,6 +130,9 @@ export class Jetstream {
 			return;
 		}
 		this.stopped = false;
+		this.stopLag = observe("jetstreamLag", () =>
+			this.cursor === null ? [] : [{ value: Math.max(0, Date.now() / 1000 - this.cursor / 1e6) }],
+		);
 		this.cursor = await this.loadCursor();
 		this.savedCursor = this.cursor;
 		this.connect();
@@ -135,6 +140,8 @@ export class Jetstream {
 
 	async stop(): Promise<void> {
 		this.stopped = true;
+		this.stopLag?.();
+		this.stopLag = null;
 		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
 		this.reconnectTimer = null;
 		this.socket?.close();
@@ -321,6 +328,7 @@ export class Jetstream {
 
 	private async advance(seq: number): Promise<void> {
 		this.cursor = seq;
+		count("jetstreamEvents");
 		this.sinceSave += 1;
 		if (this.sinceSave >= EVENTS_PER_CURSOR_SAVE) await this.flushCursor();
 	}

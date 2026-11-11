@@ -43,6 +43,7 @@ import { republishWhenPreviewsSettle } from "./embed-republish.js";
 import { ensureEmojiTracked } from "./emoji.js";
 import { announceLibrary } from "./emoji-library.js";
 import { linkUrisOf } from "./link-embeds.js";
+import { count, observe, record } from "./metrics.js";
 import { notificationDeps as buildNotificationDeps } from "./notification-deps.js";
 import { pushDelivery } from "./push-delivery.js";
 import { loadPreferences } from "./routes/actor.js";
@@ -211,7 +212,25 @@ export const connectPipeline = ({ ctx }: Deps): (() => void) => {
 		});
 	});
 
+	const unsubscribeFailed = ctx.sync.on("failed", () => count("syncFailures"));
+	const stopQueue = observe("syncQueue", () => {
+		const stats = ctx.sync.queueStats;
+
+		return [
+			{ value: stats.pending, attributes: { state: "pending" } },
+			{ value: stats.running, attributes: { state: "running" } },
+		];
+	});
+
 	const unsubscribe = ctx.sync.on("changed", (change) => {
+		const { timing } = change;
+
+		if (timing?.notifiedAt) {
+			record("syncLag", Math.max(0, (timing.committedAt - timing.notifiedAt) / 1000), {
+				trigger: timing.trigger,
+			});
+		}
+
 		void handle(change).catch((error) => {
 			reportFailure(error, { stage: "pipeline", space: change.space });
 			ctx.log.warn({ space: change.space, author: change.author, error }, "pipeline.failed");
@@ -666,6 +685,8 @@ export const connectPipeline = ({ ctx }: Deps): (() => void) => {
 	return () => {
 		unsubscribe();
 		unsubscribeDeleted();
+		unsubscribeFailed();
+		stopQueue();
 		push.close();
 	};
 };

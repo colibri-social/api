@@ -29,6 +29,16 @@ describe("WorkerPool", () => {
 		expect(create).toHaveBeenCalledTimes(3);
 	});
 
+	it("reports each worker's CPU time in seconds", async () => {
+		const { create } = fakeWorkerFactory();
+		const pool = await WorkerPool.create({ workerCount: 2, createWorker: create });
+
+		expect(await pool.usage()).toEqual([
+			{ worker: 0, cpuSeconds: 2 },
+			{ worker: 1, cpuSeconds: 2 },
+		]);
+	});
+
 	it("round robins router creation across workers", async () => {
 		const { create, workers } = fakeWorkerFactory();
 		const pool = await WorkerPool.create({ workerCount: 2, createWorker: create });

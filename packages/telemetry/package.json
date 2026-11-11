@@ -1,0 +1,26 @@
+{
+	"name": "@colibri-social/telemetry",
+	"version": "0.1.0",
+	"description": "Anonymous daily heartbeat for Colibri AppView instances.",
+	"type": "module",
+	"private": true,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"colibri-source": "./src/index.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc --build",
+		"clean": "tsc --build --clean"
+	},
+	"dependencies": {
+		"zod": "catalog:"
+	}
+}

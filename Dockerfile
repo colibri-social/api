@@ -31,6 +31,7 @@ COPY packages/notifications/package.json packages/notifications/
 COPY packages/projections/package.json packages/projections/
 COPY packages/space/package.json packages/space/
 COPY packages/space-sync/package.json packages/space-sync/
+COPY packages/telemetry/package.json packages/telemetry/
 COPY packages/voice/package.json packages/voice/
 RUN pnpm install --frozen-lockfile
 
