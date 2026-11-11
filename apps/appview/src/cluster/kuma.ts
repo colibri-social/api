@@ -24,6 +24,43 @@ export type StatusPageConfig = Record<string, unknown> & {
 	domainNameList?: string[];
 };
 
+export type IncidentStyle = "info" | "warning" | "danger" | "primary" | "light" | "dark";
+
+export type KumaIncident = {
+	id: number;
+	title: string;
+	content: string;
+	style: IncidentStyle;
+	pin: boolean;
+	active: boolean;
+	createdDate: string;
+	lastUpdatedDate: string | null;
+};
+
+export type IncidentInput = {
+	title: string;
+	content: string;
+	style: IncidentStyle;
+	pin?: boolean;
+};
+
+export type KumaMaintenance = {
+	id: number;
+	title: string;
+	description: string;
+	status: string;
+	active: boolean;
+	startDate: string | null;
+	endDate: string | null;
+};
+
+export type MaintenanceInput = {
+	title: string;
+	description: string;
+	start: Date;
+	end: Date;
+};
+
 export type StatusGroup = {
 	name: string;
 	monitorList: { id: number }[];
@@ -43,6 +80,16 @@ export type KumaApi = {
 		icon: string,
 		groups: StatusGroup[],
 	) => Promise<void>;
+	incidents: (slug: string, limit?: number) => Promise<KumaIncident[]>;
+	postIncident: (slug: string, incident: IncidentInput) => Promise<KumaIncident>;
+	editIncident: (slug: string, id: number, incident: IncidentInput) => Promise<KumaIncident>;
+	resolveIncident: (slug: string, id: number) => Promise<void>;
+	maintenances: () => Promise<KumaMaintenance[]>;
+	scheduleMaintenance: (
+		input: MaintenanceInput,
+		links: { statusPage: number | null; monitors: number[] },
+	) => Promise<number>;
+	endMaintenance: (id: number) => Promise<void>;
 	close: () => void;
 };
 
@@ -71,7 +118,41 @@ export type KumaSyncOptions = {
 	log: Pick<Logger, "info" | "warn">;
 };
 
-type Ack = { ok?: boolean; msg?: string; monitorID?: number; config?: StatusPageConfig };
+type Ack = {
+	ok?: boolean;
+	msg?: string;
+	monitorID?: number;
+	maintenanceID?: number;
+	config?: StatusPageConfig;
+	incident?: KumaIncident;
+	incidents?: KumaIncident[];
+	nextCursor?: string | null;
+	hasMore?: boolean;
+};
+
+export const kumaDate = (date: Date): string => {
+	return date.toISOString().slice(0, 19).replace("T", " ");
+};
+
+const toMaintenances = (list: unknown): KumaMaintenance[] => {
+	if (!list || typeof list !== "object") {
+		return [];
+	}
+
+	return Object.values(list as Record<string, Record<string, unknown>>).map((item) => {
+		const range = Array.isArray(item.dateRange) ? (item.dateRange as unknown[]) : [];
+
+		return {
+			id: Number(item.id),
+			title: String(item.title ?? ""),
+			description: String(item.description ?? ""),
+			status: String(item.status ?? ""),
+			active: Boolean(item.active),
+			startDate: typeof range[0] === "string" ? range[0] : null,
+			endDate: typeof range[1] === "string" ? range[1] : null,
+		};
+	});
+};
 
 const API_GROUP = "API";
 
@@ -221,6 +302,7 @@ export const connectKuma = (options: {
 		options.socket ??
 		io(options.url, { transports: ["websocket"], reconnection: true, autoConnect: true });
 	let latest: KumaMonitor[] = [];
+	let latestMaintenances: KumaMaintenance[] = [];
 	let ready: Promise<void> | null = null;
 	let greeted: Promise<void> = new Promise(() => {});
 	let greet: () => void = () => {};
@@ -290,6 +372,9 @@ export const connectKuma = (options: {
 	socket.on("monitorList", (list: unknown) => {
 		latest = toMonitors(list);
 	});
+	socket.on("maintenanceList", (list: unknown) => {
+		latestMaintenances = toMaintenances(list);
+	});
 	socket.on("info", () => greet());
 	socket.on("disconnect", () => {
 		ready = null;
@@ -338,6 +423,93 @@ export const connectKuma = (options: {
 		saveStatusPage: async (slug, config, icon, groups) => {
 			await authed();
 			await call("saveStatusPage", slug, config, icon, groups);
+		},
+		incidents: async (slug, limit = 50) => {
+			await authed();
+
+			const found: KumaIncident[] = [];
+			let cursor: string | null = null;
+
+			while (found.length < limit) {
+				const page = await call("getIncidentHistory", slug, cursor);
+
+				found.push(...(page.incidents ?? []));
+
+				if (!page.hasMore || !page.nextCursor) break;
+				cursor = page.nextCursor;
+			}
+
+			return found.slice(0, limit);
+		},
+		postIncident: async (slug, incident) => {
+			await authed();
+
+			const answer = await call("postIncident", slug, incident);
+
+			if (!answer.incident) {
+				throw new Error("Uptime Kuma didn't return the incident");
+			}
+
+			return answer.incident;
+		},
+		editIncident: async (slug, id, incident) => {
+			await authed();
+
+			const answer = await call("editIncident", slug, id, { pin: true, ...incident });
+
+			if (!answer.incident) {
+				throw new Error("Uptime Kuma didn't return the incident");
+			}
+
+			return answer.incident;
+		},
+		resolveIncident: async (slug, id) => {
+			await authed();
+			await call("resolveIncident", slug, id);
+		},
+		maintenances: async () => {
+			await authed();
+			await call("getMaintenanceList");
+
+			return latestMaintenances;
+		},
+		scheduleMaintenance: async (input, links) => {
+			await authed();
+
+			const answer = await call("addMaintenance", {
+				title: input.title,
+				description: input.description,
+				strategy: "single",
+				active: true,
+				intervalDay: 1,
+				timezoneOption: "UTC",
+				dateRange: [kumaDate(input.start), kumaDate(input.end)],
+				timeRange: [
+					{ hours: 0, minutes: 0 },
+					{ hours: 0, minutes: 0 },
+				],
+				weekdays: [],
+				daysOfMonth: [],
+			});
+			const id = Number(answer.maintenanceID);
+
+			if (links.statusPage !== null) {
+				await call("addMaintenanceStatusPage", id, [{ id: links.statusPage }]);
+			}
+
+			if (links.monitors.length > 0) {
+				await call(
+					"addMonitorMaintenance",
+					id,
+					links.monitors.map((monitor) => ({ id: monitor })),
+				);
+			}
+
+			return id;
+		},
+		endMaintenance: async (id) => {
+			await authed();
+			await call("pauseMaintenance", id);
 		},
 		close: () => {
 			socket.close();

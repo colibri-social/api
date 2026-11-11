@@ -264,6 +264,27 @@ Once `KUMA_URL` is set, the main node keeps Kuma in step with the registry every
 On a fresh Kuma, the main node creates the account from `KUMA_USERNAME` and `KUMA_PASSWORD`. Keep
 2FA off for that account.
 
+### Incidents and maintenance
+
+`colibri-admin status` opens a menu to browse nodes, open and update incidents, and schedule
+maintenance. The same actions work as commands:
+
+```sh
+colibri-admin status incident create "Voice calls drop" --message "Looking into it." --style danger
+colibri-admin status incident update 4 "Found the cause, a fix is rolling out."
+colibri-admin status incident resolve 4 "Calls work again."
+colibri-admin status incident list --all
+colibri-admin status maintenance schedule "Postgres upgrade" --start +1h --end +2h --nodes fsn-1
+colibri-admin status maintenance list
+colibri-admin status maintenance end 2
+```
+
+Incidents and maintenance live in Uptime Kuma on the `KUMA_STATUS_SLUG` status page. Each update
+goes on top of the incident with its time in UTC, so the page reads newest first. Styles are
+`info`, `warning`, `danger`, `primary`, `light` and `dark`. Times take `now`, `+30m`, `+2h`, `+1d`
+or an ISO date. Maintenance shows on the status page and marks the monitors of the `--nodes` it
+names. The commands use `KUMA_URL`, `KUMA_USERNAME` and `KUMA_PASSWORD` from the shared settings.
+
 ### Monitoring
 
 Prometheus and Grafana run next to any node's stack, and Grafana Alloy on every node sends them

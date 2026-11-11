@@ -24,6 +24,7 @@
 		"clean": "tsc --build --clean"
 	},
 	"dependencies": {
+		"@clack/prompts": "catalog:",
 		"@colibri-social/appview": "workspace:*",
 		"@colibri-social/appview-db": "workspace:*",
 		"@colibri-social/community": "workspace:*",

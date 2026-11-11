@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
+import * as clack from "@clack/prompts";
 import {
 	CLUSTER_STATE_ID,
+	connectKuma,
 	createConfigStore,
 	createRegistry,
 } from "@colibri-social/appview/cluster";
@@ -28,6 +30,18 @@ import {
 } from "./commands.js";
 import { CopyRefusedError, copyDatabase } from "./db-copy.js";
 import { openOrderBus, sendOrder } from "./orders.js";
+import {
+	createIncident,
+	endMaintenance,
+	listIncidents,
+	listMaintenance,
+	resolveIncident,
+	type StatusDeps,
+	StatusUsageError,
+	scheduleMaintenance,
+	updateIncident,
+} from "./status/commands.js";
+import { type Prompts, runStatusTui } from "./status/tui.js";
 
 const USAGE = `colibri-admin, run it inside the AppView container of the main node
 
@@ -39,7 +53,15 @@ const USAGE = `colibri-admin, run it inside the AppView container of the main no
   node recover <id>
   node remove <id> [--force]
   rollout pause|resume
+  status
   status deploy <node>
+  status incident list [--all]
+  status incident create <title> [--message <text>] [--style warning]
+  status incident update <id> <message> [--title <text>] [--style <style>]
+  status incident resolve <id> [<message>]
+  status maintenance list
+  status maintenance schedule <title> --start now|+30m|<ISO> --end +2h|<ISO> [--nodes a,b] [--message <text>]
+  status maintenance end <id>
   monitoring deploy <node>
   config list
   config set <KEY> <value>
@@ -119,6 +141,13 @@ const main = async (): Promise<void> => {
 			from: { type: "string" },
 			to: { type: "string" },
 			truncate: { type: "boolean", default: false },
+			message: { type: "string" },
+			style: { type: "string" },
+			title: { type: "string" },
+			start: { type: "string" },
+			end: { type: "string" },
+			nodes: { type: "string" },
+			all: { type: "boolean", default: false },
 			help: { type: "boolean", default: false },
 		},
 	});
@@ -175,7 +204,105 @@ const main = async (): Promise<void> => {
 		print: (line) => process.stdout.write(`${line}\n`),
 	};
 
+	const statusDeps = async (): Promise<StatusDeps & { close: () => void }> => {
+		const shared = await admin.config.values();
+		const setting = (key: string) => process.env[key] || shared[key];
+		const url = setting("KUMA_URL");
+		const username = setting("KUMA_USERNAME");
+		const password = setting("KUMA_PASSWORD");
+
+		if (!url || !username || !password) {
+			throw new RefusedError("set KUMA_URL, KUMA_USERNAME and KUMA_PASSWORD first");
+		}
+
+		const kuma = connectKuma({
+			url,
+			username,
+			password,
+			log: { info: () => {}, warn: () => {} },
+		});
+
+		return {
+			kuma,
+			slug: setting("KUMA_STATUS_SLUG") ?? "colibri",
+			nodes: () => admin.registry.list(),
+			print: admin.print,
+			now: admin.now,
+			close: () => kuma.close(),
+		};
+	};
+
+	const runStatus = async (): Promise<void> => {
+		const deps = await statusDeps();
+		const [, area, action, ...rest] = positionals;
+		const id = (value: string | undefined) => {
+			const parsed = Number(required(value, "<id>"));
+
+			if (!Number.isInteger(parsed)) throw new UsageError(`${value} isn't an ID`);
+
+			return parsed;
+		};
+		const text = (parts: string[], name: string) => required(parts.join(" ") || undefined, name);
+
+		try {
+			switch (`${area ?? ""} ${action ?? ""}`.trim()) {
+				case "":
+					return await runStatusTui(
+						{ ...deps, print: (line) => clack.log.info(line) },
+						clack as unknown as Prompts,
+					);
+				case "incident list":
+					return await listIncidents(deps, values.all);
+				case "incident create":
+					await createIncident(deps, {
+						title: text(rest, "<title>"),
+						...(values.message ? { message: values.message } : {}),
+						...(values.style ? { style: values.style } : {}),
+					});
+					return;
+				case "incident update":
+					await updateIncident(deps, {
+						id: id(rest[0]),
+						message: text(rest.slice(1), "<message>"),
+						...(values.title ? { title: values.title } : {}),
+						...(values.style ? { style: values.style } : {}),
+					});
+					return;
+				case "incident resolve":
+					return await resolveIncident(deps, {
+						id: id(rest[0]),
+						...(rest.length > 1 ? { message: rest.slice(1).join(" ") } : {}),
+					});
+				case "maintenance list":
+					return await listMaintenance(deps);
+				case "maintenance schedule":
+					await scheduleMaintenance(deps, {
+						title: text(rest, "<title>"),
+						start: required(values.start, "--start"),
+						end: required(values.end, "--end"),
+						...(values.nodes ? { nodes: values.nodes } : {}),
+						...(values.message ? { message: values.message } : {}),
+					});
+					return;
+				case "maintenance end":
+					return await endMaintenance(deps, id(rest[0]));
+				default:
+					throw new UsageError(`unknown command: ${positionals.join(" ")}`);
+			}
+		} catch (error) {
+			if (error instanceof StatusUsageError) throw new UsageError(error.message);
+
+			throw error;
+		} finally {
+			deps.close();
+		}
+	};
+
 	const run = async (): Promise<void> => {
+		if (group === "status" && command !== "deploy") {
+			return runStatus();
+		}
+
 		switch (`${group} ${command ?? ""}`.trim()) {
 			case "node list":
 				return nodeList(admin);

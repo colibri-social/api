@@ -80,6 +80,17 @@ const fakeKuma = () => {
 			pages.set(slug, config);
 			saved.push({ config, icon, groups });
 		},
+		incidents: async () => [],
+		postIncident: async () => {
+			throw new Error("not used");
+		},
+		editIncident: async () => {
+			throw new Error("not used");
+		},
+		resolveIncident: async () => {},
+		maintenances: async () => [],
+		scheduleMaintenance: async () => 1,
+		endMaintenance: async () => {},
 		close: () => {},
 	};
 

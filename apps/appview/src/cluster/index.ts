@@ -2,6 +2,7 @@ export type { EventMessage } from "../announce.js";
 export { type BusDelivery, type EventBus, postgresBus } from "../bus.js";
 export { NODE_ROLES } from "../config.js";
 export * from "./config-store.js";
+export * from "./kuma.js";
 export * from "./orders.js";
 export * from "./quorum.js";
 export * from "./registry.js";
