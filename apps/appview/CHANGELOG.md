@@ -1,5 +1,159 @@
 # @colibri-social/appview
 
+## 2.37.0
+
+### Minor Changes
+
+- 0a73387: Add `colibri-admin` and share settings across AppView nodes.
+  
+  - `colibri-admin` ships in the AppView image. Run it inside the main node's container: `node list`, `node add <id> --region --roles [--public-url]`, `node shutdown <id> --maintenance|--retire [--grace 15m] [--force]`, `node resume <id>`, `node remove <id> [--force]`, `rollout pause|resume`, and `config list|set|unset|import`. It exits with 1 when the main node refuses and 2 on a usage error.
+  - Shutdown and resume orders travel over the event bus to the main node, which answers within 30 seconds. They need the Postgres setup.
+  - Shared settings live in `cluster_config`, encrypted with `CREDENTIAL_ENCRYPTION_KEY`. Settings that describe a single node, such as `NODE_ID`, `ROLES`, `DATABASE_READ_URL` or `SFU_ANNOUNCED_IP`, stay local and are refused. `config import` reads an env file and stores only the shared settings.
+  - A node with `MAIN_NODE_URL` fetches the shared settings from the main node before it loads its configuration, along with its ID, region and roles from the registry. Its own environment wins. When `MAIN_NODE_URL` points at a node that is no longer main, it follows that node to the current one. It retries for two minutes, then exits.
+  - The node secret file now holds the node ID next to the secret.
+  - `@colibri-social/appview/cluster` exports the registry, config store, orders and event bus for the CLI.
+- 19f118e: Back up Postgres with pgBackRest.
+  
+  - The main and failover nodes run `ghcr.io/colibri-social/postgres:18` (`POSTGRES_IMAGE`), the official Postgres 18 image with pgBackRest, published by the image workflow.
+  - With `BACKUP_REPO_HOST`, `BACKUP_REPO_USER` and `BACKUP_CIPHER_PASS` set, the primary archives its WAL to that SFTP repository (`BACKUP_REPO_PORT`, default 23, and `BACKUP_REPO_PATH`, default `/colibri`) at most `ARCHIVE_TIMEOUT` seconds (default 300) behind. Backups are encrypted with AES-256, compressed with zstd, and the last 4 full backups are kept.
+  - `deploy/postgres/backup.sh` runs only where Postgres is the primary, creates the stanza on first use, and takes a full backup on Sundays and an incremental one on other days. `node add` copies the key from `BACKUP_SSH_KEY_FILE` and the settings to the failover node and schedules its backups and the backup age check.
+  - `pgbackrest-age.sh` takes `PGBACKREST_CMD` to run pgBackRest inside the Postgres container.
+- 75c544f: Share live events, authorization changes and presence across AppView nodes.
+  
+  - Every announcement goes through an event bus. On SQLite it stays in memory. On Postgres it uses `LISTEN/NOTIFY` on the primary, in publish order, and payloads over the notify limit travel through `event_payloads`, which the main node clears after 10 minutes.
+  - Per-viewer frames travel as recipes. A message carries its rendered view and each node signs it for its own viewers. A thread event names the thread, and each node renders it with the viewer's permissions after its replica has caught up to the publisher's WAL position (up to 2 seconds).
+  - `Announcer` drops `toCommunityViewers` and closure frames for `message`, `thread` and `toTopics`. `toBridges` takes a frame.
+  - Authorization changes reach every node, so a socket on any node loses a channel it may no longer read.
+  - Presence counts sockets on every node. A user stays online while any node holds a fresh socket for them, and the main node sets users offline once no node has one.
+  - Each process claims a unique notification clock ID through a Postgres advisory lock, so two writers never mint the same notification ID. `@colibri-social/notifications` exports `setClockId` and `CLOCK_IDS`.
+  - `Database.waitForReplay()` waits for a read replica to reach a WAL position. `TestDatabase` exposes its `url`.
+- 1205701: Fail the Postgres primary over to the failover node automatically and fence the old one.
+  
+  - `DATABASE_URL` can list several hosts. `@colibri-social/appview-db` connects to the one that accepts writes and has the highest epoch in `cluster_state`, rechecks every 10 seconds, and moves on read-only and connection errors. Advisory locks and the event bus follow it. It exports `FollowingPool`, `parsePostgresUrl`, `formatPostgresUrl`, `hostUrls`, `probeHost`, `pickPrimary` and `resolvePrimaryUrl`.
+  - Every clustered node serves `GET /cluster/alive` on `CLUSTER_PORT` with the time it lost the primary. The failover node promotes its local Postgres (`LOCAL_POSTGRES_URL`, or `DATABASE_READ_URL`) once the primary has been unreachable for `FAILOVER_AFTER_SECONDS` (default 60) for it and for more than half of the nodes without the `main` or `failover` role. Promotion raises the epoch and creates replication slots for the other nodes. Without a witness node it doesn't promote on its own.
+  - A writable Postgres with a lower epoch than the primary is fenced: it turns read-only and drops its client and replication connections. Nodes with the SSH key rebuild their own fenced Postgres with `rejoin-replica`, and the main node rebuilds other main and failover nodes.
+  - `colibri-admin db failback [<node>]` moves the primary back to a node with the `main` role in a planned switchover. `colibri-admin db promote` promotes a failover node's Postgres by hand.
+  - Replicas take a list of primary hosts in `PRIMARY_HOST` and stream with `target_session_attrs=read-write`. The main node's Postgres in `docker-compose.scaled.yml` uses the same entrypoint, so it can be rebuilt as a replica. Its AppView takes `DATABASE_URL` from `.env` when set.
+  - Provisioning a failover node runs the new `database-hosts` playbook on every node. `rejoin-replica` takes `primary_hosts` and runs detached on the node that starts it.
+- 6605f3d: Serve image attachments as smaller previews and keep rendered previews on disk.
+  
+  - Image attachments get a `previewUrl` with the new `timeline` variant: at most 1280 px on the long edge, WebP for still images, and animated WebP or GIF for animated ones. It's signed for the viewer like `url` and served after the same authorization check. Other files get no preview.
+  - Rendered variants are kept on disk in `BLOB_DISK_CACHE_DIR` (default `./data/blob-cache`, `/data/blob-cache` in the compose stacks) up to `BLOB_DISK_CACHE_MAX_BYTES` (default 10 GB, `0` turns it off), with the least recently used ones removed first. They survive restarts. The in-memory cache stays in front, and originals still stream from the PDS.
+  - Concurrent requests for the same variant share one render, and at most `BLOB_RENDER_CONCURRENCY` renders run at once (default half the CPU cores).
+  - `@colibri-social/blobs` adds `DiskVariantCache`, the `timeline` variant, and the `disk` and `renderConcurrency` options on `BlobService`.
+  - The main node in `docker-compose.scaled.yml` keeps its node secret in the data volume.
+- cd8f0e9: Hand the main role to the failover node during updates and outages.
+  
+  - Nodes with the `main` role always try for the main lock on the Postgres primary. Nodes with the `failover` role stay back while a `main` node answers the new `GET /cluster/alive` on `CLUSTER_PORT` and isn't draining. They take the lock when no `main` node answers or all of them drain, when the main node hands the role over with the new `takeMain` control frame, or when a live `main` node hasn't claimed the role for 30 seconds.
+  - A failover node holding the main role hands it back once a node with the `main` role has been active on the same version for 2 minutes.
+  - The rollout no longer restarts the main node in place when a failover node already runs the new version. The main node pulls the image, hands the main role to that node, waits up to 60 seconds for it to take over, then restarts. Sub nodes hold writes for the seconds of the handover. If nobody takes over, the main node keeps the role and the rollout pauses.
+  - A node with the `main` role issues its own node secret on its first start, so it forwards writes and keeps a control link like any other node while another node is main. A node only forwards writes while it isn't main.
+  - Main and failover nodes run Ansible, Cloudflare and Uptime Kuma syncs only while they hold the main role, and only when `SSH_KEY_FILE` exists for Ansible.
+  - A draining node stops trying for the main lock.
+- da22296: The main node reads the shared settings too. A clustered node without `MAIN_NODE_URL` reads `cluster_config` from its own database at boot with `CREDENTIAL_ENCRYPTION_KEY`, so settings stored with `colibri-admin config set` reach it without being copied into its `.env`. Its own environment still wins, and it starts with only its own settings when the store can't be read.
+- e917950: Deploy Prometheus, Grafana and Grafana Alloy across the cluster.
+  
+  - `colibri-admin monitoring deploy <node>` runs the new `monitoring` playbook. It starts Prometheus (`PROMETHEUS_IMAGE`, default `prom/prometheus:v3.15.1`, 90 days of data, remote write enabled) and Grafana (`GRAFANA_IMAGE`, default `grafana/grafana:13.2.5`, password from `GRAFANA_ADMIN_PASSWORD`) on the node's tailnet address. It then stores `PROMETHEUS_REMOTE_WRITE_URL` and runs the new `alloy` playbook on every node. Provisioning a node runs `alloy` too once monitoring exists.
+  - Alloy (`ALLOY_IMAGE`, default `grafana/alloy:v1.21.2`) runs in the `monitoring` compose profile. It sends host metrics, the AppView's metrics, Postgres metrics where a database runs, and on the main node probes of the PDS, labeled with the node and region. It also reads `.prom` files from `/var/lib/colibri/metrics`, where `deploy/observability/pgbackrest-age.sh` writes the last backup time.
+  - Grafana gets four dashboards (cluster, hosts, voice, Postgres). The hosts dashboard shows ingress and egress on public interfaces per node: totals for the selected range and the last 30 days, and daily bars. The cluster dashboard shows total ingress and egress. Alerts fire for a missing node, replication lag over 30 seconds, a backup older than 26 hours, a disk over 85% full, XRPC 5xx over 2% and read-only mode. With `ALERT_WEBHOOK_URL`, alerts go to that webhook.
+  - The AppView listens for metrics on `0.0.0.0` inside the node and main compose stacks. Node `.env` files carry `NODE_REGION`, and the database URLs in them escape the user and password.
+- ac153a2: Report metrics, traces and logs, and send an anonymous daily heartbeat.
+  
+  - The AppView serves Prometheus metrics on `METRICS_HOST:METRICS_PORT` (default `127.0.0.1:9464`, `0` turns them off), labeled with the node and region: XRPC duration by method and status, client sockets, Jetstream lag and events, the space sync queue, lag and failures, push deliveries by provider and outcome, drain state, write mode and queued writes, calls and participants, SFU worker CPU, bitrate, packet loss and transports by ICE state, and TURN credential requests.
+  - Sentry traces every request except `/health` and keeps those over 1 second, those that failed, and `SENTRY_TRACES_SAMPLE_RATE` (default 0.1) of the rest. Voice joins, transport setup, space repo syncs and push sends get their own spans. Logs at info and above go to Sentry Logs. Clustered nodes tag events with their ID, region and roles.
+  - The main node sends an anonymous heartbeat once a day to `COLIBRI_TELEMETRY_URL` (default `https://telemetry.colibri.social/v1/heartbeat`), an hour after the first start logs a notice. Counts are rounded into ranges. `COLIBRI_TELEMETRY_DISABLED=1` or `DO_NOT_TRACK=1` turns it off.
+  - `@colibri-social/telemetry` builds, buckets and sends the heartbeat.
+  - `VoiceSfu.stats()` reports calls, participants, transport stats and worker CPU. `WorkerPool.usage()` reads worker CPU time.
+  - `SpaceSyncEngine.queueStats` reports pending and running repo syncs.
+- 2d63cc4: Provision cluster nodes with Ansible and publish the AppView image.
+  
+  - Every push to `main` publishes `ghcr.io/colibri-social/api:edge` and `sha-<commit>`. A push that changes the `@colibri-social/appview` version also publishes the version tag and `stable`.
+  - The image carries `ansible-core`, `openssh-client`, the playbooks in `deploy/ansible` and `colibri-admin` on the `PATH`.
+  - `colibri-admin node add <id> --region --roles --public-url --ip [--workers]` has the main node bootstrap the server over SSH: Docker, Tailscale, a firewall, Caddy with Let's Encrypt, the AppView and, for sub and failover nodes, a streaming Postgres replica. The node joins with a one-time token. Without `--ip`, `node add` prints the settings for a manual setup.
+  - `colibri-admin node recover <id>` restarts a node's stack. `node remove <id>` runs the remove playbook over the tailnet, then forgets the node.
+  - The main node needs `TAILSCALE_AUTH_KEY`, `POSTGRES_REPLICATION_PASSWORD` and an SSH key at `SSH_KEY_FILE` to provision. `NODE_IMAGE`, `SSH_USER`, `ANSIBLE_DIR`, `REGISTRY_USER` and `REGISTRY_TOKEN` are optional. Ansible runs one playbook at a time and logs every line.
+  - `docker-compose.scaled.yml` runs a main node: the Postgres primary with replication, the AppView with the main role and Caddy. Its `local-cluster` profile adds a replica, a sub node and a voice node for testing on one machine.
+  - `docker-compose.yml` pulls `ghcr.io/colibri-social/api:stable` and gains an opt-in `updater` profile that keeps a single AppView on the newest stable image.
+  - `colibri-admin config import -` reads the env file from standard input.
+- 573ec8e: Register AppView nodes and link them to the main node.
+  
+  - An AppView with `NODE_ID` set is a cluster node. It registers itself in `nodes` with its region, roles, `NODE_PUBLIC_URL` and `NODE_TAILNET_URL`, heartbeats every 15 seconds with its connection and call counts, and is marked `draining` and then `down` when it stops.
+  - Nodes with the `main` or `failover` role listen on `CLUSTER_PORT` (default 3100) for joins and control links. Only the node holding the main lock accepts them.
+  - A new node trades a `CLUSTER_JOIN_TOKEN` (valid for an hour, used once) for a node secret, kept in `NODE_SECRET_FILE`. Nodes without the `main` role hold a WebSocket control link to the main node with that secret and reconnect when it drops.
+  - The main node handles shutdown and resume orders from the event bus. A shutdown checks the quorum floor (50% of 2, 66% of 3, 75% of 4, 80% of 5 or more nodes staying up) unless forced, then tells the node to drain. A drained node parks in `maintenance` or `retired`, answers every request with 503 and stays parked across restarts until it is resumed.
+  - `social.colibri.beta.server.listNodes` lists active nodes that serve clients, with a `/health` probe URL. `describeServer` advertises the `nodes` feature on a clustered AppView.
+  - `nodes` gains `secret_hash`.
+- 070ae7a: Run AppView nodes by role and shut them down gracefully.
+  
+  - `ROLES` decides what a node runs. `api` serves XRPC, blobs and embeds. `live` accepts event sockets. `voice` starts the SFU and voice signaling. `main` runs ingest, sweeps, heals and migration jobs, but only on the one node holding the main Postgres advisory lock. Another `main` node waits and takes over when the holder goes away.
+  - Migrations run only on `main` nodes, one at a time behind their own advisory lock.
+  - `DATABASE_READ_URL` sends reads to a Postgres replica. Writes and transactions stay on `DATABASE_URL`.
+  - On SIGTERM or SIGINT a node drains: `/health` answers 503 with the deadline, every event socket gets a `drainNotice`, and the node waits until its connections are gone or the deadline passes. The deadline is `DRAIN_GRACE_MINUTES` (default 120) when other active nodes can take the clients, and 15 seconds when the node is alone. A second signal skips the wait.
+  - A node that loses the main lock shuts down with exit code 1, so its supervisor restarts it.
+  - `@colibri-social/appview-db` exports `holdLock`, `postgresAdvisoryLock` and `grantedLock`, and `Database.advisoryLock()`.
+  - The single-node `docker-compose.yml` gives the container 45 seconds to stop.
+- 35b87d0: Roll out new images across the cluster and keep Cloudflare in step with the registry.
+  
+  - The main node checks `NODE_IMAGE` every `UPDATE_POLL_MINUTES` (default 15, `0` turns it off) and reads the version from the image's `org.opencontainers.image.version` label. Nodes on an older version update one at a time: sub nodes, then the failover node, then the main node. Each pulls the image pinned by digest, drains while the quorum floor holds, restarts and must report the new version within 10 minutes. A failed step pauses rollouts. The main node restarts itself in place from `STACK_DIR` (default `/opt/colibri`).
+  - Drain orders take a new `update` mode. A node drained for an update answers 503 until it restarts, and restarts on its current image after 15 minutes without one.
+  - With `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID`, provisioning a node creates a DNS-only A record for its public host and removing it deletes the record. Records the main node didn't create are left alone.
+  - With `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_LB_ID`, the main node keeps one pool per region of `api` nodes, a `/health` monitor and geo steering on that load balancer every minute. `CLOUDFLARE_GEO_REGIONS` maps regions to Cloudflare region codes.
+  - The `update` playbook takes `pull_only` and `stack_dir`.
+- 6246850: Post incidents and schedule maintenance on the status page from `colibri-admin`.
+  
+  - `colibri-admin status` opens a menu built on `@clack/prompts` to browse nodes, open incidents, post updates, resolve them, and schedule or end maintenance.
+  - `status incident list [--all]`, `create <title> [--message] [--style]`, `update <id> <message> [--title] [--style]` and `resolve <id> [<message>]` work on the `KUMA_STATUS_SLUG` page. Each update goes on top of the incident's text with its UTC time.
+  - `status maintenance list`, `schedule <title> --start --end [--nodes] [--message]` and `end <id>` manage one-off maintenance windows. They show on the status page and mark the named nodes' monitors. Times take `now`, `+30m`, `+2h`, `+1d` or an ISO date.
+  - The Uptime Kuma client in `@colibri-social/appview/cluster` reads, posts, edits and resolves incidents and adds, lists and ends maintenance.
+- 418b56f: Run the status page on Uptime Kuma and keep its monitors in step with the cluster.
+  
+  - `colibri-admin status deploy <node>` runs the new `uptime-kuma` playbook on a node. It starts Uptime Kuma (`KUMA_IMAGE`, default `louislam/uptime-kuma:2.5.7-slim`) on the node's tailnet address and serves `KUMA_PUBLIC_URL` through the node's Caddy, with the dashboard, settings and socket paths answering 404. With Cloudflare set up, the status host gets a CNAME to the node.
+  - With `KUMA_URL`, `KUMA_USERNAME` and `KUMA_PASSWORD`, the main node keeps an HTTP monitor on `/health` for the API host and every node that isn't retired. Nodes in maintenance or draining are paused, monitors of retired nodes are deleted, and other monitors are left alone. On a fresh Kuma it creates the account first.
+  - The `KUMA_STATUS_SLUG` status page (default `colibri`) lists the API, then one group per region, styled with `deploy/uptime-kuma/status.css`.
+  - Caddy on every node, and on the main node in `docker-compose.scaled.yml`, imports extra sites from `caddy-sites/`. The scaled stack's Caddy reads `deploy/caddy/Caddyfile`.
+- 19f118e: Move the primary on purpose with `colibri-admin db switchover <node>`.
+  
+  - `db switchover <node>` moves the Postgres primary and the main role to a node with the `main` or `failover` role, for example before maintenance on the main node's host. It uses the same steps as `db failback`, which now refuses a target without either role.
+  - A failover node keeps the main role while its own Postgres is the primary, so it no longer hands the role back to a `main` node that would write across the tailnet.
+- 43899d5: Run voice calls across AppView nodes.
+  
+  - Each SFU worker listens on one UDP and TCP port through a mediasoup `WebRtcServer`, starting at `SFU_RTC_PORT` (default 40000). `SFU_RTC_MIN_PORT` and `SFU_RTC_MAX_PORT` are removed. The compose file publishes 40000-40031.
+  - The SFU reads its settings from the AppView config. `SFU_INITIAL_OUTGOING_BITRATE` is part of it now, and `voiceSfuConfigFromEnv` is removed from `@colibri-social/voice`.
+  - A call runs on one node. `voice_calls` pins it there, and a join on another node answers with `callElsewhere`. A call on a node that stopped reporting moves to the next node someone joins on.
+  - Who is in a call lives in the new `voice_participants` table, so presence shows voice state from every node and `voice.moderate` reaches a call on any node over the event bus. The main node clears participants of nodes that stopped reporting and announces that they left.
+  - Server mutes and deafens are stored per Space member in the new `voice_moderation` table. They apply in every voice channel of the Space and last across calls, restarts and nodes until a moderator lifts them.
+  - A call that grows past `SFU_PARTICIPANTS_PER_WORKER` (default 20) participants per worker takes another worker, up to `SFU_WORKER_COUNT`. Its routers pipe every producer to each other, so everyone still hears everyone. New calls start on the worker with the fewest routers.
+  - With `TURN_KEY_ID` and `TURN_KEY_API_TOKEN` set, every transport gets Cloudflare TURN credentials valid for 24 hours, next to `SFU_ICE_SERVERS`.
+  - When a voice node drains, every call gets a `migrationProposal` with the other voice nodes. Participants answer with `rttReport`, and after `VOICE_MIGRATION_NOTICE_SECONDS` (default 60) or a `moveNow` the call moves with `migrateTo` to the node with the lowest worst-case round trip. A node that shuts down tells remaining callers `nodeClosed`. `joined` carries the node ID and region.
+  - `Database` exposes `primary` for reads that can't wait for a replica.
+- 885c51d: Send writes from sub nodes to the main node.
+  
+  - A node with the `api` role that doesn't hold the main role forwards every XRPC procedure to the main node over the tailnet, with the caller's headers and body and its own node ID and secret. The main node accepts forwarded writes on `CLUSTER_PORT` from known nodes only and answers them as if they came in directly. A forwarded write the main node may already have applied is never sent twice: a failure after sending answers `502 UpstreamFailure`.
+  - When the main node can't be reached, writes wait and go out in arrival order once it is back. After `WRITE_QUEUE_SECONDS` (default 90) a waiting write fails with `503 ReadOnly`, and the node refuses writes the same way until a ping to the main node succeeds again. A node that is no longer main sends the caller on to the current one.
+  - Event sockets get a `writeState` frame on connect and on every change between `normal`, `queued` and `readOnly`.
+  - The main node answers `GET /cluster/ping` on `CLUSTER_PORT` while it holds the main role.
+
+### Patch Changes
+
+- 149e2ca: Steer callers to new regions without `CLOUDFLARE_GEO_REGIONS`. Common region IDs such as `eu`, `us-east`, `us-central`, `us-west`, `asia` and `au` map to Cloudflare regions on their own, and each Cloudflare region gets its pools closest first. `CLOUDFLARE_GEO_REGIONS` now overrides single regions, and a region without a mapping logs `cloudflare.regionUnmapped`.
+- 19f118e: Run the main node behind an existing Traefik. Caddy in `docker-compose.scaled.yml` now starts only with the `caddy` profile. `deploy/traefik/compose.traefik.yml` joins the AppView to Traefik's network (`TRAEFIK_NETWORK`, default `dokploy-network`) and routes `PUBLIC_HOST` and `API_HOST` to it with `TRAEFIK_CERT_RESOLVER` (default `letsencrypt`) on `TRAEFIK_ENTRYPOINT` (default `websecure`). The `uptime-kuma` playbook only reloads Caddy where it runs.
+- Updated dependencies [aadf535]
+- Updated dependencies [75c544f]
+- Updated dependencies [1205701]
+- Updated dependencies [6605f3d]
+- Updated dependencies [ac153a2]
+- Updated dependencies [573ec8e]
+- Updated dependencies [070ae7a]
+- Updated dependencies [43899d5]
+  - @colibri-social/appview-db@0.23.0
+  - @colibri-social/notifications@1.10.0
+  - @colibri-social/blobs@0.3.0
+  - @colibri-social/voice@0.5.0
+  - @colibri-social/space-sync@0.8.0
+  - @colibri-social/telemetry@0.2.0
+  - @colibri-social/community@2.15.2
+  - @colibri-social/projections@1.15.2
+
 ## 2.36.0
 
 ### Minor Changes

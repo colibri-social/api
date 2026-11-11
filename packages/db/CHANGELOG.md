@@ -1,5 +1,60 @@
 # @colibri-social/appview-db
 
+## 0.23.0
+
+### Minor Changes
+
+- aadf535: Copy a libSQL database into Postgres.
+  
+  - `colibri-admin db copy --from <libSQL url> --to <Postgres url> [--truncate]` applies the Postgres migrations, then copies every table in batches. JSON columns become `jsonb` and flags become booleans through the shared schema. It checks the row count of every table, and exits with 1 when the counts differ or it refuses to run.
+  - It refuses a libSQL database that isn't on the current migrations, and a Postgres database that already has rows unless `--truncate` is passed.
+  - `@colibri-social/appview-db` exports `appliedMigrations` and `knownMigrations`.
+- 75c544f: Share live events, authorization changes and presence across AppView nodes.
+  
+  - Every announcement goes through an event bus. On SQLite it stays in memory. On Postgres it uses `LISTEN/NOTIFY` on the primary, in publish order, and payloads over the notify limit travel through `event_payloads`, which the main node clears after 10 minutes.
+  - Per-viewer frames travel as recipes. A message carries its rendered view and each node signs it for its own viewers. A thread event names the thread, and each node renders it with the viewer's permissions after its replica has caught up to the publisher's WAL position (up to 2 seconds).
+  - `Announcer` drops `toCommunityViewers` and closure frames for `message`, `thread` and `toTopics`. `toBridges` takes a frame.
+  - Authorization changes reach every node, so a socket on any node loses a channel it may no longer read.
+  - Presence counts sockets on every node. A user stays online while any node holds a fresh socket for them, and the main node sets users offline once no node has one.
+  - Each process claims a unique notification clock ID through a Postgres advisory lock, so two writers never mint the same notification ID. `@colibri-social/notifications` exports `setClockId` and `CLOCK_IDS`.
+  - `Database.waitForReplay()` waits for a read replica to reach a WAL position. `TestDatabase` exposes its `url`.
+- 1205701: Fail the Postgres primary over to the failover node automatically and fence the old one.
+  
+  - `DATABASE_URL` can list several hosts. `@colibri-social/appview-db` connects to the one that accepts writes and has the highest epoch in `cluster_state`, rechecks every 10 seconds, and moves on read-only and connection errors. Advisory locks and the event bus follow it. It exports `FollowingPool`, `parsePostgresUrl`, `formatPostgresUrl`, `hostUrls`, `probeHost`, `pickPrimary` and `resolvePrimaryUrl`.
+  - Every clustered node serves `GET /cluster/alive` on `CLUSTER_PORT` with the time it lost the primary. The failover node promotes its local Postgres (`LOCAL_POSTGRES_URL`, or `DATABASE_READ_URL`) once the primary has been unreachable for `FAILOVER_AFTER_SECONDS` (default 60) for it and for more than half of the nodes without the `main` or `failover` role. Promotion raises the epoch and creates replication slots for the other nodes. Without a witness node it doesn't promote on its own.
+  - A writable Postgres with a lower epoch than the primary is fenced: it turns read-only and drops its client and replication connections. Nodes with the SSH key rebuild their own fenced Postgres with `rejoin-replica`, and the main node rebuilds other main and failover nodes.
+  - `colibri-admin db failback [<node>]` moves the primary back to a node with the `main` role in a planned switchover. `colibri-admin db promote` promotes a failover node's Postgres by hand.
+  - Replicas take a list of primary hosts in `PRIMARY_HOST` and stream with `target_session_attrs=read-write`. The main node's Postgres in `docker-compose.scaled.yml` uses the same entrypoint, so it can be rebuilt as a replica. Its AppView takes `DATABASE_URL` from `.env` when set.
+  - Provisioning a failover node runs the new `database-hosts` playbook on every node. `rejoin-replica` takes `primary_hosts` and runs detached on the node that starts it.
+- 573ec8e: Register AppView nodes and link them to the main node.
+  
+  - An AppView with `NODE_ID` set is a cluster node. It registers itself in `nodes` with its region, roles, `NODE_PUBLIC_URL` and `NODE_TAILNET_URL`, heartbeats every 15 seconds with its connection and call counts, and is marked `draining` and then `down` when it stops.
+  - Nodes with the `main` or `failover` role listen on `CLUSTER_PORT` (default 3100) for joins and control links. Only the node holding the main lock accepts them.
+  - A new node trades a `CLUSTER_JOIN_TOKEN` (valid for an hour, used once) for a node secret, kept in `NODE_SECRET_FILE`. Nodes without the `main` role hold a WebSocket control link to the main node with that secret and reconnect when it drops.
+  - The main node handles shutdown and resume orders from the event bus. A shutdown checks the quorum floor (50% of 2, 66% of 3, 75% of 4, 80% of 5 or more nodes staying up) unless forced, then tells the node to drain. A drained node parks in `maintenance` or `retired`, answers every request with 503 and stays parked across restarts until it is resumed.
+  - `social.colibri.beta.server.listNodes` lists active nodes that serve clients, with a `/health` probe URL. `describeServer` advertises the `nodes` feature on a clustered AppView.
+  - `nodes` gains `secret_hash`.
+- 070ae7a: Run AppView nodes by role and shut them down gracefully.
+  
+  - `ROLES` decides what a node runs. `api` serves XRPC, blobs and embeds. `live` accepts event sockets. `voice` starts the SFU and voice signaling. `main` runs ingest, sweeps, heals and migration jobs, but only on the one node holding the main Postgres advisory lock. Another `main` node waits and takes over when the holder goes away.
+  - Migrations run only on `main` nodes, one at a time behind their own advisory lock.
+  - `DATABASE_READ_URL` sends reads to a Postgres replica. Writes and transactions stay on `DATABASE_URL`.
+  - On SIGTERM or SIGINT a node drains: `/health` answers 503 with the deadline, every event socket gets a `drainNotice`, and the node waits until its connections are gone or the deadline passes. The deadline is `DRAIN_GRACE_MINUTES` (default 120) when other active nodes can take the clients, and 15 seconds when the node is alone. A second signal skips the wait.
+  - A node that loses the main lock shuts down with exit code 1, so its supervisor restarts it.
+  - `@colibri-social/appview-db` exports `holdLock`, `postgresAdvisoryLock` and `grantedLock`, and `Database.advisoryLock()`.
+  - The single-node `docker-compose.yml` gives the container 45 seconds to stop.
+- 43899d5: Run voice calls across AppView nodes.
+  
+  - Each SFU worker listens on one UDP and TCP port through a mediasoup `WebRtcServer`, starting at `SFU_RTC_PORT` (default 40000). `SFU_RTC_MIN_PORT` and `SFU_RTC_MAX_PORT` are removed. The compose file publishes 40000-40031.
+  - The SFU reads its settings from the AppView config. `SFU_INITIAL_OUTGOING_BITRATE` is part of it now, and `voiceSfuConfigFromEnv` is removed from `@colibri-social/voice`.
+  - A call runs on one node. `voice_calls` pins it there, and a join on another node answers with `callElsewhere`. A call on a node that stopped reporting moves to the next node someone joins on.
+  - Who is in a call lives in the new `voice_participants` table, so presence shows voice state from every node and `voice.moderate` reaches a call on any node over the event bus. The main node clears participants of nodes that stopped reporting and announces that they left.
+  - Server mutes and deafens are stored per Space member in the new `voice_moderation` table. They apply in every voice channel of the Space and last across calls, restarts and nodes until a moderator lifts them.
+  - A call that grows past `SFU_PARTICIPANTS_PER_WORKER` (default 20) participants per worker takes another worker, up to `SFU_WORKER_COUNT`. Its routers pipe every producer to each other, so everyone still hears everyone. New calls start on the worker with the fewest routers.
+  - With `TURN_KEY_ID` and `TURN_KEY_API_TOKEN` set, every transport gets Cloudflare TURN credentials valid for 24 hours, next to `SFU_ICE_SERVERS`.
+  - When a voice node drains, every call gets a `migrationProposal` with the other voice nodes. Participants answer with `rttReport`, and after `VOICE_MIGRATION_NOTICE_SECONDS` (default 60) or a `moveNow` the call moves with `migrateTo` to the node with the lowest worst-case round trip. A node that shuts down tells remaining callers `nodeClosed`. `joined` carries the node ID and region.
+  - `Database` exposes `primary` for reads that can't wait for a replica.
+
 ## 0.22.0
 
 ### Minor Changes
