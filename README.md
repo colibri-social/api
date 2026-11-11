@@ -156,8 +156,28 @@ that drained for an update and isn't restarted within 15 minutes restarts on its
 
 The main node updates itself over SSH too. Keep its stack in `STACK_DIR` (default `/opt/colibri`),
 set `COMPOSE_FILE=docker-compose.scaled.yml` and `TAILNET_HOST` in its `.env`, and add the SSH
-key's public half to the main server's own `authorized_keys`. Writes pause while the main node
-restarts. Sub nodes hold them for `WRITE_QUEUE_SECONDS`.
+key's public half to the main server's own `authorized_keys`.
+
+Before the main node restarts, it hands the main role to a failover node that already runs the
+new version, and the failover node writes to the same Postgres primary over the tailnet. Sub nodes
+hold writes for the few seconds of each handover. Without a failover node on the new version, the
+main node restarts in place and writes wait for up to `WRITE_QUEUE_SECONDS`.
+
+### The main role
+
+The main role belongs to whichever node holds a lock on the Postgres primary. A node with the
+`main` role always tries for it. A node with the `failover` role asks every `main` node at
+`/cluster/alive` on `CLUSTER_PORT` before each try and stays back while one of them is up and not
+draining. It takes the lock when:
+
+- No `main` node answers, or every one of them is draining. With the Postgres primary up, that
+  takes a few seconds.
+- The main node hands the role over before an update.
+- A `main` node is up but hasn't claimed the role for 30 seconds.
+
+A failover node holding the main role hands it back once a node with the `main` role has been
+active on the same version for two minutes. A node that isn't main forwards writes to the one that
+is.
 
 ### Cloudflare
 

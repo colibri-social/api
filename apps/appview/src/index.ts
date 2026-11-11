@@ -1,4 +1,4 @@
-import { type AdvisoryLock, holdLock, type LockHolder } from "@colibri-social/appview-db";
+import type { AdvisoryLock } from "@colibri-social/appview-db";
 import { asDid, asSpaceRef } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import type { VoiceSfuStats } from "@colibri-social/voice";
@@ -8,6 +8,7 @@ import { busAnnouncer, type EventMessage } from "./announce.js";
 import { type EventBus, memoryBus, postgresBus } from "./bus.js";
 import { healCategoryOrders } from "./category-order.js";
 import { resolveClusterEnv } from "./cluster/boot.js";
+import { createMainRole } from "./cluster/main-role.js";
 import { type ClusterNode, startClusterNode } from "./cluster/node.js";
 import { parkedState } from "./cluster/orders.js";
 import type { DrainMode } from "./cluster/protocol.js";
@@ -260,6 +261,7 @@ const main = async (): Promise<void> => {
 	ctx.voiceRoster = voice;
 
 	let holdsMain = false;
+	let yieldMainTo: (target: string) => Promise<boolean> = async () => false;
 	let cluster: ClusterNode | null = null;
 	let onDrainOrder: (mode: DrainMode, graceMinutes: number | undefined) => void = () => {};
 	let onResumeOrder: () => void = () => {};
@@ -275,6 +277,7 @@ const main = async (): Promise<void> => {
 		onDrain: (mode, graceMinutes) => onDrainOrder(mode, graceMinutes),
 		onResume: () => onResumeOrder(),
 		onWriteMode: (mode) => events.announceWriteState(mode),
+		yieldMain: (target) => yieldMainTo(target),
 		app: server.router,
 	});
 
@@ -325,7 +328,6 @@ const main = async (): Promise<void> => {
 	}
 
 	let mainJobs: MainJobs | null = null;
-	let mainLock: LockHolder | null = null;
 	let shuttingDown = false;
 	let skipDrain: () => void = () => {};
 
@@ -356,6 +358,8 @@ const main = async (): Promise<void> => {
 		const wasParked = ctx.drain.parked;
 
 		ctx.drain.begin(deadline);
+
+		await step("main-lock", () => mainRole.pause());
 
 		if (!wasParked) {
 			await cluster
@@ -415,8 +419,7 @@ const main = async (): Promise<void> => {
 		});
 		await step("pipeline", () => disconnectPipeline());
 		await step("error-reporting", () => stopErrorReporting());
-		await step("main-jobs", () => mainJobs?.stop());
-		await step("main-lock", () => mainLock?.stop());
+		await step("main-lock", () => mainRole.stop());
 		await step("events", () => events.close());
 		await step("bus", async () => {
 			stopDelivery();
@@ -432,25 +435,36 @@ const main = async (): Promise<void> => {
 		process.exit(exitCode);
 	};
 
-	if (roles.has("main")) {
-		mainLock = holdLock({
-			lock: ctx.database.advisoryLock(MAIN_LOCK_KEY),
-			onAcquired: async () => {
-				ctx.log.info("main.acquired");
-				holdsMain = true;
-				await cluster
-					?.becameMain()
-					.catch((error: unknown) => ctx.log.warn({ err: error }, "cluster.claimMainFailed"));
-				mainJobs = await startMainJobs(ctx, events);
-			},
-			onLost: (error) => {
-				ctx.log.error({ err: error }, "main.lost");
-				void shutdown("main-lock-lost", 1);
-			},
-			onRetryFailed: (error) => {
-				ctx.log.warn({ err: error }, "main.acquireFailed");
-			},
-		});
+	const mainRole = createMainRole({
+		lock: () => ctx.database.advisoryLock(MAIN_LOCK_KEY),
+		canContend: () => !shuttingDown && !ctx.drain.draining,
+		mayAcquire: () => cluster?.mayTakeMain() ?? Promise.resolve(true),
+		invite: (target) => cluster?.inviteToMain(target),
+		mainNode: async () => (await ctx.registry.mainNode())?.id ?? null,
+		onAcquired: async () => {
+			holdsMain = true;
+			await cluster
+				?.becameMain()
+				.catch((error: unknown) => ctx.log.warn({ err: error }, "cluster.claimMainFailed"));
+			mainJobs = await startMainJobs(ctx, events);
+		},
+		onReleasing: async () => {
+			holdsMain = false;
+			await step("main-jobs", () => mainJobs?.stop());
+			mainJobs = null;
+		},
+		onLost: (error) => {
+			holdsMain = false;
+			ctx.log.error({ err: error }, "main.lost");
+			void shutdown("main-lock-lost", 1);
+		},
+		log: ctx.log,
+	});
+
+	yieldMainTo = (target) => mainRole.yieldTo(target);
+
+	if (roles.has("main") || roles.has("failover")) {
+		mainRole.contend();
 	}
 
 	let parking = false;

@@ -133,3 +133,15 @@ describe("rollout pause", () => {
 		expect(await registry.rolloutPaused()).toBe(true);
 	});
 });
+
+describe("issueSecret", () => {
+	it("replaces a node's secret", async () => {
+		await register("eu-1", ["main", "api"]);
+
+		const first = await registry.issueSecret("eu-1");
+		const second = await registry.issueSecret("eu-1");
+
+		expect(await registry.verify("eu-1", first)).toBe(false);
+		expect(await registry.verify("eu-1", second)).toBe(true);
+	});
+});

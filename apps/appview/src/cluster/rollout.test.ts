@@ -123,6 +123,59 @@ describe("createRollout", () => {
 		expect(await rollout.tick()).toBe("busy");
 	});
 
+	it("hands main to the updated failover node before the main node restarts", async () => {
+		const { deps, runs } = setup([
+			row("hel-1", { roles: ["main", "api"] }),
+			row("fsn-1", { roles: ["failover", "api"] }),
+		]);
+		const yieldMain = vi.fn(async () => true);
+
+		deps.yieldMain = yieldMain;
+
+		expect(await createRollout(deps).tick()).toBe("handedOver");
+		expect(yieldMain).toHaveBeenCalledWith("fsn-1");
+		expect(runs.map((run) => [run.host, run.vars])).toEqual([
+			["fsn-1.tail", { image: "ghcr.io/colibri-social/api@sha256:new", pull_only: true }],
+			["fsn-1.tail", { image: "ghcr.io/colibri-social/api@sha256:new" }],
+			[
+				"hel-1.tail",
+				{
+					image: "ghcr.io/colibri-social/api@sha256:new",
+					pull_only: true,
+					stack_dir: "/srv/colibri",
+				},
+			],
+			[
+				"hel-1.tail",
+				{ image: "ghcr.io/colibri-social/api@sha256:new", detach: true, stack_dir: "/srv/colibri" },
+			],
+		]);
+	});
+
+	it("pauses instead of restarting the main node when the failover node doesn't take over", async () => {
+		const { deps, runs, paused } = setup([
+			row("hel-1", { roles: ["main", "api"] }),
+			row("fsn-1", { roles: ["failover", "api"], version: "2.0.0" }),
+		]);
+
+		deps.yieldMain = vi.fn(async () => false);
+
+		expect(await createRollout(deps).tick()).toBe("failed");
+		expect(paused()).toBe(true);
+		expect(runs.some((run) => run.vars.detach)).toBe(false);
+	});
+
+	it("restarts the main node in place without a node to take over", async () => {
+		const { deps, runs } = setup([row("hel-1", { roles: ["main", "api"] }), row("eu-2")]);
+		const yieldMain = vi.fn(async () => true);
+
+		deps.yieldMain = yieldMain;
+
+		expect(await createRollout(deps).tick()).toBe("restarting");
+		expect(yieldMain).not.toHaveBeenCalled();
+		expect(runs.at(-1)?.vars).toMatchObject({ detach: true });
+	});
+
 	it("does nothing when every node runs the stable version", async () => {
 		const { deps, runs } = setup([row("hel-1", { version: "2.0.0" })]);
 

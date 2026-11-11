@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { hostname } from "node:os";
 import { resolve } from "node:path";
@@ -9,11 +9,12 @@ import { createAnsibleRunner } from "./ansible.js";
 import { type Cloudflare, createCloudflare, parseGeoRegions } from "./cloudflare.js";
 import { ControlClient } from "./control-client.js";
 import { ControlServer } from "./control-server.js";
+import { createHandover, type DeferState, shouldDefer } from "./handover.js";
 import { resolveImage } from "./image-source.js";
 import { connectKuma, createKumaSync } from "./kuma.js";
-import { joinCluster } from "./node-secret.js";
+import { joinCluster, ownCredentials } from "./node-secret.js";
 import { type ClusterOrder, handleOrder } from "./orders.js";
-import type { DrainMode, NodeFrame } from "./protocol.js";
+import { ALIVE_PATH, type Alive, aliveSchema, type DrainMode, type NodeFrame } from "./protocol.js";
 import { missingForProvisioning, needsPostgres, provisionVars } from "./provisioning.js";
 import type { NodeAddress, NodeIdentity } from "./registry.js";
 import { createRollout, type Rollout } from "./rollout.js";
@@ -25,6 +26,12 @@ export const DEFAULT_REGION = "default";
 
 export const POOL_SYNC_MS = 60_000;
 
+export const HANDOVER_CHECK_MS = 30_000;
+
+export const INVITE_MS = 60_000;
+
+export const ALIVE_TIMEOUT_MS = 2_000;
+
 export type ClusterNodeDeps = {
 	ctx: AppContext;
 	roles: ReadonlySet<NodeRole>;
@@ -33,6 +40,7 @@ export type ClusterNodeDeps = {
 	onDrain: (mode: DrainMode, graceMinutes: number | undefined) => void;
 	onResume: () => void;
 	onWriteMode: (mode: WriteMode) => void;
+	yieldMain: (target: string) => Promise<boolean>;
 	app: (request: IncomingMessage, response: ServerResponse) => void;
 };
 
@@ -42,6 +50,8 @@ export type ClusterNode = {
 	setState: (state: NodeState, drainDeadline?: Date | null) => Promise<void>;
 	order: (order: ClusterOrder) => Promise<void>;
 	becameMain: () => Promise<void>;
+	mayTakeMain: () => Promise<boolean>;
+	inviteToMain: (target: string) => void;
 	stop: () => Promise<void>;
 };
 
@@ -96,7 +106,8 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 
 	const address = nodeAddress(ctx);
 
-	const credentials = roles.has("main")
+	const mainCapable = roles.has("main") || roles.has("failover");
+	const joined = roles.has("main")
 		? null
 		: await joinCluster({
 				file: config.NODE_SECRET_FILE,
@@ -106,6 +117,14 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 			});
 
 	const state = await registry.register(identity, address);
+	const credentials = roles.has("main")
+		? await ownCredentials({
+				file: config.NODE_SECRET_FILE,
+				id: identity.id,
+				verify: registry.verify,
+				issue: registry.issueSecret,
+			})
+		: joined;
 	const parked = state === "maintenance" || state === "retired";
 
 	log.info({ node: identity.id, region: identity.region, state }, "cluster.registered");
@@ -135,6 +154,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 					log,
 					nodeId: ctx.nodeId,
 					isMain: deps.isMain,
+					draining: () => ctx.drain.draining,
 					config: () => ctx.clusterConfig.values(),
 					app: deps.app,
 					onFrame: (nodeId, frame) => {
@@ -157,7 +177,11 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 	const mainUrl = async (): Promise<string | null> => {
 		const main = await registry.mainNode().catch(() => null);
 
-		return main && main.id !== ctx.nodeId ? main.tailnetUrl : (config.MAIN_NODE_URL ?? null);
+		if (main) {
+			return main.id === ctx.nodeId ? null : main.tailnetUrl;
+		}
+
+		return config.MAIN_NODE_URL ?? null;
 	};
 
 	if (secret && roles.has("api")) {
@@ -168,8 +192,46 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 			mainUrl,
 			log,
 			onMode: deps.onWriteMode,
+			forwarding: () => !deps.isMain(),
 		});
 	}
+
+	let invitedUntil = 0;
+	const deferState: DeferState = { unclaimedSince: null };
+
+	const mainNodesAlive = async (): Promise<(Alive | null)[]> => {
+		const preferred = (await registry.list()).filter(
+			(node) =>
+				node.id !== ctx.nodeId &&
+				node.roles.includes("main") &&
+				node.state !== "retired" &&
+				node.state !== "maintenance",
+		);
+
+		return Promise.all(
+			preferred.map((node) =>
+				fetch(new URL(ALIVE_PATH, node.tailnetUrl), {
+					signal: AbortSignal.timeout(ALIVE_TIMEOUT_MS),
+				})
+					.then(async (response) => {
+						const parsed = response.ok ? aliveSchema.safeParse(await response.json()) : null;
+
+						return parsed?.success ? parsed.data : null;
+					})
+					.catch(() => null),
+			),
+		);
+	};
+
+	const mayTakeMain = async (): Promise<boolean> => {
+		if (roles.has("main") || Date.now() < invitedUntil) {
+			return true;
+		}
+
+		const answers = await mainNodesAlive().catch(() => []);
+
+		return !shouldDefer(answers, deferState, Date.now());
+	};
 
 	const link = secret
 		? new ControlClient({
@@ -180,6 +242,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 				onFrame: (frame) => {
 					if (frame.t === "drain") deps.onDrain(frame.mode, frame.graceMinutes);
 					if (frame.t === "resume") deps.onResume();
+					if (frame.t === "takeMain") invitedUntil = Date.now() + INVITE_MS;
 				},
 			})
 		: null;
@@ -190,16 +253,21 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 
 	link?.start();
 
-	const ansible = roles.has("main")
-		? createAnsibleRunner({
-				directory: config.ANSIBLE_DIR,
-				user: config.SSH_USER,
-				keyFile: config.SSH_KEY_FILE,
-				log,
-			})
-		: undefined;
+	const ansible =
+		mainCapable &&
+		(await access(config.SSH_KEY_FILE).then(
+			() => true,
+			() => false,
+		))
+			? createAnsibleRunner({
+					directory: config.ANSIBLE_DIR,
+					user: config.SSH_USER,
+					keyFile: config.SSH_KEY_FILE,
+					log,
+				})
+			: undefined;
 
-	const cloudflare = roles.has("main") ? startCloudflare(ctx) : null;
+	const cloudflare = mainCapable ? startCloudflare(ctx) : null;
 	const send = (nodeId: string, frame: Parameters<ControlServer["send"]>[1]) => {
 		return control?.send(nodeId, frame) ?? false;
 	};
@@ -222,6 +290,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 					send,
 					drained,
 					active: () => deps.isMain() && !ctx.drain.draining,
+					yieldMain: deps.yieldMain,
 					log,
 				})
 			: null;
@@ -252,7 +321,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 	poolTimer?.unref?.();
 
 	const kuma =
-		roles.has("main") && config.KUMA_URL && config.KUMA_USERNAME && config.KUMA_PASSWORD
+		mainCapable && config.KUMA_URL && config.KUMA_USERNAME && config.KUMA_PASSWORD
 			? connectKuma({
 					url: config.KUMA_URL,
 					username: config.KUMA_USERNAME,
@@ -288,6 +357,32 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 		: null;
 
 	kumaTimer?.unref?.();
+
+	const handover =
+		roles.has("failover") && !roles.has("main")
+			? createHandover({
+					registry,
+					self: ctx.nodeId,
+					version: address.version,
+					yieldMain: deps.yieldMain,
+					busy: () => rollout?.running ?? false,
+					log,
+				})
+			: null;
+
+	const handoverTimer = handover
+		? setInterval(() => {
+				if (!deps.isMain() || ctx.drain.draining) {
+					return;
+				}
+
+				void handover
+					.tick()
+					.catch((error: unknown) => log.warn({ err: error }, "main.handBackCheckFailed"));
+			}, HANDOVER_CHECK_MS)
+		: null;
+
+	handoverTimer?.unref?.();
 
 	const heartbeat = setInterval(() => {
 		void registry
@@ -374,12 +469,20 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 			log.info({ ...result, kind: order.kind, node: order.node }, "cluster.order");
 			ctx.announce.clusterOrderResult(result);
 		},
-		becameMain: () => registry.claimMain(ctx.nodeId),
+		becameMain: async () => {
+			invitedUntil = 0;
+			await registry.claimMain(ctx.nodeId);
+		},
+		mayTakeMain,
+		inviteToMain: (target) => {
+			control?.send(target, { t: "takeMain" });
+		},
 		stop: async () => {
 			clearInterval(heartbeat);
 			if (rolloutTimer) clearInterval(rolloutTimer);
 			if (poolTimer) clearInterval(poolTimer);
 			if (kumaTimer) clearInterval(kumaTimer);
+			if (handoverTimer) clearInterval(handoverTimer);
 			kuma?.close();
 			ctx.writeProxy?.stop();
 			link?.stop();

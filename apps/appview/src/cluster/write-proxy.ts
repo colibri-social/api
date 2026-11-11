@@ -43,6 +43,7 @@ export type WriteProxyDeps = {
 	mainUrl: () => Promise<string | null>;
 	log: Pick<Logger, "info" | "warn">;
 	onMode: (mode: WriteMode) => void;
+	forwarding?: () => boolean;
 	fetch?: typeof fetch;
 	now?: () => number;
 	retryMs?: number;
@@ -154,6 +155,10 @@ export class WriteProxy {
 
 	get waiting(): number {
 		return this.queue.length;
+	}
+
+	get forwarding(): boolean {
+		return this.deps.forwarding?.() ?? true;
 	}
 
 	async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {

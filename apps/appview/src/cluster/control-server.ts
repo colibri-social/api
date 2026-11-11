@@ -2,6 +2,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { type WebSocket, WebSocketServer } from "ws";
 import type { Logger } from "../logger.js";
 import {
+	ALIVE_PATH,
+	type Alive,
 	CONFIG_PATH,
 	CONTROL_PATH,
 	JOIN_PATH,
@@ -25,6 +27,7 @@ export type ControlServerDeps = {
 	log: Pick<Logger, "info" | "warn">;
 	nodeId: string;
 	isMain: () => boolean;
+	draining?: () => boolean;
 	onFrame?: (nodeId: string, frame: NodeFrame) => void;
 	routes?: (request: IncomingMessage, response: ServerResponse) => boolean;
 	config?: (nodeId: string) => Promise<Record<string, string>>;
@@ -145,6 +148,16 @@ export class ControlServer {
 		}
 
 		const path = new URL(request.url ?? "/", "http://localhost").pathname;
+
+		if (request.method === "GET" && path === ALIVE_PATH) {
+			respond(response, 200, {
+				node: this.deps.nodeId,
+				main: this.deps.isMain(),
+				draining: this.deps.draining?.() ?? false,
+			} satisfies Alive);
+
+			return;
+		}
 
 		if (request.method === "GET" && path === PING_PATH) {
 			if (this.deps.isMain()) {

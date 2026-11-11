@@ -6,6 +6,8 @@ export const JOIN_PATH = "/cluster/join";
 
 export const CONFIG_PATH = "/cluster/config";
 
+export const ALIVE_PATH = "/cluster/alive";
+
 export const NODE_ID_HEADER = "x-colibri-node";
 
 export const NODE_SECRET_HEADER = "x-colibri-node-secret";
@@ -30,6 +32,7 @@ export const mainFrameSchema = z.discriminatedUnion("t", [
 		graceMinutes: z.number().nonnegative().optional(),
 	}),
 	z.object({ t: z.literal("resume") }),
+	z.object({ t: z.literal("takeMain") }),
 ]);
 
 export type MainFrame = z.infer<typeof mainFrameSchema>;
@@ -54,6 +57,14 @@ export type JoinResponse = z.infer<typeof joinResponseSchema>;
 export const configResponseSchema = z.object({
 	values: z.record(z.string(), z.string()),
 });
+
+export const aliveSchema = z.object({
+	node: z.string(),
+	main: z.boolean(),
+	draining: z.boolean(),
+});
+
+export type Alive = z.infer<typeof aliveSchema>;
 
 export const notMainSchema = z.object({
 	error: z.literal("NotMain"),

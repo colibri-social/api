@@ -48,6 +48,7 @@ export type Registry = {
 	createJoinToken: (identity: NodeIdentity) => Promise<string>;
 	redeem: (token: string, address: NodeAddress) => Promise<{ id: string; secret: string } | null>;
 	verify: (id: string, secret: string) => Promise<boolean>;
+	issueSecret: (id: string) => Promise<string>;
 	register: (identity: NodeIdentity, address: NodeAddress) => Promise<NodeState>;
 	heartbeat: (id: string, load: NodeLoad) => Promise<void>;
 	setState: (id: string, state: NodeState, drainDeadline?: Date | null) => Promise<void>;
@@ -188,6 +189,16 @@ export const createRegistry = (
 			}
 
 			return sameHash(row.secretHash, hash(secret));
+		},
+		issueSecret: async (id) => {
+			const secret = newSecret();
+
+			await primary
+				.update(nodes)
+				.set({ secretHash: hash(secret) })
+				.where(eq(nodes.id, id));
+
+			return secret;
 		},
 		register: async (identity, address) => {
 			const at = now().toISOString();

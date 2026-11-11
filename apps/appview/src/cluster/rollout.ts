@@ -1,6 +1,7 @@
 import { PEER_HEARTBEAT_WINDOW_MS } from "../drain.js";
 import type { Logger } from "../logger.js";
 import type { AnsibleRunner, PlaybookResult } from "./ansible.js";
+import { takeoverCandidate } from "./handover.js";
 import type { ResolvedImage } from "./image-source.js";
 import type { MainFrame } from "./protocol.js";
 import type { NodeRow, Registry } from "./registry.js";
@@ -18,7 +19,8 @@ export type RolloutOutcome =
 	| "waiting"
 	| "updated"
 	| "failed"
-	| "restarting";
+	| "restarting"
+	| "handedOver";
 
 export type RolloutDeps = {
 	registry: Pick<Registry, "list" | "node" | "mayLeave" | "rolloutPaused" | "pauseRollout">;
@@ -31,6 +33,7 @@ export type RolloutDeps = {
 	send: (nodeId: string, frame: MainFrame) => boolean;
 	drained: (nodeId: string, timeoutMs: number) => Promise<boolean>;
 	active: () => boolean;
+	yieldMain?: (target: string) => Promise<boolean>;
 	log: Pick<Logger, "info" | "warn" | "error">;
 	pollMs?: number;
 	verifyTimeoutMs?: number;
@@ -66,6 +69,7 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 	const pollMs = deps.pollMs ?? 5_000;
 	let running = false;
 	let restarting = false;
+	let handedOver = false;
 
 	const fresh = (node: NodeRow, since: number): boolean => {
 		return node.heartbeatAt !== null && new Date(node.heartbeatAt).getTime() > since;
@@ -148,6 +152,32 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 	};
 
 	const updateSelf = async (node: NodeRow, target: ResolvedImage): Promise<StepResult> => {
+		const successor = deps.yieldMain
+			? takeoverCandidate(await deps.registry.list(), deps.self, target.version ?? "", now())
+			: null;
+
+		if (successor && deps.yieldMain) {
+			const pulled = await playbook(node, {
+				image: target.pinned,
+				pull_only: true,
+				stack_dir: deps.stackDir,
+			});
+
+			if (!pulled.ok) {
+				deps.log.error({ node: node.id, tail: tailOf(pulled) }, "rollout.pullFailed");
+
+				return { ok: false, reason: "pulling the image failed" };
+			}
+
+			deps.log.info({ node: node.id, successor: successor.id }, "rollout.handingOverMain");
+
+			if (!(await deps.yieldMain(successor.id))) {
+				return { ok: false, reason: `${successor.id} didn't take over the main role` };
+			}
+
+			handedOver = true;
+		}
+
 		const result = await playbook(node, {
 			image: target.pinned,
 			detach: true,
@@ -206,6 +236,10 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 				return "paused";
 			}
 
+			if (!deps.active()) {
+				return "busy";
+			}
+
 			const result =
 				node.id === deps.self ? await updateSelf(node, target) : await updateNode(node, target);
 
@@ -224,6 +258,10 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 			);
 
 			return "failed";
+		}
+
+		if (handedOver) {
+			return "handedOver";
 		}
 
 		return restarting ? "restarting" : "updated";

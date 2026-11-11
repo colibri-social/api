@@ -31,6 +31,25 @@ export const saveNodeCredentials = async (
 	await writeFile(file, `${JSON.stringify(credentials)}\n`, { mode: 0o600 });
 };
 
+export const ownCredentials = async (options: {
+	file: string;
+	id: string;
+	verify: (id: string, secret: string) => Promise<boolean>;
+	issue: (id: string) => Promise<string>;
+}): Promise<NodeCredentials> => {
+	const stored = await readNodeCredentials(options.file);
+
+	if (stored && stored.id === options.id && (await options.verify(options.id, stored.secret))) {
+		return stored;
+	}
+
+	const issued = { id: options.id, secret: await options.issue(options.id) };
+
+	await saveNodeCredentials(options.file, issued);
+
+	return issued;
+};
+
 const errorSchema = z.object({ error: z.string() });
 
 export const joinCluster = async (options: JoinOptions): Promise<NodeCredentials | null> => {
