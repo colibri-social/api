@@ -23,12 +23,14 @@ import {
 	monitoringDeploy,
 	nodeAdd,
 	nodeList,
+	nodeLocation,
 	nodeRecover,
 	nodeRemove,
 	nodeResume,
 	nodeShutdown,
 	RefusedError,
 	rollout,
+	rolloutNow,
 	statusDeploy,
 	UsageError,
 } from "./commands.js";
@@ -50,13 +52,15 @@ import { type Prompts, runStatusTui } from "./status/tui.js";
 const USAGE = `colibri-admin, run it inside the AppView container of the main node
 
   node list
-  node add <id> --region <region> --roles <roles> [--public-url <url>]
-                   [--ip <public ip> [--workers <n>]]
+  node add <id> --region <region> --roles <roles> [--location <text>]
+                   [--public-url <url>] [--ip <public ip> [--workers <n>]]
+  node location <id> [<text>]
   node shutdown <id> --maintenance|--retire [--grace 15m] [--force]
   node resume <id>
   node recover <id>
   node remove <id> [--force]
   rollout pause|resume
+  rollout now [--grace 2m]
   status
   status deploy <node>
   status incident list [--all]
@@ -196,6 +200,7 @@ const main = async (): Promise<void> => {
 		options: {
 			region: { type: "string" },
 			roles: { type: "string" },
+			location: { type: "string" },
 			"public-url": { type: "string" },
 			ip: { type: "string" },
 			workers: { type: "string" },
@@ -377,6 +382,7 @@ const main = async (): Promise<void> => {
 					id: required(first, "<id>"),
 					region: required(values.region, "--region"),
 					roles: required(values.roles, "--roles"),
+					...(values.location ? { location: values.location } : {}),
 					...(values["public-url"] ? { publicUrl: values["public-url"] } : {}),
 					...(values.ip ? { ip: values.ip } : {}),
 					...(values.workers ? { workers: values.workers } : {}),
@@ -389,6 +395,8 @@ const main = async (): Promise<void> => {
 					...(values.grace ? { grace: values.grace } : {}),
 					force: values.force,
 				});
+			case "node location":
+				return nodeLocation(admin, required(first, "<id>"), second);
 			case "node resume":
 				return nodeResume(admin, required(first, "<id>"));
 			case "monitoring deploy":
@@ -407,6 +415,8 @@ const main = async (): Promise<void> => {
 				return rollout(admin, true);
 			case "rollout resume":
 				return rollout(admin, false);
+			case "rollout now":
+				return rolloutNow(admin, values.grace);
 			case "config list":
 				return configList(admin);
 			case "config set":

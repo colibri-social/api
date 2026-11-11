@@ -10,6 +10,12 @@ export const VERIFY_TIMEOUT_MS = 10 * 60_000;
 
 export const DRAIN_SLACK_MS = 10 * 60_000;
 
+export const FORCED_RETRY_MS = 10_000;
+
+export type TickOptions = {
+	graceMinutes?: number;
+};
+
 export type RolloutOutcome =
 	| "busy"
 	| "paused"
@@ -43,7 +49,7 @@ export type RolloutDeps = {
 
 export type Rollout = {
 	readonly running: boolean;
-	tick: () => Promise<RolloutOutcome>;
+	tick: (options?: TickOptions) => Promise<RolloutOutcome>;
 };
 
 type StepResult = { ok: true } | { ok: false; waiting: true } | { ok: false; reason: string };
@@ -102,7 +108,11 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 		});
 	};
 
-	const updateNode = async (node: NodeRow, target: ResolvedImage): Promise<StepResult> => {
+	const updateNode = async (
+		node: NodeRow,
+		target: ResolvedImage,
+		options: TickOptions,
+	): Promise<StepResult> => {
 		const decision = await deps.registry.mayLeave(node.id);
 
 		if (!decision.allowed) {
@@ -119,7 +129,12 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 			return { ok: false, reason: "pulling the image failed" };
 		}
 
-		if (!deps.send(node.id, { t: "drain", mode: "update" })) {
+		const drainFrame: MainFrame =
+			options.graceMinutes === undefined
+				? { t: "drain", mode: "update" }
+				: { t: "drain", mode: "update", graceMinutes: options.graceMinutes };
+
+		if (!deps.send(node.id, drainFrame)) {
 			deps.log.info({ node: node.id }, "rollout.waitingForLink");
 
 			return { ok: false, waiting: true };
@@ -127,7 +142,10 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 
 		deps.log.info({ node: node.id, version: target.version }, "rollout.draining");
 
-		const drained = await deps.drained(node.id, deps.drainMinutes * 60_000 + DRAIN_SLACK_MS);
+		const drained = await deps.drained(
+			node.id,
+			(options.graceMinutes ?? deps.drainMinutes) * 60_000 + DRAIN_SLACK_MS,
+		);
 
 		if (!drained) {
 			return { ok: false, reason: "the node did not finish draining" };
@@ -151,7 +169,11 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 		return { ok: true };
 	};
 
-	const updateSelf = async (node: NodeRow, target: ResolvedImage): Promise<StepResult> => {
+	const updateSelf = async (
+		node: NodeRow,
+		target: ResolvedImage,
+		options: TickOptions,
+	): Promise<StepResult> => {
 		const successor = deps.yieldMain
 			? takeoverCandidate(await deps.registry.list(), deps.self, target.version ?? "", now())
 			: null;
@@ -182,6 +204,9 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 			image: target.pinned,
 			detach: true,
 			stack_dir: deps.stackDir,
+			...(options.graceMinutes === undefined
+				? {}
+				: { stop_timeout: Math.max(1, Math.ceil(options.graceMinutes * 60)) }),
 		});
 
 		if (!result.ok) {
@@ -196,7 +221,32 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 		return { ok: true };
 	};
 
-	const run = async (): Promise<RolloutOutcome> => {
+	const step = async (
+		node: NodeRow,
+		target: ResolvedImage,
+		options: TickOptions,
+	): Promise<StepResult> => {
+		const deadline = now() + (deps.verifyTimeoutMs ?? VERIFY_TIMEOUT_MS);
+
+		for (;;) {
+			const result =
+				node.id === deps.self
+					? await updateSelf(node, target, options)
+					: await updateNode(node, target, options);
+
+			if (result.ok || !("waiting" in result) || options.graceMinutes === undefined) {
+				return result;
+			}
+
+			if (now() >= deadline) {
+				return { ok: false, reason: `${node.id} couldn't leave without breaking the quorum` };
+			}
+
+			await sleep(FORCED_RETRY_MS);
+		}
+	};
+
+	const run = async (options: TickOptions): Promise<RolloutOutcome> => {
 		if (await deps.registry.rolloutPaused()) {
 			return "paused";
 		}
@@ -227,7 +277,11 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 		}
 
 		deps.log.info(
-			{ version: target.version, nodes: behind.map((node) => node.id) },
+			{
+				version: target.version,
+				nodes: behind.map((node) => node.id),
+				...(options.graceMinutes === undefined ? {} : { graceMinutes: options.graceMinutes }),
+			},
 			"rollout.started",
 		);
 
@@ -240,8 +294,7 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 				return "busy";
 			}
 
-			const result =
-				node.id === deps.self ? await updateSelf(node, target) : await updateNode(node, target);
+			const result = await step(node, target, options);
 
 			if (result.ok) {
 				continue;
@@ -271,7 +324,7 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 		get running() {
 			return running;
 		},
-		tick: async () => {
+		tick: async (options = {}) => {
 			if (running || restarting || !deps.active()) {
 				return "busy";
 			}
@@ -279,7 +332,7 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 			running = true;
 
 			try {
-				return await run();
+				return await run(options);
 			} finally {
 				running = false;
 			}

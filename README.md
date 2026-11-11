@@ -202,6 +202,14 @@ then the failover node, then itself. Each node pulls the image pinned by digest,
 within 10 minutes. A failed step pauses rollouts until `colibri-admin rollout resume`. A node
 that drained for an update and isn't restarted within 15 minutes restarts on its current image.
 
+`colibri-admin rollout now [--grace 2m]` starts a rollout right away, in the same order and under
+the same quorum rule, and resumes paused rollouts. Each node drains for the given grace (default 2
+minutes) in place of `DRAIN_GRACE_MINUTES`: clients move their sockets to other nodes as soon as
+the drain starts, and calls move to another voice node within `VOICE_MIGRATION_NOTICE_SECONDS`, so
+keep the grace above that. The main node stops itself after the same grace. A node that quorum
+holds back is retried every 10 seconds for up to 10 minutes. It refuses while a rollout is
+already running.
+
 The main node updates itself over SSH too. Keep its stack in `STACK_DIR` (default `/opt/colibri`),
 set `COMPOSE_FILE=docker-compose.scaled.yml` and `TAILNET_HOST` in its `.env`, and add the SSH
 key's public half to the main server's own `authorized_keys`.
@@ -276,8 +284,16 @@ Once `KUMA_URL` is set, the main node keeps Kuma in step with the registry every
 - An HTTP monitor for the API host and one for each node that isn't retired, all on `/health`.
   Nodes in maintenance or draining are paused. Monitors of retired nodes are deleted. Monitors the
   main node didn't create are left alone.
+- Each node's monitor is named after its location, such as `Helsinki, Finland`, or after its ID
+  when it has none. Set the location with `node add --location` or `node location <id> <text>`. A
+  changed location renames the monitor in place and keeps its history.
+- The status page is titled "Colibri status", carries the Colibri logo from
+  `deploy/uptime-kuma/logo.png` (unless a logo was uploaded in Kuma), a short description and footer
+  links, refreshes every 60 seconds and follows the visitor's light or dark theme.
 - The `KUMA_STATUS_SLUG` status page (default `colibri`) lists the API first, then one group per
-  region with its nodes, styled with `deploy/uptime-kuma/status.css`.
+  area in the order Europe, North America, South America, Asia, Oceania, Middle East and Africa.
+  Region IDs such as `eu`, `us-central`, `jp` or `au` map to their area, and any other region gets a
+  group under its own ID. The page is styled with `deploy/uptime-kuma/status.css`.
 
 On a fresh Kuma, the main node creates the account from `KUMA_USERNAME` and `KUMA_PASSWORD`. Keep
 2FA off for that account.

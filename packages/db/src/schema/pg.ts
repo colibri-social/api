@@ -800,6 +800,7 @@ export const nodes = pgTable(
 		id: text("id").primaryKey(),
 		region: text("region").notNull(),
 		roles: json<NodeRole[]>("roles").notNull(),
+		location: text("location"),
 		publicUrl: text("public_url").notNull(),
 		tailnetUrl: text("tailnet_url").notNull(),
 		announcedIp: text("announced_ip"),
@@ -820,6 +821,7 @@ export const nodeJoinTokens = pgTable("node_join_tokens", {
 	nodeId: text("node_id").notNull(),
 	region: text("region").notNull(),
 	roles: json<NodeRole[]>("roles").notNull(),
+	location: text("location"),
 	expiresAt: timestamp("expires_at").notNull(),
 	usedAt: timestamp("used_at"),
 });

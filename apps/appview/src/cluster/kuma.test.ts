@@ -59,6 +59,11 @@ const fakeKuma = () => {
 
 			return next;
 		},
+		edit: async (id, fields) => {
+			const current = monitors.get(id);
+
+			if (current) monitors.set(id, { ...current, name: String(fields.name) });
+		},
 		remove: async (id) => {
 			monitors.delete(id);
 		},
@@ -111,9 +116,9 @@ describe("desiredMonitors", () => {
 
 		expect(desired.map((entry) => [entry.key, entry.url, entry.active, entry.group])).toEqual([
 			[API_KEY, "https://api.test/health", true, "API"],
-			[nodeKey("eu-1"), "https://eu-1.nodes.test/health", true, "eu"],
-			[nodeKey("eu-2"), "https://eu-2.nodes.test/health", false, "eu"],
-			[nodeKey("us-1"), "https://us-1.nodes.test/health", false, "us"],
+			[nodeKey("eu-1"), "https://eu-1.nodes.test/health", true, "Europe"],
+			[nodeKey("eu-2"), "https://eu-2.nodes.test/health", false, "Europe"],
+			[nodeKey("us-1"), "https://us-1.nodes.test/health", false, "North America"],
 		]);
 	});
 });
@@ -141,25 +146,51 @@ describe("planMonitors", () => {
 		expect(plan.add.map((entry) => entry.key)).toEqual([nodeKey("eu-3")]);
 		expect(plan.pause).toEqual([3]);
 		expect(plan.resume).toEqual([2]);
+		expect(plan.rename).toEqual([]);
+	});
+
+	it("renames a monitor in place when only the location changed", () => {
+		const desired = desiredMonitors(
+			[node("hel-1", { location: "Helsinki, Finland" })],
+			"https://api.test",
+		);
+		const plan = planMonitors([monitor(1, API_KEY), monitor(2, nodeKey("hel-1"))], desired);
+
+		expect(plan.remove).toEqual([]);
+		expect(plan.add).toEqual([]);
+		expect(plan.rename.map((entry) => [entry.id, entry.monitor.name])).toEqual([
+			[2, "Helsinki, Finland"],
+		]);
 	});
 });
 
 describe("statusGroups", () => {
-	it("puts the API first, then one group per region", () => {
+	it("puts the API first, then one group per area in a fixed order", () => {
 		const desired = desiredMonitors(
-			[node("us-1", { region: "us" }), node("eu-1")],
+			[
+				node("syd-1", { region: "au" }),
+				node("stl-1", { region: "us-central" }),
+				node("hel-1"),
+				node("lau-1", { region: "eu-west" }),
+				node("lab-1", { region: "lab" }),
+			],
 			"https://api.test",
 		);
 		const groups = statusGroups(desired, [
 			monitor(1, API_KEY),
-			monitor(2, nodeKey("eu-1")),
-			monitor(3, nodeKey("us-1")),
+			monitor(2, nodeKey("hel-1")),
+			monitor(3, nodeKey("lau-1")),
+			monitor(4, nodeKey("stl-1")),
+			monitor(5, nodeKey("syd-1")),
+			monitor(6, nodeKey("lab-1")),
 		]);
 
 		expect(groups).toEqual([
 			{ name: "API", monitorList: [{ id: 1 }] },
-			{ name: "eu", monitorList: [{ id: 2 }] },
-			{ name: "us", monitorList: [{ id: 3 }] },
+			{ name: "Europe", monitorList: [{ id: 2 }, { id: 3 }] },
+			{ name: "North America", monitorList: [{ id: 4 }] },
+			{ name: "Oceania", monitorList: [{ id: 5 }] },
+			{ name: "lab", monitorList: [{ id: 6 }] },
 		]);
 	});
 });
@@ -172,6 +203,7 @@ describe("createKumaSync", () => {
 			title: "Colibri",
 			statusHost: "status.test",
 			css: async () => css,
+			logo: async () => "data:image/png;base64,AAAA",
 			apiUrl: "https://api.test",
 			log: { info: vi.fn(), warn: vi.fn() },
 		});
@@ -191,8 +223,13 @@ describe("createKumaSync", () => {
 			customCSS: "body {}",
 			showPoweredBy: false,
 			domainNameList: ["status.test"],
+			autoRefreshInterval: 60,
+			theme: "auto",
+			showTags: false,
 		});
-		expect(kuma.saved[0]?.groups.map((group) => group.name)).toEqual(["API", "eu"]);
+		expect(kuma.saved[0]?.config.description).toMatch(/checked every minute/);
+		expect(kuma.saved[0]?.icon).toBe("data:image/png;base64,AAAA");
+		expect(kuma.saved[0]?.groups.map((group) => group.name)).toEqual(["API", "Europe"]);
 
 		await syncer.sync([node("eu-1")]);
 
@@ -201,7 +238,11 @@ describe("createKumaSync", () => {
 		await syncer.sync([node("eu-1"), node("us-1", { region: "us" })]);
 
 		expect(kuma.saved).toHaveLength(2);
-		expect(kuma.saved[1]?.groups.map((group) => group.name)).toEqual(["API", "eu", "us"]);
+		expect(kuma.saved[1]?.groups.map((group) => group.name)).toEqual([
+			"API",
+			"Europe",
+			"North America",
+		]);
 	});
 
 	it("pauses a node in maintenance without saving the page again", async () => {

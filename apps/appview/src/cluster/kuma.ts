@@ -69,6 +69,7 @@ export type StatusGroup = {
 export type KumaApi = {
 	monitors: () => Promise<KumaMonitor[]>;
 	add: (monitor: Record<string, unknown>) => Promise<number>;
+	edit: (id: number, monitor: Record<string, unknown>) => Promise<void>;
 	remove: (id: number) => Promise<void>;
 	pause: (id: number) => Promise<void>;
 	resume: (id: number) => Promise<void>;
@@ -103,6 +104,7 @@ export type DesiredMonitor = {
 
 export type MonitorPlan = {
 	add: DesiredMonitor[];
+	rename: { id: number; monitor: DesiredMonitor }[];
 	remove: number[];
 	pause: number[];
 	resume: number[];
@@ -114,6 +116,7 @@ export type KumaSyncOptions = {
 	title: string;
 	statusHost: string | null;
 	css: () => Promise<string>;
+	logo?: () => Promise<string | null>;
 	apiUrl: string;
 	log: Pick<Logger, "info" | "warn">;
 };
@@ -156,6 +159,55 @@ const toMaintenances = (list: unknown): KumaMaintenance[] => {
 
 const API_GROUP = "API";
 
+export const AREA_ORDER: readonly string[] = [
+	"Europe",
+	"North America",
+	"South America",
+	"Asia",
+	"Oceania",
+	"Middle East",
+	"Africa",
+];
+
+const AREAS: Readonly<Record<string, string>> = {
+	eu: "Europe",
+	europe: "Europe",
+	weu: "Europe",
+	eeu: "Europe",
+	us: "North America",
+	na: "North America",
+	ca: "North America",
+	enam: "North America",
+	wnam: "North America",
+	sa: "South America",
+	latam: "South America",
+	br: "South America",
+	nsam: "South America",
+	ssam: "South America",
+	asia: "Asia",
+	jp: "Asia",
+	kr: "Asia",
+	sg: "Asia",
+	in: "Asia",
+	neas: "Asia",
+	seas: "Asia",
+	sas: "Asia",
+	oc: "Oceania",
+	oceania: "Oceania",
+	au: "Oceania",
+	me: "Middle East",
+	af: "Africa",
+	africa: "Africa",
+	naf: "Africa",
+	saf: "Africa",
+};
+
+export const areaOf = (region: string): string => {
+	const id = region.toLowerCase();
+
+	return AREAS[id] ?? AREAS[id.split("-")[0] ?? ""] ?? region;
+};
+
 const healthUrl = (base: string): string => {
 	return new URL("/health", base).toString();
 };
@@ -174,10 +226,10 @@ export const desiredMonitors = (nodes: readonly NodeRow[], apiUrl: string): Desi
 
 		monitors.push({
 			key: nodeKey(node.id),
-			name: node.id,
+			name: node.location ?? node.id,
 			url: healthUrl(node.publicUrl),
 			active: node.state !== "maintenance" && node.state !== "draining",
-			group: node.region,
+			group: areaOf(node.region),
 		});
 	}
 
@@ -188,7 +240,7 @@ export const planMonitors = (
 	existing: readonly KumaMonitor[],
 	desired: readonly DesiredMonitor[],
 ): MonitorPlan => {
-	const plan: MonitorPlan = { add: [], remove: [], pause: [], resume: [] };
+	const plan: MonitorPlan = { add: [], rename: [], remove: [], pause: [], resume: [] };
 	const wanted = new Map(desired.map((monitor) => [monitor.key, monitor]));
 	const kept = new Set<string>();
 
@@ -199,18 +251,16 @@ export const planMonitors = (
 
 		const target = wanted.get(key);
 
-		if (
-			!target ||
-			kept.has(key) ||
-			monitor.type !== "http" ||
-			monitor.name !== target.name ||
-			monitor.url !== target.url
-		) {
+		if (!target || kept.has(key) || monitor.type !== "http" || monitor.url !== target.url) {
 			plan.remove.push(monitor.id);
 			continue;
 		}
 
 		kept.add(key);
+
+		if (monitor.name !== target.name) {
+			plan.rename.push({ id: monitor.id, monitor: target });
+		}
 
 		if (monitor.active && !target.active) plan.pause.push(monitor.id);
 		if (!monitor.active && target.active) plan.resume.push(monitor.id);
@@ -238,9 +288,12 @@ export const statusGroups = (
 		groups.set(monitor.group, [...(groups.get(monitor.group) ?? []), id]);
 	}
 
-	const names = [...groups.keys()].sort((a, b) =>
-		a === API_GROUP ? -1 : b === API_GROUP ? 1 : a.localeCompare(b),
-	);
+	const rank = (name: string): number => {
+		const index = AREA_ORDER.indexOf(name);
+
+		return name === API_GROUP ? -1 : index === -1 ? AREA_ORDER.length : index;
+	};
+	const names = [...groups.keys()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 
 	return names.map((name) => ({
 		name,
@@ -395,6 +448,10 @@ export const connectKuma = (options: {
 
 			return Number(answer.monitorID);
 		},
+		edit: async (id, monitor) => {
+			await authed();
+			await call("editMonitor", { ...monitor, id });
+		},
 		remove: async (id) => {
 			await authed();
 			await call("deleteMonitor", id, false);
@@ -517,6 +574,14 @@ export const connectKuma = (options: {
 	};
 };
 
+export const STATUS_PAGE_DESCRIPTION =
+	"Live status of the servers that run Colibri. Each one is checked every minute.";
+
+export const STATUS_PAGE_FOOTER =
+	"[colibri.social](https://colibri.social) · [Open Colibri](https://colibri.social/app)";
+
+const DEFAULT_ICON = "/icon.svg";
+
 export const createKumaSync = (options: KumaSyncOptions) => {
 	let savedPage: string | null = null;
 
@@ -547,12 +612,22 @@ export const createKumaSync = (options: KumaSyncOptions) => {
 			{
 				...config,
 				slug: options.slug,
+				title: options.title,
+				description: STATUS_PAGE_DESCRIPTION,
+				footerText: STATUS_PAGE_FOOTER,
+				autoRefreshInterval: 60,
+				theme: "auto",
+				showTags: false,
+				showCertificateExpiry: false,
+				showOnlyLastHeartbeat: false,
 				customCSS: css,
 				showPoweredBy: false,
 				analyticsType: config.analyticsType ?? null,
 				domainNameList: options.statusHost ? [options.statusHost] : [],
 			},
-			config.icon ?? "/icon.svg",
+			!config.icon || config.icon === DEFAULT_ICON
+				? ((await options.logo?.().catch(() => null)) ?? DEFAULT_ICON)
+				: config.icon,
 			groups,
 		);
 		savedPage = fingerprint;
@@ -566,13 +641,22 @@ export const createKumaSync = (options: KumaSyncOptions) => {
 
 			for (const id of plan.remove) await options.api.remove(id);
 			for (const monitor of plan.add) await options.api.add(monitorFields(monitor));
+			for (const { id, monitor } of plan.rename) await options.api.edit(id, monitorFields(monitor));
 			for (const id of plan.pause) await options.api.pause(id);
 			for (const id of plan.resume) await options.api.resume(id);
 
-			if (plan.add.length + plan.remove.length + plan.pause.length + plan.resume.length > 0) {
+			if (
+				plan.add.length +
+					plan.rename.length +
+					plan.remove.length +
+					plan.pause.length +
+					plan.resume.length >
+				0
+			) {
 				options.log.info(
 					{
 						added: plan.add.length,
+						renamed: plan.rename.length,
 						removed: plan.remove.length,
 						paused: plan.pause.length,
 						resumed: plan.resume.length,

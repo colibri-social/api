@@ -451,3 +451,29 @@ describe("Ansible orders", () => {
 		expect(run).not.toHaveBeenCalled();
 	});
 });
+
+describe("rollout orders", () => {
+	it("resumes rollouts and starts one at once with the given grace", async () => {
+		const now = vi.fn(async () => "updated");
+
+		await deps.registry.pauseRollout();
+		deps = { ...deps, rollout: { running: () => false, now } };
+
+		const result = await handleOrder(deps, { kind: "rolloutNow", id: "r1", graceMinutes: 2 });
+
+		expect(result.ok).toBe(true);
+		expect(now).toHaveBeenCalledWith(2);
+		expect(await deps.registry.rolloutPaused()).toBe(false);
+	});
+
+	it("refuses while a rollout is running or without a rollout", async () => {
+		const busy = await handleOrder(
+			{ ...deps, rollout: { running: () => true, now: vi.fn() } },
+			{ kind: "rolloutNow", id: "r2", graceMinutes: 2 },
+		);
+		const missing = await handleOrder(deps, { kind: "rolloutNow", id: "r3", graceMinutes: 2 });
+
+		expect(busy.ok).toBe(false);
+		expect(missing.ok).toBe(false);
+	});
+});

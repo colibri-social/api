@@ -11,11 +11,13 @@ import {
 	monitoringDeploy,
 	nodeAdd,
 	nodeList,
+	nodeLocation,
 	nodeRemove,
 	nodeShutdown,
 	parseGrace,
 	parseRoles,
 	RefusedError,
+	rolloutNow,
 	statusDeploy,
 	UsageError,
 } from "./commands.js";
@@ -81,8 +83,8 @@ describe("node commands", () => {
 		await registry.claimMain("hel-1");
 		await nodeList(admin);
 
-		expect(printed[0]).toMatch(/^NODE\s+REGION\s+ROLES\s+STATE\s+HEARTBEAT/);
-		expect(printed.some((line) => /^hel-1 \*\s+eu\s+main\s+active\s+30s ago/.test(line))).toBe(
+		expect(printed[0]).toMatch(/^NODE\s+REGION\s+LOCATION\s+ROLES\s+STATE\s+HEARTBEAT/);
+		expect(printed.some((line) => /^hel-1 \*\s+eu\s+-\s+main\s+active\s+30s ago/.test(line))).toBe(
 			true,
 		);
 	});
@@ -103,6 +105,18 @@ describe("node commands", () => {
 				version: "1",
 			}),
 		).toMatchObject({ id: "eu-2" });
+	});
+
+	it("sets and clears a node's location", async () => {
+		await register("hel-1", ["main"]);
+		await nodeLocation(admin, "hel-1", "Helsinki, Finland");
+
+		expect((await registry.node("hel-1"))?.location).toBe("Helsinki, Finland");
+
+		await nodeLocation(admin, "hel-1", undefined);
+
+		expect((await registry.node("hel-1"))?.location).toBeNull();
+		await expect(nodeLocation(admin, "nope-1", "Nowhere")).rejects.toThrow(RefusedError);
 	});
 
 	it("refuses to add a node that is already registered", async () => {
@@ -131,6 +145,20 @@ describe("node commands", () => {
 			}),
 		);
 		expect(printed).toEqual(["eu-2 is draining"]);
+	});
+
+	it("starts a rollout now with a 2 minute grace unless told otherwise", async () => {
+		await rolloutNow(admin, undefined);
+		await rolloutNow(admin, "90s");
+
+		expect(admin.sendOrder).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({ kind: "rolloutNow", graceMinutes: 2 }),
+		);
+		expect(admin.sendOrder).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ kind: "rolloutNow", graceMinutes: 1.5 }),
+		);
 	});
 
 	it("turns a refused order into a refusal", async () => {

@@ -359,9 +359,11 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 		? createKumaSync({
 				api: kuma,
 				slug: config.KUMA_STATUS_SLUG,
-				title: "Colibri",
+				title: "Colibri status",
 				statusHost,
 				css: () => readFile(resolve(config.ANSIBLE_DIR, "../uptime-kuma/status.css"), "utf8"),
+				logo: async () =>
+					`data:image/png;base64,${(await readFile(resolve(config.ANSIBLE_DIR, "../uptime-kuma/logo.png"))).toString("base64")}`,
 				apiUrl: config.PUBLIC_URL,
 				log,
 			})
@@ -533,6 +535,17 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 					self: ctx.nodeId,
 					send,
 					...(ansible ? { ansible } : {}),
+					...(rollout
+						? {
+								rollout: {
+									running: () => rollout.running,
+									now: (graceMinutes: number) =>
+										rollout
+											.tick({ graceMinutes })
+											.catch((error: unknown) => log.error({ err: error }, "rollout.tickFailed")),
+								},
+							}
+						: {}),
 					...(postgresUrl
 						? {
 								failback: (target: string | undefined) =>
@@ -637,7 +650,10 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 				order,
 			);
 
-			log.info({ ...result, kind: order.kind, node: order.node }, "cluster.order");
+			log.info(
+				{ ...result, kind: order.kind, ...("node" in order ? { node: order.node } : {}) },
+				"cluster.order",
+			);
 			ctx.announce.clusterOrderResult(result);
 		},
 		becameMain: async () => {

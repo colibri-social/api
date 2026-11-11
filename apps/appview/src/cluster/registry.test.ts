@@ -46,6 +46,25 @@ describe("join tokens", () => {
 		expect(await registry.verify("eu-2", "guess")).toBe(false);
 	});
 
+	it("carries the location from the token to the node, and keeps it across registrations", async () => {
+		const token = await registry.createJoinToken({
+			id: "eu-2",
+			region: "eu",
+			roles: ["api"],
+			location: " Lauterbourg, France ",
+		});
+
+		await registry.redeem(token, ADDRESS);
+		await registry.register({ id: "eu-2", region: "eu", roles: ["api"] }, ADDRESS);
+
+		expect((await registry.node("eu-2"))?.location).toBe("Lauterbourg, France");
+		expect(await registry.setLocation("eu-2", "Strasbourg, France")).toBe(true);
+		expect((await registry.node("eu-2"))?.location).toBe("Strasbourg, France");
+		expect(await registry.setLocation("eu-2", " ")).toBe(true);
+		expect((await registry.node("eu-2"))?.location).toBeNull();
+		expect(await registry.setLocation("nope-1", "Nowhere")).toBe(false);
+	});
+
 	it("refuses a token after an hour", async () => {
 		const token = await registry.createJoinToken({ id: "eu-2", region: "eu", roles: ["api"] });
 

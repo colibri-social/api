@@ -29,6 +29,7 @@ export type NodeAddress = {
 
 export type NodeRow = NodeIdentity &
 	NodeAddress & {
+		location?: string | null;
 		state: NodeState;
 		connections: number;
 		activeCalls: number;
@@ -45,7 +46,8 @@ export type NodeLoad = {
 export type LeaveDecision = { allowed: true } | { allowed: false; reason: string };
 
 export type Registry = {
-	createJoinToken: (identity: NodeIdentity) => Promise<string>;
+	createJoinToken: (identity: NodeIdentity & { location?: string | undefined }) => Promise<string>;
+	setLocation: (id: string, location: string | null) => Promise<boolean>;
 	redeem: (token: string, address: NodeAddress) => Promise<{ id: string; secret: string } | null>;
 	verify: (id: string, secret: string) => Promise<boolean>;
 	issueSecret: (id: string) => Promise<string>;
@@ -61,6 +63,7 @@ export type Registry = {
 	mainNode: () => Promise<NodeRow | null>;
 	rolloutPaused: () => Promise<boolean>;
 	pauseRollout: () => Promise<void>;
+	resumeRollout: () => Promise<void>;
 };
 
 const hash = (value: string): string => {
@@ -97,6 +100,7 @@ export const createRegistry = (
 			id: row.id,
 			region: row.region,
 			roles: row.roles,
+			location: row.location ?? null,
 			publicUrl: row.publicUrl,
 			tailnetUrl: row.tailnetUrl,
 			...(row.announcedIp ? { announcedIp: row.announcedIp } : {}),
@@ -133,6 +137,7 @@ export const createRegistry = (
 				nodeId: identity.id,
 				region: identity.region,
 				roles: identity.roles,
+				location: identity.location?.trim() || null,
 				expiresAt: new Date(now().getTime() + JOIN_TOKEN_TTL_MS).toISOString(),
 			});
 
@@ -161,6 +166,7 @@ export const createRegistry = (
 				id: claimed.nodeId,
 				region: claimed.region,
 				roles: claimed.roles,
+				location: claimed.location,
 				...addressColumns(address),
 				state: "joining" as const,
 				secretHash: hash(secret),
@@ -176,6 +182,15 @@ export const createRegistry = (
 				});
 
 			return { id: claimed.nodeId, secret };
+		},
+		setLocation: async (id, location) => {
+			const updated = await primary
+				.update(nodes)
+				.set({ location: location?.trim() || null })
+				.where(eq(nodes.id, id))
+				.returning({ id: nodes.id });
+
+			return updated.length > 0;
 		},
 		verify: async (id, secret) => {
 			const [row] = await primary
@@ -318,6 +333,17 @@ export const createRegistry = (
 				.onConflictDoUpdate({
 					target: tables.clusterState.id,
 					set: { rolloutPaused: true, updatedAt: at },
+				});
+		},
+		resumeRollout: async () => {
+			const at = now().toISOString();
+
+			await primary
+				.insert(tables.clusterState)
+				.values({ id: CLUSTER_STATE_ID, rolloutPaused: false, updatedAt: at })
+				.onConflictDoUpdate({
+					target: tables.clusterState.id,
+					set: { rolloutPaused: false, updatedAt: at },
 				});
 		},
 	};

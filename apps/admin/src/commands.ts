@@ -106,6 +106,7 @@ export const nodeList = async (admin: Admin): Promise<void> => {
 	const rows = nodes.map((node: NodeRow) => [
 		node.id === main?.id ? `${node.id} *` : node.id,
 		node.region,
+		node.location ?? "-",
 		node.roles.join(","),
 		node.state,
 		age(node.heartbeatAt, now),
@@ -115,7 +116,7 @@ export const nodeList = async (admin: Admin): Promise<void> => {
 	]);
 
 	for (const line of formatTable([
-		["NODE", "REGION", "ROLES", "STATE", "HEARTBEAT", "SOCKETS", "CALLS", "VERSION"],
+		["NODE", "REGION", "LOCATION", "ROLES", "STATE", "HEARTBEAT", "SOCKETS", "CALLS", "VERSION"],
 		...rows,
 	])) {
 		admin.print(line);
@@ -141,6 +142,7 @@ export const nodeAdd = async (
 		id: string;
 		region: string;
 		roles: string;
+		location?: string;
 		publicUrl?: string;
 		ip?: string;
 		workers?: string;
@@ -167,6 +169,7 @@ export const nodeAdd = async (
 		id: options.id,
 		region: options.region,
 		roles,
+		location: options.location,
 	});
 
 	if (options.ip && options.publicUrl) {
@@ -201,6 +204,22 @@ export const nodeAdd = async (
 	admin.print("NODE_TAILNET_URL=<tailnet URL of the new node, on CLUSTER_PORT>");
 	admin.print("");
 	admin.print("The node gets its ID, region, roles and the shared settings from the main node.");
+};
+
+export const nodeLocation = async (
+	admin: Admin,
+	id: string,
+	location: string | undefined,
+): Promise<void> => {
+	if (!(await admin.registry.setLocation(id, location ?? null))) {
+		throw new RefusedError(`no node is called ${id}`);
+	}
+
+	admin.print(
+		location?.trim()
+			? `${id} shows as ${location.trim()} on the status page within a minute.`
+			: `${id} shows as ${id} on the status page within a minute.`,
+	);
 };
 
 export const nodeShutdown = async (
@@ -266,6 +285,14 @@ export const dbFailback = async (admin: Admin, node: string | undefined): Promis
 export const rollout = async (admin: Admin, paused: boolean): Promise<void> => {
 	await admin.setRolloutPaused(paused);
 	admin.print(paused ? "Rollouts are paused." : "Rollouts are running.");
+};
+
+export const DEFAULT_ROLLOUT_GRACE_MINUTES = 2;
+
+export const rolloutNow = async (admin: Admin, grace: string | undefined): Promise<void> => {
+	const graceMinutes = grace === undefined ? DEFAULT_ROLLOUT_GRACE_MINUTES : parseGrace(grace);
+
+	await runOrder(admin, { kind: "rolloutNow", id: randomUUID(), graceMinutes });
 };
 
 export const configList = async (admin: Admin): Promise<void> => {

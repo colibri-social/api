@@ -194,6 +194,42 @@ describe("createRollout", () => {
 		expect(runs).toEqual([]);
 	});
 
+	it("drains with the given grace and stops the main node after it when forced", async () => {
+		const { deps, runs, send } = setup([row("hel-1", { roles: ["main", "api"] }), row("eu-2")]);
+		const drained = vi.fn(async () => true);
+
+		deps.drained = drained;
+
+		expect(await createRollout(deps).tick({ graceMinutes: 2 })).toBe("restarting");
+		expect(send).toHaveBeenCalledWith("eu-2", { t: "drain", mode: "update", graceMinutes: 2 });
+		expect(drained).toHaveBeenCalledWith("eu-2", 2 * 60_000 + 10 * 60_000);
+		expect(runs.at(-1)?.vars).toEqual({
+			image: "ghcr.io/colibri-social/api@sha256:new",
+			detach: true,
+			stack_dir: "/srv/colibri",
+			stop_timeout: 120,
+		});
+	});
+
+	it("keeps retrying a node that quorum holds back when forced, then gives up", async () => {
+		const { deps, runs, paused } = setup([row("hel-1", { version: "2.0.0" }), row("eu-2")]);
+		let refusals = 2;
+
+		deps.registry.mayLeave = async () =>
+			refusals-- > 0 ? { allowed: false, reason: "below the floor" } : { allowed: true };
+
+		expect(await createRollout(deps).tick({ graceMinutes: 1 })).toBe("updated");
+		expect(runs.map((run) => run.host)).toEqual(["eu-2.tail", "eu-2.tail"]);
+
+		const stuck = setup([row("hel-1", { version: "2.0.0" }), row("eu-3")]);
+
+		stuck.deps.registry.mayLeave = async () => ({ allowed: false, reason: "below the floor" });
+
+		expect(await createRollout(stuck.deps).tick({ graceMinutes: 1 })).toBe("failed");
+		expect(stuck.paused()).toBe(true);
+		expect(paused()).toBe(false);
+	});
+
 	it("waits for the next tick when quorum doesn't allow the node to leave", async () => {
 		const { deps, runs, paused } = setup([row("hel-1", { version: "2.0.0" }), row("eu-2")]);
 

@@ -29,7 +29,8 @@ export type ClusterOrder =
 	| { kind: "deprovision"; id: string; node: string; force?: boolean }
 	| { kind: "deployStatus"; id: string; node: string }
 	| { kind: "deployMonitoring"; id: string; node: string }
-	| { kind: "failback"; id: string; node: string };
+	| { kind: "failback"; id: string; node: string }
+	| { kind: "rolloutNow"; id: string; graceMinutes: number };
 
 export type OrderResult = {
 	id: string;
@@ -64,6 +65,10 @@ export type OrderDeps = {
 	status?: {
 		vars: (node: { id: string; self: boolean }) => Record<string, unknown> | null;
 		host: string | null;
+	};
+	rollout?: {
+		running: () => boolean;
+		now: (graceMinutes: number) => Promise<unknown>;
 	};
 };
 
@@ -470,6 +475,39 @@ const failback = async (
 	return result.ok ? done(order, result.message) : refused(order, result.message);
 };
 
+const rolloutNow = async (
+	deps: OrderDeps,
+	order: Extract<ClusterOrder, { kind: "rolloutNow" }>,
+): Promise<OrderResult> => {
+	const { rollout } = deps;
+
+	if (!rollout) {
+		return refused(
+			order,
+			"this main node can't run rollouts. It needs Ansible and UPDATE_POLL_MINUTES above 0",
+		);
+	}
+
+	if (rollout.running()) {
+		return refused(order, "a rollout is running already. Wait for it to finish, or pause it first");
+	}
+
+	await deps.registry.resumeRollout();
+
+	const work = rollout.now(order.graceMinutes);
+
+	if (deps.background) {
+		deps.background(work);
+	} else {
+		void work.catch(() => {});
+	}
+
+	return done(
+		order,
+		`updating every node to the stable image now, one at a time, giving clients ${order.graceMinutes} minutes to move. Follow it with docker compose logs -f appview | grep rollout`,
+	);
+};
+
 export const ORDER_TIMEOUTS_MS: Record<ClusterOrder["kind"], number> = {
 	shutdown: 30_000,
 	resume: 30_000,
@@ -479,6 +517,7 @@ export const ORDER_TIMEOUTS_MS: Record<ClusterOrder["kind"], number> = {
 	deployStatus: 30_000,
 	deployMonitoring: 30_000,
 	failback: 3 * 60_000,
+	rolloutNow: 30_000,
 };
 
 export const handleOrder = (deps: OrderDeps, order: ClusterOrder): Promise<OrderResult> => {
@@ -499,5 +538,7 @@ export const handleOrder = (deps: OrderDeps, order: ClusterOrder): Promise<Order
 			return deployMonitoring(deps, order);
 		case "failback":
 			return failback(deps, order);
+		case "rolloutNow":
+			return rolloutNow(deps, order);
 	}
 };
