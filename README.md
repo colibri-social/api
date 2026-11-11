@@ -240,9 +240,13 @@ Add `CLOUDFLARE_ACCOUNT_ID` and the ID of an existing load balancer on the API h
   nodes are enabled, the others are disabled, and retired nodes are left out. Each origin sends
   the node's own host as `Host`. A pool without nodes is deleted.
 - A shared monitor checks `GET /health` for a 200.
-- The load balancer uses geo steering. `CLOUDFLARE_GEO_REGIONS` maps regions to Cloudflare
-  region codes, for example `eu=WEU,EEU;us=ENAM,WNAM`. Every pool is a default pool, with the
-  main node's region first and as the fallback.
+- The load balancer uses geo steering. Each Cloudflare region gets the pools that serve it,
+  closest first. Region IDs such as `eu`, `eu-west`, `us-east`, `us-central`, `us-west`, `asia`,
+  `jp`, `sg`, `in`, `au`, `sa` and `af` map to Cloudflare regions on their own, and a bare
+  Cloudflare code such as `weu` maps to itself. `CLOUDFLARE_GEO_REGIONS` overrides the mapping
+  for a region, for example `eu=WEU,EEU;lab=ENAM`. A region without a mapping only serves as a
+  default pool, and the main node logs `cloudflare.regionUnmapped`. Every pool is a default
+  pool, with the main node's region first and as the fallback.
 
 The token needs DNS edit on the zone, and Load Balancing edit on the zone and the account. A
 node whose public host is the API host is left out of the pools, so give the main node its own

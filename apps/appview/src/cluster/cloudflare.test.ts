@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	CLOUDFLARE_API,
+	CLOUDFLARE_REGIONS,
 	createCloudflare,
 	desiredOrigins,
+	geoCodes,
 	MONITOR_DESCRIPTION,
 	parseGeoRegions,
+	regionPoolsFor,
 } from "./cloudflare.js";
 import type { NodeRow } from "./registry.js";
 
@@ -106,13 +109,16 @@ const fakeCloudflare = () => {
 	return { request, records, pools, monitors, balancer, calls };
 };
 
-const client = (api: ReturnType<typeof fakeCloudflare>) => {
+const client = (
+	api: ReturnType<typeof fakeCloudflare>,
+	geo = parseGeoRegions("eu=WEU,EEU;us=ENAM,WNAM"),
+) => {
 	return createCloudflare({
 		token: "t",
 		accountId: "a1",
 		zoneId: "z1",
 		loadBalancerId: "lb1",
-		geo: parseGeoRegions("eu=WEU,EEU;us=ENAM,WNAM"),
+		geo,
 		mainRegion: "eu",
 		log: { info: vi.fn(), warn: vi.fn() },
 		fetch: api.request,
@@ -131,6 +137,62 @@ describe("parseGeoRegions", () => {
 	it("rejects unknown codes and malformed entries", () => {
 		expect(() => parseGeoRegions("eu=MARS")).toThrow(/not a Cloudflare region/);
 		expect(() => parseGeoRegions("eu")).toThrow(/region=CODE/);
+	});
+});
+
+describe("geoCodes", () => {
+	it("uses the override, then the built-in table, then a bare Cloudflare code", () => {
+		expect(geoCodes("eu", { eu: ["WEU"] })).toEqual(["WEU"]);
+		expect(geoCodes("US-Central", {})).toEqual(["ENAM", "WNAM", "NSAM", "SSAM"]);
+		expect(geoCodes("seas", {})).toEqual(["SEAS"]);
+		expect(geoCodes("mars", {})).toEqual([]);
+	});
+});
+
+describe("regionPoolsFor", () => {
+	it("puts the closest pool first for each Cloudflare region", () => {
+		const pools = new Map([
+			["eu", "p-eu"],
+			["us-east", "p-east"],
+			["us-west", "p-west"],
+		]);
+
+		expect(regionPoolsFor(pools, {}, "eu")).toEqual({
+			WEU: ["p-eu"],
+			EEU: ["p-eu"],
+			NAF: ["p-eu"],
+			ME: ["p-eu"],
+			SAF: ["p-eu"],
+			ENAM: ["p-east", "p-west"],
+			WNAM: ["p-west", "p-east"],
+			NSAM: ["p-east", "p-west"],
+			SSAM: ["p-east", "p-west"],
+		});
+	});
+
+	it("covers every Cloudflare region with the planned nodes", () => {
+		const pools = new Map([
+			["eu", "p-eu"],
+			["us-central", "p-us"],
+			["jp", "p-jp"],
+			["au", "p-au"],
+		]);
+		const steered = regionPoolsFor(pools, {}, "eu");
+
+		expect(Object.keys(steered).sort()).toEqual([...CLOUDFLARE_REGIONS].sort());
+		expect(steered.NEAS?.[0]).toBe("p-jp");
+		expect(steered.OC?.[0]).toBe("p-au");
+		expect(steered.SAS?.[0]).toBe("p-jp");
+		expect(steered.NSAM?.[0]).toBe("p-us");
+	});
+
+	it("prefers the main region when two pools rank the same", () => {
+		const pools = new Map([
+			["us-central", "p-central"],
+			["us-east", "p-east"],
+		]);
+
+		expect(regionPoolsFor(pools, {}, "us-east").ENAM).toEqual(["p-east", "p-central"]);
 	});
 });
 
@@ -259,6 +321,16 @@ describe("syncPools", () => {
 		const eu = api.pools[0]?.id;
 
 		expect(api.balancer.region_pools).toEqual({ WEU: [eu], EEU: [eu] });
+	});
+
+	it("steers a new region without CLOUDFLARE_GEO_REGIONS", async () => {
+		const api = fakeCloudflare();
+
+		await client(api, {}).syncPools([node("hel-1"), node("us-1", { region: "us-central" })]);
+
+		const [eu, us] = api.pools.map((pool) => pool.id);
+
+		expect(api.balancer.region_pools).toMatchObject({ WEU: [eu], ENAM: [us], WNAM: [us] });
 	});
 
 	it("leaves the load balancer alone without any api nodes", async () => {

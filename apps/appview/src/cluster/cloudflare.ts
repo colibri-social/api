@@ -30,6 +30,86 @@ export const CLOUDFLARE_REGIONS: ReadonlySet<string> = new Set([
 
 export type GeoRegions = Record<string, string[]>;
 
+export const DEFAULT_GEO_REGIONS: Readonly<GeoRegions> = {
+	eu: ["WEU", "EEU", "NAF", "ME", "SAF"],
+	europe: ["WEU", "EEU", "NAF", "ME", "SAF"],
+	"eu-west": ["WEU", "NAF", "EEU", "ME", "SAF"],
+	"eu-central": ["WEU", "EEU", "NAF", "ME", "SAF"],
+	"eu-north": ["WEU", "EEU", "NAF", "ME"],
+	"eu-east": ["EEU", "ME", "WEU", "NAF"],
+	us: ["ENAM", "WNAM", "NSAM", "SSAM"],
+	na: ["ENAM", "WNAM", "NSAM", "SSAM"],
+	"us-east": ["ENAM", "WNAM", "NSAM", "SSAM"],
+	"us-central": ["ENAM", "WNAM", "NSAM", "SSAM"],
+	"us-west": ["WNAM", "ENAM", "NSAM", "SSAM"],
+	ca: ["ENAM", "WNAM", "NSAM"],
+	sa: ["NSAM", "SSAM"],
+	latam: ["NSAM", "SSAM"],
+	br: ["SSAM", "NSAM"],
+	asia: ["NEAS", "SEAS", "SAS", "OC"],
+	"asia-east": ["NEAS", "SEAS", "SAS", "OC"],
+	"asia-northeast": ["NEAS", "SEAS", "SAS", "OC"],
+	"asia-southeast": ["SEAS", "SAS", "OC", "NEAS"],
+	"asia-south": ["SAS", "SEAS", "ME", "NEAS", "OC"],
+	jp: ["NEAS", "SEAS", "SAS", "OC"],
+	kr: ["NEAS", "SEAS", "SAS", "OC"],
+	sg: ["SEAS", "SAS", "OC", "NEAS"],
+	in: ["SAS", "SEAS", "ME", "NEAS", "OC"],
+	oc: ["OC", "SEAS", "NEAS", "SAS"],
+	oceania: ["OC", "SEAS", "NEAS", "SAS"],
+	au: ["OC", "SEAS", "NEAS", "SAS"],
+	me: ["ME", "EEU", "SAS"],
+	af: ["SAF", "NAF"],
+	africa: ["SAF", "NAF"],
+};
+
+export const geoCodes = (region: string, overrides: GeoRegions): string[] => {
+	const custom = overrides[region];
+
+	if (custom) {
+		return custom;
+	}
+
+	const known = DEFAULT_GEO_REGIONS[region.toLowerCase()];
+
+	if (known) {
+		return known;
+	}
+
+	const code = region.toUpperCase();
+
+	return CLOUDFLARE_REGIONS.has(code) ? [code] : [];
+};
+
+export const regionPoolsFor = (
+	pools: ReadonlyMap<string, string>,
+	overrides: GeoRegions,
+	mainRegion: string,
+): Record<string, string[]> => {
+	const ranked = new Map<string, { id: string; rank: number; region: string }[]>();
+
+	for (const [region, id] of pools) {
+		geoCodes(region, overrides).forEach((code, rank) => {
+			ranked.set(code, [...(ranked.get(code) ?? []), { id, rank, region }]);
+		});
+	}
+
+	const result: Record<string, string[]> = {};
+
+	for (const [code, entries] of ranked) {
+		result[code] = entries
+			.sort(
+				(a, b) =>
+					a.rank - b.rank ||
+					Number(b.region === mainRegion) - Number(a.region === mainRegion) ||
+					a.region.localeCompare(b.region),
+			)
+			.map((entry) => entry.id);
+	}
+
+	return result;
+};
+
 export type CloudflareOptions = {
 	token: string;
 	accountId?: string | undefined;
@@ -193,6 +273,7 @@ const sameRegionPools = (
 export const createCloudflare = (options: CloudflareOptions): Cloudflare => {
 	const request = options.fetch ?? fetch;
 	const { accountId, loadBalancerId } = options;
+	const unmapped = new Set<string>();
 
 	const api = async <T>(method: string, path: string, body?: unknown): Promise<T> => {
 		const response = await request(`${CLOUDFLARE_API}${path}`, {
@@ -335,13 +416,12 @@ export const createCloudflare = (options: CloudflareOptions): Cloudflare => {
 		);
 		const defaultPools = regions.flatMap((region) => poolIds.get(region) ?? []);
 		const fallback = defaultPools[0] ?? balancer.fallback_pool;
-		const regionPools: Record<string, string[]> = {};
+		const regionPools = regionPoolsFor(poolIds, options.geo, options.mainRegion);
 
 		for (const region of regions) {
-			const id = poolIds.get(region);
-
-			for (const code of options.geo[region] ?? []) {
-				if (id) regionPools[code] = [...(regionPools[code] ?? []), id];
+			if (geoCodes(region, options.geo).length === 0 && !unmapped.has(region)) {
+				unmapped.add(region);
+				options.log.warn({ region }, "cloudflare.regionUnmapped");
 			}
 		}
 
