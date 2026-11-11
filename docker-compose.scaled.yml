@@ -112,6 +112,7 @@ services:
   sub:
     image: ${IMAGE:-ghcr.io/colibri-social/api:stable}
     profiles: [local-cluster]
+    restart: unless-stopped
     environment:
       HOST: 0.0.0.0
       PORT: 3000
@@ -133,6 +134,7 @@ services:
   voice:
     image: ${IMAGE:-ghcr.io/colibri-social/api:stable}
     profiles: [local-cluster]
+    restart: unless-stopped
     environment:
       HOST: 0.0.0.0
       PORT: 3000

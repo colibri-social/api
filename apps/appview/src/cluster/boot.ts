@@ -1,5 +1,8 @@
 import { hostname } from "node:os";
+import { openDatabase } from "@colibri-social/appview-db";
+import { SecretBox } from "@colibri-social/community";
 import { resolveVersion } from "../routes/server.js";
+import { createConfigStore } from "./config-store.js";
 import { joinCluster, type NodeCredentials } from "./node-secret.js";
 import {
 	CONFIG_PATH,
@@ -18,6 +21,26 @@ export type BootOptions = {
 	attempts?: number;
 	retryMs?: number;
 	log?: (message: string) => void;
+	readShared?: (env: NodeJS.ProcessEnv) => Promise<Record<string, string>>;
+};
+
+export const readSharedFromDatabase = async (
+	env: NodeJS.ProcessEnv,
+): Promise<Record<string, string>> => {
+	const url = env.DATABASE_URL;
+	const key = env.CREDENTIAL_ENCRYPTION_KEY;
+
+	if (!url || !key) {
+		return {};
+	}
+
+	const database = openDatabase({ url, maxConnections: 1 });
+
+	try {
+		return await createConfigStore(database, await SecretBox.fromBase64(key)).values();
+	} finally {
+		await database.close().catch(() => undefined);
+	}
 };
 
 const fetchConfig = async (
@@ -55,7 +78,21 @@ export const resolveClusterEnv = async (
 	const mainUrl = env.MAIN_NODE_URL;
 
 	if (!mainUrl) {
-		return env;
+		if (!env.NODE_ID) {
+			return env;
+		}
+
+		const shared = await (options.readShared ?? readSharedFromDatabase)(env).catch(
+			(error: unknown) => {
+				options.log?.(
+					`could not read the shared settings (${error instanceof Error ? error.message : String(error)}), starting with the local ones`,
+				);
+
+				return {};
+			},
+		);
+
+		return { ...shared, ...env };
 	}
 
 	const request = options.fetch ?? fetch;

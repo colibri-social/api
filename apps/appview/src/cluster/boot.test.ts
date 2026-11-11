@@ -2,8 +2,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
+import { SecretBox } from "@colibri-social/community";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveClusterEnv } from "./boot.js";
+import { readSharedFromDatabase, resolveClusterEnv } from "./boot.js";
+import { createConfigStore } from "./config-store.js";
 import { ControlServer } from "./control-server.js";
 import { createRegistry, type Registry } from "./registry.js";
 
@@ -108,5 +110,70 @@ describe("resolveClusterEnv", () => {
 				{ attempts: 2, retryMs: 1 },
 			),
 		).rejects.toThrow();
+	});
+});
+
+describe("resolveClusterEnv on the main node", () => {
+	it("reads the shared settings from its own database under its own environment", async () => {
+		const env = await resolveClusterEnv(
+			{ NODE_ID: "hel-1", KUMA_URL: "http://local:3001" },
+			{
+				readShared: async () => ({
+					KUMA_URL: "http://shared:3001",
+					GRAFANA_ADMIN_PASSWORD: "from-store",
+				}),
+			},
+		);
+
+		expect(env.GRAFANA_ADMIN_PASSWORD).toBe("from-store");
+		expect(env.KUMA_URL).toBe("http://local:3001");
+	});
+
+	it("starts with its own settings when the store can't be read", async () => {
+		const lines: string[] = [];
+		const env = await resolveClusterEnv(
+			{ NODE_ID: "hel-1", PORT: "3000" },
+			{
+				readShared: async () => {
+					throw new Error("relation cluster_config does not exist");
+				},
+				log: (line) => lines.push(line),
+			},
+		);
+
+		expect(env).toEqual({ NODE_ID: "hel-1", PORT: "3000" });
+		expect(lines[0]).toMatch(/could not read the shared settings/);
+	});
+
+	it("leaves a lone AppView without a node ID alone", async () => {
+		const readShared = vi.fn(async () => ({ KUMA_URL: "x" }));
+		const env = await resolveClusterEnv({ PORT: "3000" }, { readShared });
+
+		expect(env).toEqual({ PORT: "3000" });
+		expect(readShared).not.toHaveBeenCalled();
+	});
+});
+
+describe("readSharedFromDatabase", () => {
+	let database: TestDatabase;
+
+	beforeEach(async () => {
+		database = await openTestDatabase();
+	});
+
+	afterEach(async () => {
+		await database.destroy();
+	});
+
+	it("decrypts the shared settings the admin CLI stored", async () => {
+		const key = Buffer.alloc(32, 7).toString("base64");
+		const store = createConfigStore(database, await SecretBox.fromBase64(key));
+
+		await store.set("KUMA_URL", "http://fsn-1:3001");
+
+		expect(
+			await readSharedFromDatabase({ DATABASE_URL: database.url, CREDENTIAL_ENCRYPTION_KEY: key }),
+		).toEqual({ KUMA_URL: "http://fsn-1:3001" });
+		expect(await readSharedFromDatabase({ DATABASE_URL: database.url })).toEqual({});
 	});
 });
