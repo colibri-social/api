@@ -268,7 +268,10 @@ const provision = async (
 		void work.catch(() => {});
 	}
 
-	return done(order, `provisioning ${order.node} at ${order.ip}. Follow it with node list`);
+	return done(
+		order,
+		`provisioning ${order.node} at ${order.ip}. It joins node list once bootstrap finishes, in about 10 minutes. Follow it with docker compose logs -f appview`,
+	);
 };
 
 const tailnetHost = async (deps: OrderDeps, node: string): Promise<string | null> => {
