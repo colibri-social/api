@@ -158,6 +158,9 @@ const observeNode = (ctx: AppContext, events: EventServer, voice: VoiceServer): 
 		return voiceStats.stats;
 	};
 
+	const version = resolveVersion();
+
+	observe("buildInfo", () => [{ value: 1, attributes: { version } }]);
 	observe("connections", () => [
 		{ value: events.connectionCount, attributes: { kind: "events" } },
 		{ value: voice.connectionCount, attributes: { kind: "voice" } },

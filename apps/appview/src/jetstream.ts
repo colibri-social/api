@@ -55,9 +55,16 @@ type CommitPayload = {
 
 type InfoPayload = { name: string; message?: string };
 
-type Payload = { $type?: string; seq?: number; did?: string } & Partial<
+export type Payload = { $type?: string; seq?: number; did?: string; time?: string } & Partial<
 	IdentityPayload & AccountPayload & CommitPayload & InfoPayload
 >;
+
+export const eventTime = (payload: Payload): number | null => {
+	const time = payload.time ?? payload.identity?.time ?? payload.account?.time;
+	const parsed = time ? Date.parse(time) : Number.NaN;
+
+	return Number.isFinite(parsed) ? parsed : null;
+};
 
 type Frame = {
 	$type?: string;
@@ -112,6 +119,7 @@ export type JetstreamOptions = {
 export class Jetstream {
 	private socket: WebSocket | null = null;
 	private cursor: number | null = null;
+	private lastEventAt: number | null = null;
 	private stopLag: (() => void) | null = null;
 	private savedCursor: number | null = null;
 	private sinceSave = 0;
@@ -131,7 +139,9 @@ export class Jetstream {
 		}
 		this.stopped = false;
 		this.stopLag = observe("jetstreamLag", () =>
-			this.cursor === null ? [] : [{ value: Math.max(0, Date.now() / 1000 - this.cursor / 1e6) }],
+			this.lastEventAt === null
+				? []
+				: [{ value: Math.max(0, (Date.now() - this.lastEventAt) / 1000) }],
 		);
 		this.cursor = await this.loadCursor();
 		this.savedCursor = this.cursor;
@@ -301,7 +311,7 @@ export class Jetstream {
 			return;
 		}
 
-		if (typeof payload.seq === "number") await this.advance(payload.seq);
+		if (typeof payload.seq === "number") await this.advance(payload.seq, eventTime(payload));
 		if (typeof payload.did !== "string") return;
 
 		if (kind === "identity") {
@@ -326,8 +336,9 @@ export class Jetstream {
 		}
 	}
 
-	private async advance(seq: number): Promise<void> {
+	private async advance(seq: number, at: number | null): Promise<void> {
 		this.cursor = seq;
+		this.lastEventAt = at ?? Date.now();
 		count("jetstreamEvents");
 		this.sinceSave += 1;
 		if (this.sinceSave >= EVENTS_PER_CURSOR_SAVE) await this.flushCursor();

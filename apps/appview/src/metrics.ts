@@ -14,6 +14,7 @@ export type Sample = {
 };
 
 export type GaugeName =
+	| "buildInfo"
 	| "connections"
 	| "jetstreamLag"
 	| "syncQueue"
@@ -41,6 +42,10 @@ type Instruments = {
 };
 
 const GAUGES: Record<GaugeName, { name: string; description: string }> = {
+	buildInfo: {
+		name: "colibri_build_info",
+		description: "Always 1, labelled with the AppView version this node runs",
+	},
 	connections: {
 		name: "colibri_connections",
 		description: "Open client sockets on this node, by kind",

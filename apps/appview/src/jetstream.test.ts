@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { ArtworkEntry } from "./activity-artwork.js";
 import type { AppContext } from "./context.js";
-import { Jetstream } from "./jetstream.js";
+import { eventTime, Jetstream } from "./jetstream.js";
 import { isLegacyJetstreamUrl, jetstreamEndpoint } from "./jetstream-url.js";
 
 const DID = "did:plc:subjectaaaaaaaaaaaaaaaaaaaa";
@@ -702,5 +702,18 @@ describe("emoji commits", () => {
 		await settle();
 
 		expect(await storedItems()).toEqual([]);
+	});
+});
+
+describe("eventTime", () => {
+	it("reads the event's own time, then the identity or account time", () => {
+		expect(eventTime({ seq: 1, time: "2026-08-23T01:17:44.164880Z" })).toBe(
+			Date.parse("2026-08-23T01:17:44.164Z"),
+		);
+		expect(eventTime({ seq: 1, identity: { time: "2026-08-23T01:17:43.936Z" } })).toBe(
+			Date.parse("2026-08-23T01:17:43.936Z"),
+		);
+		expect(eventTime({ seq: 1, time: "soon" })).toBeNull();
+		expect(eventTime({ seq: 1 })).toBeNull();
 	});
 });

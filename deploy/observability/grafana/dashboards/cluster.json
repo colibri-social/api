@@ -815,6 +815,68 @@
 			},
 			"description": "Public interfaces only. Tailnet, Docker and loopback traffic is left out.",
 			"id": 19
+		},
+		{
+			"type": "table",
+			"title": "Versions",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 12,
+				"y": 4,
+				"w": 12,
+				"h": 4
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "max by (node, version) (colibri_build_info{node=~\"$node\"})",
+					"instant": true,
+					"range": false,
+					"format": "table"
+				}
+			],
+			"transformations": [
+				{
+					"id": "organize",
+					"options": {
+						"excludeByName": {
+							"Time": true,
+							"Value": true
+						},
+						"indexByName": {
+							"node": 0,
+							"version": 1
+						},
+						"renameByName": {
+							"node": "Node",
+							"version": "Version"
+						}
+					}
+				}
+			],
+			"fieldConfig": {
+				"defaults": {},
+				"overrides": []
+			},
+			"options": {
+				"showHeader": true,
+				"cellHeight": "sm",
+				"sortBy": [
+					{
+						"displayName": "Node",
+						"desc": false
+					}
+				]
+			},
+			"description": "The AppView version each node reports",
+			"id": 20
 		}
 	]
 }

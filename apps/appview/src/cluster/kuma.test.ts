@@ -9,6 +9,7 @@ import {
 	type KumaMonitor,
 	nodeKey,
 	planMonitors,
+	STATUS_PAGE_DESCRIPTION,
 	type StatusGroup,
 	type StatusPageConfig,
 	statusGroups,
@@ -227,7 +228,7 @@ describe("createKumaSync", () => {
 			theme: "auto",
 			showTags: false,
 		});
-		expect(kuma.saved[0]?.config.description).toMatch(/checked every minute/);
+		expect(kuma.saved[0]?.config.description).toBe(STATUS_PAGE_DESCRIPTION);
 		expect(kuma.saved[0]?.icon).toBe("data:image/png;base64,AAAA");
 		expect(kuma.saved[0]?.groups.map((group) => group.name)).toEqual(["API", "Europe"]);
 
