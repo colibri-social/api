@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { hostname } from "node:os";
 import { resolve } from "node:path";
 import type { NodeRole, NodeState, WriteMode } from "@colibri-social/appview-db";
+import { eq } from "drizzle-orm";
 import pg from "pg";
 import type { AppContext } from "../context.js";
 import { resolveVersion } from "../routes/server.js";
@@ -16,8 +18,13 @@ import { createFencing, FENCE_CHECK_MS } from "./fencing.js";
 import { createHandover, type DeferState, shouldDefer } from "./handover.js";
 import { resolveImage } from "./image-source.js";
 import { connectKuma, createKumaSync } from "./kuma.js";
+import {
+	createMonitoringSync,
+	MONITORING_FINGERPRINT_KEY,
+	monitoringFingerprint,
+} from "./monitoring-sync.js";
 import { joinCluster, ownCredentials } from "./node-secret.js";
-import { type ClusterOrder, handleOrder } from "./orders.js";
+import { type ClusterOrder, handleOrder, type OrderDeps } from "./orders.js";
 import { ALIVE_PATH, type Alive, aliveSchema, type DrainMode, type NodeFrame } from "./protocol.js";
 import {
 	type BackupKeys,
@@ -518,6 +525,209 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 
 	heartbeat.unref?.();
 
+	const orderDeps = (background?: (work: Promise<unknown>) => void): OrderDeps => ({
+		registry,
+		self: ctx.nodeId,
+		send,
+		...(ansible ? { ansible } : {}),
+		...(rollout
+			? {
+					rollout: {
+						running: () => rollout.running,
+						now: (graceMinutes: number) =>
+							rollout
+								.tick({ graceMinutes })
+								.catch((error: unknown) => log.error({ err: error }, "rollout.tickFailed")),
+					},
+				}
+			: {}),
+		...(postgresUrl
+			? {
+					failback: (target: string | undefined) =>
+						runFailback(
+							{
+								self: ctx.nodeId,
+								localUrl,
+								databaseUrl: postgresUrl,
+								nodes: () => registry.list(),
+								yieldMain: deps.yieldMain,
+								log,
+							},
+							target,
+						),
+				}
+			: {}),
+		...(cloudflare
+			? {
+					dns: {
+						put: (node, host, ip) => cloudflare.putNodeRecord(node, host, ip),
+						remove: (host) => cloudflare.removeNodeRecord(host),
+						alias: (host, target) => cloudflare.putAlias(host, target),
+					},
+				}
+			: {}),
+		provisioning: {
+			missing: (nodeRoles) => missingForProvisioning(config, nodeRoles),
+			vars: async (target) =>
+				provisionVars(
+					config,
+					{
+						tailnetUrl: address.tailnetUrl,
+						standbyHosts: (await registry.list())
+							.filter(
+								(node) =>
+									node.id !== target.node &&
+									node.id !== ctx.nodeId &&
+									node.state !== "retired" &&
+									(node.roles.includes("main") || node.roles.includes("failover")),
+							)
+							.map((node) => new URL(node.tailnetUrl).hostname),
+					},
+					target,
+					await readBackupKeys(config.BACKUP_SSH_KEY_FILE),
+				),
+			removeNode: (id) => registry.remove(id),
+			spreadDatabaseHosts: async () => {
+				if (!ansible) return;
+
+				const nodes = (await registry.list()).filter((node) => node.state !== "retired");
+
+				for (const run of databaseHostRuns(config, nodes, ctx.nodeId)) {
+					const result = await ansible.run({
+						playbook: "database-hosts",
+						host: run.host,
+						vars: run.vars,
+					});
+
+					if (!result.ok) log.warn({ node: run.node }, "failover.databaseHostsFailed");
+				}
+			},
+		},
+		monitoring: {
+			vars: () =>
+				config.GRAFANA_ADMIN_PASSWORD
+					? {
+							grafana_admin_password: config.GRAFANA_ADMIN_PASSWORD,
+							alert_webhook_url: config.ALERT_WEBHOOK_URL ?? "",
+							grafana_image: config.GRAFANA_IMAGE,
+							prometheus_image: config.PROMETHEUS_IMAGE,
+							stack_dir: config.STACK_DIR,
+						}
+					: null,
+			remoteWriteUrl: () => remoteWriteUrl,
+			setRemoteWriteUrl: async (url) => {
+				await ctx.clusterConfig.set("PROMETHEUS_REMOTE_WRITE_URL", url);
+				remoteWriteUrl = url;
+			},
+			deployed: async () => {
+				await storeMonitoringFingerprint(await currentMonitoringFingerprint());
+			},
+			alloyVars: (node, self, url) => ({
+				remote_write_url: url,
+				alloy_image: config.ALLOY_IMAGE,
+				postgres: self || needsPostgres(node.roles),
+				probes: self,
+				stack_dir: self ? config.STACK_DIR : "/opt/colibri",
+			}),
+		},
+		status: {
+			host: statusHost,
+			vars: (node) =>
+				statusHost
+					? {
+							kuma_image: config.KUMA_IMAGE,
+							status_host: statusHost,
+							stack_dir: node.self ? config.STACK_DIR : "/opt/colibri",
+						}
+					: null,
+		},
+		background:
+			background ??
+			((work) => {
+				void work.catch((error: unknown) => log.warn({ err: error }, "ansible.runFailed"));
+			}),
+	});
+
+	const monitoringPaths = [
+		resolve(config.ANSIBLE_DIR, "../observability"),
+		resolve(config.ANSIBLE_DIR, "templates/monitoring-compose.yml.j2"),
+		resolve(config.ANSIBLE_DIR, "templates/contact-points.yml.j2"),
+		resolve(config.ANSIBLE_DIR, "playbooks/monitoring.yml"),
+		resolve(config.ANSIBLE_DIR, "playbooks/alloy.yml"),
+	];
+
+	const currentMonitoringFingerprint = () => {
+		return monitoringFingerprint(monitoringPaths, {
+			grafana_admin_password: config.GRAFANA_ADMIN_PASSWORD ?? "",
+			alert_webhook_url: config.ALERT_WEBHOOK_URL ?? "",
+			grafana_image: config.GRAFANA_IMAGE,
+			prometheus_image: config.PROMETHEUS_IMAGE,
+			alloy_image: config.ALLOY_IMAGE,
+		});
+	};
+
+	const storeMonitoringFingerprint = async (fingerprint: string): Promise<void> => {
+		const row = {
+			key: MONITORING_FINGERPRINT_KEY,
+			value: fingerprint,
+			updatedAt: new Date().toISOString(),
+		};
+
+		await ctx.database.db
+			.insert(ctx.database.tables.serviceState)
+			.values(row)
+			.onConflictDoUpdate({ target: ctx.database.tables.serviceState.key, set: row });
+	};
+
+	const monitoringSync =
+		roles.has("main") && ansible && config.GRAFANA_ADMIN_PASSWORD
+			? createMonitoringSync({
+					fingerprint: currentMonitoringFingerprint,
+					stored: async () => {
+						const [row] = await ctx.database.db
+							.select()
+							.from(ctx.database.tables.serviceState)
+							.where(eq(ctx.database.tables.serviceState.key, MONITORING_FINGERPRINT_KEY))
+							.limit(1);
+
+						return row?.value ?? null;
+					},
+					store: storeMonitoringFingerprint,
+					target: async () => {
+						if (!remoteWriteUrl) {
+							return null;
+						}
+
+						const host = new URL(remoteWriteUrl).hostname;
+						const node = (await registry.list()).find(
+							(entry) => entry.state !== "retired" && new URL(entry.tailnetUrl).hostname === host,
+						);
+
+						return node?.id ?? null;
+					},
+					deploy: async (node) => {
+						let work: Promise<unknown> | null = null;
+						const result = await handleOrder(
+							orderDeps((started) => {
+								work = started;
+							}),
+							{ kind: "deployMonitoring", id: randomUUID(), node },
+						);
+
+						if (!result.ok || !work) {
+							return false;
+						}
+
+						const outcome = (await (work as Promise<unknown>).catch(() => null)) as {
+							ok?: boolean;
+						} | null;
+
+						return outcome?.ok === true;
+					},
+					log,
+				})
+			: null;
+
 	return {
 		parked,
 		report: (frame) => {
@@ -529,126 +739,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 				return;
 			}
 
-			const result = await handleOrder(
-				{
-					registry,
-					self: ctx.nodeId,
-					send,
-					...(ansible ? { ansible } : {}),
-					...(rollout
-						? {
-								rollout: {
-									running: () => rollout.running,
-									now: (graceMinutes: number) =>
-										rollout
-											.tick({ graceMinutes })
-											.catch((error: unknown) => log.error({ err: error }, "rollout.tickFailed")),
-								},
-							}
-						: {}),
-					...(postgresUrl
-						? {
-								failback: (target: string | undefined) =>
-									runFailback(
-										{
-											self: ctx.nodeId,
-											localUrl,
-											databaseUrl: postgresUrl,
-											nodes: () => registry.list(),
-											yieldMain: deps.yieldMain,
-											log,
-										},
-										target,
-									),
-							}
-						: {}),
-					...(cloudflare
-						? {
-								dns: {
-									put: (node, host, ip) => cloudflare.putNodeRecord(node, host, ip),
-									remove: (host) => cloudflare.removeNodeRecord(host),
-									alias: (host, target) => cloudflare.putAlias(host, target),
-								},
-							}
-						: {}),
-					provisioning: {
-						missing: (nodeRoles) => missingForProvisioning(config, nodeRoles),
-						vars: async (target) =>
-							provisionVars(
-								config,
-								{
-									tailnetUrl: address.tailnetUrl,
-									standbyHosts: (await registry.list())
-										.filter(
-											(node) =>
-												node.id !== target.node &&
-												node.id !== ctx.nodeId &&
-												node.state !== "retired" &&
-												(node.roles.includes("main") || node.roles.includes("failover")),
-										)
-										.map((node) => new URL(node.tailnetUrl).hostname),
-								},
-								target,
-								await readBackupKeys(config.BACKUP_SSH_KEY_FILE),
-							),
-						removeNode: (id) => registry.remove(id),
-						spreadDatabaseHosts: async () => {
-							if (!ansible) return;
-
-							const nodes = (await registry.list()).filter((node) => node.state !== "retired");
-
-							for (const run of databaseHostRuns(config, nodes, ctx.nodeId)) {
-								const result = await ansible.run({
-									playbook: "database-hosts",
-									host: run.host,
-									vars: run.vars,
-								});
-
-								if (!result.ok) log.warn({ node: run.node }, "failover.databaseHostsFailed");
-							}
-						},
-					},
-					monitoring: {
-						vars: () =>
-							config.GRAFANA_ADMIN_PASSWORD
-								? {
-										grafana_admin_password: config.GRAFANA_ADMIN_PASSWORD,
-										alert_webhook_url: config.ALERT_WEBHOOK_URL ?? "",
-										grafana_image: config.GRAFANA_IMAGE,
-										prometheus_image: config.PROMETHEUS_IMAGE,
-										stack_dir: config.STACK_DIR,
-									}
-								: null,
-						remoteWriteUrl: () => remoteWriteUrl,
-						setRemoteWriteUrl: async (url) => {
-							await ctx.clusterConfig.set("PROMETHEUS_REMOTE_WRITE_URL", url);
-							remoteWriteUrl = url;
-						},
-						alloyVars: (node, self, url) => ({
-							remote_write_url: url,
-							alloy_image: config.ALLOY_IMAGE,
-							postgres: self || needsPostgres(node.roles),
-							probes: self,
-							stack_dir: self ? config.STACK_DIR : "/opt/colibri",
-						}),
-					},
-					status: {
-						host: statusHost,
-						vars: (node) =>
-							statusHost
-								? {
-										kuma_image: config.KUMA_IMAGE,
-										status_host: statusHost,
-										stack_dir: node.self ? config.STACK_DIR : "/opt/colibri",
-									}
-								: null,
-					},
-					background: (work) => {
-						void work.catch((error: unknown) => log.warn({ err: error }, "ansible.runFailed"));
-					},
-				},
-				order,
-			);
+			const result = await handleOrder(orderDeps(), order);
 
 			log.info(
 				{ ...result, kind: order.kind, ...("node" in order ? { node: order.node } : {}) },
@@ -659,6 +750,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 		becameMain: async () => {
 			invitedUntil = 0;
 			await registry.claimMain(ctx.nodeId);
+			void monitoringSync?.sync();
 		},
 		mayTakeMain,
 		inviteToMain: (target) => {

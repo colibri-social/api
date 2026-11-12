@@ -335,6 +335,12 @@ node's tailnet address, stores `PROMETHEUS_REMOTE_WRITE_URL`, then starts Alloy 
 every node. Nodes added later get Alloy during provisioning. Grafana is at
 `http://<tailnet address>:3300`, user `admin`. Prometheus keeps 90 days.
 
+After the first deploy, the main node keeps the stack current itself. Each time it takes the main
+role, for example after an update, it hashes `deploy/observability`, the monitoring templates and
+playbooks, and `GRAFANA_ADMIN_PASSWORD`, `ALERT_WEBHOOK_URL` and the three images. When the hash
+differs from the last deploy, it runs `monitoring deploy` again for the node that hosts
+Prometheus. A failed run is retried at the next start. Only a node with the `main` role does this.
+
 Alloy collects:
 
 - Host CPU, memory, disk and network, including traffic totals per node on the public

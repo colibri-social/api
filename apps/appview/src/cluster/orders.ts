@@ -60,6 +60,7 @@ export type OrderDeps = {
 		vars: () => Record<string, unknown> | null;
 		remoteWriteUrl: () => string | null;
 		setRemoteWriteUrl: (url: string) => Promise<void>;
+		deployed?: () => Promise<void>;
 		alloyVars: (node: NodeRow, self: boolean, url: string) => Record<string, unknown>;
 	};
 	status?: {
@@ -446,6 +447,8 @@ const deployMonitoring = async (
 
 			await startAlloy(deps, ansible, node, url);
 		}
+
+		await monitoring.deployed?.();
 
 		return deployed;
 	})();
