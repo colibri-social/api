@@ -3,7 +3,7 @@ import { AuthRequiredError, createServer } from "@atproto/xrpc-server";
 import type { Request, Response } from "express";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "./config.js";
-import { corsMiddleware, DEVELOPMENT_ORIGINS, parseOrigins } from "./cors.js";
+import { corsMiddleware, DEVELOPMENT_ORIGINS, nodeHeaderMiddleware, parseOrigins } from "./cors.js";
 
 const DEV_ORIGIN = "http://127.0.0.1:4321";
 
@@ -95,6 +95,42 @@ describe("corsMiddleware", () => {
 
 	it("allows no origin at all when the list is empty", () => {
 		expect(call([], "GET", DEV_ORIGIN).headers["access-control-allow-origin"]).toBeUndefined();
+	});
+});
+
+describe("nodeHeaderMiddleware", () => {
+	const headersOf = (nodeId: string | undefined, region: string | undefined) => {
+		const headers: Record<string, string> = {};
+		const res = {
+			setHeader: (name: string, value: string) => {
+				headers[name] = value;
+			},
+		} as unknown as Response;
+		let passed = false;
+		nodeHeaderMiddleware(nodeId, region)({} as Request, res, () => {
+			passed = true;
+		});
+
+		return { headers, passed };
+	};
+
+	it("names the node and its region on every response", () => {
+		expect(headersOf("hel-1", "eu-north")).toEqual({
+			headers: { "colibri-node": "hel-1", "colibri-node-region": "eu-north" },
+			passed: true,
+		});
+	});
+
+	it("adds nothing on an unclustered AppView", () => {
+		expect(headersOf(undefined, "eu-north")).toEqual({ headers: {}, passed: true });
+	});
+
+	it("exposes the node headers to browser clients", () => {
+		const exposed = call(DEVELOPMENT_ORIGINS, "GET", DEV_ORIGIN).headers[
+			"access-control-expose-headers"
+		];
+		expect(exposed).toContain("colibri-node");
+		expect(exposed).toContain("colibri-node-region");
 	});
 });
 

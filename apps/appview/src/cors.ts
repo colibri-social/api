@@ -14,7 +14,17 @@ const ALLOWED_HEADERS = [
 	"baggage",
 ].join(", ");
 
-const EXPOSED_HEADERS = ["atproto-repo-rev", "accept-ranges", "content-range"].join(", ");
+export const NODE_HEADER = "colibri-node";
+
+export const NODE_REGION_HEADER = "colibri-node-region";
+
+const EXPOSED_HEADERS = [
+	"atproto-repo-rev",
+	"accept-ranges",
+	"content-range",
+	NODE_HEADER,
+	NODE_REGION_HEADER,
+].join(", ");
 
 const PREFLIGHT_MAX_AGE_SECONDS = "86400";
 
@@ -48,5 +58,13 @@ export const corsMiddleware = (origins: readonly string[]) => {
 		res.setHeader("Access-Control-Allow-Headers", ALLOWED_HEADERS);
 		res.setHeader("Access-Control-Max-Age", PREFLIGHT_MAX_AGE_SECONDS);
 		res.status(204).end();
+	};
+};
+
+export const nodeHeaderMiddleware = (nodeId: string | undefined, region: string | undefined) => {
+	return (_req: Request, res: Response, next: NextFunction): void => {
+		if (nodeId) res.setHeader(NODE_HEADER, nodeId);
+		if (nodeId && region) res.setHeader(NODE_REGION_HEADER, region);
+		next();
 	};
 };

@@ -3,7 +3,7 @@ import type { Request, Response } from "express";
 import { authVerifiers } from "./auth.js";
 import { isWrite } from "./cluster/write-proxy.js";
 import type { AppContext } from "./context.js";
-import { corsMiddleware } from "./cors.js";
+import { corsMiddleware, nodeHeaderMiddleware } from "./cors.js";
 import { record, xrpcMethod } from "./metrics.js";
 import { registerActorRoutes } from "./routes/actor.js";
 import { registerActorWriteRoutes } from "./routes/actor-write.js";
@@ -80,6 +80,7 @@ export const createAppServer = (
 		});
 		next();
 	});
+	app.use(nodeHeaderMiddleware(ctx.config.NODE_ID, ctx.config.NODE_REGION));
 	app.use(corsMiddleware(ctx.config.corsOrigins));
 	app.use((req: Request, res: Response, next: (error?: unknown) => void) => {
 		const proxy = ctx.writeProxy;
