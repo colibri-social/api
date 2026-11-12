@@ -1,5 +1,17 @@
 # @colibri-social/appview
 
+## 2.38.0
+
+### Minor Changes
+
+- 477dee5: Add `colibri-admin db backup [full|diff|incr]`. The main node runs a pgBackRest backup of its own Postgres through Ansible, waits for it and prints the result, or the last lines of the output when it fails. The backup is a full one unless you choose another type. It refuses when Postgres on the main node isn't the primary, appends its output to `/var/log/colibri-backup.log` and refreshes the backup age metric afterwards.
+- 477dee5: Collect logs and table stats in Grafana. `monitoring deploy` now also starts Loki (`LOKI_IMAGE`, default `grafana/loki:3.7.9`) next to Prometheus, and Alloy on every node sends the logs of each Docker container there, labeled with `node`, `service` and `project`. Loki keeps 30 days. A new "Colibri logs" dashboard shows log volume, warnings and errors per node, and the log lines, filtered by node, service and a search term. The Postgres dashboard gains the message count, messages added in the last 24 hours, a table of every table with its rows, size, index size, dead rows, inserts and sequential scans, and charts for table sizes, writes and dead rows per table. The cluster dashboard layout follows the latest export.
+
+### Patch Changes
+
+- 477dee5: Show pgBackRest errors from `stanza-create` in `backup.sh`. The output went to `/dev/null`, so a failing backup stopped without a message and left `/var/log/colibri-backup.log` empty.
+- 477dee5: Default `BACKUP_REPO_PATH` to `/home/colibri`. A Hetzner Storage Box keeps your files under `/home`, and with `/colibri` pgBackRest couldn't create the repository and crashed during `stanza-create`.
+
 ## 2.37.2
 
 ### Patch Changes
