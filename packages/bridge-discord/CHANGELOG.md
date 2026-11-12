@@ -1,5 +1,13 @@
 # @colibri-social/bridge-discord
 
+## 0.3.24
+
+### Patch Changes
+
+- 7ce42b9: Bridge timestamps in both directions. A `<t:...>` timestamp from a bridged platform arrives as a `#time` facet with the matching style, and a `#time` facet goes out as a native timestamp. Time references use the `bridge:time/<seconds>:<style>` form.
+- Updated dependencies [7ce42b9]
+  - @colibri-social/bridge-core@0.2.24
+
 ## 0.3.23
 
 ### Patch Changes
