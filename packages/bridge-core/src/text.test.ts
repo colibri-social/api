@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { colibriToMarkdown, markdownToColibri } from "./text.js";
+import {
+	colibriToMarkdown,
+	markdownToColibri,
+	parseReferenceUri,
+	parseTimeReferenceId,
+} from "./text.js";
 
 const kindOf = (feature: { $type?: string }): string => (feature.$type ?? "").split("#")[1] ?? "";
 
@@ -83,5 +88,20 @@ describe("bare URLs", () => {
 	it("writes a bare URL back as a self-labelled link", () => {
 		const { text, facets } = markdownToColibri("hi https://a.test/x");
 		expect(colibriToMarkdown(text, facets)).toBe("hi [https://a.test/x](https://a.test/x)");
+	});
+});
+
+describe("time references", () => {
+	it("parses a time reference URI", () => {
+		expect(parseReferenceUri("bridge:time/1700000000:relative")).toEqual({
+			kind: "time",
+			id: "1700000000:relative",
+		});
+	});
+
+	it("reads the seconds and style of a time reference", () => {
+		expect(parseTimeReferenceId("-5:date-long")).toEqual({ seconds: -5, style: "date-long" });
+		expect(parseTimeReferenceId("5:fortnightly")).toBeNull();
+		expect(parseTimeReferenceId("soon:relative")).toBeNull();
 	});
 });

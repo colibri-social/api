@@ -1,4 +1,9 @@
-import { referenceMarkdown } from "@colibri-social/bridge-core";
+import {
+	parseTimeReferenceId,
+	referenceMarkdown,
+	type TimeStyle,
+	timeReferenceId,
+} from "@colibri-social/bridge-core";
 
 export type MentionLookups = {
 	user(id: string): string | undefined;
@@ -12,9 +17,40 @@ const TIMESTAMP_FORMAT = new Intl.DateTimeFormat("en-GB", {
 	timeZone: "UTC",
 });
 
-const timestampText = (seconds: string): string => {
+const STYLE_BY_LETTER: Record<string, TimeStyle> = {
+	t: "time-short",
+	T: "time-long",
+	d: "date-short",
+	D: "date-long",
+	f: "datetime-short",
+	F: "datetime-long",
+	R: "relative",
+};
+
+const LETTER_BY_STYLE = Object.fromEntries(
+	Object.entries(STYLE_BY_LETTER).map(([letter, style]) => [style, letter]),
+) as Record<TimeStyle, string>;
+
+const timestampMarkdown = (seconds: string, letter = "f"): string => {
 	const date = new Date(Number(seconds) * 1000);
-	return Number.isNaN(date.getTime()) ? seconds : `${TIMESTAMP_FORMAT.format(date)} UTC`;
+
+	if (Number.isNaN(date.getTime())) return seconds;
+
+	return referenceMarkdown(`${TIMESTAMP_FORMAT.format(date)} UTC`, {
+		kind: "time",
+		id: timeReferenceId({
+			seconds: Number(seconds),
+			style: STYLE_BY_LETTER[letter] ?? "datetime-short",
+		}),
+	});
+};
+
+const discordTimestamp = (id: string): string | null => {
+	const reference = parseTimeReferenceId(id);
+
+	if (!reference) return null;
+
+	return `<t:${reference.seconds}:${LETTER_BY_STYLE[reference.style]}>`;
 };
 
 export const discordToColibriMarkdown = (content: string, lookups: MentionLookups): string =>
@@ -27,13 +63,16 @@ export const discordToColibriMarkdown = (content: string, lookups: MentionLookup
 			referenceMarkdown(`#${lookups.channel(id) ?? "unknown-channel"}`, { kind: "room", id }),
 		)
 		.replace(/<a?:(\w+):\d+>/g, (_, name: string) => `:${name}:`)
-		.replace(/<t:(-?\d+)(?::[tTdDfFR])?>/g, (_, seconds: string) => timestampText(seconds))
+		.replace(/<t:(-?\d+)(?::([tTdDfFR]))?>/g, (_, seconds: string, letter?: string) =>
+			timestampMarkdown(seconds, letter),
+		)
 		.replace(/<\/([\w -]+):\d+>/g, (_, command: string) => `/${command}`);
 
 export const MAX_DISCORD_CONTENT = 2000;
 
 const USER_REFERENCE = /\[[^\]]*\]\(bridge:user\/(\d+)\)/g;
 const ROOM_REFERENCE = /\[[^\]]*\]\(bridge:room\/(\d+)\)/g;
+const TIME_REFERENCE = /\[([^\]]*)\]\(bridge:time\/([^)\s]+)\)/g;
 
 export const mentionedUsers = (markdown: string): string[] => [
 	...new Set([...markdown.matchAll(USER_REFERENCE)].flatMap((match) => match[1] ?? [])),
@@ -45,6 +84,7 @@ export const colibriToDiscordMarkdown = (markdown: string): string => {
 	const native = markdown
 		.replace(USER_REFERENCE, (_, id: string) => `<@${id}>`)
 		.replace(ROOM_REFERENCE, (_, id: string) => `<#${id}>`)
+		.replace(TIME_REFERENCE, (_, label: string, id: string) => discordTimestamp(id) ?? label)
 		.replace(URL_LABELLED_LINK, (link, label: string, url: string) => (label === url ? url : link));
 	return native.length <= MAX_DISCORD_CONTENT
 		? native

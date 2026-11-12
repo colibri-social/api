@@ -30,9 +30,32 @@ describe("discordToColibriMarkdown", () => {
 		);
 	});
 
-	it("keeps custom emoji as shortcodes and spells out timestamps", () => {
+	it("keeps custom emoji as shortcodes", () => {
 		expect(discordToColibriMarkdown("<:wave:123> <a:party:456>", lookups)).toBe(":wave: :party:");
-		expect(discordToColibriMarkdown("<t:0:R>", lookups)).toBe("1 Jan 1970, 00:00 UTC");
+	});
+
+	it.each([
+		["t", "time-short"],
+		["T", "time-long"],
+		["d", "date-short"],
+		["D", "date-long"],
+		["f", "datetime-short"],
+		["F", "datetime-long"],
+		["R", "relative"],
+	])("turns a <t:...:%s> timestamp into a %s time reference", (letter, style) => {
+		expect(discordToColibriMarkdown(`<t:0:${letter}>`, lookups)).toBe(
+			`[1 Jan 1970, 00:00 UTC](bridge:time/0:${style})`,
+		);
+	});
+
+	it("reads a timestamp without a style as a short date and time", () => {
+		expect(discordToColibriMarkdown("<t:1700000000>", lookups)).toBe(
+			"[14 Nov 2023, 22:13 UTC](bridge:time/1700000000:datetime-short)",
+		);
+	});
+
+	it("keeps the seconds of a timestamp that is out of range", () => {
+		expect(discordToColibriMarkdown("<t:99999999999999999>", lookups)).toBe("99999999999999999");
 	});
 
 	it("keeps formatting both dialects share", () => {
@@ -51,6 +74,24 @@ describe("discordToColibriMarkdown", () => {
 });
 
 describe("colibriToDiscordMarkdown", () => {
+	it("turns time references into native timestamps", () => {
+		expect(
+			colibriToDiscordMarkdown(
+				"at [noon](bridge:time/1700000000:time-short) or [later](bridge:time/0:relative)",
+			),
+		).toBe("at <t:1700000000:t> or <t:0:R>");
+	});
+
+	it("keeps the label of a time reference it cannot read", () => {
+		expect(colibriToDiscordMarkdown("[soon](bridge:time/x:relative)")).toBe("soon");
+	});
+
+	it("round-trips a native timestamp", () => {
+		expect(colibriToDiscordMarkdown(discordToColibriMarkdown("<t:1700000000:F>", lookups))).toBe(
+			"<t:1700000000:F>",
+		);
+	});
+
 	it("cuts content to the platform limit", () => {
 		const long = "a".repeat(MAX_DISCORD_CONTENT + 10);
 

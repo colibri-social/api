@@ -12,7 +12,38 @@ export type ColibriText = {
 
 export type Feature = Facet["features"][number];
 
-export type RemoteReference = { kind: "user" | "room"; id: string };
+export type RemoteReference = { kind: "user" | "room" | "time"; id: string };
+
+export const TIME_STYLES = [
+	"time-short",
+	"time-long",
+	"date-short",
+	"date-long",
+	"datetime-short",
+	"datetime-long",
+	"relative",
+] as const;
+
+export type TimeStyle = (typeof TIME_STYLES)[number];
+
+export type TimeReference = { seconds: number; style: TimeStyle };
+
+const isTimeStyle = (value: string): value is TimeStyle => {
+	return (TIME_STYLES as readonly string[]).includes(value);
+};
+
+export const timeReferenceId = (reference: TimeReference): string => {
+	return `${reference.seconds}:${reference.style}`;
+};
+
+export const parseTimeReferenceId = (id: string): TimeReference | null => {
+	const match = /^(-?\d+):([a-z-]+)$/.exec(id);
+	const seconds = Number(match?.[1]);
+
+	if (!match?.[2] || !isTimeStyle(match[2]) || !Number.isSafeInteger(seconds)) return null;
+
+	return { seconds, style: match[2] };
+};
 
 const REFERENCE_PREFIX = "bridge:";
 
@@ -20,7 +51,7 @@ export const referenceUri = (reference: RemoteReference): string =>
 	`${REFERENCE_PREFIX}${reference.kind}/${reference.id}`;
 
 export const parseReferenceUri = (uri: string): RemoteReference | null => {
-	const match = /^bridge:(user|room)\/(.+)$/.exec(uri);
+	const match = /^bridge:(user|room|time)\/(.+)$/.exec(uri);
 	return match?.[1] && match[2]
 		? { kind: match[1] as RemoteReference["kind"], id: match[2] }
 		: null;

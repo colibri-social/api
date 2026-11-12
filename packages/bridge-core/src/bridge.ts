@@ -36,7 +36,10 @@ import {
 	colibriToMarkdown,
 	type Feature,
 	markdownToColibri,
+	parseTimeReferenceId,
 	type RemoteReference,
+	TIME_STYLES,
+	timeReferenceId,
 } from "./text.js";
 
 export type BridgeOptions = {
@@ -93,6 +96,32 @@ const MAX_THREAD_NAME = 128;
 const FALLBACK_THREAD_NAME = "Thread";
 const CHANNEL_FEATURE = "social.colibri.beta.richtext.facet#channel";
 const BRIDGED_MENTION_FEATURE = "social.colibri.beta.richtext.facet#bridgedMention";
+const TIME_FEATURE = "social.colibri.beta.richtext.facet#time";
+
+const timeFeature = (id: string): Feature | null => {
+	const reference = parseTimeReferenceId(id);
+	const date = reference ? new Date(reference.seconds * 1000) : null;
+
+	if (!reference || !date || Number.isNaN(date.getTime())) return null;
+
+	return {
+		$type: TIME_FEATURE,
+		datetime: date.toISOString(),
+		style: reference.style,
+	} as Feature;
+};
+
+const timeReference = (feature: Record<string, unknown>): RemoteReference | null => {
+	const milliseconds = Date.parse(String(feature.datetime));
+	const style = TIME_STYLES.find((known) => known === feature.style) ?? "relative";
+
+	if (Number.isNaN(milliseconds)) return null;
+
+	return {
+		kind: "time",
+		id: timeReferenceId({ seconds: Math.floor(milliseconds / 1000), style }),
+	};
+};
 
 const skeyOf = (space: string): string => space.split("/").at(-1) ?? space;
 
@@ -425,6 +454,7 @@ export class Bridge {
 
 	private resolver(portal: Portal): (reference: RemoteReference) => Feature | null {
 		return (reference) => {
+			if (reference.kind === "time") return timeFeature(reference.id);
 			if (reference.kind === "room") {
 				const link = portal.links.find((held) => held.remoteRoom === reference.id);
 				return link ? ({ $type: CHANNEL_FEATURE, channel: skeyOf(link.channel) } as Feature) : null;
@@ -441,6 +471,7 @@ export class Bridge {
 	private referrer(portal: Portal): (feature: Feature) => RemoteReference | null {
 		return (feature) => {
 			const value = feature as Feature & Record<string, unknown>;
+			if (value.$type === TIME_FEATURE) return timeReference(value);
 			if (value.$type === CHANNEL_FEATURE) {
 				const link = portal.links.find((held) => skeyOf(held.channel) === value.channel);
 				return link ? { kind: "room", id: link.remoteRoom } : null;

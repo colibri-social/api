@@ -808,6 +808,72 @@ describe("mentions", () => {
 			"[@Bob](bridge:user/bob-1) in [#general](bridge:room/room-1)",
 		);
 	});
+
+	it("turns time references into time facets", async () => {
+		inboundMessage("m1", "meet [noon](bridge:time/1700000000:time-short)");
+		await bridge.idle();
+
+		const input = client.postMessage.mock.calls[0]?.[0];
+		expect(input?.text).toBe("meet noon");
+		expect(input?.facets).toMatchObject([
+			{
+				index: { byteStart: 5, byteEnd: 9 },
+				features: [
+					{
+						$type: "social.colibri.beta.richtext.facet#time",
+						datetime: "2023-11-14T22:13:20.000Z",
+						style: "time-short",
+					},
+				],
+			},
+		]);
+	});
+
+	it("drops time references it cannot read", async () => {
+		inboundMessage("m1", "meet [noon](bridge:time/1700000000:fortnightly)");
+		await bridge.idle();
+
+		const input = client.postMessage.mock.calls[0]?.[0];
+		expect(input?.text).toBe("meet noon");
+		expect(input?.facets ?? []).toEqual([]);
+	});
+
+	it("sends time facets as time references", async () => {
+		deliver({
+			$type: "social.colibri.beta.sync.defs#messageEvent",
+			event: "create",
+			channel: CHANNEL,
+			message: messageView({
+				text: "meet in 3 hours or at 4 PM",
+				facets: [
+					{
+						index: { byteStart: 5, byteEnd: 15 },
+						features: [
+							{
+								$type: "social.colibri.beta.richtext.facet#time",
+								datetime: "2023-11-14T22:13:20.500Z",
+							},
+						],
+					},
+					{
+						index: { byteStart: 22, byteEnd: 26 },
+						features: [
+							{
+								$type: "social.colibri.beta.richtext.facet#time",
+								datetime: "2023-11-14T16:00:00.000Z",
+								style: "time-short",
+							},
+						],
+					},
+				],
+			}),
+		});
+		await bridge.idle();
+
+		expect(connector.sent[0]?.markdown).toBe(
+			"meet [in 3 hours](bridge:time/1700000000:relative) or at [4 PM](bridge:time/1699977600:time-short)",
+		);
+	});
 });
 
 describe("moderation", () => {
