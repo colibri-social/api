@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { createTtlCache } from "@colibri-social/embeds";
 import { eq } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { ArtworkEntry } from "./activity-artwork.js";
 import type { AppContext } from "./context.js";
@@ -636,7 +636,8 @@ describe("emoji commits", () => {
 		const socket = await startAgainstServer();
 
 		socket.send(commitFrame(1, ITEM, "create", wave, DID, "wave"));
-		await settle();
+
+		await vi.waitFor(() => expect(userFrames).toHaveLength(1), { timeout: 5_000 });
 
 		const rows = await storedItems();
 		expect(rows.map((row) => [row.rkey, row.name, row.provider])).toEqual([
@@ -669,9 +670,11 @@ describe("emoji commits", () => {
 		const socket = await startAgainstServer();
 
 		socket.send(commitFrame(1, ITEM, "create", wave, DID, "wave"));
-		await settle();
 
-		expect(userFrames.map((entry) => entry.did).sort()).toEqual([DID, FOLLOWER].sort());
+		await vi.waitFor(
+			() => expect(userFrames.map((entry) => entry.did).sort()).toEqual([DID, FOLLOWER].sort()),
+			{ timeout: 5_000 },
+		);
 		const follower = userFrames.find((entry) => entry.did === FOLLOWER)?.frame as {
 			$type: string;
 			library: { follows: Array<{ state: string; emojis: Array<{ name: string }> }> };
