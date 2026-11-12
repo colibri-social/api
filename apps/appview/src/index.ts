@@ -19,7 +19,7 @@ import { eventDelivery } from "./event-delivery.js";
 import { HandOverSweeper, hostIdentityChanged } from "./hand-overs.js";
 import { healOwnerRolePermissions } from "./heal.js";
 import { Jetstream } from "./jetstream.js";
-import { claimClockId, MAIN_LOCK_KEY } from "./locks.js";
+import { claimClockId, MAIN_LOCK_KEY, migrateUnderLock } from "./locks.js";
 import { createLogger } from "./logger.js";
 import { observe, startMetrics } from "./metrics.js";
 import { migrationJobs } from "./migrations.js";
@@ -449,6 +449,22 @@ const main = async (): Promise<void> => {
 		invite: (target) => cluster?.inviteToMain(target),
 		mainNode: async () => (await ctx.registry.mainNode())?.id ?? null,
 		onAcquired: async () => {
+			const migrated = await migrateUnderLock(ctx.database).catch((error: unknown) => {
+				ctx.log.error({ err: error }, "migrations.failed");
+
+				return null;
+			});
+
+			if (migrated === null) {
+				void shutdown("migrations-failed", 1);
+
+				return;
+			}
+
+			if (!migrated) {
+				ctx.log.warn("migrations.deferredReadOnly");
+			}
+
 			holdsMain = true;
 			await cluster
 				?.becameMain()

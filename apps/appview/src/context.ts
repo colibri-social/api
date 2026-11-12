@@ -94,8 +94,8 @@ export const createContext = async (config: Config) => {
 		...(config.DATABASE_READ_URL ? { readUrl: config.DATABASE_READ_URL } : {}),
 	});
 
-	if (config.ROLES.includes("main")) {
-		await migrateUnderLock(database);
+	if (config.ROLES.includes("main") && !(await migrateUnderLock(database))) {
+		log.warn("migrations.deferredReadOnly");
 	}
 
 	const keypair = await Secp256k1Keypair.import(config.SIGNING_KEY, {

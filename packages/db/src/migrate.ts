@@ -28,6 +28,25 @@ export const knownMigrations = (dialect: Database["dialect"]): number => {
 	return journal.entries.length;
 };
 
+export const acceptsWrites = async ({ primary, dialect }: Database): Promise<boolean> => {
+	if (dialect !== "postgres") {
+		return true;
+	}
+
+	const result = await (
+		primary as unknown as {
+			execute: (query: SQL) => Promise<{ rows: { recovery: boolean; read_only: string }[] }>;
+		}
+	)
+		.execute(
+			sql`select pg_is_in_recovery() as recovery, current_setting('default_transaction_read_only') as read_only`,
+		)
+		.catch(() => null);
+	const row = result?.rows[0];
+
+	return row !== undefined && !row.recovery && row.read_only !== "on";
+};
+
 export const appliedMigrations = async ({ primary, dialect }: Database): Promise<number> => {
 	if (dialect === "postgres") {
 		const result = await (

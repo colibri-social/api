@@ -236,14 +236,25 @@ const main = async (): Promise<void> => {
 	}
 
 	const url = process.env.DATABASE_URL ?? fail("DATABASE_URL is not set", 2);
-	const key =
-		process.env.CREDENTIAL_ENCRYPTION_KEY ?? fail("CREDENTIAL_ENCRYPTION_KEY is not set", 2);
 	const database = openDatabase({ url, maxConnections: 2 });
 	const bus = await openOrderBus(url, database);
 	const { primary, tables } = database;
+
+	const configStore = async (): Promise<Admin["config"]> => {
+		const key =
+			process.env.CREDENTIAL_ENCRYPTION_KEY ?? fail("CREDENTIAL_ENCRYPTION_KEY is not set", 2);
+
+		return createConfigStore(database, await SecretBox.fromBase64(key));
+	};
+
 	const admin: Admin = {
 		registry: createRegistry(database),
-		config: createConfigStore(database, await SecretBox.fromBase64(key)),
+		config: {
+			set: async (key, value) => (await configStore()).set(key, value),
+			unset: async (key) => (await configStore()).unset(key),
+			keys: async () => (await configStore()).keys(),
+			values: async () => (await configStore()).values(),
+		},
 		sendOrder: async (order) => {
 			if (!bus) {
 				throw new RefusedError("orders need the Postgres setup with a running main node");
