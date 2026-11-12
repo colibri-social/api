@@ -294,6 +294,57 @@ describe("createRollout", () => {
 		expect(await createRollout(unversioned.deps).tick()).toBe("unversioned");
 	});
 
+	it("waits with the link history when the main node has no control link to the node", async () => {
+		const linkedAt = NOW - 60 * 60_000;
+		const unlinkedAt = NOW - 30 * 60_000;
+		const { deps, runs, paused } = setup([row("hel-1", { version: "2.0.0" }), row("stl-1")], {
+			send: vi.fn(() => false),
+			linkState: () => ({ linkedAt, unlinkedAt, linked: ["fsn-1"] }),
+		});
+
+		expect(await createRollout(deps).tick()).toBe("waiting");
+		expect(runs.map((run) => run.vars.pull_only)).toEqual([true]);
+		expect(paused()).toBe(false);
+		expect(deps.log.info).toHaveBeenCalledWith(
+			{
+				node: "stl-1",
+				heartbeatAt: new Date(NOW).toISOString(),
+				heartbeatFresh: true,
+				linkedAt: new Date(linkedAt).toISOString(),
+				unlinkedAt: new Date(unlinkedAt).toISOString(),
+				linked: ["fsn-1"],
+			},
+			"rollout.waitingForLink",
+		);
+	});
+
+	it("names the missing link when a forced rollout gives up on a node", async () => {
+		const { deps, paused } = setup([row("hel-1", { version: "2.0.0" }), row("stl-1")], {
+			send: vi.fn(() => false),
+		});
+
+		expect(await createRollout(deps).tick({ graceMinutes: 1 })).toBe("failed");
+		expect(paused()).toBe(true);
+		expect(deps.log.error).toHaveBeenCalledWith(
+			{
+				node: "stl-1",
+				version: "2.0.0",
+				reason: "stl-1 had no control link to the main node",
+			},
+			"rollout.paused",
+		);
+
+		const quorum = setup([row("hel-1", { version: "2.0.0" }), row("eu-3")]);
+
+		quorum.deps.registry.mayLeave = async () => ({ allowed: false, reason: "below the floor" });
+
+		expect(await createRollout(quorum.deps).tick({ graceMinutes: 1 })).toBe("failed");
+		expect(quorum.deps.log.error).toHaveBeenCalledWith(
+			expect.objectContaining({ reason: "eu-3 couldn't leave without breaking the quorum" }),
+			"rollout.paused",
+		);
+	});
+
 	it("stays idle while the node isn't main or is draining", async () => {
 		const { deps, runs } = setup([row("eu-2")], { active: () => false });
 

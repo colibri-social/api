@@ -23,6 +23,7 @@ import { claimClockId, MAIN_LOCK_KEY } from "./locks.js";
 import { createLogger } from "./logger.js";
 import { observe, startMetrics } from "./metrics.js";
 import { migrationJobs } from "./migrations.js";
+import { NotificationPruner } from "./notification-prune.js";
 import { connectPipeline } from "./pipeline.js";
 import { healProfilePolicies } from "./profile-policies.js";
 import { resyncBrokenCids } from "./resync-broken-cids.js";
@@ -71,11 +72,13 @@ const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<Main
 	});
 	const activities = new ActivitySweeper(ctx);
 	const handOvers = new HandOverSweeper(ctx);
+	const notificationPruner = new NotificationPruner(ctx);
 
 	await ctx.sync.start();
 	await jetstream.start();
 	activities.start();
 	handOvers.start();
+	notificationPruner.start();
 
 	const telemetry = startTelemetry({
 		database: ctx.database,
@@ -131,6 +134,7 @@ const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<Main
 	return {
 		stop: async () => {
 			clearInterval(housekeeping);
+			notificationPruner.stop();
 			telemetry.stop();
 			await jetstream.stop();
 			await activities.stop();
@@ -453,6 +457,7 @@ const main = async (): Promise<void> => {
 		},
 		onReleasing: async () => {
 			holdsMain = false;
+			cluster?.releasedMain();
 			await step("main-jobs", () => mainJobs?.stop());
 			mainJobs = null;
 		},

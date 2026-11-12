@@ -1,3 +1,4 @@
+import type { DeliveryOutcome, PushSender, Senders } from "@colibri-social/notifications";
 import {
 	type Attributes,
 	type Counter,
@@ -35,6 +36,12 @@ export type HistogramName = "xrpcDuration" | "syncLag" | "voiceJoinDuration";
 export type MetricsHandle = {
 	stop: () => Promise<void>;
 };
+
+type PushProvider = keyof Senders;
+
+type PushOutcome = Exclude<DeliveryOutcome, "not-configured">;
+
+type PushType = Parameters<PushSender["send"]>[1]["type"];
 
 type Instruments = {
 	counters: Record<CounterName, Counter>;
@@ -90,7 +97,7 @@ const GAUGES: Record<GaugeName, { name: string; description: string }> = {
 const COUNTERS: Record<CounterName, { name: string; description: string }> = {
 	pushDeliveries: {
 		name: "colibri_push_deliveries",
-		description: "Push notifications sent, by provider and outcome",
+		description: "Push sends per device, by provider, outcome and type",
 	},
 	turnCredentials: {
 		name: "colibri_turn_credentials",
@@ -120,6 +127,25 @@ const HISTOGRAMS: Record<
 		boundaries: [0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
 	},
 };
+
+const PUSH_PROVIDERS = {
+	webpush: true,
+	fcm: true,
+	apns: true,
+} satisfies Record<PushProvider, true>;
+
+const PUSH_OUTCOMES = {
+	delivered: true,
+	gone: true,
+	failed: true,
+} satisfies Record<PushOutcome, true>;
+
+const PUSH_TYPES = {
+	message: true,
+	edit: true,
+	delete: true,
+	read: true,
+} satisfies Record<PushType, true>;
 
 const sources = new Map<GaugeName, () => Sample[] | Promise<Sample[]>>();
 let constants: Attributes = {};
@@ -181,6 +207,16 @@ export const record = (name: HistogramName, value: number, attributes: Attribute
 	current.histograms[name].record(value, { ...constants, ...attributes });
 };
 
+const zeroPushDeliveries = (): void => {
+	for (const provider of Object.keys(PUSH_PROVIDERS)) {
+		for (const outcome of Object.keys(PUSH_OUTCOMES)) {
+			for (const type of Object.keys(PUSH_TYPES)) {
+				count("pushDeliveries", { provider, outcome, type }, 0);
+			}
+		}
+	}
+};
+
 export const xrpcMethod = (path: string): string | null => {
 	if (!path.startsWith("/xrpc/")) {
 		return null;
@@ -206,6 +242,8 @@ export const startMetrics = (options: {
 
 	constants = options.attributes;
 	current = createInstruments(provider.getMeter("colibri-appview"));
+
+	zeroPushDeliveries();
 
 	return {
 		stop: async () => {

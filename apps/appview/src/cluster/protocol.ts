@@ -12,6 +12,22 @@ export const NODE_ID_HEADER = "x-colibri-node";
 
 export const NODE_SECRET_HEADER = "x-colibri-node-secret";
 
+export const CONTROL_PING_MS = 15_000;
+
+export const CLOSE_REPLACED = 4000;
+
+export const CLOSE_MAIN_RELEASED = 4001;
+
+export const linkErrorCode = (error: unknown): string => {
+	if (error instanceof Error) {
+		const code = (error as NodeJS.ErrnoException).code;
+
+		return typeof code === "string" ? code : error.name;
+	}
+
+	return "Unknown";
+};
+
 export type ParkMode = "maintenance" | "retire";
 
 export type DrainMode = ParkMode | "update";

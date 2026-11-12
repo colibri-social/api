@@ -28,6 +28,12 @@ export type RolloutOutcome =
 	| "restarting"
 	| "handedOver";
 
+export type LinkState = {
+	linkedAt: number | null;
+	unlinkedAt: number | null;
+	linked: string[];
+};
+
 export type RolloutDeps = {
 	registry: Pick<Registry, "list" | "node" | "mayLeave" | "rolloutPaused" | "pauseRollout">;
 	self: string;
@@ -37,6 +43,7 @@ export type RolloutDeps = {
 	resolve: (image: string) => Promise<ResolvedImage>;
 	ansible: AnsibleRunner;
 	send: (nodeId: string, frame: MainFrame) => boolean;
+	linkState?: (nodeId: string) => LinkState;
 	drained: (nodeId: string, timeoutMs: number) => Promise<boolean>;
 	active: () => boolean;
 	yieldMain?: (target: string) => Promise<boolean>;
@@ -52,10 +59,16 @@ export type Rollout = {
 	tick: (options?: TickOptions) => Promise<RolloutOutcome>;
 };
 
-type StepResult = { ok: true } | { ok: false; waiting: true } | { ok: false; reason: string };
+type WaitKind = "quorum" | "link";
+
+type StepResult = { ok: true } | { ok: false; waiting: WaitKind } | { ok: false; reason: string };
 
 const tailOf = (result: PlaybookResult): string[] => {
 	return result.tail.slice(-10);
+};
+
+const isoOrNull = (at: number | null): string | null => {
+	return at === null ? null : new Date(at).toISOString();
 };
 
 export const rolloutOrder = (nodes: readonly NodeRow[], self: string): NodeRow[] => {
@@ -97,6 +110,28 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 		return false;
 	};
 
+	const logMissingLink = async (node: NodeRow): Promise<void> => {
+		const current = await deps.registry.node(node.id).catch(() => null);
+		const link = deps.linkState?.(node.id);
+		const heartbeatAt = current?.heartbeatAt ?? null;
+
+		deps.log.info(
+			{
+				node: node.id,
+				heartbeatAt,
+				heartbeatFresh: current ? fresh(current, now() - PEER_HEARTBEAT_WINDOW_MS) : false,
+				...(link
+					? {
+							linkedAt: isoOrNull(link.linkedAt),
+							unlinkedAt: isoOrNull(link.unlinkedAt),
+							linked: link.linked,
+						}
+					: {}),
+			},
+			"rollout.waitingForLink",
+		);
+	};
+
 	const playbook = async (
 		node: NodeRow,
 		vars: Record<string, unknown>,
@@ -118,7 +153,7 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 		if (!decision.allowed) {
 			deps.log.info({ node: node.id, reason: decision.reason }, "rollout.waitingForQuorum");
 
-			return { ok: false, waiting: true };
+			return { ok: false, waiting: "quorum" };
 		}
 
 		const pulled = await playbook(node, { image: target.pinned, pull_only: true });
@@ -135,9 +170,9 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 				: { t: "drain", mode: "update", graceMinutes: options.graceMinutes };
 
 		if (!deps.send(node.id, drainFrame)) {
-			deps.log.info({ node: node.id }, "rollout.waitingForLink");
+			await logMissingLink(node);
 
-			return { ok: false, waiting: true };
+			return { ok: false, waiting: "link" };
 		}
 
 		deps.log.info({ node: node.id, version: target.version }, "rollout.draining");
@@ -239,7 +274,13 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 			}
 
 			if (now() >= deadline) {
-				return { ok: false, reason: `${node.id} couldn't leave without breaking the quorum` };
+				return {
+					ok: false,
+					reason:
+						result.waiting === "link"
+							? `${node.id} had no control link to the main node`
+							: `${node.id} couldn't leave without breaking the quorum`,
+				};
 			}
 
 			await sleep(FORCED_RETRY_MS);

@@ -43,14 +43,18 @@ export const measuredSenders = (senders: Senders): Senders => {
 						try {
 							const outcome = await sender.send(subscription, payload);
 
-							count("pushDeliveries", { provider, outcome });
+							count("pushDeliveries", { provider, outcome, type: payload.type });
 							span.setAttribute("push.outcome", outcome);
 
 							if (outcome === "failed") span.setStatus({ code: SpanStatusCode.ERROR });
 
 							return outcome;
 						} catch (error) {
-							count("pushDeliveries", { provider, outcome: "failed" });
+							count("pushDeliveries", {
+								provider,
+								outcome: "failed",
+								type: payload.type,
+							});
 							span.setStatus({ code: SpanStatusCode.ERROR });
 
 							throw error;

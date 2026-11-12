@@ -4,10 +4,14 @@ import type { Logger } from "../logger.js";
 import {
 	ALIVE_PATH,
 	type Alive,
+	CLOSE_MAIN_RELEASED,
+	CLOSE_REPLACED,
 	CONFIG_PATH,
 	CONTROL_PATH,
+	CONTROL_PING_MS,
 	JOIN_PATH,
 	joinRequestSchema,
+	linkErrorCode,
 	type MainFrame,
 	NODE_ID_HEADER,
 	NODE_SECRET_HEADER,
@@ -19,8 +23,6 @@ import type { Registry } from "./registry.js";
 import { PING_PATH } from "./write-proxy.js";
 
 const MAX_BODY_BYTES = 16 * 1024;
-
-const PING_MS = 15_000;
 
 export type ControlServerDeps = {
 	registry: Registry;
@@ -41,6 +43,13 @@ type Link = {
 	socket: WebSocket;
 	alive: boolean;
 };
+
+export type LinkHistory = {
+	linkedAt: number | null;
+	unlinkedAt: number | null;
+};
+
+type Upgrade = { nodeId: string } | { nodeId: string | null; reason: string };
 
 const readBody = async (request: IncomingMessage): Promise<string> => {
 	const chunks: Buffer[] = [];
@@ -74,6 +83,7 @@ export class ControlServer {
 	private readonly wss = new WebSocketServer({ noServer: true });
 	private readonly links = new Map<string, Link>();
 	private readonly verified = new Map<string, number>();
+	private readonly history = new Map<string, LinkHistory>();
 	private readonly http: Server;
 	private ping: ReturnType<typeof setInterval> | null = null;
 
@@ -87,22 +97,49 @@ export class ControlServer {
 
 		this.http.on("upgrade", (request, socket, head) => {
 			void this.upgrade(request)
-				.then((nodeId) => {
-					if (!nodeId) {
+				.then((result) => {
+					if ("reason" in result) {
+						deps.log.warn({ node: result.nodeId, reason: result.reason }, "cluster.linkRejected");
 						socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
 						socket.destroy();
 
 						return;
 					}
 
-					this.wss.handleUpgrade(request, socket, head, (ws) => this.accept(nodeId, ws));
+					this.wss.handleUpgrade(request, socket, head, (ws) => this.accept(result.nodeId, ws));
 				})
-				.catch(() => socket.destroy());
+				.catch((error: unknown) => {
+					deps.log.warn(
+						{ node: headerOf(request, NODE_ID_HEADER), code: linkErrorCode(error) },
+						"cluster.upgradeFailed",
+					);
+					socket.destroy();
+				});
 		});
 	}
 
 	get linked(): string[] {
 		return [...this.links.keys()];
+	}
+
+	linkHistory(nodeId: string): LinkHistory {
+		return this.history.get(nodeId) ?? { linkedAt: null, unlinkedAt: null };
+	}
+
+	dropLinks(): string[] {
+		const dropped = [...this.links.keys()];
+
+		for (const [nodeId, link] of this.links) {
+			this.links.delete(nodeId);
+			this.markUnlinked(nodeId);
+			link.socket.close(CLOSE_MAIN_RELEASED, "main role released");
+		}
+
+		if (dropped.length > 0) {
+			this.deps.log.info({ nodes: dropped }, "cluster.linksDropped");
+		}
+
+		return dropped;
 	}
 
 	listen(port: number, host: string): Promise<number> {
@@ -113,7 +150,7 @@ export class ControlServer {
 				resolve(typeof address === "object" && address ? address.port : port);
 			});
 
-			this.ping = setInterval(() => this.reap(), PING_MS);
+			this.ping = setInterval(() => this.reap(), CONTROL_PING_MS);
 			this.ping.unref?.();
 		});
 	}
@@ -297,26 +334,43 @@ export class ControlServer {
 		});
 	}
 
-	private async upgrade(request: IncomingMessage): Promise<string | null> {
+	private async upgrade(request: IncomingMessage): Promise<Upgrade> {
 		const path = new URL(request.url ?? "/", "http://localhost").pathname;
 		const nodeId = headerOf(request, NODE_ID_HEADER);
 		const secret = headerOf(request, NODE_SECRET_HEADER);
 
-		if (path !== CONTROL_PATH || !this.deps.isMain() || !nodeId || !secret) {
-			return null;
+		if (path !== CONTROL_PATH) {
+			return { nodeId, reason: "unknownPath" };
 		}
 
-		return (await this.deps.registry.verify(nodeId, secret)) ? nodeId : null;
+		if (!this.deps.isMain()) {
+			return { nodeId, reason: "notMain" };
+		}
+
+		if (!nodeId || !secret) {
+			return { nodeId, reason: "missingCredentials" };
+		}
+
+		if (!(await this.deps.registry.verify(nodeId, secret))) {
+			return { nodeId, reason: "invalidSecret" };
+		}
+
+		return { nodeId };
+	}
+
+	private markUnlinked(nodeId: string): void {
+		this.history.set(nodeId, { ...this.linkHistory(nodeId), unlinkedAt: Date.now() });
 	}
 
 	private accept(nodeId: string, socket: WebSocket): void {
 		const previous = this.links.get(nodeId);
 
-		previous?.socket.close(4000, "replaced");
+		previous?.socket.close(CLOSE_REPLACED, "replaced");
 
 		const link: Link = { socket, alive: true };
 
 		this.links.set(nodeId, link);
+		this.history.set(nodeId, { ...this.linkHistory(nodeId), linkedAt: Date.now() });
 		this.deps.log.info({ node: nodeId }, "cluster.linked");
 
 		socket.send(
@@ -338,19 +392,24 @@ export class ControlServer {
 			}
 		});
 
-		socket.on("close", () => {
+		socket.on("close", (code, reason) => {
 			if (this.links.get(nodeId) === link) {
 				this.links.delete(nodeId);
-				this.deps.log.info({ node: nodeId }, "cluster.unlinked");
+				this.markUnlinked(nodeId);
+				this.deps.log.info({ node: nodeId, code, reason: reason.toString() }, "cluster.unlinked");
 			}
 		});
 
-		socket.on("error", () => socket.close());
+		socket.on("error", (error) => {
+			this.deps.log.warn({ node: nodeId, code: linkErrorCode(error) }, "cluster.linkError");
+			socket.close();
+		});
 	}
 
 	private reap(): void {
-		for (const link of this.links.values()) {
+		for (const [nodeId, link] of this.links) {
 			if (!link.alive) {
+				this.deps.log.warn({ node: nodeId }, "cluster.linkReaped");
 				link.socket.terminate();
 				continue;
 			}

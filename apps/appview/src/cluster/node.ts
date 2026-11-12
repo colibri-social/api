@@ -68,6 +68,7 @@ export type ClusterNode = {
 	setState: (state: NodeState, drainDeadline?: Date | null) => Promise<void>;
 	order: (order: ClusterOrder) => Promise<void>;
 	becameMain: () => Promise<void>;
+	releasedMain: () => void;
 	mayTakeMain: () => Promise<boolean>;
 	inviteToMain: (target: string) => void;
 	stop: () => Promise<void>;
@@ -320,6 +321,14 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 						}),
 					ansible,
 					send,
+					...(control
+						? {
+								linkState: (nodeId: string) => ({
+									...control.linkHistory(nodeId),
+									linked: control.linked,
+								}),
+							}
+						: {}),
 					drained,
 					active: () => deps.isMain() && !ctx.drain.draining,
 					yieldMain: deps.yieldMain,
@@ -760,6 +769,9 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 			invitedUntil = 0;
 			await registry.claimMain(ctx.nodeId);
 			void monitoringSync?.sync();
+		},
+		releasedMain: () => {
+			control?.dropLinks();
 		},
 		mayTakeMain,
 		inviteToMain: (target) => {

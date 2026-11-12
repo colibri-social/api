@@ -26,7 +26,7 @@ describe("startMetrics", () => {
 
 		const stop = observe("connections", () => [{ value: 7, attributes: { kind: "events" } }]);
 
-		count("pushDeliveries", { provider: "fcm", outcome: "delivered" });
+		count("pushDeliveries", { provider: "fcm", outcome: "delivered", type: "message" });
 		record("xrpcDuration", 0.2, {
 			method: "social.colibri.beta.server.describeServer",
 			status: 200,
@@ -48,8 +48,12 @@ describe("startMetrics", () => {
 
 		expect(body).toMatch(/colibri_connections\{node="eu-1",kind="events"\} 7/);
 		expect(body).toMatch(
-			/colibri_push_deliveries_total\{node="eu-1",provider="fcm",outcome="delivered"\} 1/,
+			/colibri_push_deliveries_total\{node="eu-1",provider="fcm",outcome="delivered",type="message"\} 1/,
 		);
+		expect(body).toMatch(
+			/colibri_push_deliveries_total\{node="eu-1",provider="apns",outcome="gone",type="read"\} 0/,
+		);
+		expect(body.match(/^colibri_push_deliveries_total\{/gm)).toHaveLength(36);
 		expect(body).toMatch(/colibri_xrpc_duration_seconds_bucket\{.*le="0.25"\} 1/);
 	});
 });

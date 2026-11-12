@@ -41,3 +41,7 @@ export const nextId = (): string => {
 };
 
 export const isId = (value: string): boolean => value.length === ID_LENGTH;
+
+export const idAt = (date: Date) => {
+	return `${encode(date.getTime() * 1000, TIMESTAMP_CHARS)}${encode(0, CLOCK_CHARS)}`;
+};

@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ControlClient } from "./control-client.js";
+import { ControlClient, type ControlClientDeps } from "./control-client.js";
 import { ControlServer } from "./control-server.js";
 import { joinCluster } from "./node-secret.js";
-import type { MainFrame } from "./protocol.js";
+import { CLOSE_MAIN_RELEASED, type MainFrame } from "./protocol.js";
 import { createRegistry, type Registry } from "./registry.js";
 
 const log = { info: vi.fn(), warn: vi.fn() };
@@ -26,6 +26,7 @@ let directory: string;
 const clients: ControlClient[] = [];
 
 beforeEach(async () => {
+	vi.clearAllMocks();
 	database = await openTestDatabase();
 	registry = createRegistry(database);
 	isMain = true;
@@ -52,7 +53,7 @@ const join2 = async () => {
 	return { secret: credentials?.secret ?? "", credentials, file, token };
 };
 
-const link = (secret: string) => {
+const link = (secret: string, options: Partial<ControlClientDeps> = {}) => {
 	const frames: MainFrame[] = [];
 	const client = new ControlClient({
 		nodeId: "eu-2",
@@ -60,6 +61,7 @@ const link = (secret: string) => {
 		log,
 		mainUrl: async () => mainUrl,
 		onFrame: (frame) => frames.push(frame),
+		...options,
 	});
 
 	clients.push(client);
@@ -131,6 +133,98 @@ describe("control link", () => {
 			},
 			{ timeout: 5_000 },
 		);
+	});
+
+	it("drops every link when the main role goes and takes them back once main again", async () => {
+		const { secret } = await join2();
+		const { frames } = link(secret);
+
+		await vi.waitFor(() => expect(server.linked).toEqual(["eu-2"]));
+
+		const linkedAt = server.linkHistory("eu-2").linkedAt;
+
+		isMain = false;
+
+		expect(server.dropLinks()).toEqual(["eu-2"]);
+		expect(server.linked).toEqual([]);
+		expect(server.linkHistory("eu-2")).toEqual({
+			linkedAt,
+			unlinkedAt: expect.any(Number),
+		});
+		expect(log.info).toHaveBeenCalledWith({ nodes: ["eu-2"] }, "cluster.linksDropped");
+
+		await vi.waitFor(() =>
+			expect(log.warn).toHaveBeenCalledWith(
+				{ main: mainUrl, code: CLOSE_MAIN_RELEASED, reason: "main role released" },
+				"cluster.linkClosed",
+			),
+		);
+		await vi.waitFor(
+			() =>
+				expect(log.warn).toHaveBeenCalledWith(
+					{ node: "eu-2", reason: "notMain" },
+					"cluster.linkRejected",
+				),
+			{ timeout: 5_000 },
+		);
+
+		isMain = true;
+
+		await vi.waitFor(
+			() => {
+				expect(server.linked).toEqual(["eu-2"]);
+				expect(frames.filter((frame) => frame.t === "welcome")).toHaveLength(2);
+			},
+			{ timeout: 10_000 },
+		);
+	}, 15_000);
+
+	it("terminates a link that stops hearing from the main node and dials again", async () => {
+		const { secret } = await join2();
+		const { frames } = link(secret, { idleMs: 200 });
+
+		await vi.waitFor(
+			() => {
+				expect(log.warn).toHaveBeenCalledWith({ main: mainUrl, idleMs: 200 }, "cluster.linkIdle");
+				expect(frames.filter((frame) => frame.t === "welcome").length).toBeGreaterThanOrEqual(2);
+			},
+			{ timeout: 5_000 },
+		);
+		expect(log.info).toHaveBeenCalledWith(
+			{ main: mainUrl, reason: "closed", delayMs: 1_000 },
+			"cluster.linkRetry",
+		);
+	});
+
+	it("moves the link when the main node changes under an open socket", async () => {
+		const { secret } = await join2();
+		let current = mainUrl;
+
+		link(secret, { mainUrl: async () => current, mainCheckMs: 100 });
+
+		await vi.waitFor(() => expect(server.linked).toEqual(["eu-2"]));
+
+		const next = new ControlServer({ registry, log, nodeId: "eu-3", isMain: () => true });
+		const nextUrl = `http://127.0.0.1:${await next.listen(0, "127.0.0.1")}`;
+
+		current = nextUrl;
+
+		try {
+			await vi.waitFor(
+				() => {
+					expect(next.linked).toEqual(["eu-2"]);
+					expect(server.linked).toEqual([]);
+				},
+				{ timeout: 5_000 },
+			);
+			expect(log.warn).toHaveBeenCalledWith(
+				{ connected: mainUrl, main: nextUrl },
+				"cluster.linkStale",
+			);
+		} finally {
+			for (const client of clients.splice(0)) client.stop();
+			await next.close();
+		}
 	});
 });
 
