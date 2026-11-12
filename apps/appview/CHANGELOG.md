@@ -1,5 +1,11 @@
 # @colibri-social/appview
 
+## 2.39.0
+
+### Minor Changes
+
+- 6b23a08: Clustered nodes name themselves on every response with the `colibri-node` and `colibri-node-region` headers, exposed to browser clients through CORS
+
 ## 2.38.0
 
 ### Minor Changes
