@@ -1,0 +1,55 @@
+- name: Back up the primary database now
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    stack_dir: /opt/colibri
+    db_user: colibri
+    backup_type: full
+    scripts_dir: /var/lib/colibri/bin
+  tasks:
+    - name: Check that Postgres here is the primary
+      ansible.builtin.command:
+        argv: [docker, compose, exec, -T, -u, postgres, postgres, psql, -U, "{{ db_user }}", -d, postgres, -Atc, select pg_is_in_recovery()]
+        chdir: "{{ stack_dir }}"
+      register: recovery
+      changed_when: false
+      failed_when: recovery.rc != 0 or recovery.stdout != "f"
+
+    - name: Create the script directory
+      ansible.builtin.file:
+        path: "{{ scripts_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copy the backup scripts
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ scripts_dir }}/"
+        mode: "0755"
+      loop:
+        - ../../postgres/backup.sh
+        - ../../observability/pgbackrest-age.sh
+
+    - name: Run the backup
+      ansible.builtin.shell: "set -o pipefail; {{ scripts_dir }}/backup.sh {{ backup_type | quote }} 2>&1 | tee -a /var/log/colibri-backup.log"
+      args:
+        executable: /bin/bash
+      environment:
+        STACK_DIR: "{{ stack_dir }}"
+        DB_USER: "{{ db_user }}"
+      register: backup_run
+      changed_when: true
+
+    - name: Show the backup output
+      ansible.builtin.debug:
+        var: backup_run.stdout_lines
+
+    - name: Refresh the backup age metric
+      ansible.builtin.command: "{{ scripts_dir }}/pgbackrest-age.sh"
+      args:
+        chdir: "{{ stack_dir }}"
+      environment:
+        PGBACKREST_CMD: docker compose exec -T -u postgres postgres pgbackrest
+      changed_when: true
+      failed_when: false

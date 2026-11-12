@@ -30,7 +30,12 @@ export type ClusterOrder =
 	| { kind: "deployStatus"; id: string; node: string }
 	| { kind: "deployMonitoring"; id: string; node: string }
 	| { kind: "failback"; id: string; node: string }
-	| { kind: "rolloutNow"; id: string; graceMinutes: number };
+	| { kind: "rolloutNow"; id: string; graceMinutes: number }
+	| { kind: "backup"; id: string; type: BackupType };
+
+export const BACKUP_TYPES = ["full", "diff", "incr"] as const;
+
+export type BackupType = (typeof BACKUP_TYPES)[number];
 
 export type OrderResult = {
 	id: string;
@@ -70,6 +75,9 @@ export type OrderDeps = {
 	rollout?: {
 		running: () => boolean;
 		now: (graceMinutes: number) => Promise<unknown>;
+	};
+	backup?: {
+		vars: () => Record<string, unknown>;
 	};
 };
 
@@ -511,6 +519,30 @@ const rolloutNow = async (
 	);
 };
 
+const backup = async (
+	deps: OrderDeps,
+	order: Extract<ClusterOrder, { kind: "backup" }>,
+): Promise<OrderResult> => {
+	const { ansible } = deps;
+	const self = await deps.registry.node(deps.self);
+
+	if (!ansible || !deps.backup || !self) {
+		return refused(order, "this main node can't run Ansible");
+	}
+
+	const result = await ansible.run({
+		playbook: "backup",
+		host: hostOf(self.tailnetUrl),
+		vars: { ...deps.backup.vars(), backup_type: order.type },
+	});
+
+	if (!result.ok) {
+		return refused(order, `the ${order.type} backup failed:\n${result.tail.slice(-15).join("\n")}`);
+	}
+
+	return done(order, `the ${order.type} backup on ${deps.self} finished`);
+};
+
 export const ORDER_TIMEOUTS_MS: Record<ClusterOrder["kind"], number> = {
 	shutdown: 30_000,
 	resume: 30_000,
@@ -521,6 +553,7 @@ export const ORDER_TIMEOUTS_MS: Record<ClusterOrder["kind"], number> = {
 	deployMonitoring: 30_000,
 	failback: 3 * 60_000,
 	rolloutNow: 30_000,
+	backup: 3 * 60 * 60_000,
 };
 
 export const handleOrder = (deps: OrderDeps, order: ClusterOrder): Promise<OrderResult> => {
@@ -543,5 +576,7 @@ export const handleOrder = (deps: OrderDeps, order: ClusterOrder): Promise<Order
 			return failback(deps, order);
 		case "rolloutNow":
 			return rolloutNow(deps, order);
+		case "backup":
+			return backup(deps, order);
 	}
 };

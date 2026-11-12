@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { parseEnv } from "node:util";
 import {
+	BACKUP_TYPES,
+	type BackupType,
 	type ClusterOrder,
 	type ConfigStore,
 	isSharedKey,
@@ -280,6 +282,17 @@ export const dbSwitchover = async (admin: Admin, node: string): Promise<void> =>
 
 export const dbFailback = async (admin: Admin, node: string | undefined): Promise<void> => {
 	await runOrder(admin, { kind: "failback", id: randomUUID(), node: node ?? "" });
+};
+
+export const dbBackup = async (admin: Admin, type: string | undefined): Promise<void> => {
+	const chosen = type ?? "full";
+
+	if (!(BACKUP_TYPES as readonly string[]).includes(chosen)) {
+		throw new UsageError(`${chosen} is not a backup type, expected ${BACKUP_TYPES.join(", ")}`);
+	}
+
+	admin.print(`Running a ${chosen} backup on the main node. This can take a while.`);
+	await runOrder(admin, { kind: "backup", id: randomUUID(), type: chosen as BackupType });
 };
 
 export const rollout = async (admin: Admin, paused: boolean): Promise<void> => {

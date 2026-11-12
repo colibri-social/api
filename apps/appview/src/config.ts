@@ -127,7 +127,7 @@ export const configSchema = z.object({
 	BACKUP_REPO_HOST: optionalString,
 	BACKUP_REPO_PORT: z.coerce.number().int().min(1).max(65535).default(23),
 	BACKUP_REPO_USER: optionalString,
-	BACKUP_REPO_PATH: z.string().trim().min(1).default("/colibri"),
+	BACKUP_REPO_PATH: z.string().trim().min(1).default("/home/colibri"),
 	BACKUP_CIPHER_PASS: optionalString,
 	BACKUP_SSH_KEY_FILE: z.string().default("/run/secrets/backup_ssh_key"),
 	UPDATE_POLL_MINUTES: z.coerce.number().nonnegative().default(15),
@@ -148,6 +148,7 @@ export const configSchema = z.object({
 	PROMETHEUS_IMAGE: z.string().trim().min(1).default("prom/prometheus:v3.15.1"),
 	GRAFANA_IMAGE: z.string().trim().min(1).default("grafana/grafana:13.2.5"),
 	ALLOY_IMAGE: z.string().trim().min(1).default("grafana/alloy:v1.21.2"),
+	LOKI_IMAGE: z.string().trim().min(1).default("grafana/loki:3.7.9"),
 	KUMA_URL: z
 		.url()
 		.optional()

@@ -20,7 +20,13 @@
         src: "{{ observability_dir }}/alloy/{{ item }}.alloy"
         dest: "{{ stack_dir }}/alloy/{{ item }}.alloy"
         mode: "0644"
-      loop: "{{ ['base'] + (['postgres'] if postgres | default(false) | bool else []) + (['probes'] if probes | default(false) | bool else []) }}"
+      loop: "{{ ['base', 'logs'] + (['postgres'] if postgres | default(false) | bool else []) + (['probes'] if probes | default(false) | bool else []) }}"
+
+    - name: Point Alloy at Loki
+      ansible.builtin.copy:
+        content: "http://{{ remote_write_url | urlsplit('hostname') }}:3101/loki/api/v1/push\n"
+        dest: "{{ stack_dir }}/alloy/loki-url"
+        mode: "0644"
 
     - name: Remove Alloy modules this node doesn't run
       ansible.builtin.file:
@@ -39,7 +45,7 @@
         - { key: ALLOY_IMAGE, value: "{{ alloy_image }}" }
 
     - name: Start Alloy
-      ansible.builtin.command: docker compose up -d alloy
+      ansible.builtin.command: docker compose up -d --force-recreate alloy
       args:
         chdir: "{{ stack_dir }}"
       changed_when: true

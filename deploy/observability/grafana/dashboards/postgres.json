@@ -374,6 +374,503 @@
 				}
 			},
 			"id": 8
+		},
+		{
+			"type": "stat",
+			"title": "Messages",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 28,
+				"w": 6,
+				"h": 4
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "max(pg_stat_user_tables_n_live_tup{relname=\"messages\",node=~\"$node\"})"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "short"
+				},
+				"overrides": []
+			},
+			"options": {
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					]
+				},
+				"colorMode": "value",
+				"graphMode": "area"
+			},
+			"id": 9,
+			"description": "Live rows in the messages table, as Postgres last counted them"
+		},
+		{
+			"type": "stat",
+			"title": "Messages in the last 24 hours",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 6,
+				"y": 28,
+				"w": 6,
+				"h": 4
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "max(increase(pg_stat_user_tables_n_tup_ins{relname=\"messages\",node=~\"$node\"}[24h]))"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "short"
+				},
+				"overrides": []
+			},
+			"options": {
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					]
+				},
+				"colorMode": "value",
+				"graphMode": "area"
+			},
+			"id": 10
+		},
+		{
+			"type": "stat",
+			"title": "Tables and indexes",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 12,
+				"y": 28,
+				"w": 6,
+				"h": 4
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum(max by (relname) (pg_stat_user_tables_table_size_bytes{node=~\"$node\"} + pg_stat_user_tables_index_size_bytes{node=~\"$node\"}))"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "bytes"
+				},
+				"overrides": []
+			},
+			"options": {
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					]
+				},
+				"colorMode": "value",
+				"graphMode": "area"
+			},
+			"id": 11
+		},
+		{
+			"type": "stat",
+			"title": "Dead rows",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 18,
+				"y": 28,
+				"w": 6,
+				"h": 4
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum(max by (relname) (pg_stat_user_tables_n_dead_tup{node=~\"$node\"}))"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "short"
+				},
+				"overrides": []
+			},
+			"options": {
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					]
+				},
+				"colorMode": "value",
+				"graphMode": "area"
+			},
+			"id": 12,
+			"description": "Rows waiting for vacuum"
+		},
+		{
+			"type": "table",
+			"title": "Tables",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 32,
+				"w": 24,
+				"h": 12
+			},
+			"description": "Each table on the primary. Row counts are the estimates Postgres keeps between vacuums.",
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "max by (relname) (pg_stat_user_tables_n_live_tup{node=~\"$node\"})",
+					"format": "table",
+					"instant": true,
+					"range": false
+				},
+				{
+					"refId": "B",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "max by (relname) (pg_stat_user_tables_table_size_bytes{node=~\"$node\"})",
+					"format": "table",
+					"instant": true,
+					"range": false
+				},
+				{
+					"refId": "C",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "max by (relname) (pg_stat_user_tables_index_size_bytes{node=~\"$node\"})",
+					"format": "table",
+					"instant": true,
+					"range": false
+				},
+				{
+					"refId": "D",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "max by (relname) (pg_stat_user_tables_n_dead_tup{node=~\"$node\"})",
+					"format": "table",
+					"instant": true,
+					"range": false
+				},
+				{
+					"refId": "E",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "max by (relname) (increase(pg_stat_user_tables_n_tup_ins{node=~\"$node\"}[1h]))",
+					"format": "table",
+					"instant": true,
+					"range": false
+				},
+				{
+					"refId": "F",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "max by (relname) (increase(pg_stat_user_tables_seq_scan{node=~\"$node\"}[1h]))",
+					"format": "table",
+					"instant": true,
+					"range": false
+				}
+			],
+			"transformations": [
+				{
+					"id": "merge",
+					"options": {}
+				},
+				{
+					"id": "organize",
+					"options": {
+						"excludeByName": {
+							"Time": true
+						},
+						"indexByName": {
+							"relname": 0,
+							"Value #A": 1,
+							"Value #B": 2,
+							"Value #C": 3,
+							"Value #D": 4,
+							"Value #E": 5,
+							"Value #F": 6
+						},
+						"renameByName": {
+							"relname": "Table",
+							"Value #A": "Rows",
+							"Value #B": "Size",
+							"Value #C": "Index size",
+							"Value #D": "Dead rows",
+							"Value #E": "Inserts (1h)",
+							"Value #F": "Sequential scans (1h)"
+						}
+					}
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "short"
+				},
+				"overrides": [
+					{
+						"matcher": {
+							"id": "byName",
+							"options": "Size"
+						},
+						"properties": [
+							{
+								"id": "unit",
+								"value": "bytes"
+							}
+						]
+					},
+					{
+						"matcher": {
+							"id": "byName",
+							"options": "Index size"
+						},
+						"properties": [
+							{
+								"id": "unit",
+								"value": "bytes"
+							}
+						]
+					},
+					{
+						"matcher": {
+							"id": "byName",
+							"options": "Table"
+						},
+						"properties": [
+							{
+								"id": "unit",
+								"value": "string"
+							}
+						]
+					}
+				]
+			},
+			"options": {
+				"showHeader": true,
+				"cellHeight": "sm",
+				"sortBy": [
+					{
+						"displayName": "Size",
+						"desc": true
+					}
+				]
+			},
+			"id": 13
+		},
+		{
+			"type": "timeseries",
+			"title": "Table sizes",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 44,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "topk(10, max by (relname) (pg_stat_user_tables_table_size_bytes{node=~\"$node\"} + pg_stat_user_tables_index_size_bytes{node=~\"$node\"}))",
+					"legendFormat": "{{relname}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "bytes"
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 14,
+			"description": "The 10 largest tables, indexes included"
+		},
+		{
+			"type": "timeseries",
+			"title": "Writes by table",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 12,
+				"y": 44,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "topk(10, max by (relname) (rate(pg_stat_user_tables_n_tup_ins{node=~\"$node\"}[5m]) + rate(pg_stat_user_tables_n_tup_upd{node=~\"$node\"}[5m]) + rate(pg_stat_user_tables_n_tup_del{node=~\"$node\"}[5m])))",
+					"legendFormat": "{{relname}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "wps"
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 15,
+			"description": "Inserted, updated and deleted rows per second, top 10"
+		},
+		{
+			"type": "timeseries",
+			"title": "Messages",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 52,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "max(pg_stat_user_tables_n_live_tup{relname=\"messages\",node=~\"$node\"})",
+					"legendFormat": "messages"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "short"
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 16
+		},
+		{
+			"type": "timeseries",
+			"title": "Dead rows by table",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 12,
+				"y": 52,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "topk(10, max by (relname) (pg_stat_user_tables_n_dead_tup{node=~\"$node\"}))",
+					"legendFormat": "{{relname}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "short"
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 17
 		}
 	]
 }

@@ -13,6 +13,17 @@ services:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
 
+  loki:
+    image: {{ loki_image }}
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/loki/loki.yml
+    ports:
+      - "{{ tailnet_ip.stdout }}:3101:3100"
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+
   grafana:
     image: {{ grafana_image }}
     restart: unless-stopped
@@ -33,6 +44,7 @@ services:
       - grafana_admin_password
     depends_on:
       - prometheus
+      - loki
 
 secrets:
   grafana_admin_password:
@@ -40,4 +52,5 @@ secrets:
 
 volumes:
   prometheus-data:
+  loki-data:
   grafana-data:

@@ -29,6 +29,7 @@ import { ALIVE_PATH, type Alive, aliveSchema, type DrainMode, type NodeFrame } f
 import {
 	type BackupKeys,
 	databaseHostRuns,
+	databaseParts,
 	missingForProvisioning,
 	needsPostgres,
 	provisionVars,
@@ -543,6 +544,12 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 			: {}),
 		...(postgresUrl
 			? {
+					backup: {
+						vars: () => ({
+							stack_dir: config.STACK_DIR,
+							db_user: databaseParts(postgresUrl).db_user,
+						}),
+					},
 					failback: (target: string | undefined) =>
 						runFailback(
 							{
@@ -611,6 +618,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 							alert_webhook_url: config.ALERT_WEBHOOK_URL ?? "",
 							grafana_image: config.GRAFANA_IMAGE,
 							prometheus_image: config.PROMETHEUS_IMAGE,
+							loki_image: config.LOKI_IMAGE,
 							stack_dir: config.STACK_DIR,
 						}
 					: null,
@@ -662,6 +670,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 			alert_webhook_url: config.ALERT_WEBHOOK_URL ?? "",
 			grafana_image: config.GRAFANA_IMAGE,
 			prometheus_image: config.PROMETHEUS_IMAGE,
+			loki_image: config.LOKI_IMAGE,
 			alloy_image: config.ALLOY_IMAGE,
 		});
 	};

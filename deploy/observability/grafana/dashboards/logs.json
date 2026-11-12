@@ -1,0 +1,239 @@
+{
+	"uid": "colibri-logs",
+	"title": "Colibri logs",
+	"tags": [
+		"colibri"
+	],
+	"timezone": "browser",
+	"schemaVersion": 39,
+	"version": 1,
+	"editable": true,
+	"refresh": "30s",
+	"time": {
+		"from": "now-1h",
+		"to": "now"
+	},
+	"templating": {
+		"list": [
+			{
+				"name": "node",
+				"label": "Node",
+				"type": "query",
+				"datasource": {
+					"type": "loki",
+					"uid": "colibri-loki"
+				},
+				"query": "label_values(node)",
+				"definition": "label_values(node)",
+				"refresh": 2,
+				"includeAll": true,
+				"multi": true,
+				"current": {
+					"text": "All",
+					"value": "$__all"
+				},
+				"allValue": ".+"
+			},
+			{
+				"name": "service",
+				"label": "Service",
+				"type": "query",
+				"datasource": {
+					"type": "loki",
+					"uid": "colibri-loki"
+				},
+				"query": "label_values({node=~\"$node\"}, service)",
+				"definition": "label_values({node=~\"$node\"}, service)",
+				"refresh": 2,
+				"includeAll": true,
+				"multi": true,
+				"current": {
+					"text": "appview",
+					"value": [
+						"appview"
+					]
+				},
+				"allValue": ".+"
+			},
+			{
+				"name": "search",
+				"label": "Search",
+				"type": "textbox",
+				"query": "",
+				"current": {
+					"text": "",
+					"value": ""
+				}
+			}
+		]
+	},
+	"panels": [
+		{
+			"type": "timeseries",
+			"title": "Log lines by node",
+			"datasource": {
+				"type": "loki",
+				"uid": "colibri-loki"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 0,
+				"w": 12,
+				"h": 6
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "loki",
+						"uid": "colibri-loki"
+					},
+					"expr": "sum by (node) (count_over_time({node=~\"$node\", service=~\"$service\"} |= \"$search\" [$__auto]))",
+					"legendFormat": "{{node}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "short",
+					"custom": {
+						"drawStyle": "bars",
+						"fillOpacity": 60,
+						"stacking": {
+							"mode": "normal"
+						}
+					}
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 1
+		},
+		{
+			"type": "timeseries",
+			"title": "Warnings and errors by node",
+			"datasource": {
+				"type": "loki",
+				"uid": "colibri-loki"
+			},
+			"gridPos": {
+				"x": 12,
+				"y": 0,
+				"w": 12,
+				"h": 6
+			},
+			"description": "Lines with a pino level of warn (40) or higher",
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "loki",
+						"uid": "colibri-loki"
+					},
+					"expr": "sum by (node) (count_over_time({node=~\"$node\", service=~\"$service\"} |= \"$search\" | json | __error__=\"\" | level >= 40 [$__auto]))",
+					"legendFormat": "{{node}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "short",
+					"custom": {
+						"drawStyle": "bars",
+						"fillOpacity": 60,
+						"stacking": {
+							"mode": "normal"
+						}
+					}
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 2
+		},
+		{
+			"type": "logs",
+			"title": "Warnings and errors",
+			"datasource": {
+				"type": "loki",
+				"uid": "colibri-loki"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 6,
+				"w": 24,
+				"h": 10
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "loki",
+						"uid": "colibri-loki"
+					},
+					"expr": "{node=~\"$node\", service=~\"$service\"} |= \"$search\" | json | __error__=\"\" | level >= 40"
+				}
+			],
+			"options": {
+				"showTime": true,
+				"showLabels": false,
+				"showCommonLabels": false,
+				"wrapLogMessage": true,
+				"prettifyLogMessage": false,
+				"enableLogDetails": true,
+				"dedupStrategy": "none",
+				"sortOrder": "Descending"
+			},
+			"id": 3
+		},
+		{
+			"type": "logs",
+			"title": "Logs",
+			"datasource": {
+				"type": "loki",
+				"uid": "colibri-loki"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 16,
+				"w": 24,
+				"h": 20
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "loki",
+						"uid": "colibri-loki"
+					},
+					"expr": "{node=~\"$node\", service=~\"$service\"} |= \"$search\""
+				}
+			],
+			"options": {
+				"showTime": true,
+				"showLabels": false,
+				"showCommonLabels": false,
+				"wrapLogMessage": true,
+				"prettifyLogMessage": false,
+				"enableLogDetails": true,
+				"dedupStrategy": "none",
+				"sortOrder": "Descending"
+			},
+			"id": 4
+		}
+	]
+}

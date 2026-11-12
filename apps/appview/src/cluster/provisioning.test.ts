@@ -23,7 +23,7 @@ const config = {
 	BACKUP_REPO_HOST: undefined,
 	BACKUP_REPO_PORT: 23,
 	BACKUP_REPO_USER: undefined,
-	BACKUP_REPO_PATH: "/colibri",
+	BACKUP_REPO_PATH: "/home/colibri",
 	BACKUP_CIPHER_PASS: undefined,
 };
 
@@ -54,7 +54,7 @@ describe("provisionVars", () => {
 			backup_repo_host: "u1.your-storagebox.de",
 			backup_repo_port: 23,
 			backup_repo_user: "u1",
-			backup_repo_path: "/colibri",
+			backup_repo_path: "/home/colibri",
 			backup_cipher_pass: "secret",
 			backup_key: "PRIVATE",
 			backup_public_key: "PUBLIC",

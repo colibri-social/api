@@ -14,6 +14,7 @@ export const PLAYBOOKS = [
 	"monitoring",
 	"alloy",
 	"database-hosts",
+	"backup",
 ] as const;
 
 export type Playbook = (typeof PLAYBOOKS)[number];

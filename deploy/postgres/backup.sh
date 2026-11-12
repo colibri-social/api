@@ -14,7 +14,7 @@ if [ "$(run psql -U "$user" -d postgres -Atc 'select pg_is_in_recovery()')" != "
 	exit 0
 fi
 
-run pgbackrest stanza-create >/dev/null
+run pgbackrest stanza-create
 
 type="${1:-}"
 

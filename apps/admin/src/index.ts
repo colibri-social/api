@@ -18,6 +18,7 @@ import {
 	configList,
 	configSet,
 	configUnset,
+	dbBackup,
 	dbFailback,
 	dbSwitchover,
 	monitoringDeploy,
@@ -76,6 +77,7 @@ const USAGE = `colibri-admin, run it inside the AppView container of the main no
   config unset <KEY>
   config import <file|-> [--dry-run]
   db copy --from <libSQL url> --to <Postgres url> [--truncate]
+  db backup [full|diff|incr]
   db failback [<node>]
   db switchover <node>
   db promote`;
@@ -229,7 +231,7 @@ const main = async (): Promise<void> => {
 		process.exit(values.help ? 0 : 2);
 	}
 
-	if (group === "db" && command !== "failback" && command !== "switchover") {
+	if (group === "db" && !["failback", "switchover", "backup"].includes(command ?? "")) {
 		process.exit(await runDbCommand(command, values));
 	}
 
@@ -407,6 +409,8 @@ const main = async (): Promise<void> => {
 				return nodeRecover(admin, required(first, "<id>"));
 			case "node remove":
 				return nodeRemove(admin, { id: required(first, "<id>"), force: values.force });
+			case "db backup":
+				return dbBackup(admin, first);
 			case "db failback":
 				return dbFailback(admin, first);
 			case "db switchover":

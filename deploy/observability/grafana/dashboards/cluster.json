@@ -81,84 +81,6 @@
 		},
 		{
 			"type": "stat",
-			"title": "Client sockets",
-			"datasource": {
-				"type": "prometheus",
-				"uid": "colibri-prometheus"
-			},
-			"gridPos": {
-				"x": 0,
-				"y": 4,
-				"w": 6,
-				"h": 4
-			},
-			"targets": [
-				{
-					"refId": "A",
-					"datasource": {
-						"type": "prometheus",
-						"uid": "colibri-prometheus"
-					},
-					"expr": "sum(colibri_connections)",
-					"legendFormat": "sockets"
-				}
-			],
-			"fieldConfig": {
-				"defaults": {},
-				"overrides": []
-			},
-			"options": {
-				"reduceOptions": {
-					"calcs": [
-						"lastNotNull"
-					]
-				},
-				"colorMode": "value",
-				"graphMode": "none"
-			},
-			"id": 2
-		},
-		{
-			"type": "stat",
-			"title": "Calls",
-			"datasource": {
-				"type": "prometheus",
-				"uid": "colibri-prometheus"
-			},
-			"gridPos": {
-				"x": 6,
-				"y": 4,
-				"w": 6,
-				"h": 4
-			},
-			"targets": [
-				{
-					"refId": "A",
-					"datasource": {
-						"type": "prometheus",
-						"uid": "colibri-prometheus"
-					},
-					"expr": "sum(colibri_voice_calls)",
-					"legendFormat": "calls"
-				}
-			],
-			"fieldConfig": {
-				"defaults": {},
-				"overrides": []
-			},
-			"options": {
-				"reduceOptions": {
-					"calcs": [
-						"lastNotNull"
-					]
-				},
-				"colorMode": "value",
-				"graphMode": "none"
-			},
-			"id": 3
-		},
-		{
-			"type": "stat",
 			"title": "XRPC 5xx share",
 			"datasource": {
 				"type": "prometheus",
@@ -279,17 +201,17 @@
 			"id": 6
 		},
 		{
-			"type": "timeseries",
-			"title": "XRPC requests by node",
+			"type": "stat",
+			"title": "Client sockets",
 			"datasource": {
 				"type": "prometheus",
 				"uid": "colibri-prometheus"
 			},
 			"gridPos": {
 				"x": 0,
-				"y": 8,
-				"w": 12,
-				"h": 8
+				"y": 4,
+				"w": 6,
+				"h": 4
 			},
 			"targets": [
 				{
@@ -298,26 +220,63 @@
 						"type": "prometheus",
 						"uid": "colibri-prometheus"
 					},
-					"expr": "sum by (node) (rate(colibri_xrpc_duration_seconds_count{node=~\"$node\"}[5m]))",
-					"legendFormat": "{{node}}"
+					"expr": "sum(colibri_connections)",
+					"legendFormat": "sockets"
 				}
 			],
 			"fieldConfig": {
-				"defaults": {
-					"unit": "reqps"
-				},
+				"defaults": {},
 				"overrides": []
 			},
 			"options": {
-				"legend": {
-					"displayMode": "list",
-					"placement": "bottom"
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					]
 				},
-				"tooltip": {
-					"mode": "multi"
-				}
+				"colorMode": "value",
+				"graphMode": "none"
 			},
-			"id": 7
+			"id": 2
+		},
+		{
+			"type": "stat",
+			"title": "Calls",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 6,
+				"y": 4,
+				"w": 6,
+				"h": 4
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum(colibri_voice_calls)",
+					"legendFormat": "calls"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {},
+				"overrides": []
+			},
+			"options": {
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					]
+				},
+				"colorMode": "value",
+				"graphMode": "none"
+			},
+			"id": 3
 		},
 		{
 			"type": "timeseries",
@@ -359,6 +318,109 @@
 				}
 			},
 			"id": 8
+		},
+		{
+			"type": "timeseries",
+			"title": "XRPC requests by node",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 8,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum by (node) (rate(colibri_xrpc_duration_seconds_count{node=~\"$node\"}[5m]))",
+					"legendFormat": "{{node}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "reqps"
+				},
+				"overrides": []
+			},
+			"options": {
+				"legend": {
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "multi"
+				}
+			},
+			"id": 7
+		},
+		{
+			"type": "table",
+			"title": "Versions",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 12,
+				"y": 12,
+				"w": 12,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "max by (node, version) (colibri_build_info{node=~\"$node\"})",
+					"instant": true,
+					"range": false,
+					"format": "table"
+				}
+			],
+			"transformations": [
+				{
+					"id": "organize",
+					"options": {
+						"excludeByName": {
+							"Time": true,
+							"Value": true
+						},
+						"indexByName": {
+							"node": 0,
+							"version": 1
+						},
+						"renameByName": {
+							"node": "Node",
+							"version": "Version"
+						}
+					}
+				}
+			],
+			"fieldConfig": {
+				"defaults": {},
+				"overrides": []
+			},
+			"options": {
+				"showHeader": true,
+				"cellHeight": "sm",
+				"sortBy": [
+					{
+						"displayName": "Node",
+						"desc": false
+					}
+				]
+			},
+			"description": "The AppView version each node reports",
+			"id": 20
 		},
 		{
 			"type": "timeseries",
@@ -410,7 +472,7 @@
 			},
 			"gridPos": {
 				"x": 12,
-				"y": 12,
+				"y": 20,
 				"w": 12,
 				"h": 8
 			},
@@ -490,7 +552,7 @@
 			},
 			"gridPos": {
 				"x": 12,
-				"y": 20,
+				"y": 28,
 				"w": 12,
 				"h": 8
 			},
@@ -570,7 +632,7 @@
 			},
 			"gridPos": {
 				"x": 8,
-				"y": 32,
+				"y": 36,
 				"w": 8,
 				"h": 8
 			},
@@ -611,7 +673,7 @@
 			},
 			"gridPos": {
 				"x": 16,
-				"y": 28,
+				"y": 36,
 				"w": 8,
 				"h": 8
 			},
@@ -659,7 +721,7 @@
 			},
 			"gridPos": {
 				"x": 0,
-				"y": 40,
+				"y": 44,
 				"w": 12,
 				"h": 8
 			},
@@ -700,7 +762,7 @@
 			},
 			"gridPos": {
 				"x": 12,
-				"y": 40,
+				"y": 44,
 				"w": 12,
 				"h": 8
 			},
@@ -741,7 +803,7 @@
 			},
 			"gridPos": {
 				"x": 0,
-				"y": 48,
+				"y": 52,
 				"w": 12,
 				"h": 8
 			},
@@ -783,7 +845,7 @@
 			},
 			"gridPos": {
 				"x": 12,
-				"y": 48,
+				"y": 52,
 				"w": 12,
 				"h": 8
 			},
@@ -815,68 +877,6 @@
 			},
 			"description": "Public interfaces only. Tailnet, Docker and loopback traffic is left out.",
 			"id": 19
-		},
-		{
-			"type": "table",
-			"title": "Versions",
-			"datasource": {
-				"type": "prometheus",
-				"uid": "colibri-prometheus"
-			},
-			"gridPos": {
-				"x": 12,
-				"y": 4,
-				"w": 12,
-				"h": 4
-			},
-			"targets": [
-				{
-					"refId": "A",
-					"datasource": {
-						"type": "prometheus",
-						"uid": "colibri-prometheus"
-					},
-					"expr": "max by (node, version) (colibri_build_info{node=~\"$node\"})",
-					"instant": true,
-					"range": false,
-					"format": "table"
-				}
-			],
-			"transformations": [
-				{
-					"id": "organize",
-					"options": {
-						"excludeByName": {
-							"Time": true,
-							"Value": true
-						},
-						"indexByName": {
-							"node": 0,
-							"version": 1
-						},
-						"renameByName": {
-							"node": "Node",
-							"version": "Version"
-						}
-					}
-				}
-			],
-			"fieldConfig": {
-				"defaults": {},
-				"overrides": []
-			},
-			"options": {
-				"showHeader": true,
-				"cellHeight": "sm",
-				"sortBy": [
-					{
-						"displayName": "Node",
-						"desc": false
-					}
-				]
-			},
-			"description": "The AppView version each node reports",
-			"id": 20
 		}
 	]
 }

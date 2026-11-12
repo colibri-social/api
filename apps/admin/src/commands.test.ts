@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	type Admin,
 	configImport,
+	dbBackup,
 	dbFailback,
 	dbSwitchover,
 	formatTable,
@@ -145,6 +146,21 @@ describe("node commands", () => {
 			}),
 		);
 		expect(printed).toEqual(["eu-2 is draining"]);
+	});
+
+	it("runs a full backup unless told otherwise and refuses unknown types", async () => {
+		await dbBackup(admin, undefined);
+		await dbBackup(admin, "incr");
+
+		expect(admin.sendOrder).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({ kind: "backup", type: "full" }),
+		);
+		expect(admin.sendOrder).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ kind: "backup", type: "incr" }),
+		);
+		await expect(dbBackup(admin, "weekly")).rejects.toBeInstanceOf(UsageError);
 	});
 
 	it("starts a rollout now with a 2 minute grace unless told otherwise", async () => {

@@ -477,3 +477,44 @@ describe("rollout orders", () => {
 		expect(missing.ok).toBe(false);
 	});
 });
+
+describe("backup orders", () => {
+	const withBackup = (ok: boolean) => {
+		const run = vi.fn(async (_run: PlaybookRun) => ({
+			ok,
+			code: ok ? 0 : 2,
+			tail: ["ERROR: [082]: unable to open repository"],
+		}));
+
+		return {
+			run,
+			deps: {
+				...deps,
+				ansible: { run, busy: false },
+				backup: { vars: () => ({ stack_dir: "/opt/colibri", db_user: "colibri" }) },
+			} satisfies OrderDeps,
+		};
+	};
+
+	it("runs the backup playbook on the main node's own host and waits for it", async () => {
+		const { deps: backupDeps, run } = withBackup(true);
+		const result = await handleOrder(backupDeps, { kind: "backup", id: "b1", type: "full" });
+
+		expect(result).toMatchObject({ ok: true, message: "the full backup on eu-1 finished" });
+		expect(run).toHaveBeenCalledWith({
+			playbook: "backup",
+			host: "eu-1",
+			vars: { stack_dir: "/opt/colibri", db_user: "colibri", backup_type: "full" },
+		});
+	});
+
+	it("reports the playbook output when the backup fails, and refuses without Ansible", async () => {
+		const { deps: backupDeps } = withBackup(false);
+		const failed = await handleOrder(backupDeps, { kind: "backup", id: "b2", type: "incr" });
+		const missing = await handleOrder(deps, { kind: "backup", id: "b3", type: "full" });
+
+		expect(failed.ok).toBe(false);
+		expect(failed.message).toContain("unable to open repository");
+		expect(missing.ok).toBe(false);
+	});
+});

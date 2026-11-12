@@ -321,8 +321,8 @@ names. The commands use `KUMA_URL`, `KUMA_USERNAME` and `KUMA_PASSWORD` from the
 
 ### Monitoring
 
-Prometheus and Grafana run next to any node's stack, and Grafana Alloy on every node sends them
-metrics. Set a Grafana password, optionally a webhook for alerts, then deploy:
+Prometheus, Loki and Grafana run next to any node's stack, and Grafana Alloy on every node sends
+them metrics and container logs. Set a Grafana password, optionally a webhook for alerts, then deploy:
 
 ```sh
 colibri-admin config set GRAFANA_ADMIN_PASSWORD ...
@@ -330,14 +330,15 @@ colibri-admin config set ALERT_WEBHOOK_URL https://ntfy.example.com/colibri
 colibri-admin monitoring deploy fsn-1
 ```
 
-`monitoring deploy` starts Prometheus (`PROMETHEUS_IMAGE`) and Grafana (`GRAFANA_IMAGE`) on the
-node's tailnet address, stores `PROMETHEUS_REMOTE_WRITE_URL`, then starts Alloy (`ALLOY_IMAGE`) on
-every node. Nodes added later get Alloy during provisioning. Grafana is at
-`http://<tailnet address>:3300`, user `admin`. Prometheus keeps 90 days.
+`monitoring deploy` starts Prometheus (`PROMETHEUS_IMAGE`), Loki (`LOKI_IMAGE`) and Grafana
+(`GRAFANA_IMAGE`) on the node's tailnet address, stores `PROMETHEUS_REMOTE_WRITE_URL`, then starts
+Alloy (`ALLOY_IMAGE`) on every node. Nodes added later get Alloy during provisioning. Grafana is at
+`http://<tailnet address>:3300`, user `admin`. Prometheus keeps 90 days and Loki keeps 30. Loki
+listens on port 3101 of the tailnet address, so every node needs to reach that port.
 
 After the first deploy, the main node keeps the stack current itself. Each time it takes the main
 role, for example after an update, it hashes `deploy/observability`, the monitoring templates and
-playbooks, and `GRAFANA_ADMIN_PASSWORD`, `ALERT_WEBHOOK_URL` and the three images. When the hash
+playbooks, and `GRAFANA_ADMIN_PASSWORD`, `ALERT_WEBHOOK_URL` and the four images. When the hash
 differs from the last deploy, it runs `monitoring deploy` again for the node that hosts
 Prometheus. A failed run is retried at the next start. Only a node with the `main` role does this.
 
@@ -346,16 +347,19 @@ Alloy collects:
 - Host CPU, memory, disk and network, including traffic totals per node on the public
   interfaces.
 - The AppView's metrics from `METRICS_PORT`.
-- Postgres connections, database size, transactions, query time and replication lag, on nodes
-  with a Postgres replica and on the main node.
+- The logs of every Docker container on the node, labeled with `node`, `service` (the Compose
+  service, or the container name outside Compose) and `project`.
+- Postgres connections, database size, transactions, query time, replication lag, and rows,
+  sizes, writes and scans per table, on nodes with a Postgres replica and on the main node.
 - On the main node, probes of `PDS_URL` at `/xrpc/_health` and
   `/xrpc/com.atproto.server.describeServer`.
 - Any `.prom` file in `/var/lib/colibri/metrics`. `deploy/observability/pgbackrest-age.sh` writes
   the time of the last pgBackRest backup there. Run it from cron on the Postgres primary after
   each backup.
 
-Grafana has four dashboards (cluster, hosts with daily and 30-day ingress and egress, voice and
-Postgres) and sends these alerts to
+Grafana has five dashboards (cluster, hosts with daily and 30-day ingress and egress, voice,
+Postgres with the message count and a table of every table's rows and size, and logs filtered by
+node, service and a search term) and sends these alerts to
 `ALERT_WEBHOOK_URL`:
 
 | Alert | Fires when |
@@ -421,7 +425,7 @@ and compressed with zstd, and the last 4 full backups are kept.
 | `BACKUP_REPO_HOST` | unset | The SFTP host, for example `u123456.your-storagebox.de` |
 | `BACKUP_REPO_PORT` | `23` | The SFTP port. Storage Boxes use 23 |
 | `BACKUP_REPO_USER` | unset | The SFTP user |
-| `BACKUP_REPO_PATH` | `/colibri` | The repository folder |
+| `BACKUP_REPO_PATH` | `/home/colibri` | The repository folder. Storage Boxes keep your files under `/home` |
 | `BACKUP_CIPHER_PASS` | unset | The encryption passphrase. Keep a copy outside the cluster, because backups can't be read without it |
 
 The SSH key goes in `data/backup/key` and `data/backup/key.pub` on the main node, without a
@@ -436,6 +440,10 @@ backups. On the main node, add the same schedule to cron:
 `backup.sh` runs only where Postgres is the primary. It creates the stanza on first use, takes a
 full backup on Sundays (UTC) and an incremental one on other days. Pass `full`, `diff` or `incr`
 to choose. The second line keeps the backup age metric up to date.
+
+To back up right away, run `colibri-admin db backup` on the main node. It takes a full backup
+unless you pass `diff` or `incr`, waits for it, and prints the last lines of the pgBackRest output
+when it fails. The output also goes to `/var/log/colibri-backup.log`.
 
 To restore, start the Postgres image on an empty data volume with the same `PGBACKREST_*`
 settings, without `BACKUP_REPO_HOST` so the copy doesn't archive into the repository, and run
