@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/admin",
-	"version": "0.2.1",
+	"version": "0.2.2",
 	"description": "colibri-admin, the command line for running a cluster of Colibri AppView nodes.",
 	"type": "module",
 	"private": true,

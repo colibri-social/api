@@ -1,5 +1,21 @@
 # @colibri-social/admin
 
+## 0.2.2
+
+### Patch Changes
+
+- bc5e956: Asks for `CREDENTIAL_ENCRYPTION_KEY` only in commands that read or write the shared settings, so node and database commands such as `db switchover` run on sub and failover nodes
+- Updated dependencies [a43636b]
+- Updated dependencies [bc5e956]
+- Updated dependencies [a43636b]
+- Updated dependencies [a43636b]
+- Updated dependencies [3b3b2b7]
+- Updated dependencies [4bcbcf0]
+- Updated dependencies [4bcbcf0]
+  - @colibri-social/appview@2.40.0
+  - @colibri-social/appview-db@0.24.0
+  - @colibri-social/community@2.16.0
+
 ## 0.2.1
 
 ### Patch Changes

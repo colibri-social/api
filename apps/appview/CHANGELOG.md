@@ -1,5 +1,81 @@
 # @colibri-social/appview
 
+## 2.40.0
+
+### Minor Changes
+
+- a43636b: Prunes notifications every hour on the main node, deleting seen notifications after 30 days and every notification after 90 days
+- 3b3b2b7: Moves Spaces support to the November 12, 2026 alpha (`0.0.0-spaces-alpha-20261112204144`). PDSes on the November 5 alpha can't talk to this release.
+  
+  The AppView now serves three new protocol methods and drops the old ones:
+  
+  - `com.atproto.managedspace.checkAccess` replaces `checkUserAccess`. It answers `read` and `write` together, and answers both as `false` when the request names no repo.
+  - `com.atproto.space.confirmRegistration` echoes the challenge when the token is the one the AppView issued for that space.
+  - `com.atproto.space.notifySpaceUpdate` replaces `notifyWrite` and `notifySpaceDeleted`. It authenticates with the per-space token in the body and rejects any other token with `InvalidRequest`. A deletion notice only drops the space once reauthorizing answers `SpaceDeleted`.
+  
+  The sync engine registers for notifications through `authorizeSpaceSync` and reauthorizes every space before its credential expires. A writer the space host lists as removed is dropped. A repo whose host answers `RepoNotFound` is kept as an empty repo.
+  
+  `notify_registrations` stores a stable random token per space in place of the service ID. The migration drops existing registrations, and the AppView registers again on its next authorization.
+  
+  Lexicons:
+  - The vendored `com.atproto.space`, `memberspace`, `managedspace` and `personalspace` lexicons follow atproto `d4def6e9`.
+  - The eight `social.colibri.beta` space types name themselves with `title` in place of `name`.
+  
+  `@colibri-social/space`:
+  - `SpaceClient.listWriters` and `allWriters` replace `listRepos` and `allRepos`, and return `repoWrite` and `repoRemoved` entries. `registerNotify` and `unregisterNotify` are gone.
+  - `SpaceCredentials` takes a `notify` provider, reports `spaceRev`, and adds `reauthorize`. `AccountNotAuthorized` counts as a refusal. `RegistrationNotConfirmed` and `UpstreamFailure` count as upstream failures.
+  - MACs use `Accept-Signature` and HTTP Message Signatures. `MacProof` carries `keyShare`, `sharedSecret` and the response `headers`.
+  - `PdsClient.putMembers` and `removeMembers` replace `putMember` and `removeMember`. `createSpace`, `getSpace` and `listSpaces` return `space` in place of `uri`.
+  
+  `@colibri-social/identity`:
+  - `IdentityResolver` takes an optional `fetch`. The alpha `@atproto/identity` resolves through an SSRF-protected fetch that refuses `http:` and private addresses, so the AppView passes the platform fetch outside production and whenever `PLC_URL` is plain `http:`. `DidDocumentSpaceHostResolver` in `@colibri-social/space` takes the same option.
+  
+  `@colibri-social/space-sync`:
+  - `SpaceSyncEngine` drops the `syncerService` option and adds `notifyRepoRemoved`, `confirmSpaceDeleted` and `renewLapsedRegistration`.
+- 4bcbcf0: Moderators with `voice.moderate` in the destination can move a member into a voice channel that member can't see. The member joins the call there, without access to its text chat. Access ends when they leave, disconnect or join another channel, so they can't rejoin on their own. `social.colibri.beta.voice.moderate` no longer returns `DestinationForbidden`.
+  
+  `@colibri-social/appview-db` adds the `voice_move_grants` table.
+- 4bcbcf0: Adds voice permissions that admins can set per role and per channel. Every member keeps them by default.
+  
+  - `voice.speak`: members without it stay muted. Their screen share sound still plays.
+  - `voice.listen`: members without it can't hear the call. Cameras and screen shares still show.
+  - `voice.camera` and `voice.screenshare`: members without them can't turn on their camera or share their screen.
+  - `voice.chat`: members without it can't read or post in the voice channel's text chat.
+  
+  When an admin changes these mid-call, the AppView applies them right away, stops any camera or screen share the member lost, and tells their client. A moderator unmute never lifts a mute that comes from a missing permission.
+  
+  The Members role of every Space gains the five permissions once at startup. Removing them later sticks. Spaces whose credentials are missing keep their current Members role until the owner signs in again.
+  
+  Lexicons:
+  - `social.colibri.beta.voice.defs#joined` lists the member's voice permissions in `permissions`.
+  - New `social.colibri.beta.voice.defs#permissionsChanged` frame with the updated list.
+  - `social.colibri.beta.voice.defs#moved` carries the destination's `channelView` in `view`, and in `after` the nearest channel before it in its category that the member can read.
+  - `serverMuted` and `serverDeafened` also cover a missing `voice.speak` or `voice.listen`.
+  
+  `@colibri-social/community` adds `voiceCapabilities` and `voicePermissionKeys`. `@colibri-social/voice` adds `VoiceSfu.setRestriction`, `restrictionOf` and `moderationOf`.
+
+### Patch Changes
+
+- a43636b: Sub-nodes keep their control link to the main node healthy on their own. A node that hands off the main role closes every control link, so sub-nodes dial the new main node. A sub-node now retries after the main node refuses its link, drops a link that hears no ping for 30 seconds, gives up on a handshake after 10 seconds, and moves its link when the registry names a different main node. Rollouts that wait for a missing link log the node's link history and heartbeat, and a forced rollout that gives up names the missing link as the cause.
+- bc5e956: Skips schema migrations at startup while the database is read-only, so a main node whose Postgres is fenced or rebuilding as a replica starts instead of crashing. A node runs the migrations when it takes the main role. `@colibri-social/appview-db` exports `acceptsWrites`
+- a43636b: Labels push delivery metrics by payload type and exports every series at zero from startup
+- Updated dependencies [bc5e956]
+- Updated dependencies [c9104d3]
+- Updated dependencies [a43636b]
+- Updated dependencies [3b3b2b7]
+- Updated dependencies [4bcbcf0]
+- Updated dependencies [4bcbcf0]
+  - @colibri-social/appview-db@0.24.0
+  - @colibri-social/lexicons@2.38.0
+  - @colibri-social/notifications@1.11.0
+  - @colibri-social/community@2.16.0
+  - @colibri-social/identity@0.4.0
+  - @colibri-social/space@0.12.0
+  - @colibri-social/space-sync@0.9.0
+  - @colibri-social/voice@0.6.0
+  - @colibri-social/projections@1.15.4
+  - @colibri-social/blobs@0.3.1
+
 ## 2.39.0
 
 ### Minor Changes

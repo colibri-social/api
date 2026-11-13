@@ -1,5 +1,23 @@
 # @colibri-social/notifications
 
+## 1.11.0
+
+### Minor Changes
+
+- a43636b: Prunes notifications every hour on the main node, deleting seen notifications after 30 days and every notification after 90 days
+
+### Patch Changes
+
+- Updated dependencies [bc5e956]
+- Updated dependencies [c9104d3]
+- Updated dependencies [3b3b2b7]
+- Updated dependencies [4bcbcf0]
+- Updated dependencies [4bcbcf0]
+  - @colibri-social/appview-db@0.24.0
+  - @colibri-social/lexicons@2.38.0
+  - @colibri-social/space@0.12.0
+  - @colibri-social/projections@1.15.4
+
 ## 1.10.1
 
 ### Patch Changes

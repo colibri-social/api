@@ -1,5 +1,65 @@
 # @colibri-social/lexicons
 
+## 2.38.0
+
+### Minor Changes
+
+- c9104d3: Adds lexicons for four methods the AppView serves:
+  
+  - `social.colibri.beta.sync.subscribeEvents`, the live updates WebSocket. Its messages are the server frames in `social.colibri.beta.sync.defs`.
+  - `social.colibri.beta.voice.subscribeSignals`, the voice signaling WebSocket. Its messages are the server frames in `social.colibri.beta.voice.defs`.
+  - `social.colibri.beta.embed.getImage` and `getVideo`, which proxy link embed media through signed URLs.
+  
+  `social.colibri.beta.permissionMessaging` now grants all four.
+- 3b3b2b7: Moves Spaces support to the November 12, 2026 alpha (`0.0.0-spaces-alpha-20261112204144`). PDSes on the November 5 alpha can't talk to this release.
+  
+  The AppView now serves three new protocol methods and drops the old ones:
+  
+  - `com.atproto.managedspace.checkAccess` replaces `checkUserAccess`. It answers `read` and `write` together, and answers both as `false` when the request names no repo.
+  - `com.atproto.space.confirmRegistration` echoes the challenge when the token is the one the AppView issued for that space.
+  - `com.atproto.space.notifySpaceUpdate` replaces `notifyWrite` and `notifySpaceDeleted`. It authenticates with the per-space token in the body and rejects any other token with `InvalidRequest`. A deletion notice only drops the space once reauthorizing answers `SpaceDeleted`.
+  
+  The sync engine registers for notifications through `authorizeSpaceSync` and reauthorizes every space before its credential expires. A writer the space host lists as removed is dropped. A repo whose host answers `RepoNotFound` is kept as an empty repo.
+  
+  `notify_registrations` stores a stable random token per space in place of the service ID. The migration drops existing registrations, and the AppView registers again on its next authorization.
+  
+  Lexicons:
+  - The vendored `com.atproto.space`, `memberspace`, `managedspace` and `personalspace` lexicons follow atproto `d4def6e9`.
+  - The eight `social.colibri.beta` space types name themselves with `title` in place of `name`.
+  
+  `@colibri-social/space`:
+  - `SpaceClient.listWriters` and `allWriters` replace `listRepos` and `allRepos`, and return `repoWrite` and `repoRemoved` entries. `registerNotify` and `unregisterNotify` are gone.
+  - `SpaceCredentials` takes a `notify` provider, reports `spaceRev`, and adds `reauthorize`. `AccountNotAuthorized` counts as a refusal. `RegistrationNotConfirmed` and `UpstreamFailure` count as upstream failures.
+  - MACs use `Accept-Signature` and HTTP Message Signatures. `MacProof` carries `keyShare`, `sharedSecret` and the response `headers`.
+  - `PdsClient.putMembers` and `removeMembers` replace `putMember` and `removeMember`. `createSpace`, `getSpace` and `listSpaces` return `space` in place of `uri`.
+  
+  `@colibri-social/identity`:
+  - `IdentityResolver` takes an optional `fetch`. The alpha `@atproto/identity` resolves through an SSRF-protected fetch that refuses `http:` and private addresses, so the AppView passes the platform fetch outside production and whenever `PLC_URL` is plain `http:`. `DidDocumentSpaceHostResolver` in `@colibri-social/space` takes the same option.
+  
+  `@colibri-social/space-sync`:
+  - `SpaceSyncEngine` drops the `syncerService` option and adds `notifyRepoRemoved`, `confirmSpaceDeleted` and `renewLapsedRegistration`.
+- 4bcbcf0: Moderators with `voice.moderate` in the destination can move a member into a voice channel that member can't see. The member joins the call there, without access to its text chat. Access ends when they leave, disconnect or join another channel, so they can't rejoin on their own. `social.colibri.beta.voice.moderate` no longer returns `DestinationForbidden`.
+  
+  `@colibri-social/appview-db` adds the `voice_move_grants` table.
+- 4bcbcf0: Adds voice permissions that admins can set per role and per channel. Every member keeps them by default.
+  
+  - `voice.speak`: members without it stay muted. Their screen share sound still plays.
+  - `voice.listen`: members without it can't hear the call. Cameras and screen shares still show.
+  - `voice.camera` and `voice.screenshare`: members without them can't turn on their camera or share their screen.
+  - `voice.chat`: members without it can't read or post in the voice channel's text chat.
+  
+  When an admin changes these mid-call, the AppView applies them right away, stops any camera or screen share the member lost, and tells their client. A moderator unmute never lifts a mute that comes from a missing permission.
+  
+  The Members role of every Space gains the five permissions once at startup. Removing them later sticks. Spaces whose credentials are missing keep their current Members role until the owner signs in again.
+  
+  Lexicons:
+  - `social.colibri.beta.voice.defs#joined` lists the member's voice permissions in `permissions`.
+  - New `social.colibri.beta.voice.defs#permissionsChanged` frame with the updated list.
+  - `social.colibri.beta.voice.defs#moved` carries the destination's `channelView` in `view`, and in `after` the nearest channel before it in its category that the member can read.
+  - `serverMuted` and `serverDeafened` also cover a missing `voice.speak` or `voice.listen`.
+  
+  `@colibri-social/community` adds `voiceCapabilities` and `voicePermissionKeys`. `@colibri-social/voice` adds `VoiceSfu.setRestriction`, `restrictionOf` and `moderationOf`.
+
 ## 2.37.0
 
 ### Minor Changes
