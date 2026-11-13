@@ -3,7 +3,9 @@
  */
 
 export * as defs from "./embed/defs.js";
+export * as getImage from "./embed/getImage.js";
 export * as getMetadata from "./embed/getMetadata.js";
+export * as getVideo from "./embed/getVideo.js";
 export * as gifCategories from "./embed/gifCategories.js";
 export * as searchGifs from "./embed/searchGifs.js";
 export * as trendingGifs from "./embed/trendingGifs.js";

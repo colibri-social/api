@@ -3,3 +3,4 @@
  */
 
 export * as defs from "./sync/defs.js";
+export * as subscribeEvents from "./sync/subscribeEvents.js";

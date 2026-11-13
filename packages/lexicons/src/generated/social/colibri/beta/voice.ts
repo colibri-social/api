@@ -4,3 +4,4 @@
 
 export * as defs from "./voice/defs.js";
 export * as moderate from "./voice/moderate.js";
+export * as subscribeSignals from "./voice/subscribeSignals.js";
