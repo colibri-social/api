@@ -112,7 +112,7 @@ const fakeWriter = (): CommunityWriter => {
 					);
 			}
 		},
-		createSpaceFor: async () => ({ uri: "at://space" }),
+		createSpaceFor: async () => ({ space: "at://space" }),
 		deleteSpaceFor: async () => undefined,
 	};
 	return writer as unknown as CommunityWriter;

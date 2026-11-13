@@ -2,7 +2,18 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { P256Keypair } from "@atproto/crypto";
 import { parseCid } from "@atproto/lex-data";
+import {
+	COMMIT_MAC_PROFILE,
+	createCommitMacHeaders,
+	encapsulate,
+	formatMacRequest,
+	parseMacRequest,
+	RepoCommit,
+} from "@atproto/space";
+import type { DidString, SpaceRefString, TidString } from "@atproto/syntax";
+import type { ProvenCommit } from "@colibri-social/space";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AdvanceRequest } from "./verify-pool.js";
 import { inlineVerifier, VerifierPool } from "./verify-pool.js";
@@ -27,18 +38,43 @@ parentPort.on("message", ({ id, job }) => {
 });
 `;
 
+const SPACE = "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchan";
+const ALICE = "did:plc:alice";
+
+let emptyCommit: ProvenCommit;
+
 const request = (author: string): AdvanceRequest => ({
-	space: "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchan",
+	space: SPACE,
 	author,
 	setHashBase64: null,
 	ops: [],
-	commit: null,
+	commit: emptyCommit,
 });
+
+const provenEmptyCommit = async (): Promise<ProvenCommit> => {
+	const kem = await P256Keypair.create();
+	const { keyShare, sharedSecret } = await encapsulate(kem.did() as DidString);
+	const commit = new RepoCommit().toCommit({
+		space: SPACE as SpaceRefString,
+		repo: ALICE as DidString,
+		rev: "3mwcj3b6uak22" as TidString,
+	});
+	const macRequest = parseMacRequest(
+		formatMacRequest(COMMIT_MAC_PROFILE, keyShare),
+		COMMIT_MAC_PROFILE,
+	);
+	if (!macRequest) throw new Error("the MAC request did not parse");
+
+	const { headers } = createCommitMacHeaders(commit, { ...macRequest, sharedSecret });
+
+	return { commit, keyShare, sharedSecret, headers };
+};
 
 let entry: URL;
 let pool: VerifierPool | null = null;
 
 beforeAll(async () => {
+	emptyCommit = await provenEmptyCommit();
 	const directory = await mkdtemp(join(tmpdir(), "verify-pool-"));
 	const file = join(directory, "fake-worker.mjs");
 	await writeFile(file, FAKE_WORKER, "utf8");
@@ -52,7 +88,7 @@ afterEach(async () => {
 
 describe("inlineVerifier", () => {
 	it("folds an empty op list into the state it started from", async () => {
-		const result = await inlineVerifier().advance(request("did:plc:alice"));
+		const result = await inlineVerifier().advance(request(ALICE));
 
 		expect(result).toMatchObject({ authentic: true, matches: true });
 		expect(result.setHashBase64).toBeTypeOf("string");

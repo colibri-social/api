@@ -1,6 +1,7 @@
-import type { Commit } from "@atproto/space";
+import type { SpaceCommit } from "@atproto/space";
 import {
 	applyRecordToSetHash,
+	type MacProof,
 	type ProvenCommit,
 	RepoUnverifiedError,
 	readVerifiedRepoStar,
@@ -24,7 +25,7 @@ export type AdvanceJob = {
 	author: string;
 	setHashBase64: string | null;
 	ops: HashOp[];
-	commit: ProvenCommit | null;
+	commit: ProvenCommit;
 };
 
 export type AdvanceResult = {
@@ -33,12 +34,10 @@ export type AdvanceResult = {
 	matches: boolean;
 };
 
-export type RepoJob = {
+export type RepoJob = MacProof & {
 	kind: "repo";
 	space: string;
 	author: string;
-	sharedSecret: Uint8Array;
-	mac: Uint8Array;
 	star: Uint8Array;
 };
 
@@ -46,7 +45,7 @@ export type RepoResult =
 	| { authentic: false }
 	| {
 			authentic: true;
-			commit: Commit;
+			commit: SpaceCommit;
 			records: RecordWrite[];
 			setHashBase64: string;
 	  };
@@ -73,17 +72,8 @@ export const runAdvance = async (job: AdvanceJob): Promise<AdvanceResult> => {
 		}
 	}
 
-	if (!job.commit) {
-		return { setHashBase64: setHashToBase64(hash), authentic: true, matches: true };
-	}
-
-	const { commit, sharedSecret, mac } = job.commit;
-	const authentic = verifyRepoCommit(commit, {
-		space: job.space,
-		author: job.author,
-		sharedSecret,
-		mac,
-	});
+	const { commit, ...proof } = job.commit;
+	const authentic = verifyRepoCommit(commit, { ...proof, space: job.space, author: job.author });
 	return {
 		setHashBase64: setHashToBase64(hash),
 		authentic,
@@ -96,8 +86,9 @@ export const runRepo = async (job: RepoJob): Promise<RepoResult> => {
 		const verified = await readVerifiedRepoStar([job.star], {
 			space: job.space,
 			author: job.author,
+			keyShare: job.keyShare,
 			sharedSecret: job.sharedSecret,
-			mac: job.mac,
+			headers: job.headers,
 		});
 
 		const records: RecordWrite[] = [];

@@ -14,7 +14,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"space":/*#__PURE__*/ l.string({"format":"space-ref"}),"did":/*#__PURE__*/ l.string({"format":"did"})});
+export const $input = /*#__PURE__*/ l.jsonPayload({"space":/*#__PURE__*/ l.string({"format":"space-ref"}),"repo":/*#__PURE__*/ l.string({"format":"did"})});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;
@@ -24,8 +24,8 @@ export const $output = /*#__PURE__*/ l.payload();
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Remove an account from a space's writer set, so that listRepos no longer lists it. The account is tracked again if it later writes while still authorized. Idempotent: succeeds whether or not the account was in the writer set. Requires auth as an account that may manage the space. */
-const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["SpaceNotFound","NotSpaceOwner"]);
+/** Remove an account from a space's writer set, as returned by listWriters. The removal is sent to registered syncers. The account is added back if it makes another authorized write to the space. Does nothing if the account is not in the writer set. Requires auth as the space authority, implemented by PDS. */
+const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["SpaceNotFound","NotAuthorized"]);
 
 export { main };
 

@@ -60,7 +60,6 @@ export type CommittedCursor = Pick<
 
 export type NotifyRegistration = {
 	space: string;
-	service: string;
 	expiresAt: Date;
 };
 

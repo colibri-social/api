@@ -28,7 +28,9 @@ export class SpaceKey {
 		return Buffer.from(await this.keypair.export()).toString("base64");
 	}
 
-	headers(request: SpaceSignatureRequest): Promise<Record<string, string>> {
-		return createSpaceSigHeaders(this.keypair, request);
+	async headers(request: SpaceSignatureRequest): Promise<Record<string, string>> {
+		const { headers } = await createSpaceSigHeaders({ ...request, keypair: this.keypair });
+
+		return headers;
 	}
 }

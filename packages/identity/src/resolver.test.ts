@@ -34,6 +34,7 @@ const cached = (overrides: Partial<CachedIdentity> = {}): CachedIdentity => ({
 const resolver = (identityStore: IdentityStore) =>
 	new IdentityResolver({
 		plcUrl: "http://plc.invalid",
+		fetch: globalThis.fetch,
 		staleSeconds: 3600,
 		maxSeconds: 86_400,
 		store: identityStore,

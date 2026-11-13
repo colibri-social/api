@@ -1,22 +1,29 @@
 import { readFileSync } from "node:fs";
 import { P256Keypair } from "@atproto/crypto";
 import {
-	COMMIT_MAC_TYPE,
-	computeCommitMac,
-	computeRecordMac,
+	COMMIT_MAC_PROFILE,
+	type CreateMacParams,
+	createCommitMacHeaders,
+	createRecordMacHeaders,
 	decapsulate,
-	formatMacHeader,
-	type MacType,
-	parseWantMacHeader,
-	RECORD_MAC_TYPE,
+	type MacProfile,
+	parseMacRequest,
+	RECORD_MAC_PROFILE,
 	serializeRecord,
-	verifyCommit,
 	verifyCredentialSig,
 } from "@atproto/space";
 import type { DidString } from "@atproto/syntax";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { SpaceCredential, SpaceCredentials } from "./credentials.js";
-import { decodeCommit, SpaceClient, SpaceRecordUnverifiedError } from "./space-client.js";
+import { verifyRepoCommit } from "./repo.js";
+import {
+	decodeCommit,
+	REPO_REMOVED_TYPE,
+	REPO_WRITE_TYPE,
+	SpaceClient,
+	SpaceRecordUnverifiedError,
+	STAR_CONTENT_TYPE,
+} from "./space-client.js";
 import { SpaceKey } from "./space-key.js";
 import { type SpaceRefString, spaceRecordUri } from "./space-ref.js";
 
@@ -33,22 +40,28 @@ const RECORD = { $type: COLLECTION, text: "hello" };
 
 let key: SpaceKey;
 let authorKem: P256Keypair;
+let recordCid: Awaited<ReturnType<typeof serializeRecord>>["cid"];
 
 beforeAll(async () => {
 	key = await SpaceKey.generate();
 	authorKem = await P256Keypair.create();
+	recordCid = (await serializeRecord(COLLECTION as never, RKEY as never, RECORD as never)).cid;
 });
 
 const kemKeys = () => ({ kemKeyFor: async () => authorKem.did() });
 
-const secretFrom = (sent: Headers, type: MacType): Uint8Array =>
-	decapsulate(authorKem, parseWantMacHeader(sent.get("atproto-space-want-mac") ?? undefined, type));
+const macParamsFrom = (sent: Headers, profile: MacProfile): CreateMacParams => {
+	const request = parseMacRequest(sent.get("accept-signature") ?? undefined, profile);
+	if (!request) throw new Error(`no ${profile} MAC was requested`);
+
+	return { ...request, sharedSecret: decapsulate(authorKem, request.keyShare) };
+};
 
 const wireCommit = {
 	ver: 1,
 	repo: REPO,
 	space: SPACE,
-	rev: "3lkrev1",
+	rev: "3mwcj3b6uak2f",
 	data: { $bytes: Buffer.alloc(32, 7).toString("base64") },
 };
 
@@ -57,18 +70,19 @@ const repoHostResponse = async (url: URL, sent: Headers): Promise<Response | und
 	if (nsid === "com.atproto.space.getRecord") {
 		const { cid } = await serializeRecord(COLLECTION as never, RKEY as never, RECORD as never);
 		const uri = spaceRecordUri(SPACE, REPO, COLLECTION, RKEY);
-		const mac = computeRecordMac(secretFrom(sent, RECORD_MAC_TYPE), uri, cid);
-		return Response.json(
-			{ uri, cid: cid.toString(), value: RECORD },
-			{ headers: { "atproto-space-mac": formatMacHeader(RECORD_MAC_TYPE, mac) } },
+		const { headers } = createRecordMacHeaders(
+			uri as never,
+			cid,
+			macParamsFrom(sent, RECORD_MAC_PROFILE),
 		);
+		return Response.json({ uri, cid: cid.toString(), value: RECORD }, { headers });
 	}
 	if (nsid === "com.atproto.space.listRepoOps") {
-		const mac = computeCommitMac(secretFrom(sent, COMMIT_MAC_TYPE), decodeCommit(wireCommit));
-		return Response.json(
-			{ ops: [], commit: wireCommit },
-			{ headers: { "atproto-space-mac": formatMacHeader(COMMIT_MAC_TYPE, mac) } },
+		const { headers } = createCommitMacHeaders(
+			decodeCommit(wireCommit),
+			macParamsFrom(sent, COMMIT_MAC_PROFILE),
 		);
+		return Response.json({ ops: [], commit: wireCommit }, { headers });
 	}
 	return undefined;
 };
@@ -81,6 +95,7 @@ const credentialsIssuing = (names: string[] = ["credential"]) => {
 			credential: names[Math.min(issued++, names.length - 1)] as string,
 			key,
 			expiresAt: new Date(Date.now() + 60_000),
+			spaceRev: null,
 		}),
 		invalidate: async (space: string) => void invalidated.push(space),
 	} as unknown as SpaceCredentials;
@@ -111,7 +126,7 @@ const clientRecording = (respond?: (headers: Headers) => Response | undefined) =
 			return (
 				respond?.(sent) ??
 				(await repoHostResponse(new URL(url), sent)) ??
-				Response.json({ cids: [], records: [], repos: [], ops: [] })
+				Response.json({ cids: [], records: [], repos: [], ops: [], commit: wireCommit })
 			);
 		}) as typeof globalThis.fetch,
 	});
@@ -160,7 +175,7 @@ describe("SpaceClient credential signatures", () => {
 		expect(sent.get("authorization")).toBe("Atproto-Space-Credential first");
 		expect(sent.get("atproto-space-audience")).toBe(REPO);
 		expect(sent.get("signature-input")).toBe(
-			'atproto-space-credential=("authorization" "atproto-space-audience");tag="atproto-space-credential"',
+			'sig=("authorization" "atproto-space-audience");tag="atproto-space-credential"',
 		);
 		await expect(
 			verifyCredentialSig(Object.fromEntries(sent.entries()), key.did as DidString),
@@ -169,8 +184,7 @@ describe("SpaceClient credential signatures", () => {
 
 	it("addresses space host calls to the authority", async () => {
 		const { client, headers } = clientRecording();
-		await client.listRepos(SPACE);
-		await client.registerNotify(SPACE, "did:web:appview.test#atproto_space_syncer");
+		await client.listWriters(SPACE);
 
 		for (const sent of headers) expect(sent.get("atproto-space-audience")).toBe(AUTHORITY);
 	});
@@ -201,11 +215,19 @@ describe("SpaceClient credential signatures", () => {
 	});
 });
 
-describe("SpaceClient repo listing", () => {
+describe("SpaceClient writer listing", () => {
 	it("pages by space revision until an empty page", async () => {
 		const pages = [
 			{
-				repos: [{ did: REPO, repoRev: "3lkrepo1", data: { $bytes: "AA==" }, spaceRev: "3lks1" }],
+				repos: [
+					{
+						$type: REPO_WRITE_TYPE,
+						repo: REPO,
+						repoRev: "3lkrepo1",
+						data: { $bytes: "AA==" },
+						spaceRev: "3lks1",
+					},
+				],
 				cursor: "3lks1",
 			},
 			{ repos: [] },
@@ -222,12 +244,37 @@ describe("SpaceClient repo listing", () => {
 		});
 
 		const listed = [];
-		for await (const repo of client.allRepos(SPACE, "3lks0")) listed.push(repo);
+		for await (const entry of client.allWriters(SPACE, "3lks0")) listed.push(entry);
 
 		expect(cursors).toEqual(["3lks0", "3lks1"]);
-		expect(listed.map((repo) => [repo.did, repo.repoRev, repo.spaceRev])).toEqual([
-			[REPO, "3lkrepo1", "3lks1"],
+		expect(listed).toEqual([
+			{
+				$type: REPO_WRITE_TYPE,
+				repo: REPO,
+				repoRev: "3lkrepo1",
+				data: new Uint8Array([0]),
+				spaceRev: "3lks1",
+			},
 		]);
+	});
+
+	it("tells removed repos apart from written ones", async () => {
+		const client = new SpaceClient({
+			hosts: { hostFor: async () => HOST },
+			credentials: credentialsIssuing().credentials,
+			kemKeys: kemKeys(),
+			fetch: (async () =>
+				Response.json({
+					repos: [
+						{ $type: REPO_REMOVED_TYPE, repo: REPO, spaceRev: "3lks2" },
+						{ $type: "com.atproto.space.defs#somethingElse", repo: AUTHORITY },
+					],
+				})) as typeof globalThis.fetch,
+		});
+
+		const { writers } = await client.listWriters(SPACE);
+
+		expect(writers).toEqual([{ $type: REPO_REMOVED_TYPE, repo: REPO, spaceRev: "3lks2" }]);
 	});
 });
 
@@ -236,34 +283,28 @@ describe("SpaceClient MACs", () => {
 		const { client, headers } = clientRecording();
 		const page = await client.listRepoOps(SPACE, HOST, REPO);
 
-		expect(headers[0]?.get("atproto-space-want-mac")).toMatch(
-			/^type="atproto-space-repo", ver=1, key_share="did:key:/,
+		expect(headers[0]?.get("accept-signature")).toMatch(
+			/^mac=\("atproto-space-commit";sf\);keyid="did:key:.+";tag="atproto-space-commit"$/,
 		);
-		const proven = page.commit;
-		expect(proven).not.toBeNull();
-		if (!proven) return;
 		expect(
-			verifyCommit(proven.commit, {
-				space: SPACE,
-				repo: REPO,
-				sharedSecret: proven.sharedSecret,
-				mac: proven.mac,
-			}),
+			verifyRepoCommit(page.commit.commit, { ...page.commit, space: SPACE, author: REPO }),
 		).toBe(true);
-	});
-
-	it("leaves a listRepoOps page without a commit unproven", async () => {
-		const { client } = clientRecording(() => Response.json({ ops: [] }));
-		const page = await client.listRepoOps(SPACE, HOST, REPO);
-		expect(page.commit).toBeNull();
 	});
 
 	it("uses a fresh key share for every request", async () => {
 		const { client, headers } = clientRecording();
 		await client.listRepoOps(SPACE, HOST, REPO);
 		await client.listRepoOps(SPACE, HOST, REPO);
-		const shares = headers.map((sent) => sent.get("atproto-space-want-mac"));
+		const shares = headers.map((sent) => sent.get("accept-signature"));
 		expect(shares[0]).not.toBe(shares[1]);
+	});
+
+	it("asks getRepo for a STAR archive with a commit MAC", async () => {
+		const { client, headers } = clientRecording(() => new Response(new Uint8Array()));
+		await client.getRepoStar(SPACE, HOST, REPO);
+
+		expect(headers[0]?.get("accept")).toBe(STAR_CONTENT_TYPE);
+		expect(headers[0]?.get("accept-signature")).toContain('tag="atproto-space-commit"');
 	});
 
 	it("accepts a record whose MAC verifies", async () => {
@@ -274,27 +315,30 @@ describe("SpaceClient MACs", () => {
 
 	it("rejects a record whose MAC was made with another secret", async () => {
 		const { client } = clientRecording((sent) => {
-			if (!sent.get("atproto-space-want-mac")?.includes("atproto-space-record")) return undefined;
-			return Response.json(
-				{
-					uri: spaceRecordUri(SPACE, REPO, COLLECTION, RKEY),
-					cid: CID,
-					value: RECORD,
-				},
-				{
-					headers: {
-						"atproto-space-mac": formatMacHeader(RECORD_MAC_TYPE, new Uint8Array(32)),
-					},
-				},
+			const request = parseMacRequest(
+				sent.get("accept-signature") ?? undefined,
+				RECORD_MAC_PROFILE,
 			);
+			if (!request) return undefined;
+			const uri = spaceRecordUri(SPACE, REPO, COLLECTION, RKEY);
+			const { headers } = createRecordMacHeaders(uri as never, recordCid, {
+				...request,
+				sharedSecret: new Uint8Array(32),
+			});
+			return Response.json({ uri, cid: recordCid.toString(), value: RECORD }, { headers });
 		});
 		await expect(client.getRecord(SPACE, HOST, REPO, COLLECTION, RKEY)).rejects.toBeInstanceOf(
 			SpaceRecordUnverifiedError,
 		);
 	});
 
-	it("rejects a commit response without a MAC header", async () => {
+	it("leaves a commit without a MAC unverified", async () => {
 		const { client } = clientRecording(() => Response.json({ ops: [], commit: wireCommit }));
-		await expect(client.listRepoOps(SPACE, HOST, REPO)).rejects.toThrow();
+		const page = await client.listRepoOps(SPACE, HOST, REPO);
+
+		expect(page.commit.headers).toEqual({});
+		expect(
+			verifyRepoCommit(page.commit.commit, { ...page.commit, space: SPACE, author: REPO }),
+		).toBe(false);
 	});
 });

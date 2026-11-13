@@ -27,8 +27,8 @@ export const $output = /*#__PURE__*/ l.payload();
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Replace the policy of a space wholesale. A policy with a different $type migrates the space, discarding state held by the previous policy (such as a member list). The authenticated user must be the space owner. Requires auth, implemented by PDS. */
-const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["SpaceNotFound","NotSpaceOwner","UnsupportedPolicy"]);
+/** Replace the policy of a space. Changing to a different policy type discards state held by the previous policy, such as a member list. Requires auth as the space authority, implemented by PDS. */
+const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["SpaceNotFound","NotAuthorized","UnsupportedPolicy"]);
 
 export { main };
 

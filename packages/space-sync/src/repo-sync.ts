@@ -1,9 +1,11 @@
 import {
+	emptySetHash,
 	type KemKeyResolver,
 	type ProvenCommit,
 	type RepoStar,
 	RepoUnverifiedError,
 	type SpaceClient,
+	setHashToBase64,
 	XrpcError,
 } from "@colibri-social/space";
 import type {
@@ -39,7 +41,11 @@ const OPLOG_UNUSABLE = new Set(["InvalidRequest", "CursorNotFound", "RevNotFound
 
 const isGone = (error: unknown): boolean =>
 	error instanceof XrpcError &&
-	["RepoNotFound", "RepoTakendown", "RepoSuspended", "RepoDeactivated"].includes(error.code);
+	["RepoTakendown", "RepoSuspended", "RepoDeactivated"].includes(error.code);
+
+const isEmpty = (error: unknown): boolean => {
+	return error instanceof XrpcError && error.code === "RepoNotFound";
+};
 
 const needsRecovery = (error: unknown): boolean =>
 	error instanceof XrpcError && OPLOG_UNUSABLE.has(error.code);
@@ -117,11 +123,14 @@ export class RepoSync {
 			throw error;
 		}
 
-		if (cursor.appliedRev === null) return this.recover(space, author, host);
+		if (cursor.appliedRev === null && cursor.setHashBase64 === null) {
+			return this.recover(space, author, host);
+		}
 
 		try {
 			return await this.advance(space, author, host, cursor);
 		} catch (error) {
+			if (isEmpty(error)) return this.empty(space, author);
 			if (isGone(error)) {
 				await this.deps.store.dropRepo(space, author);
 				return { kind: "gone" };
@@ -147,7 +156,7 @@ export class RepoSync {
 		const deletes: RecordDelete[] = [];
 		const ops: HashOp[] = [];
 		let rev = cursor.appliedRev;
-		let commit: ProvenCommit | null = null;
+		let commit: ProvenCommit | undefined;
 		let pageCursor: string | undefined;
 
 		do {
@@ -173,11 +182,13 @@ export class RepoSync {
 				rev = op.rev;
 			}
 
-			commit = page.commit ?? commit;
+			commit = page.commit;
 			pageCursor = page.cursor ?? undefined;
 		} while (pageCursor);
 
-		if (puts.length === 0 && deletes.length === 0 && commit === null) {
+		if (!commit) throw new RepoUnverifiedError(space, author);
+
+		if (ops.length === 0 && commit.commit.rev === cursor.appliedRev) {
 			return { kind: "unchanged", appliedRev: cursor.appliedRev };
 		}
 
@@ -189,11 +200,9 @@ export class RepoSync {
 			commit,
 		});
 
-		if (commit) {
-			if (!verified.authentic) throw new RepoUnverifiedError(space, author);
-			if (!verified.matches) return this.recover(space, author, host);
-			rev = commit.commit.rev;
-		}
+		if (!verified.authentic) throw new RepoUnverifiedError(space, author);
+		if (!verified.matches) return this.recover(space, author, host);
+		rev = commit.commit.rev;
 
 		const change: RepoChange = { space, author, puts, deletes };
 		await this.deps.store.commit(change, {
@@ -206,11 +215,34 @@ export class RepoSync {
 		return { kind: "advanced", change, appliedRev: rev };
 	}
 
+	private async empty(space: string, author: string): Promise<RepoSyncOutcome> {
+		const held = await this.deps.store.replace(
+			{ space, author, puts: [] },
+			{
+				space,
+				author,
+				appliedRev: null,
+				setHashBase64: setHashToBase64(emptySetHash()),
+				state: "active",
+			},
+		);
+		const deletes = held.map(({ collection, rkey }) => ({ collection, rkey }));
+
+		if (deletes.length === 0) return { kind: "unchanged", appliedRev: null };
+
+		return {
+			kind: "recovered",
+			change: { space, author, puts: [], deletes },
+			appliedRev: null,
+		};
+	}
+
 	private async recover(space: string, author: string, host: string): Promise<RepoSyncOutcome> {
 		let repo: RepoStar;
 		try {
 			repo = await this.deps.client.getRepoStar(space, host, author);
 		} catch (error) {
+			if (isEmpty(error)) return this.empty(space, author);
 			if (isGone(error)) {
 				await this.deps.store.dropRepo(space, author);
 				return { kind: "gone" };
@@ -221,8 +253,9 @@ export class RepoSync {
 		const verified = await this.verifier.repo({
 			space,
 			author,
+			keyShare: repo.keyShare,
 			sharedSecret: repo.sharedSecret,
-			mac: repo.mac,
+			headers: repo.headers,
 			star: await collectStar(
 				repo.star,
 				this.deps.maxRepoBytes ?? DEFAULT_MAX_REPO_BYTES,

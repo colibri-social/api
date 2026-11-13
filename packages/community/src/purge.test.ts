@@ -203,7 +203,7 @@ const seed = async (community: string) => {
 
 		await db
 			.insert(tables.notifyRegistrations)
-			.values({ space: uri, service: HOST, expiresAt: NOW });
+			.values({ space: uri, token: "token", expiresAt: NOW });
 	}
 };
 

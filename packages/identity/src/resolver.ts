@@ -31,6 +31,7 @@ export type IdentityResolverOptions = {
 	handleTtlSeconds?: number;
 	negativeHandleTtlSeconds?: number;
 	handleConcurrency?: number;
+	fetch?: typeof globalThis.fetch;
 };
 
 export type IdentityObserver = (identity: AtprotoIdentity) => void;
@@ -60,6 +61,7 @@ export class IdentityResolver {
 		this.resolver = new IdResolver({
 			plcUrl: options.plcUrl,
 			didCache: new MemoryCache(options.staleSeconds * 1000, options.maxSeconds * 1000),
+			...(options.fetch ? { fetch: options.fetch } : {}),
 		});
 		this.store = options.store;
 		this.handleTtlMs = (options.handleTtlSeconds ?? DEFAULT_HANDLE_TTL_SECONDS) * 1000;

@@ -11,6 +11,6 @@ type $nsid = typeof $nsid;
 export { $nsid };
 
 /** A user's own Colibri settings, mutes, blocks and read state. */
-const main = /*#__PURE__*/ l.space($nsid, "literal:self", ["social.colibri.beta.actor.block","social.colibri.beta.actor.mute","social.colibri.beta.actor.settings","social.colibri.beta.channel.read"], {"name":"Colibri preferences"});
+const main = /*#__PURE__*/ l.space("literal:self", $nsid, ["social.colibri.beta.actor.block","social.colibri.beta.actor.mute","social.colibri.beta.actor.settings","social.colibri.beta.channel.read"], {"title":"Colibri preferences"});
 
 export { main };

@@ -166,8 +166,8 @@ export const spaceCredentials = pgTable("space_credentials", {
 
 export const notifyRegistrations = pgTable("notify_registrations", {
 	space: text("space").primaryKey(),
-	service: text("service").notNull(),
-	expiresAt: timestamp("expires_at").notNull(),
+	token: text("token").notNull(),
+	expiresAt: timestamp("expires_at"),
 });
 
 export const communities = pgTable(

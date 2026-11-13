@@ -237,14 +237,14 @@ describe("space types", () => {
 		expect(dangling).toEqual([]);
 	});
 
-	it("names every space type for a consent screen", () => {
-		const unnamed = spaces
+	it("titles every space type for a consent screen", () => {
+		const untitled = spaces
 			.filter(({ doc }) => {
-				const name = (doc.defs.main as { name?: string }).name;
-				return typeof name !== "string" || name.length === 0 || name.length > 64;
+				const title = (doc.defs.main as { title?: string }).title;
+				return typeof title !== "string" || title.length === 0 || title.length > 64;
 			})
 			.map(({ doc }) => doc.id);
-		expect(unnamed).toEqual([]);
+		expect(untitled).toEqual([]);
 	});
 });
 

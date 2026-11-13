@@ -160,8 +160,8 @@ export const spaceCredentials = sqliteTable("space_credentials", {
 
 export const notifyRegistrations = sqliteTable("notify_registrations", {
 	space: text("space").primaryKey(),
-	service: text("service").notNull(),
-	expiresAt: timestamp("expires_at").notNull(),
+	token: text("token").notNull(),
+	expiresAt: timestamp("expires_at"),
 });
 
 export const communities = sqliteTable(

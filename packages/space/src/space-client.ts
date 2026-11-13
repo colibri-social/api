@@ -1,18 +1,16 @@
 import { fromBase64 } from "@atproto/lex-data";
 import {
-	COMMIT_MAC_TYPE,
-	type Commit,
+	COMMIT_MAC_PROFILE,
 	encapsulate,
-	formatWantMacHeader,
-	MAC_HEADER,
-	type MacType,
-	parseMacHeader,
-	RECORD_MAC_TYPE,
-	SpaceMacError,
+	formatMacRequest,
+	MAC_COVERED_HEADER,
+	type MacProfile,
+	RECORD_MAC_PROFILE,
+	type SpaceCommit,
+	SpaceError,
 	verifyRecord,
-	WANT_MAC_HEADER,
 } from "@atproto/space";
-import type { DidString } from "@atproto/syntax";
+import type { DidString, SpaceAtUriString } from "@atproto/syntax";
 import type { SpaceCredentials } from "./credentials.js";
 import { XrpcError } from "./errors.js";
 import type { SpaceHostResolver } from "./host.js";
@@ -29,27 +27,51 @@ export type WireCommit = {
 	data: WireBytes;
 };
 
-export const decodeCommit = (wire: WireCommit): Commit => ({
+export const decodeCommit = (wire: WireCommit): SpaceCommit => ({
 	ver: wire.ver,
-	repo: wire.repo as Commit["repo"],
-	space: wire.space as Commit["space"],
-	rev: wire.rev,
+	repo: wire.repo as SpaceCommit["repo"],
+	space: wire.space as SpaceCommit["space"],
+	rev: wire.rev as SpaceCommit["rev"],
 	data: fromBase64(wire.data.$bytes),
 });
 
 export type MacProof = {
+	keyShare: DidString;
 	sharedSecret: Uint8Array;
-	mac: Uint8Array;
+	headers: Record<string, string>;
 };
 
-export type ProvenCommit = MacProof & { commit: Commit };
+export type ProvenCommit = MacProof & { commit: SpaceCommit };
 
-export type RepoListing = {
-	did: string;
+export const REPO_WRITE_TYPE = "com.atproto.space.defs#repoWrite";
+export const REPO_REMOVED_TYPE = "com.atproto.space.defs#repoRemoved";
+
+export type RepoWriteEntry = {
+	$type: typeof REPO_WRITE_TYPE;
+	repo: string;
 	repoRev: string;
 	data: Uint8Array;
 	spaceRev: string;
 };
+
+export type RepoRemovedEntry = {
+	$type: typeof REPO_REMOVED_TYPE;
+	repo: string;
+	spaceRev: string;
+};
+
+export type WriterEntry = RepoWriteEntry | RepoRemovedEntry;
+
+type WireWriterEntry =
+	| {
+			$type: typeof REPO_WRITE_TYPE;
+			repo: string;
+			repoRev: string;
+			data: WireBytes;
+			spaceRev: string;
+	  }
+	| { $type: typeof REPO_REMOVED_TYPE; repo: string; spaceRev: string }
+	| { $type?: string };
 
 export type RepoOp = {
 	rev: string;
@@ -62,11 +84,19 @@ export type RepoOp = {
 
 export type RepoOpsPage = {
 	ops: RepoOp[];
-	commit: ProvenCommit | null;
+	commit: ProvenCommit;
 	cursor: string | null;
 };
 
 export type RepoStar = MacProof & { star: AsyncIterable<Uint8Array> };
+
+export const STAR_CONTENT_TYPE = "application/vnd.dasl.star";
+
+type MacRequest = {
+	keyShare: DidString;
+	sharedSecret: Uint8Array;
+	headers: Record<string, string>;
+};
 
 export type KemKeyResolver = {
 	kemKeyFor(did: string, forceRefresh?: boolean): Promise<string>;
@@ -133,14 +163,16 @@ export class SpaceClient {
 		}
 	}
 
-	private async wantMac(
-		repo: string,
-		type: MacType,
-	): Promise<{ sharedSecret: Uint8Array; headers: Record<string, string> }> {
+	private async wantMac(repo: string, profile: MacProfile): Promise<MacRequest> {
 		const { keyShare, sharedSecret } = await encapsulate(
-			await this.options.kemKeys.kemKeyFor(repo),
+			(await this.options.kemKeys.kemKeyFor(repo)) as DidString,
 		);
-		return { sharedSecret, headers: { [WANT_MAC_HEADER]: formatWantMacHeader(type, keyShare) } };
+
+		return {
+			keyShare,
+			sharedSecret,
+			headers: { "accept-signature": formatMacRequest(profile, keyShare) },
+		};
 	}
 
 	private withAuthorityCredential<T>(
@@ -154,34 +186,31 @@ export class SpaceClient {
 		return this.options.hosts.hostFor(parseSpaceRef(space).authority);
 	}
 
-	async listRepos(
+	async listWriters(
 		space: SpaceRefString,
 		options: { limit?: number; cursor?: string } = {},
-	): Promise<{ repos: RepoListing[]; cursor: string | null }> {
+	): Promise<{ writers: WriterEntry[]; cursor: string | null }> {
 		const client = this.clientFor(await this.hostForAuthority(space));
 		const response = await this.withAuthorityCredential(space, (auth) =>
-			client.query<{
-				repos: Array<{ did: string; repoRev: string; data: WireBytes; spaceRev: string }>;
-				cursor?: string;
-			}>("com.atproto.space.listRepos", { space, ...options }, auth),
+			client.query<{ repos: WireWriterEntry[]; cursor?: string }>(
+				"com.atproto.space.listWriters",
+				{ space, ...options },
+				auth,
+			),
 		);
+
 		return {
-			repos: response.repos.map((repo) => ({
-				did: repo.did,
-				repoRev: repo.repoRev,
-				data: fromBase64(repo.data.$bytes),
-				spaceRev: repo.spaceRev,
-			})),
+			writers: response.repos.flatMap(decodeWriterEntry),
 			cursor: response.cursor ?? null,
 		};
 	}
 
-	async *allRepos(space: SpaceRefString, since?: string): AsyncGenerator<RepoListing> {
+	async *allWriters(space: SpaceRefString, since?: string): AsyncGenerator<WriterEntry> {
 		let cursor = since;
 		while (true) {
-			const page = await this.listRepos(space, { limit: 1000, cursor });
-			yield* page.repos;
-			if (page.repos.length === 0 || !page.cursor) return;
+			const page = await this.listWriters(space, { limit: 1000, cursor });
+			yield* page.writers;
+			if (page.writers.length === 0 || !page.cursor) return;
 			cursor = page.cursor;
 		}
 	}
@@ -193,24 +222,23 @@ export class SpaceClient {
 		options: { since?: string; cursor?: string; limit?: number; excludeValues?: boolean } = {},
 	): Promise<RepoOpsPage> {
 		const client = this.clientFor(repoHost);
-		const { body, headers, sharedSecret } = await this.withCredential(space, repo, async (auth) => {
-			const want = await this.wantMac(repo, COMMIT_MAC_TYPE);
+		const { body, headers, request } = await this.withCredential(space, repo, async (auth) => {
+			const request = await this.wantMac(repo, COMMIT_MAC_PROFILE);
 			const response = await client.queryWithHeaders<{
 				ops: RepoOp[];
-				commit?: WireCommit;
+				commit: WireCommit;
 				cursor?: string;
-			}>("com.atproto.space.listRepoOps", { space, repo, ...options }, auth, want.headers);
-			return { ...response, sharedSecret: want.sharedSecret };
+			}>("com.atproto.space.listRepoOps", { space, repo, ...options }, auth, request.headers);
+
+			return { ...response, request };
 		});
+
 		return {
 			ops: body.ops,
-			commit: body.commit
-				? {
-						commit: decodeCommit(body.commit),
-						sharedSecret,
-						mac: macFrom(headers, COMMIT_MAC_TYPE),
-					}
-				: null,
+			commit: {
+				commit: decodeCommit(body.commit),
+				...macProof(request, headers, COMMIT_MAC_PROFILE),
+			},
 			cursor: body.cursor ?? null,
 		};
 	}
@@ -221,44 +249,42 @@ export class SpaceClient {
 		repo: string,
 	): Promise<ProvenCommit | null> {
 		const client = this.clientFor(repoHost);
-		const { body, headers, sharedSecret } = await this.withCredential(space, repo, async (auth) => {
-			const want = await this.wantMac(repo, COMMIT_MAC_TYPE);
+		const { body, headers, request } = await this.withCredential(space, repo, async (auth) => {
+			const request = await this.wantMac(repo, COMMIT_MAC_PROFILE);
 			const response = await client.queryWithHeaders<{ commit?: WireCommit }>(
 				"com.atproto.space.getLatestCommit",
 				{ space, repo },
 				auth,
-				want.headers,
+				request.headers,
 			);
-			return { ...response, sharedSecret: want.sharedSecret };
+
+			return { ...response, request };
 		});
+
 		if (!body.commit) return null;
+
 		return {
 			commit: decodeCommit(body.commit),
-			sharedSecret,
-			mac: macFrom(headers, COMMIT_MAC_TYPE),
+			...macProof(request, headers, COMMIT_MAC_PROFILE),
 		};
 	}
 
 	async getRepoStar(space: SpaceRefString, repoHost: string, repo: string): Promise<RepoStar> {
 		const client = this.clientFor(repoHost);
-		const { response, sharedSecret } = await this.withCredential(space, repo, async (auth) => {
-			const want = await this.wantMac(repo, COMMIT_MAC_TYPE);
-			const response = await client.stream(
-				"com.atproto.space.getRepo",
-				{ space, repo },
-				auth,
-				want.headers,
-			);
-			return { response, sharedSecret: want.sharedSecret };
+		const { response, request } = await this.withCredential(space, repo, async (auth) => {
+			const request = await this.wantMac(repo, COMMIT_MAC_PROFILE);
+			const response = await client.stream("com.atproto.space.getRepo", { space, repo }, auth, {
+				...request.headers,
+				accept: STAR_CONTENT_TYPE,
+			});
+
+			return { response, request };
 		});
-		let mac: Uint8Array;
-		try {
-			mac = macFrom(response.headers, COMMIT_MAC_TYPE);
-		} catch (error) {
-			await response.body?.cancel().catch(() => undefined);
-			throw error;
-		}
-		return { star: streamBytes(response), sharedSecret, mac };
+
+		return {
+			star: streamBytes(response),
+			...macProof(request, response.headers, COMMIT_MAC_PROFILE),
+		};
 	}
 
 	async getRecord(
@@ -269,26 +295,39 @@ export class SpaceClient {
 		rkey: string,
 	): Promise<SpaceRecord> {
 		const client = this.clientFor(repoHost);
-		const { body, headers, sharedSecret } = await this.withCredential(space, repo, async (auth) => {
-			const want = await this.wantMac(repo, RECORD_MAC_TYPE);
+		const { body, headers, request } = await this.withCredential(space, repo, async (auth) => {
+			const request = await this.wantMac(repo, RECORD_MAC_PROFILE);
 			const response = await client.queryWithHeaders<SpaceRecord>(
 				"com.atproto.space.getRecord",
 				{ space, repo, collection, rkey },
 				auth,
-				want.headers,
+				request.headers,
 			);
-			return { ...response, sharedSecret: want.sharedSecret };
+
+			return { ...response, request };
 		});
+
 		const uri = spaceRecordUri(space, repo, collection, rkey);
-		const authentic = await verifyRecord(
-			{
-				uri: body.uri,
-				cid: body.cid,
-				value: body.value as Parameters<typeof verifyRecord>[0]["value"],
-			},
-			{ uri, sharedSecret, mac: macFrom(headers, RECORD_MAC_TYPE) },
-		);
-		if (!authentic) throw new SpaceRecordUnverifiedError(uri);
+
+		try {
+			await verifyRecord(
+				{
+					uri: body.uri,
+					cid: body.cid,
+					value: body.value as Parameters<typeof verifyRecord>[0]["value"],
+				},
+				{
+					uri: uri as SpaceAtUriString,
+					keyShare: request.keyShare,
+					sharedSecret: request.sharedSecret,
+					headers,
+				},
+			);
+		} catch (error) {
+			if (error instanceof SpaceError) throw new SpaceRecordUnverifiedError(uri);
+			throw error;
+		}
+
 		return body;
 	}
 
@@ -337,31 +376,39 @@ export class SpaceClient {
 		);
 		return { cids: response.cids, cursor: response.cursor ?? null };
 	}
-
-	async registerNotify(space: SpaceRefString, service: string): Promise<{ expiresAt: Date }> {
-		const client = this.clientFor(await this.hostForAuthority(space));
-		const response = await this.withAuthorityCredential(space, (auth) =>
-			client.procedure<{ expiresAt: string }>(
-				"com.atproto.space.registerNotify",
-				{ space, service },
-				auth,
-			),
-		);
-		return { expiresAt: new Date(response.expiresAt) };
-	}
-
-	async unregisterNotify(space: SpaceRefString, service: string): Promise<void> {
-		const client = this.clientFor(await this.hostForAuthority(space));
-		await this.withAuthorityCredential(space, (auth) =>
-			client.procedure("com.atproto.space.unregisterNotify", { space, service }, auth),
-		);
-	}
 }
 
-const macFrom = (headers: Headers, type: MacType): Uint8Array => {
-	const value = headers.get(MAC_HEADER);
-	if (value === null) throw new SpaceMacError("the response carried no MAC");
-	return parseMacHeader(value, type);
+const decodeWriterEntry = (entry: WireWriterEntry): WriterEntry[] => {
+	if (entry.$type === REPO_WRITE_TYPE && "repoRev" in entry) {
+		return [
+			{
+				$type: REPO_WRITE_TYPE,
+				repo: entry.repo,
+				repoRev: entry.repoRev,
+				data: fromBase64(entry.data.$bytes),
+				spaceRev: entry.spaceRev,
+			},
+		];
+	}
+
+	if (entry.$type === REPO_REMOVED_TYPE && "repo" in entry) {
+		return [{ $type: REPO_REMOVED_TYPE, repo: entry.repo, spaceRev: entry.spaceRev }];
+	}
+
+	return [];
+};
+
+const MAC_RESPONSE_HEADERS = ["signature-input", "signature"];
+
+const macProof = (request: MacRequest, headers: Headers, profile: MacProfile): MacProof => {
+	const picked: Record<string, string> = {};
+
+	for (const name of [...MAC_RESPONSE_HEADERS, MAC_COVERED_HEADER[profile]]) {
+		const value = headers.get(name);
+		if (value !== null) picked[name] = value;
+	}
+
+	return { keyShare: request.keyShare, sharedSecret: request.sharedSecret, headers: picked };
 };
 
 const streamBytes = (response: Response): AsyncIterable<Uint8Array> => {

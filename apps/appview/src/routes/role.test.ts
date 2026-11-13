@@ -161,7 +161,7 @@ const fakeWriter = (): CommunityWriter => {
 			mimeType,
 			size: bytes.byteLength,
 		}),
-		createSpaceFor: async () => ({ uri: "at://space" }),
+		createSpaceFor: async () => ({ space: "at://space" }),
 		deleteSpaceFor: async () => undefined,
 	};
 	return writer as unknown as CommunityWriter;

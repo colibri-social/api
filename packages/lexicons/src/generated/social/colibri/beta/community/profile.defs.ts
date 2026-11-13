@@ -11,6 +11,6 @@ type $nsid = typeof $nsid;
 export { $nsid };
 
 /** A community's public identity: the one part of a community that can be read before joining it. */
-const main = /*#__PURE__*/ l.space($nsid, "literal:self", ["social.colibri.beta.community"], {"name":"Colibri community profile"});
+const main = /*#__PURE__*/ l.space("literal:self", $nsid, ["social.colibri.beta.community"], {"title":"Colibri community profile"});
 
 export { main };

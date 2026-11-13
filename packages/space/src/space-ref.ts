@@ -74,14 +74,9 @@ export const spaceRecordUri = (
 	rkey: string,
 ): SpaceRecordUri => {
 	const { authority, spaceType, skey } = parseSpaceRef(space);
-	return AtUri.makeSpace(
-		asDid(authority),
-		asNsid(spaceType),
-		asRecordKey(skey),
-		asDid(author),
-		asNsid(collection),
-		asRecordKey(rkey),
-	).toString();
+	return new SpaceRef(asDid(authority), asNsid(spaceType), asRecordKey(skey))
+		.recordUri(asDid(author), asNsid(collection), asRecordKey(rkey))
+		.toString();
 };
 
 export const parseSpaceRecordUri = (value: string): ParsedSpaceRecord => {

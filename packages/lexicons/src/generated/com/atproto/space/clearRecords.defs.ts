@@ -24,7 +24,7 @@ export const $output = /*#__PURE__*/ l.jsonPayload({});
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Delete every record in the authenticated account's space repo. The repo advances to a new revision with the empty repo's digest, and its oplog is cleared. In the space authority's own repo, the records the host publishes from the space's configuration (com.atproto.space.policy and com.atproto.memberspace.member) are kept, and the digest is that of the records that remain. Succeeds whether or not the repo held any records to delete. Requires auth, implemented by PDS. */
+/** Delete all records in the authenticated account's space repo. In the space authority's repo, records published from the space's configuration (such as its policy) are kept. Requires auth, implemented by PDS. */
 const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output);
 
 export { main };

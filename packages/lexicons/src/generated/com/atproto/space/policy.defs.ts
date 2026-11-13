@@ -13,17 +13,17 @@ type $nsid = typeof $nsid;
 
 export { $nsid };
 
-/** The policy governing a space, optionally published in the space so that syncers can view a description of the space's policy. Written to the space authority's own repo in the space, and kept in sync with the policy. Only authoritative in the authority's repo. */
+/** A published copy of a space's policy. Only authoritative in the space authority's repo. */
 type Main = { $type: "com.atproto.space.policy";
 
   /**
-   * The current policy governing the space, including its configuration.
+   * PDSes must support all of the listed policies. Other space hosts may support only some of them, and any host may support policies beyond those listed.
    */
   "policy":l.$Typed<PersonalspacePolicy.Main> | l.$Typed<MemberspacePolicy.Main> | l.$Typed<ManagedspacePolicy.Main> | l.Unknown$TypedObject };
 
 export type { Main };
 
-/** The policy governing a space, optionally published in the space so that syncers can view a description of the space's policy. Written to the space authority's own repo in the space, and kept in sync with the policy. Only authoritative in the authority's repo. */
+/** A published copy of a space's policy. Only authoritative in the space authority's repo. */
 const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"policy":/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<PersonalspacePolicy.Main>((() => PersonalspacePolicy.main) as any),/*#__PURE__*/ l.typedRef<MemberspacePolicy.Main>((() => MemberspacePolicy.main) as any),/*#__PURE__*/ l.typedRef<ManagedspacePolicy.Main>((() => ManagedspacePolicy.main) as any)], false)}));
 
 export { main };

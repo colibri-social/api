@@ -39,7 +39,7 @@ const fakeClient = (service: string): PdsClient =>
 	({
 		service,
 		login: async () => ({ did: sessionDid, handle: "byo.example" }) as unknown as PdsSession,
-		listSpaces: async () => ({ spaces: existingSpaces.map((uri) => ({ uri })) }),
+		listSpaces: async () => ({ spaces: existingSpaces.map((space) => ({ space })) }),
 		createSpace: async (
 			_session: PdsSession,
 			params: { spaceType: string; skey: string; policy: unknown },

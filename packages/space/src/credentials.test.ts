@@ -1,7 +1,11 @@
 import { Secp256k1Keypair } from "@atproto/crypto";
-import { createSpaceToken, isP256DidKey, parseSpaceToken } from "@atproto/space";
+import { createSpaceCredential, isP256DidKey, parseSpaceToken } from "@atproto/space";
 import { beforeEach, describe, expect, it } from "vitest";
-import { inMemoryCredentialStorage, SpaceCredentials } from "./credentials.js";
+import {
+	inMemoryCredentialStorage,
+	type NotifyTargetProvider,
+	SpaceCredentials,
+} from "./credentials.js";
 import { SpaceCredentialError } from "./errors.js";
 import { StaticSpaceHostResolver } from "./host.js";
 import { spaceRef } from "./space-ref.js";
@@ -14,6 +18,7 @@ type HostBehaviour = {
 	failWith?: { status: number; error: string };
 	rejectTokensOnce?: string;
 	lifetimeSeconds?: number;
+	spaceRev?: string;
 };
 
 type Recorded = {
@@ -22,9 +27,10 @@ type Recorded = {
 	keyId: string;
 	body: {
 		space: string;
-		credentialKid: string;
+		credentialKey: string;
 		delegationToken?: string;
 		clientAttestation?: string;
+		notify?: { endpoint: string; token: string };
 	};
 };
 
@@ -49,7 +55,7 @@ const fakeSpaceHost = (authorityKey: Secp256k1Keypair, behaviour: HostBehaviour 
 			});
 		}
 
-		const keyId = body.credentialKid;
+		const keyId = body.credentialKey;
 		if (typeof keyId !== "string" || !isP256DidKey(keyId)) {
 			return new Response(JSON.stringify({ error: "InvalidRequest" }), { status: 400 });
 		}
@@ -61,17 +67,15 @@ const fakeSpaceHost = (authorityKey: Secp256k1Keypair, behaviour: HostBehaviour 
 			body,
 		});
 
-		const credential = await createSpaceToken(
-			"credential",
-			{
-				iss: AUTHORITY,
-				sub: body.space,
-				keyId,
-				expiresInSec: behaviour.lifetimeSeconds ?? 600,
-			},
-			authorityKey,
-		);
-		return new Response(JSON.stringify({ credential }), {
+		const credential = await createSpaceCredential({
+			iss: AUTHORITY,
+			sub: body.space,
+			keyId,
+			keypair: authorityKey,
+			expiresInSec: behaviour.lifetimeSeconds ?? 600,
+		});
+		const spaceRev = behaviour.spaceRev ? { spaceRev: behaviour.spaceRev } : {};
+		return new Response(JSON.stringify({ credential, ...spaceRev }), {
 			status: 200,
 			headers: { "content-type": "application/json" },
 		});
@@ -92,6 +96,7 @@ const credentialsFor = (
 		delegation: () => Promise<string | null>;
 		renewBeforeSeconds: number;
 		clientAttestation: () => Promise<string | undefined>;
+		notify: NotifyTargetProvider;
 	}> = {},
 ) =>
 	new SpaceCredentials({
@@ -101,6 +106,7 @@ const credentialsFor = (
 		fetch: fetchImpl,
 		renewBeforeSeconds: overrides.renewBeforeSeconds ?? 120,
 		...(overrides.clientAttestation ? { clientAttestation: overrides.clientAttestation } : {}),
+		...(overrides.notify ? { notify: overrides.notify } : {}),
 	});
 
 describe("space credentials", () => {
@@ -124,7 +130,7 @@ describe("space credentials", () => {
 		expect(host.calls[0]?.signatureInput).toBeNull();
 		expect(host.calls[0]?.body).toEqual({
 			space: SPACE,
-			credentialKid: credential.key.did,
+			credentialKey: credential.key.did,
 			delegationToken: "delegation-token",
 		});
 	});
@@ -234,7 +240,7 @@ describe("space credentials", () => {
 
 	it("reports a refusal distinctly from an outage", async () => {
 		const refused = fakeSpaceHost(authorityKey, {
-			failWith: { status: 400, error: "UserNotAuthorized" },
+			failWith: { status: 400, error: "AccountNotAuthorized" },
 		});
 		await expect(credentialsFor(refused.fetchImpl).acquire(SPACE)).rejects.toMatchObject({
 			reason: "refused",
@@ -251,6 +257,40 @@ describe("space credentials", () => {
 		await expect(credentialsFor(down.fetchImpl).acquire(SPACE)).rejects.toMatchObject({
 			reason: "upstream",
 		});
+	});
+
+	it("treats an unconfirmed registration and a managing app outage as transient", async () => {
+		for (const error of ["RegistrationNotConfirmed", "UpstreamFailure"]) {
+			const host = fakeSpaceHost(authorityKey, { failWith: { status: 400, error } });
+			await expect(credentialsFor(host.fetchImpl).acquire(SPACE)).rejects.toMatchObject({
+				reason: "upstream",
+			});
+		}
+	});
+
+	it("registers for notifications on every authorization", async () => {
+		const host = fakeSpaceHost(authorityKey, { spaceRev: "3mwcj3b6uak2f" });
+		const notify = { endpoint: "https://appview.test", token: "space-token" };
+		const credentials = credentialsFor(host.fetchImpl, { notify: async () => notify });
+
+		const first = await credentials.acquire(SPACE);
+		const renewed = await credentials.reauthorize(SPACE);
+
+		expect(host.calls.map((call) => call.body.notify)).toEqual([notify, notify]);
+		expect(first.spaceRev).toBe("3mwcj3b6uak2f");
+		expect(renewed.spaceRev).toBe("3mwcj3b6uak2f");
+		expect(renewed.key.did).not.toBe(first.key.did);
+	});
+
+	it("reports no space revision for a held credential", async () => {
+		const host = fakeSpaceHost(authorityKey, { spaceRev: "3mwcj3b6uak2f" });
+		const credentials = credentialsFor(host.fetchImpl);
+		await credentials.acquire(SPACE);
+
+		const held = await credentials.acquire(SPACE);
+
+		expect(host.calls).toHaveLength(1);
+		expect(held.spaceRev).toBeNull();
 	});
 
 	it("reports an unresolvable authority without calling anything", async () => {

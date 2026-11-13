@@ -4,7 +4,7 @@ import type { ProjectionDeps } from "@colibri-social/projections";
 import type { RepoChange, RepoCursor, SyncStore } from "@colibri-social/space-sync";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { drizzleSyncStore } from "./stores.js";
+import { drizzleNotifyTokens, drizzleSyncStore } from "./stores.js";
 
 const COMMUNITY = "did:plc:communityaaaaaaaaaaaaaaaaaa";
 const AUTHOR = "did:plc:authoraaaaaaaaaaaaaaaaaaaaaa";
@@ -219,7 +219,7 @@ describe("dropSpace", () => {
 		});
 		await database.db.insert(database.tables.notifyRegistrations).values({
 			space: SPACE,
-			service: "did:web:appview.test#atproto_space_syncer",
+			token: "token",
 			expiresAt: NOW,
 		});
 		await store.commit(change([message("3mry5ybrkzc22", "hello")]), cursor("rev1"));
@@ -283,5 +283,46 @@ describe("expectedRepos", () => {
 
 	it("names nothing for a space it has never registered", async () => {
 		expect(await store.expectedRepos?.("at://did:plc:nope/space/x.y.z/self")).toEqual([]);
+	});
+});
+
+describe("notify registrations", () => {
+	it("issues one token per space and keeps it across calls", async () => {
+		const tokens = drizzleNotifyTokens(database);
+		const OTHER = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkchannel2");
+
+		const first = await tokens.tokenFor(SPACE);
+		const again = await tokens.tokenFor(SPACE);
+		const other = await tokens.tokenFor(OTHER);
+
+		expect(Buffer.from(first, "base64url")).toHaveLength(32);
+		expect(again).toBe(first);
+		expect(other).not.toBe(first);
+	});
+
+	it("only accepts the token issued for that space", async () => {
+		const tokens = drizzleNotifyTokens(database);
+		const OTHER = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkchannel2");
+		const token = await tokens.tokenFor(SPACE);
+		const otherToken = await tokens.tokenFor(OTHER);
+
+		expect(await tokens.matches(SPACE, token)).toBe(true);
+		expect(await tokens.matches(SPACE, otherToken)).toBe(false);
+		expect(await tokens.matches(SPACE, `${token}x`)).toBe(false);
+		expect(
+			await tokens.matches(channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lk"), token),
+		).toBe(false);
+	});
+
+	it("lists a registration once an authorization has renewed it", async () => {
+		const tokens = drizzleNotifyTokens(database);
+		const token = await tokens.tokenFor(SPACE);
+
+		expect(await store.listRegistrations?.()).toEqual([]);
+
+		await store.saveRegistration?.({ space: SPACE, expiresAt: new Date(NOW) });
+
+		expect(await store.listRegistrations?.()).toEqual([{ space: SPACE, expiresAt: new Date(NOW) }]);
+		expect(await tokens.tokenFor(SPACE)).toBe(token);
 	});
 });

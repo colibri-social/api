@@ -1,3 +1,4 @@
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Database, Queryable } from "@colibri-social/appview-db";
 import type { LinkEmbed } from "@colibri-social/embeds";
 import {
@@ -9,8 +10,13 @@ import { isChannelSpaceType, isThreadSpaceType, toJsonForm } from "@colibri-soci
 import { applyChange, type ProjectionDeps } from "@colibri-social/projections";
 import type { CredentialStorage } from "@colibri-social/space";
 import type { RepoChange, RepoCursor, SyncStore } from "@colibri-social/space-sync";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { STORED_PREVIEW_TTL_MS, type StoredPreviews } from "./link-embeds.js";
+
+export type NotifyTokens = {
+	tokenFor(space: string): Promise<string>;
+	matches(space: string, token: string): Promise<boolean>;
+};
 
 const IDENTITY_WRITE_CONCURRENCY = 8;
 
@@ -212,20 +218,21 @@ export const drizzleSyncStore = (
 		},
 
 		listRegistrations: async () => {
-			const rows = await db.select().from(tables.notifyRegistrations);
-			return rows.map((row) => ({
-				space: row.space,
-				service: row.service,
-				expiresAt: new Date(row.expiresAt),
-			}));
+			const rows = await db
+				.select()
+				.from(tables.notifyRegistrations)
+				.where(isNotNull(tables.notifyRegistrations.expiresAt));
+
+			return rows.flatMap((row) =>
+				row.expiresAt ? [{ space: row.space, expiresAt: new Date(row.expiresAt) }] : [],
+			);
 		},
 
-		saveRegistration: async ({ space, service, expiresAt }) => {
-			const row = { space, service, expiresAt: expiresAt.toISOString() };
+		saveRegistration: async ({ space, expiresAt }) => {
 			await db
-				.insert(tables.notifyRegistrations)
-				.values(row)
-				.onConflictDoUpdate({ target: tables.notifyRegistrations.space, set: row });
+				.update(tables.notifyRegistrations)
+				.set({ expiresAt: expiresAt.toISOString() })
+				.where(eq(tables.notifyRegistrations.space, space));
 		},
 
 		expectedRepos: async (space) => {
@@ -449,6 +456,47 @@ export const drizzleSyncStore = (
 					.where(eq(tables.notifyRegistrations.space, space));
 				await tx.delete(tables.spaces).where(eq(tables.spaces.uri, space));
 			});
+		},
+	};
+};
+
+const NOTIFY_TOKEN_BYTES = 32;
+
+export const drizzleNotifyTokens = ({ db, tables }: Database): NotifyTokens => {
+	const stored = async (space: string): Promise<string | null> => {
+		const [row] = await db
+			.select({ token: tables.notifyRegistrations.token })
+			.from(tables.notifyRegistrations)
+			.where(eq(tables.notifyRegistrations.space, space))
+			.limit(1);
+
+		return row?.token ?? null;
+	};
+
+	return {
+		tokenFor: async (space) => {
+			const existing = await stored(space);
+			if (existing) return existing;
+
+			await db
+				.insert(tables.notifyRegistrations)
+				.values({ space, token: randomBytes(NOTIFY_TOKEN_BYTES).toString("base64url") })
+				.onConflictDoNothing();
+
+			const token = await stored(space);
+			if (!token) throw new Error(`no notify token could be stored for ${space}`);
+
+			return token;
+		},
+
+		matches: async (space, token) => {
+			const expected = await stored(space);
+			if (!expected) return false;
+
+			const given = Buffer.from(token);
+			const wanted = Buffer.from(expected);
+
+			return given.length === wanted.length && timingSafeEqual(given, wanted);
 		},
 	};
 };

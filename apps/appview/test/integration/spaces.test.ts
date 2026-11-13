@@ -41,7 +41,7 @@ describe("provisioning a community", () => {
 	it("reports every space back through listSpaces", async () => {
 		const session = await harness.credentials.session(community);
 		const { spaces } = await harness.pds.listSpaces(session);
-		const uris = spaces.map((space) => space.uri);
+		const uris = spaces.map((entry) => entry.space);
 
 		for (const space of Object.values(communitySpaces(community))) {
 			expect(uris).toContain(space);

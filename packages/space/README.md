@@ -32,7 +32,7 @@ const credentials = new SpaceCredentials({
 })
 
 const client = new SpaceClient({ hosts, credentials })
-for await (const repo of client.allRepos(space)) { ... }
+for await (const writer of client.allWriters(space)) { ... }
 ```
 
 - A **delegation token** is presented as `Authorization: Bearer <token>` with a

@@ -1,5 +1,10 @@
-import type { KemKeyResolver, SpaceClient, SpaceCredentials } from "@colibri-social/space";
-import { SpaceCredentialError, XrpcError } from "@colibri-social/space";
+import type {
+	KemKeyResolver,
+	SpaceClient,
+	SpaceCredentials,
+	WriterEntry,
+} from "@colibri-social/space";
+import { REPO_REMOVED_TYPE, SpaceCredentialError, XrpcError } from "@colibri-social/space";
 import { SpanStatusCode, trace } from "@opentelemetry/api";
 import { Emitter } from "./emitter.js";
 import { KeyedWorkQueue } from "./queue.js";
@@ -29,13 +34,17 @@ export type NotifyWriteHint = {
 	notifiedAt?: number;
 };
 
+export type SpaceRevHint = {
+	spaceRev?: string;
+	prevSpaceRev?: string;
+};
+
 export type SyncEngineOptions = {
 	client: SpaceClient;
 	credentials: SpaceCredentials;
 	store: SyncStore;
 	hosts: RepoHostResolver;
 	keys: KemKeyResolver;
-	syncerService: string;
 	concurrency?: number;
 	sweepIntervalMs?: number;
 	maxBackoffMs?: number;
@@ -93,6 +102,10 @@ type RegistrationState = {
 
 const isMissingDelegation = (error: unknown): boolean =>
 	error instanceof SpaceCredentialError && error.reason === "noDelegationToken";
+
+const isSpaceDeleted = (error: unknown): boolean => {
+	return error instanceof SpaceCredentialError && error.reason === "spaceDeleted";
+};
 
 export class SpaceSyncEngine {
 	private readonly repos: Pick<RepoSync, "sync">;
@@ -205,6 +218,41 @@ export class SpaceSyncEngine {
 		this.queue.push(key);
 	}
 
+	notifyRepoRemoved(space: string, author: string, hint: SpaceRevHint = {}): void {
+		if (hint.spaceRev) this.trackSpaceRev(space, hint.spaceRev, hint.prevSpaceRev);
+
+		void this.removeRepo(space, author).catch((error: unknown) =>
+			this.log("removeRepo.failed", { space, author, error }),
+		);
+	}
+
+	async confirmSpaceDeleted(space: string): Promise<void> {
+		await this.register(space, this.trackSpace(space));
+	}
+
+	async renewLapsedRegistration(space: string, spaceRev: string): Promise<void> {
+		await this.register(space, this.trackSpace(space));
+
+		const checkpoint = this.spaceRevs.get(space);
+		if (checkpoint !== undefined && spaceRev <= checkpoint) return;
+
+		await this.catchUp(space);
+	}
+
+	private async removeRepo(space: string, author: string): Promise<void> {
+		await this.options.store.dropRepo(space, author);
+		this.forgetRepo(space, author);
+		this.emit("repoGone", space, author);
+	}
+
+	private applyWriter(space: string, entry: WriterEntry): Promise<void> {
+		if (entry.$type === REPO_REMOVED_TYPE) return this.removeRepo(space, entry.repo);
+
+		this.notifyWrite(space, entry.repo, { rev: entry.repoRev, trigger: "sweep" });
+
+		return Promise.resolve();
+	}
+
 	private trackSpaceRev(space: string, spaceRev: string, prevSpaceRev?: string): void {
 		const checkpoint = this.spaceRevs.get(space);
 		if (checkpoint === undefined) {
@@ -225,13 +273,13 @@ export class SpaceSyncEngine {
 		this.catchingUp.add(space);
 		try {
 			let latest = this.spaceRevs.get(space) ?? null;
-			for await (const repo of this.options.client.allRepos(space, latest ?? undefined)) {
-				latest = laterRev(latest, repo.spaceRev);
-				this.notifyWrite(space, repo.did, { rev: repo.repoRev, trigger: "sweep" });
+			for await (const entry of this.options.client.allWriters(space, latest ?? undefined)) {
+				latest = laterRev(latest, entry.spaceRev);
+				await this.applyWriter(space, entry);
 			}
 			if (latest) this.spaceRevs.set(space, latest);
 		} catch (error) {
-			if (error instanceof SpaceCredentialError && error.reason === "spaceDeleted") {
+			if (isSpaceDeleted(error)) {
 				await this.dropSpace(space);
 				return;
 			}
@@ -299,18 +347,23 @@ export class SpaceSyncEngine {
 		}
 
 		const seen = new Set<string>();
+		const removed = new Set<string>();
 		const stale: string[] = [];
 		let latest = this.spaceRevs.get(space) ?? null;
 
 		try {
-			for await (const repo of this.options.client.allRepos(space)) {
-				seen.add(repo.did);
-				latest = laterRev(latest, repo.spaceRev);
-				const cursor = cursors.get(repo.did);
-				if (this.shouldSync(cursor, repo.repoRev)) stale.push(encodeKey(space, repo.did));
+			for await (const entry of this.options.client.allWriters(space)) {
+				latest = laterRev(latest, entry.spaceRev);
+				if (entry.$type === REPO_REMOVED_TYPE) {
+					removed.add(entry.repo);
+					continue;
+				}
+				seen.add(entry.repo);
+				const cursor = cursors.get(entry.repo);
+				if (this.shouldSync(cursor, entry.repoRev)) stale.push(encodeKey(space, entry.repo));
 			}
 		} catch (error) {
-			if (error instanceof SpaceCredentialError && error.reason === "spaceDeleted") {
+			if (isSpaceDeleted(error)) {
 				await this.dropSpace(space);
 				return;
 			}
@@ -320,16 +373,16 @@ export class SpaceSyncEngine {
 
 		const expected = new Set(await this.expectedRepos(space));
 		for (const repo of expected) {
-			if (seen.has(repo)) continue;
+			if (seen.has(repo) || removed.has(repo)) continue;
 			if (!this.mayHaveAdvanced(cursors.get(repo))) continue;
 			stale.push(encodeKey(space, repo));
 		}
 
 		for (const [author, cursor] of cursors) {
-			if (seen.has(author) || expected.has(author) || cursor.state === "gone") continue;
-			await this.options.store.dropRepo(space, author);
-			this.forgetRepo(space, author);
-			this.emit("repoGone", space, author);
+			if (seen.has(author)) continue;
+			const kept = expected.has(author) || cursor.state === "gone";
+			if (kept && !removed.has(author)) continue;
+			await this.removeRepo(space, author);
 		}
 
 		if (latest) this.spaceRevs.set(space, latest);
@@ -384,7 +437,6 @@ export class SpaceSyncEngine {
 			return [];
 		});
 		for (const row of rows) {
-			if (row.service !== this.options.syncerService) continue;
 			this.registrations.set(row.space, {
 				expiresAt: row.expiresAt,
 				registeredAt: null,
@@ -476,26 +528,33 @@ export class SpaceSyncEngine {
 	private async register(space: string, state: RegistrationState): Promise<void> {
 		const now = this.now();
 		if (state.expiresAt && state.expiresAt <= now) {
-			this.log("registerNotify.lapsed", {
+			this.log("registration.lapsed", {
 				space,
 				downMs: now.getTime() - state.expiresAt.getTime(),
 			});
 		}
 
 		try {
-			const { expiresAt } = await this.options.client.registerNotify(
-				space,
-				this.options.syncerService,
-			);
+			const { expiresAt, spaceRev } = await this.options.credentials.reauthorize(space);
+
 			state.expiresAt = expiresAt;
 			state.registeredAt = now;
 			state.retryAt = null;
 			state.failures = 0;
+			state.dormant = false;
+
 			await this.options.store
-				.saveRegistration?.({ space, service: this.options.syncerService, expiresAt })
+				.saveRegistration?.({ space, expiresAt })
 				.catch((error: unknown) => this.log("saveRegistration.failed", { space, error }));
-			this.log("registerNotify.renewed", { space, expiresAt: expiresAt.toISOString() }, "debug");
+
+			this.log("registration.renewed", { space, expiresAt: expiresAt.toISOString() }, "debug");
+
+			if (spaceRev) this.checkSpaceRev(space, spaceRev);
 		} catch (error) {
+			if (isSpaceDeleted(error)) {
+				await this.dropSpace(space);
+				return;
+			}
 			if (await this.park(space, error)) return;
 			state.failures += 1;
 			state.retryAt = new Date(
@@ -505,8 +564,16 @@ export class SpaceSyncEngine {
 						REGISTRATION_RETRY_BASE_MS * 2 ** (state.failures - 1),
 					),
 			);
-			this.log("registerNotify.failed", { space, failures: state.failures, error });
+			this.log("registration.failed", { space, failures: state.failures, error });
 		}
+	}
+
+	private checkSpaceRev(space: string, spaceRev: string): void {
+		const checkpoint = this.spaceRevs.get(space);
+		if (checkpoint === undefined || spaceRev <= checkpoint) return;
+
+		this.log("space.revGap", { space, checkpoint, spaceRev }, "debug");
+		void this.catchUp(space);
 	}
 
 	private async dropSpace(space: string): Promise<void> {

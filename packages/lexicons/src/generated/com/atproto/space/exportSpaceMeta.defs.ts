@@ -14,13 +14,13 @@ export const $params = /*#__PURE__*/ l.params({"space":/*#__PURE__*/ l.string({"
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $output = /*#__PURE__*/ l.payload("application/octet-stream");
+export const $output = /*#__PURE__*/ l.payload("application/vnd.dasl.star");
 
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Download a space's host-side state as a space meta archive, for account migration: a STAR file with the atproto-space-meta profile. The archive's metadata is the space. Its body is the space's policy, then any state the policy keeps (such as a memberspace member list), then the writer set. Served by the space host. Requires OAuth as the space owner with a covering read_self grant. */
-const main = /*#__PURE__*/ l.query($nsid, $params, $output, ["SpaceNotFound","NotSpaceOwner"]);
+/** Export a space's state, such as its policy and member list, as a STAR file for account migration. Requires auth as the space authority, implemented by PDS. */
+const main = /*#__PURE__*/ l.query($nsid, $params, $output, ["SpaceNotFound","NotAuthorized"]);
 
 export { main };
 

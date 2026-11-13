@@ -27,6 +27,7 @@ import {
 	PdsAdmin,
 	PdsClient,
 	type PdsSession,
+	REPO_WRITE_TYPE,
 	SpaceClient,
 	SpaceCredentials,
 } from "@colibri-social/space";
@@ -190,6 +191,7 @@ export const createHarness = async () => {
 
 	const identity = new IdentityResolver({
 		plcUrl,
+		fetch: globalThis.fetch,
 		staleSeconds: 5,
 		maxSeconds: 30,
 	});
@@ -210,7 +212,7 @@ export const createHarness = async () => {
 		resolver: identity,
 	});
 
-	const hosts = new DidDocumentSpaceHostResolver({ plcUrl });
+	const hosts = new DidDocumentSpaceHostResolver({ plcUrl, fetch: globalThis.fetch });
 
 	const spaceCredentials = new SpaceCredentials({
 		hosts,
@@ -300,16 +302,16 @@ export const createHarness = async () => {
 	};
 
 	const syncSpace = async (space: string) => {
-		for await (const repo of spaceClient.allRepos(space)) {
-			await repoSync.sync(space, repo.did);
+		for await (const entry of spaceClient.allWriters(space)) {
+			if (entry.$type === REPO_WRITE_TYPE) await repoSync.sync(space, entry.repo);
 		}
 	};
 
 	const waitForWriter = async (space: string, did: string, timeoutMs = 5_000): Promise<void> => {
 		const deadline = Date.now() + timeoutMs;
 		while (Date.now() < deadline) {
-			for await (const repo of spaceClient.allRepos(space)) {
-				if (repo.did === did) return;
+			for await (const entry of spaceClient.allWriters(space)) {
+				if (entry.$type === REPO_WRITE_TYPE && entry.repo === did) return;
 			}
 			await new Promise((resolve) => setTimeout(resolve, 200));
 		}

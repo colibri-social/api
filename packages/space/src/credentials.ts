@@ -9,6 +9,7 @@ export type SpaceCredential = {
 	credential: string;
 	key: SpaceKey;
 	expiresAt: Date;
+	spaceRev: string | null;
 };
 
 export type StoredCredential = {
@@ -35,16 +36,24 @@ export const inMemoryCredentialStorage = (): CredentialStorage => {
 
 export type DelegationTokenProvider = (space: SpaceRefString) => Promise<string | null>;
 
+export type NotifyTarget = {
+	endpoint: string;
+	token: string;
+};
+
+export type NotifyTargetProvider = (space: SpaceRefString) => Promise<NotifyTarget | null>;
+
 export type SpaceCredentialsOptions = {
 	hosts: SpaceHostResolver;
 	delegation: DelegationTokenProvider;
 	storage?: CredentialStorage;
 	clientAttestation?: (space: SpaceRefString) => Promise<string | undefined>;
+	notify?: NotifyTargetProvider;
 	renewBeforeSeconds?: number;
 	fetch?: typeof globalThis.fetch;
 };
 
-const GET_SPACE_CREDENTIAL = "com.atproto.space.getSpaceCredential";
+const AUTHORIZE_SPACE_SYNC = "com.atproto.space.authorizeSpaceSync";
 
 export class SpaceCredentials {
 	private readonly storage: CredentialStorage;
@@ -67,6 +76,10 @@ export class SpaceCredentials {
 
 	async acquireWith(space: SpaceRefString, delegationToken: string): Promise<SpaceCredential> {
 		return this.mint(space, delegationToken);
+	}
+
+	async reauthorize(space: SpaceRefString): Promise<SpaceCredential> {
+		return this.mint(space);
 	}
 
 	async invalidate(space: SpaceRefString): Promise<void> {
@@ -92,6 +105,7 @@ export class SpaceCredentials {
 			credential: stored.credential,
 			key: await SpaceKey.fromExported(stored.privateKey),
 			expiresAt: stored.expiresAt,
+			spaceRev: null,
 		};
 	}
 
@@ -132,13 +146,15 @@ export class SpaceCredentials {
 		const key = await SpaceKey.generate();
 		const client = new XrpcClient({ service: host, fetch: this.options.fetch });
 		const clientAttestation = await this.options.clientAttestation?.(space);
+		const notify = await this.options.notify?.(space);
 
 		const response = await client
-			.procedure<{ credential: string }>(GET_SPACE_CREDENTIAL, {
+			.procedure<{ credential: string; spaceRev?: string }>(AUTHORIZE_SPACE_SYNC, {
 				space,
-				credentialKid: key.did,
+				credentialKey: key.did,
 				delegationToken: token,
 				...(clientAttestation ? { clientAttestation } : {}),
+				...(notify ? { notify } : {}),
 			})
 			.catch((cause: unknown) => {
 				throw toCredentialError(space, cause);
@@ -152,7 +168,12 @@ export class SpaceCredentials {
 			expiresAt,
 		});
 
-		return { credential: response.credential, key, expiresAt };
+		return {
+			credential: response.credential,
+			key,
+			expiresAt,
+			spaceRev: response.spaceRev ?? null,
+		};
 	}
 }
 
@@ -204,7 +225,7 @@ const toCredentialError = (space: SpaceRefString, cause: unknown): SpaceCredenti
 		}
 		if (
 			cause.code === "SpaceNotFound" ||
-			cause.code === "UserNotAuthorized" ||
+			cause.code === "AccountNotAuthorized" ||
 			cause.code === "AppNotAuthorized" ||
 			cause.code === "NotAuthorized"
 		) {

@@ -10,22 +10,12 @@ type $nsid = typeof $nsid;
 
 export { $nsid };
 
-/** An entry in the member list of a space governed by the memberspace policy, published to readers when the policy's publishMembers is set. Keyed by the member's DID. Written by the space authority's PDS to the authority's own repo in the space, and kept in sync with the member list. Only authoritative in the authority's repo. */
-type Main = { $type: "com.atproto.memberspace.member";
-
-  /**
-   * Whether the member may read when the policy's publicRead is not set.
-   */
-  "read":boolean;
-
-  /**
-   * Whether the member's writes are tracked when the policy's publicWrite is not set.
-   */
-  "write":boolean };
+/** A published entry in a space's member list, keyed by the member's DID. Only authoritative in the space authority's repo. */
+type Main = { $type: "com.atproto.memberspace.member";"read":boolean;"write":boolean };
 
 export type { Main };
 
-/** An entry in the member list of a space governed by the memberspace policy, published to readers when the policy's publishMembers is set. Keyed by the member's DID. Written by the space authority's PDS to the authority's own repo in the space, and kept in sync with the member list. Only authoritative in the authority's repo. */
+/** A published entry in a space's member list, keyed by the member's DID. Only authoritative in the space authority's repo. */
 const main = /*#__PURE__*/ l.record<"any", Main>("any", $nsid, /*#__PURE__*/ l.object({"read":/*#__PURE__*/ l.boolean(),"write":/*#__PURE__*/ l.boolean()}));
 
 export { main };

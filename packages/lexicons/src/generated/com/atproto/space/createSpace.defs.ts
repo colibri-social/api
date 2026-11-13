@@ -22,12 +22,12 @@ export const $input = /*#__PURE__*/ l.jsonPayload({"spaceType":/*#__PURE__*/ l.s
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;
 
-export const $output = /*#__PURE__*/ l.jsonPayload({"uri":/*#__PURE__*/ l.string({"format":"space-ref"})});
+export const $output = /*#__PURE__*/ l.jsonPayload({"space":/*#__PURE__*/ l.string({"format":"space-ref"})});
 
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Create a new space governed by the given policy. The space is anchored on the authenticated user's DID, who becomes the space owner. Requires auth, implemented by PDS. */
+/** Create a new space, with the authenticated account as its authority. Requires auth, implemented by PDS. */
 const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["SpaceAlreadyExists","UnsupportedPolicy"]);
 
 export { main };

@@ -3,6 +3,7 @@
  */
 
 import { l } from "@atproto/lex";
+import * as MemberspaceDefs from "./defs.defs.js";
 
 const $nsid = "com.atproto.memberspace.listMembers";
 
@@ -14,13 +15,13 @@ export const $params = /*#__PURE__*/ l.params({"space":/*#__PURE__*/ l.string({"
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $output = /*#__PURE__*/ l.jsonPayload({"cursor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"members":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<Member>((() => member) as any), )});
+export const $output = /*#__PURE__*/ l.jsonPayload({"cursor":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"members":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<MemberspaceDefs.Member>((() => MemberspaceDefs.member) as any), )});
 
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** List the members of a space governed by the memberspace policy, and their read and write access. Must be called on the space authority's PDS. Requires OAuth with a covering read_self grant; a space credential is not sufficient, so members hosted elsewhere cannot enumerate the list. To make the list visible to readers, set the policy's publishMembers. */
-const main = /*#__PURE__*/ l.query($nsid, $params, $output, ["SpaceNotFound","PolicyMismatch"]);
+/** List the members of a space with a memberspace policy. Requires auth as the space authority, implemented by PDS. */
+const main = /*#__PURE__*/ l.query($nsid, $params, $output, ["SpaceNotFound","NotAuthorized","PolicyMismatch","InvalidCursor"]);
 
 export { main };
 
@@ -29,11 +30,3 @@ const $lxm = $nsid;
 type $lxm = typeof $lxm;
 
 export { $lxm };
-
-type Member = { $type?: "com.atproto.memberspace.listMembers#member";"did":l.DidString;"read":boolean;"write":boolean };
-
-export type { Member };
-
-const member = /*#__PURE__*/ l.typedObject<Member>($nsid, "member", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"read":/*#__PURE__*/ l.boolean(),"write":/*#__PURE__*/ l.boolean()}));
-
-export { member };

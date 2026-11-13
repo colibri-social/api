@@ -100,7 +100,7 @@ export class CommunityWriter {
 	async createSpaceFor(
 		community: string,
 		params: Parameters<PdsClient["createSpace"]>[1],
-	): Promise<{ uri: string }> {
+	): Promise<{ space: string }> {
 		const { pds, session } = await this.deps.credentials.connect(community);
 		return pds.createSpace(session, params);
 	}

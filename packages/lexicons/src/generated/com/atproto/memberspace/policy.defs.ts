@@ -10,38 +10,38 @@ type $nsid = typeof $nsid;
 
 export { $nsid };
 
-/** Space policy that governs access via a member list maintained by the space host, managed with putMember and removeMember. */
+/** Space policy that grants access based on a member list. */
 type Main = { $type?: "com.atproto.memberspace.policy";
 
   /**
-   * If true, the authority issues a space credential to anyone, with or without a delegation token. Otherwise, only to members whose entry has read set.
+   * If true, anyone may read the space. Otherwise, only members with read access.
    */
   "publicRead"?:boolean;
 
   /**
-   * If true, the authority tracks and forwards notifications for any user's writes. Otherwise, only for members whose entry has write set.
+   * If true, any account's writes are tracked in the writer set, except members without write access. Otherwise, only members with write access.
    */
   "publicWrite"?:boolean;
 
   /**
-   * If set, the authority mints a credential only for these apps, evaluated against the attested client_id. When omitted, any app may read the space and no client attestation is required. Does not apply to writes.
+   * If set, only these apps (by OAuth client ID) may read the space.
    */
-  "allowedApps"?:(string)[];
+  "allowedApps"?:(l.UriString)[];
 
   /**
-   * Publish the policy to readers as a com.atproto.space.policy record in the authority's repo in the space.
+   * Publish the policy as a com.atproto.space.policy record in the space.
    */
   "publishPolicy"?:boolean;
 
   /**
-   * Publish the member list to readers as com.atproto.memberspace.member records in the authority's repo in the space.
+   * Publish the member list as com.atproto.memberspace.member records in the space.
    */
   "publishMembers"?:boolean };
 
 export type { Main };
 
-/** Space policy that governs access via a member list maintained by the space host, managed with putMember and removeMember. */
-const main = /*#__PURE__*/ l.typedObject<Main>($nsid, "main", /*#__PURE__*/ l.object({"publicRead":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"publicWrite":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"allowedApps":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), )),"publishPolicy":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"publishMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false))}));
+/** Space policy that grants access based on a member list. */
+const main = /*#__PURE__*/ l.typedObject<Main>($nsid, "main", /*#__PURE__*/ l.object({"publicRead":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"publicWrite":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"allowedApps":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"uri"}), )),"publishPolicy":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"publishMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false))}));
 
 export { main };
 

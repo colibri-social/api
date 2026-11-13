@@ -18,6 +18,7 @@ const endpointOf = (services: DidService[], id: string): string | null => {
 export type DidDocumentHostResolverOptions = {
 	plcUrl?: string;
 	resolver?: DidResolver;
+	fetch?: typeof globalThis.fetch;
 };
 
 export class DidDocumentSpaceHostResolver implements SpaceHostResolver {
@@ -29,6 +30,7 @@ export class DidDocumentSpaceHostResolver implements SpaceHostResolver {
 			new DidResolver({
 				plcUrl: options.plcUrl ?? "https://plc.directory",
 				didCache: new MemoryCache(60 * 60 * 1000, 24 * 60 * 60 * 1000),
+				...(options.fetch ? { fetch: options.fetch } : {}),
 			});
 	}
 

@@ -33,7 +33,7 @@ export const managedspacePolicy = (managingApp: string): ManagedspacePolicy => (
 });
 
 export type SpaceConfiguration = {
-	uri: SpaceRefString;
+	space: SpaceRefString;
 	policy: SpacePolicy;
 };
 
@@ -174,9 +174,13 @@ export class PdsClient {
 		});
 	}
 
-	listSpaces(session: HostSession): Promise<{ spaces: Array<{ uri: string }> }> {
+	listSpaces(session: HostSession): Promise<{ spaces: Array<{ space: string }> }> {
 		return session.run((auth) =>
-			this.xrpc.query<{ spaces: Array<{ uri: string }> }>("com.atproto.space.listSpaces", {}, auth),
+			this.xrpc.query<{ spaces: Array<{ space: string }> }>(
+				"com.atproto.space.listSpaces",
+				{},
+				auth,
+			),
 		);
 	}
 
@@ -187,9 +191,9 @@ export class PdsClient {
 			skey?: string;
 			policy: SpacePolicy;
 		},
-	): Promise<{ uri: SpaceRefString }> {
+	): Promise<{ space: SpaceRefString }> {
 		return session.run((auth) =>
-			this.xrpc.procedure<{ uri: SpaceRefString }>("com.atproto.space.createSpace", params, auth),
+			this.xrpc.procedure<{ space: SpaceRefString }>("com.atproto.space.createSpace", params, auth),
 		);
 	}
 
@@ -217,16 +221,14 @@ export class PdsClient {
 		);
 	}
 
-	putMember(
-		session: HostSession,
-		space: SpaceRefString,
-		did: string,
-		access: SpaceMemberAccess,
-	): Promise<void> {
+	putMembers(session: HostSession, space: SpaceRefString, members: SpaceMember[]): Promise<void> {
 		return session.run(async (auth) => {
 			await this.xrpc.procedure(
-				"com.atproto.memberspace.putMember",
-				{ space, did, read: access.read, write: access.write },
+				"com.atproto.memberspace.putMembers",
+				{
+					space,
+					members: members.map(({ did, read, write }) => ({ did, read, write })),
+				},
 				auth,
 			);
 		});
@@ -246,9 +248,9 @@ export class PdsClient {
 		);
 	}
 
-	removeMember(session: HostSession, space: SpaceRefString, did: string): Promise<void> {
+	removeMembers(session: HostSession, space: SpaceRefString, dids: string[]): Promise<void> {
 		return session.run(async (auth) => {
-			await this.xrpc.procedure("com.atproto.memberspace.removeMember", { space, did }, auth);
+			await this.xrpc.procedure("com.atproto.memberspace.removeMembers", { space, dids }, auth);
 		});
 	}
 

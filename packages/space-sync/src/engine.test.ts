@@ -1,16 +1,20 @@
-import { SpaceCredentialError, XrpcError } from "@colibri-social/space";
+import {
+	REPO_REMOVED_TYPE,
+	REPO_WRITE_TYPE,
+	SpaceCredentialError,
+	XrpcError,
+} from "@colibri-social/space";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SpaceSyncEngine, type SyncEngineOptions } from "./engine.js";
 import type { RepoSyncOutcome } from "./repo-sync.js";
 import type { ChangeTiming, RepoCursor, SyncStore } from "./types.js";
 
 const SPACE = "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchan";
-const SYNCER = "did:web:appview#atproto_space_syncer";
 const AUTHORITY = "did:plc:community";
 const ALICE = "did:plc:alice";
 const BOB = "did:plc:bob";
 
-type Remote = { did: string; rev: string; spaceRev?: string };
+type Remote = { did: string; rev: string; spaceRev?: string; removed?: boolean };
 
 const cursor = (
 	author: string,
@@ -53,15 +57,34 @@ const store = (expected?: string[]): SyncStore => ({
 });
 
 const client = (remotes: Remote[], options: { listThrows?: unknown } = {}) => ({
-	allRepos: vi.fn(async function* (_space: string, since?: string) {
+	allWriters: vi.fn(async function* (_space: string, since?: string) {
 		if (options.listThrows) throw options.listThrows;
 		for (const [index, remote] of remotes.entries()) {
 			const spaceRev = remote.spaceRev ?? `3s${index}`;
 			if (since !== undefined && spaceRev <= since) continue;
-			yield { did: remote.did, repoRev: remote.rev, hash: new Uint8Array(), spaceRev };
+			yield remote.removed
+				? { $type: REPO_REMOVED_TYPE, repo: remote.did, spaceRev }
+				: {
+						$type: REPO_WRITE_TYPE,
+						repo: remote.did,
+						repoRev: remote.rev,
+						data: new Uint8Array(),
+						spaceRev,
+					};
 		}
 	}),
-	registerNotify: vi.fn(async () => ({ expiresAt: new Date(Date.now() + 3_600_000) })),
+});
+
+type Authorization = { expiresAt: Date; spaceRev?: string | null };
+
+const authorizer = () => ({
+	invalidate: async () => undefined,
+	reauthorize: vi.fn(
+		async (_space: string): Promise<Authorization> => ({
+			expiresAt: new Date(Date.now() + 3_600_000),
+			spaceRev: null,
+		}),
+	),
 });
 
 const isOutcome = (value: unknown): value is RepoSyncOutcome =>
@@ -78,6 +101,7 @@ const engineFor = (
 	} = {},
 ) => {
 	const spaceClient = client(remotes, options);
+	const credentials = authorizer();
 	const engine = new SpaceSyncEngine({
 		repos: {
 			sync: async (space: string, author: string) => {
@@ -86,17 +110,16 @@ const engineFor = (
 			},
 		},
 		client: spaceClient as never,
-		credentials: { invalidate: async () => undefined } as never,
+		credentials: credentials as never,
 		store: store(options.expected),
 		hosts: { hostFor: async () => "https://pds.test" },
 		keys: { kemKeyFor: async () => "did:key:z" },
-		syncerService: SYNCER,
 		concurrency: 4,
 		...(options.now ? { now: options.now } : {}),
 		...(options.engine ?? {}),
 	});
 
-	return { engine, spaceClient };
+	return { engine, spaceClient, credentials };
 };
 
 beforeEach(() => {
@@ -270,17 +293,14 @@ describe("sweeping a space", () => {
 		expect(dropped).toEqual([]);
 	});
 
-	it("registers for write notifications, and only once while the registration holds", async () => {
-		const { engine, spaceClient } = engineFor([], async () => undefined);
+	it("authorizes with a notify registration, and only once while it holds", async () => {
+		const { engine, credentials } = engineFor([], async () => undefined);
 
 		await engine.sweepSpace(SPACE);
 		await engine.sweepSpace(SPACE);
 
-		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(1);
-		expect(spaceClient.registerNotify).toHaveBeenCalledWith(
-			SPACE,
-			"did:web:appview#atproto_space_syncer",
-		);
+		expect(credentials.reauthorize).toHaveBeenCalledTimes(1);
+		expect(credentials.reauthorize).toHaveBeenCalledWith(SPACE);
 	});
 
 	it("drops the whole space when the authority says it is gone", async () => {
@@ -526,21 +546,21 @@ describe("notify registrations", () => {
 	it("renews on its own schedule before the registration lapses", async () => {
 		vi.useFakeTimers();
 		let clock = new Date("2026-08-23T00:00:00.000Z").getTime();
-		const { engine, spaceClient } = engineFor([], async () => undefined, {
+		const { engine, credentials } = engineFor([], async () => undefined, {
 			now: () => new Date(clock),
 			engine: { registrationRenewMarginMs: 60_000 },
 		});
-		spaceClient.registerNotify.mockImplementation(async () => ({
+		credentials.reauthorize.mockImplementation(async () => ({
 			expiresAt: new Date(clock + 120_000),
 		}));
 
 		await engine.start();
-		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(1);
+		expect(credentials.reauthorize).toHaveBeenCalledTimes(1);
 
 		clock += 70_000;
 		await vi.advanceTimersByTimeAsync(30_000);
 
-		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(2);
+		expect(credentials.reauthorize).toHaveBeenCalledTimes(2);
 		await engine.stop();
 		vi.useRealTimers();
 	});
@@ -549,20 +569,20 @@ describe("notify registrations", () => {
 		vi.useFakeTimers();
 		let clock = new Date("2026-08-23T00:00:00.000Z").getTime();
 		const events: string[] = [];
-		const { engine, spaceClient } = engineFor([], async () => undefined, {
+		const { engine, credentials } = engineFor([], async () => undefined, {
 			now: () => new Date(clock),
 			engine: { log: (event) => void events.push(event) },
 		});
-		spaceClient.registerNotify.mockRejectedValueOnce(new Error("host refused"));
+		credentials.reauthorize.mockRejectedValueOnce(new Error("host refused"));
 
 		await engine.start();
-		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(1);
-		expect(events).toContain("registerNotify.failed");
+		expect(credentials.reauthorize).toHaveBeenCalledTimes(1);
+		expect(events).toContain("registration.failed");
 
 		clock += 10_000;
 		await vi.advanceTimersByTimeAsync(30_000);
 
-		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(2);
+		expect(credentials.reauthorize).toHaveBeenCalledTimes(2);
 		await engine.stop();
 		vi.useRealTimers();
 	});
@@ -571,11 +591,11 @@ describe("notify registrations", () => {
 		vi.useFakeTimers();
 		let clock = new Date("2026-08-23T00:00:00.000Z").getTime();
 		const events: string[] = [];
-		const { engine, spaceClient } = engineFor([], async () => undefined, {
+		const { engine, credentials } = engineFor([], async () => undefined, {
 			now: () => new Date(clock),
 			engine: { log: (event) => void events.push(event) },
 		});
-		spaceClient.registerNotify.mockImplementation(async () => ({
+		credentials.reauthorize.mockImplementation(async () => ({
 			expiresAt: new Date(clock + 60_000),
 		}));
 
@@ -583,7 +603,7 @@ describe("notify registrations", () => {
 		clock += 120_000;
 		await vi.advanceTimersByTimeAsync(30_000);
 
-		expect(events).toContain("registerNotify.lapsed");
+		expect(events).toContain("registration.lapsed");
 		await engine.stop();
 		vi.useRealTimers();
 	});
@@ -591,11 +611,11 @@ describe("notify registrations", () => {
 	it("stops renewing a space that was deleted", async () => {
 		vi.useFakeTimers();
 		let clock = new Date("2026-08-23T00:00:00.000Z").getTime();
-		const { engine, spaceClient } = engineFor([], async () => undefined, {
+		const { engine, credentials } = engineFor([], async () => undefined, {
 			now: () => new Date(clock),
 			engine: { registrationRenewMarginMs: 60_000 },
 		});
-		spaceClient.registerNotify.mockImplementation(async () => ({
+		credentials.reauthorize.mockImplementation(async () => ({
 			expiresAt: new Date(clock + 120_000),
 		}));
 
@@ -606,7 +626,7 @@ describe("notify registrations", () => {
 		clock += 70_000;
 		await vi.advanceTimersByTimeAsync(30_000);
 
-		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(1);
+		expect(credentials.reauthorize).toHaveBeenCalledTimes(1);
 		await engine.stop();
 		vi.useRealTimers();
 	});
@@ -631,8 +651,8 @@ describe("sweeping", () => {
 	it("refuses to start a second sweep while one is running", async () => {
 		const { engine, spaceClient } = engineFor([], async () => undefined);
 		let listings = 0;
-		const original = spaceClient.allRepos;
-		spaceClient.allRepos = vi.fn(async function* (space: string, since?: string) {
+		const original = spaceClient.allWriters;
+		spaceClient.allWriters = vi.fn(async function* (space: string, since?: string) {
 			listings += 1;
 			await new Promise((resolve) => setTimeout(resolve, 10));
 			yield* original(space, since);
@@ -652,31 +672,34 @@ describe("spaces the appview cannot mint a credential for", () => {
 		vi.useFakeTimers();
 		let clock = new Date("2026-08-23T00:00:00.000Z").getTime();
 		const events: string[] = [];
-		const { engine, spaceClient } = engineFor([], async () => undefined, {
+		const { engine, credentials } = engineFor([], async () => undefined, {
 			now: () => new Date(clock),
 			engine: { log: (event) => void events.push(event) },
 		});
-		spaceClient.registerNotify.mockRejectedValue(noToken());
+		credentials.reauthorize.mockRejectedValue(noToken());
 
 		await engine.start();
-		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(1);
+		expect(credentials.reauthorize).toHaveBeenCalledTimes(1);
 		expect(events).toContain("space.dormant");
-		expect(events).not.toContain("registerNotify.failed");
+		expect(events).not.toContain("registration.failed");
 
 		clock += 600_000;
 		await vi.advanceTimersByTimeAsync(300_000);
 
-		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(1);
+		expect(credentials.reauthorize).toHaveBeenCalledTimes(1);
 		await engine.stop();
 		vi.useRealTimers();
 	});
 
 	it("leaves a parked space out of the sweep", async () => {
-		const { engine, spaceClient } = engineFor([{ did: ALICE, rev: "3b" }], async () => undefined);
-		spaceClient.registerNotify.mockRejectedValue(noToken());
+		const { engine, spaceClient, credentials } = engineFor(
+			[{ did: ALICE, rev: "3b" }],
+			async () => undefined,
+		);
+		credentials.reauthorize.mockRejectedValue(noToken());
 		let listings = 0;
-		const original = spaceClient.allRepos;
-		spaceClient.allRepos = vi.fn(async function* (space: string, since?: string) {
+		const original = spaceClient.allWriters;
+		spaceClient.allWriters = vi.fn(async function* (space: string, since?: string) {
 			listings += 1;
 			yield* original(space, since);
 		});
@@ -688,27 +711,27 @@ describe("spaces the appview cannot mint a credential for", () => {
 	});
 
 	it("resumes once a fresh grant wakes it", async () => {
-		const { engine, spaceClient } = engineFor([], async () => undefined);
-		spaceClient.registerNotify.mockRejectedValueOnce(noToken());
+		const { engine, credentials } = engineFor([], async () => undefined);
+		credentials.reauthorize.mockRejectedValueOnce(noToken());
 
 		await engine.sweepSpace(SPACE);
-		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(1);
+		expect(credentials.reauthorize).toHaveBeenCalledTimes(1);
 
 		engine.wake(SPACE);
 		await engine.sweepSpace(SPACE);
 
-		expect(spaceClient.registerNotify).toHaveBeenCalledTimes(2);
+		expect(credentials.reauthorize).toHaveBeenCalledTimes(2);
 	});
 
 	it("parks it quietly when the appview says the space cannot be renewed", async () => {
 		const logged: Array<{ event: string; level: string }> = [];
-		const { engine, spaceClient } = engineFor([], async () => undefined, {
+		const { engine, credentials } = engineFor([], async () => undefined, {
 			engine: {
 				canRenew: async () => false,
 				log: (event, _detail, level = "warn") => void logged.push({ event, level }),
 			},
 		});
-		spaceClient.registerNotify.mockRejectedValue(noToken());
+		credentials.reauthorize.mockRejectedValue(noToken());
 
 		await engine.sweepSpace(SPACE);
 
@@ -717,10 +740,10 @@ describe("spaces the appview cannot mint a credential for", () => {
 
 	it("warns when a space it should be able to renew goes dormant", async () => {
 		const logged: Array<{ event: string; level: string }> = [];
-		const { engine, spaceClient } = engineFor([], async () => undefined, {
+		const { engine, credentials } = engineFor([], async () => undefined, {
 			engine: { log: (event, _detail, level = "warn") => void logged.push({ event, level }) },
 		});
-		spaceClient.registerNotify.mockRejectedValue(noToken());
+		credentials.reauthorize.mockRejectedValue(noToken());
 
 		await engine.sweepSpace(SPACE);
 
@@ -729,14 +752,14 @@ describe("spaces the appview cannot mint a credential for", () => {
 
 	it("leaves a lapsed registration alone when the space cannot be renewed", async () => {
 		const events: string[] = [];
-		const { engine, spaceClient } = engineFor([], async () => undefined, {
+		const { engine, credentials } = engineFor([], async () => undefined, {
 			engine: {
 				canRenew: async () => false,
 				log: (event) => void events.push(event),
 				store: {
 					...store(),
 					listRegistrations: async () => [
-						{ space: SPACE, service: SYNCER, expiresAt: new Date(Date.now() - 86_400_000) },
+						{ space: SPACE, expiresAt: new Date(Date.now() - 86_400_000) },
 					],
 				},
 			},
@@ -745,18 +768,18 @@ describe("spaces the appview cannot mint a credential for", () => {
 		await engine.start();
 		await engine.stop();
 
-		expect(spaceClient.registerNotify).not.toHaveBeenCalled();
-		expect(events).not.toContain("registerNotify.lapsed");
+		expect(credentials.reauthorize).not.toHaveBeenCalled();
+		expect(events).not.toContain("registration.lapsed");
 		expect(events).not.toContain("space.dormant");
 	});
 
 	it("drops a space whose community is gone rather than parking it", async () => {
 		orphaned = true;
 		const events: string[] = [];
-		const { engine, spaceClient } = engineFor([], async () => undefined, {
+		const { engine, credentials } = engineFor([], async () => undefined, {
 			engine: { log: (event) => void events.push(event) },
 		});
-		spaceClient.registerNotify.mockRejectedValue(noToken());
+		credentials.reauthorize.mockRejectedValue(noToken());
 
 		await engine.sweepSpace(SPACE);
 
@@ -777,7 +800,7 @@ describe("space revisions", () => {
 		engine.notifyWrite(SPACE, ALICE, { rev: "3c", spaceRev: "3s2", prevSpaceRev: "3s1" });
 		await engine.drain();
 
-		expect(spaceClient.allRepos).toHaveBeenCalledTimes(1);
+		expect(spaceClient.allWriters).toHaveBeenCalledTimes(1);
 	});
 
 	it("catches up from the last space revision after a gap", async () => {
@@ -805,7 +828,133 @@ describe("space revisions", () => {
 		await settle();
 		await engine.drain();
 
-		expect(spaceClient.allRepos).toHaveBeenLastCalledWith(SPACE, "3s2");
+		expect(spaceClient.allWriters).toHaveBeenLastCalledWith(SPACE, "3s2");
 		expect(pulled).toEqual([ALICE]);
+	});
+});
+
+describe("writer removals", () => {
+	it("drops a repo the writer set lists as removed, even one the space expects", async () => {
+		cursors.set(ALICE, cursor(ALICE, "3a"));
+		const pulled: string[] = [];
+		const gone: string[] = [];
+		const { engine } = engineFor(
+			[{ did: ALICE, rev: "3a", removed: true }],
+			async (_space, author) => void pulled.push(author),
+			{ expected: [ALICE] },
+		);
+		engine.on("repoGone", (_space, author) => void gone.push(author));
+
+		await engine.sweepSpace(SPACE);
+		await engine.drain();
+
+		expect(pulled).toEqual([]);
+		expect(dropped).toEqual([ALICE]);
+		expect(gone).toEqual([ALICE]);
+	});
+
+	it("drops a repo when a removal notice arrives", async () => {
+		cursors.set(ALICE, cursor(ALICE, "3a"));
+		const gone: string[] = [];
+		const { engine } = engineFor([], async () => undefined);
+		engine.on("repoGone", (_space, author) => void gone.push(author));
+
+		engine.notifyRepoRemoved(SPACE, ALICE, { spaceRev: "3s2", prevSpaceRev: "3s1" });
+		await vi.waitFor(() => expect(gone).toEqual([ALICE]));
+
+		expect(dropped).toEqual([ALICE]);
+	});
+
+	it("applies removals it finds while catching up", async () => {
+		const pulled: string[] = [];
+		const { engine } = engineFor(
+			[
+				{ did: ALICE, rev: "3b", spaceRev: "3s1" },
+				{ did: BOB, rev: "3b", spaceRev: "3s2", removed: true },
+			],
+			async (_space, author) => {
+				pulled.push(author);
+				return advanced("3b");
+			},
+		);
+
+		await engine.catchUp(SPACE);
+		await engine.drain();
+
+		expect(pulled).toEqual([ALICE]);
+		expect(dropped).toEqual([BOB]);
+	});
+});
+
+describe("space notices", () => {
+	it("drops a space only once reauthorizing confirms the deletion", async () => {
+		const { engine, credentials } = engineFor([], async () => undefined);
+		credentials.reauthorize.mockRejectedValueOnce(
+			new SpaceCredentialError(SPACE, "spaceDeleted", "gone"),
+		);
+
+		await engine.confirmSpaceDeleted(SPACE);
+
+		expect(credentials.reauthorize).toHaveBeenCalledWith(SPACE);
+		expect(droppedSpaces).toEqual([SPACE]);
+	});
+
+	it("keeps a space whose deletion notice the authority does not confirm", async () => {
+		const { engine, credentials } = engineFor([], async () => undefined);
+
+		await engine.confirmSpaceDeleted(SPACE);
+
+		expect(credentials.reauthorize).toHaveBeenCalledTimes(1);
+		expect(droppedSpaces).toEqual([]);
+	});
+
+	it("reauthorizes and catches up after a lapsed registration", async () => {
+		const pulled: string[] = [];
+		const { engine, spaceClient, credentials } = engineFor(
+			[
+				{ did: ALICE, rev: "3b", spaceRev: "3s1" },
+				{ did: BOB, rev: "3b", spaceRev: "3s3" },
+			],
+			async (_space, author) => {
+				pulled.push(author);
+				return advanced("3b");
+			},
+		);
+		await engine.sweepSpace(SPACE);
+		await engine.drain();
+		pulled.length = 0;
+		credentials.reauthorize.mockClear();
+
+		await engine.renewLapsedRegistration(SPACE, "3s4");
+		await engine.drain();
+
+		expect(credentials.reauthorize).toHaveBeenCalledTimes(1);
+		expect(spaceClient.allWriters).toHaveBeenLastCalledWith(SPACE, "3s3");
+	});
+
+	it("catches up when an authorization reports a newer space revision", async () => {
+		let clock = new Date("2026-08-23T00:00:00.000Z").getTime();
+		const { engine, spaceClient, credentials } = engineFor(
+			[{ did: ALICE, rev: "3b", spaceRev: "3s1" }],
+			async () => advanced("3b"),
+			{ now: () => new Date(clock) },
+		);
+		credentials.reauthorize.mockImplementation(async () => ({
+			expiresAt: new Date(clock + 60_000),
+			spaceRev: null,
+		}));
+		await engine.sweepSpace(SPACE);
+		await engine.drain();
+		clock += 50_000;
+
+		credentials.reauthorize.mockImplementation(async () => ({
+			expiresAt: new Date(clock + 600_000),
+			spaceRev: "3s5",
+		}));
+		await engine.sweepSpace(SPACE);
+		await settle();
+		await engine.drain();
+
+		expect(spaceClient.allWriters).toHaveBeenCalledWith(SPACE, "3s1");
 	});
 });

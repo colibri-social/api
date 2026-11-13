@@ -84,7 +84,7 @@ const fakeWriter = (): CommunityWriter => {
 			return { uri: `at://${community}/${write.collection}/${rkey}`, rkey };
 		},
 		remove: async () => undefined,
-		createSpaceFor: async () => ({ uri: "at://space" }),
+		createSpaceFor: async () => ({ space: "at://space" }),
 		deleteSpaceFor: async () => undefined,
 	};
 	return fake as unknown as CommunityWriter;

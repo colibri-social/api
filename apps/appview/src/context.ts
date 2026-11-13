@@ -61,6 +61,7 @@ import { createLogger, type Logger } from "./logger.js";
 import {
 	drizzleCredentialStorage,
 	drizzleIdentityStore,
+	drizzleNotifyTokens,
 	drizzleStoredPreviews,
 	drizzleSyncStore,
 } from "./stores.js";
@@ -103,7 +104,13 @@ export const createContext = async (config: Config) => {
 	});
 	const secrets = await SecretBox.fromBase64(config.CREDENTIAL_ENCRYPTION_KEY);
 
+	const identityFetch =
+		config.NODE_ENV !== "production" || config.PLC_URL.startsWith("http:")
+			? { fetch: globalThis.fetch }
+			: {};
+
 	const identity = new IdentityResolver({
+		...identityFetch,
 		plcUrl: config.PLC_URL,
 		staleSeconds: 60 * 60,
 		maxSeconds: 24 * 60 * 60,
@@ -129,7 +136,7 @@ export const createContext = async (config: Config) => {
 		? new PdsAdmin(pds.xrpc, { password: config.PDS_ADMIN_PASSWORD })
 		: null;
 
-	const hosts = new DidDocumentSpaceHostResolver({ plcUrl: config.PLC_URL });
+	const hosts = new DidDocumentSpaceHostResolver({ ...identityFetch, plcUrl: config.PLC_URL });
 
 	let hostOAuth: HostOAuth | null = null;
 
@@ -171,10 +178,16 @@ export const createContext = async (config: Config) => {
 			})
 		: null;
 
+	const notifyTokens = drizzleNotifyTokens(database);
+
 	const spaceCredentials = new SpaceCredentials({
 		hosts,
 		storage: drizzleCredentialStorage(database),
 		delegation: async (space) => delegationFor(space),
+		notify: async (space) => ({
+			endpoint: config.PUBLIC_URL,
+			token: await notifyTokens.tokenFor(space),
+		}),
 		renewBeforeSeconds: 120,
 	});
 
@@ -225,7 +238,6 @@ export const createContext = async (config: Config) => {
 			},
 		},
 		keys: identity,
-		syncerService: serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.syncer),
 		canRenew: async (space) => {
 			const authority = authorityOf(space);
 			return authority !== null && (await credentials.has(authority));
@@ -353,6 +365,7 @@ export const createContext = async (config: Config) => {
 		hostOAuth,
 		hosts,
 		spaceCredentials,
+		notifyTokens,
 		spaceClient,
 		loader,
 		writer,

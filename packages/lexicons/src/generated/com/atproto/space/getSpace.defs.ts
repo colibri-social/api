@@ -17,13 +17,13 @@ export const $params = /*#__PURE__*/ l.params({"space":/*#__PURE__*/ l.string({"
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $output = /*#__PURE__*/ l.jsonPayload({"uri":/*#__PURE__*/ l.string({"format":"space-ref"}),"policy":/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<PersonalspacePolicy.Main>((() => PersonalspacePolicy.main) as any),/*#__PURE__*/ l.typedRef<MemberspacePolicy.Main>((() => MemberspacePolicy.main) as any),/*#__PURE__*/ l.typedRef<ManagedspacePolicy.Main>((() => ManagedspacePolicy.main) as any)], false)});
+export const $output = /*#__PURE__*/ l.jsonPayload({"space":/*#__PURE__*/ l.string({"format":"space-ref"}),"policy":/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<PersonalspacePolicy.Main>((() => PersonalspacePolicy.main) as any),/*#__PURE__*/ l.typedRef<MemberspacePolicy.Main>((() => MemberspacePolicy.main) as any),/*#__PURE__*/ l.typedRef<ManagedspacePolicy.Main>((() => ManagedspacePolicy.main) as any)], false)});
 
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Describe a space, including the policy that governs it. Served by the space host for every space it hosts, regardless of policy. Requires OAuth as the space owner with a covering read_self grant. A policy may optionally be published in the space, as a com.atproto.space.policy record, so that syncers can view it. */
-const main = /*#__PURE__*/ l.query($nsid, $params, $output, ["SpaceNotFound"]);
+/** Get a space and its policy. Requires auth as the space authority, implemented by PDS. */
+const main = /*#__PURE__*/ l.query($nsid, $params, $output, ["SpaceNotFound","NotAuthorized"]);
 
 export { main };
 

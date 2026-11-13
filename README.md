@@ -523,7 +523,7 @@ pnpm lexicons:codegen
 ## Communities on other AppViews and other PDSes
 
 A community record names its `managingApp`. That AppView holds the community's
-credentials and answers `checkUserAccess` for every one of its spaces, so it is
+credentials and answers `checkAccess` for every one of its spaces, so it is
 the only one that can serve the community. A client that finds a community whose
 `managingApp` is not the AppView it is talking to must talk to that AppView
 instead, for reads, writes, events and voice alike. The field lives on the record

@@ -248,7 +248,7 @@ export class CommunityProvisioner {
 
 		const spaces = communitySpaces(request.did);
 		const { spaces: existing } = await host.pds.listSpaces(host.session);
-		const taken = new Set(existing.map((space) => space.uri));
+		const taken = new Set(existing.map((entry) => entry.space));
 		if (Object.values(spaces).some((space) => taken.has(space))) {
 			throw new ProvisioningRefused(
 				"alreadyASpaceCommunity",
