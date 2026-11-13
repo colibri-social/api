@@ -32,7 +32,7 @@ export type VoiceState = {
 
 export type VoicePatch = { muted?: boolean; deafened?: boolean };
 
-export type VoiceStateOrigin = "self" | "server";
+export type VoiceStateOrigin = "self" | "server" | "restriction";
 
 export type VoiceSharing = { camera: boolean; screen: boolean };
 
@@ -47,20 +47,29 @@ type ParticipantVoice = {
 	selfDeafened: boolean;
 	serverMuted: boolean;
 	serverDeafened: boolean;
+	restrictedMuted: boolean;
+	restrictedDeafened: boolean;
 };
 
-const effectiveVoice = (voice: ParticipantVoice): VoiceState => ({
-	muted: voice.selfMuted || voice.serverMuted,
-	deafened: voice.selfDeafened || voice.serverDeafened,
-	serverMuted: voice.serverMuted,
-	serverDeafened: voice.serverDeafened,
-});
+const effectiveVoice = (voice: ParticipantVoice): VoiceState => {
+	const serverMuted = voice.serverMuted || voice.restrictedMuted;
+	const serverDeafened = voice.serverDeafened || voice.restrictedDeafened;
+
+	return {
+		muted: voice.selfMuted || serverMuted,
+		deafened: voice.selfDeafened || serverDeafened,
+		serverMuted,
+		serverDeafened,
+	};
+};
 
 const SILENT: ParticipantVoice = {
 	selfMuted: false,
 	selfDeafened: false,
 	serverMuted: false,
 	serverDeafened: false,
+	restrictedMuted: false,
+	restrictedDeafened: false,
 };
 
 export type ProducerSnapshot = {
@@ -77,6 +86,13 @@ export type ServerVoiceState = {
 };
 
 export type ModerationStore = Map<string, ServerVoiceState>;
+
+export type VoiceRestriction = {
+	muted: boolean;
+	deafened: boolean;
+};
+
+export type RestrictionStore = Map<string, VoiceRestriction>;
 
 export type TransportSample = {
 	iceState: string;
@@ -120,6 +136,7 @@ export type VoiceRoomOptions = {
 	webRtcTransportOptions: WebRtcTransportOptions;
 	speakingDebounceMs?: number;
 	moderation?: ModerationStore;
+	restrictions?: RestrictionStore;
 	worker?: number;
 	extraRouter?: ExtraRouterSource;
 	participantsPerRouter?: number;
@@ -249,7 +266,7 @@ function isMicProducer(kind: MediaKind, source: string): boolean {
 
 function silencesProducer(voice: ParticipantVoice, kind: MediaKind, source: string): boolean {
 	if (kind !== "audio") return false;
-	return voice.serverMuted || (voice.selfMuted && source === "mic");
+	return voice.serverMuted || ((voice.selfMuted || voice.restrictedMuted) && source === "mic");
 }
 
 function isScreenVideo(kind: MediaKind, source: string): boolean {
@@ -282,6 +299,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 	private readonly speakingTracker: SpeakingTracker = createSpeakingTracker();
 	private readonly clientSpeaking = new Map<string, boolean>();
 	private readonly moderation: ModerationStore;
+	private readonly restrictions: RestrictionStore;
 	private speakingSettleTimer: ReturnType<typeof setTimeout> | null = null;
 	private closed = false;
 
@@ -305,6 +323,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		this.audioLevelObserver = audioLevelObserver;
 		this.speakingDebounceMs = options.speakingDebounceMs ?? DEFAULT_SPEAKING_DEBOUNCE_MS;
 		this.moderation = options.moderation ?? new Map();
+		this.restrictions = options.restrictions ?? new Map();
 		this.extraRouter = options.extraRouter;
 		this.participantsPerRouter = options.participantsPerRouter ?? DEFAULT_PARTICIPANTS_PER_ROUTER;
 		this.maxRouters = options.maxRouters ?? 1;
@@ -628,6 +647,42 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		await this.applyVoiceState(did, "server", patch);
 	}
 
+	getRestriction(did: string): VoiceRestriction {
+		const voice = this.participants.get(did)?.voice;
+
+		if (voice) {
+			return { muted: voice.restrictedMuted, deafened: voice.restrictedDeafened };
+		}
+
+		return this.restrictions.get(did) ?? { muted: false, deafened: false };
+	}
+
+	async setRestriction(did: string, restriction: VoiceRestriction): Promise<void> {
+		if (restriction.muted || restriction.deafened) this.restrictions.set(did, { ...restriction });
+		else this.restrictions.delete(did);
+
+		const participant = this.participants.get(did);
+
+		if (!participant) {
+			return;
+		}
+
+		const patch: VoicePatch = {
+			...(participant.voice.restrictedMuted === restriction.muted
+				? {}
+				: { muted: restriction.muted }),
+			...(participant.voice.restrictedDeafened === restriction.deafened
+				? {}
+				: { deafened: restriction.deafened }),
+		};
+
+		if (patch.muted === undefined && patch.deafened === undefined) {
+			return;
+		}
+
+		await this.applyVoiceState(did, "restriction", patch);
+	}
+
 	private async applyVoiceState(
 		did: string,
 		origin: VoiceStateOrigin,
@@ -638,11 +693,13 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 
 		if (patch.muted !== undefined) {
 			if (origin === "self") participant.voice.selfMuted = patch.muted;
-			else participant.voice.serverMuted = patch.muted;
+			else if (origin === "server") participant.voice.serverMuted = patch.muted;
+			else participant.voice.restrictedMuted = patch.muted;
 		}
 		if (patch.deafened !== undefined) {
 			if (origin === "self") participant.voice.selfDeafened = patch.deafened;
-			else participant.voice.serverDeafened = patch.deafened;
+			else if (origin === "server") participant.voice.serverDeafened = patch.deafened;
+			else participant.voice.restrictedDeafened = patch.deafened;
 		}
 		const after = effectiveVoice(participant.voice);
 
@@ -862,6 +919,7 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 		let participant = this.participants.get(did);
 		if (!participant) {
 			const enforced = this.moderation.get(did);
+			const restricted = this.restrictions.get(did);
 			participant = {
 				slot: null,
 				transports: new Map(),
@@ -872,6 +930,8 @@ export class VoiceRoom extends TypedEmitter<VoiceRoomEvents> {
 					...SILENT,
 					serverMuted: enforced?.serverMuted ?? false,
 					serverDeafened: enforced?.serverDeafened ?? false,
+					restrictedMuted: restricted?.muted ?? false,
+					restrictedDeafened: restricted?.deafened ?? false,
 				},
 			};
 			this.participants.set(did, participant);

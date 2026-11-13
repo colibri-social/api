@@ -58,13 +58,61 @@ export type DefaultRoleBackfill = {
 	role: string;
 	created: boolean;
 	normalized: boolean;
+	granted: string[];
 	members: number;
 	failedMembers: number;
 };
 
 export const DEFAULT_ROLE_NAME = "Members";
 
-export const DEFAULT_ROLE_PERMISSIONS: readonly string[] = ["thread.create"];
+export const DEFAULT_ROLE_PERMISSIONS: readonly string[] = [
+	"thread.create",
+	"voice.speak",
+	"voice.listen",
+	"voice.camera",
+	"voice.screenshare",
+	"voice.chat",
+];
+
+const FIRST_DEFAULT_ROLE_PERMISSIONS: readonly string[] = ["thread.create"];
+
+const offeredDefaultsKey = (community: string): string => {
+	return `defaultRolePermissions:${community}`;
+};
+
+const readOfferedDefaults = async (deps: DefaultRoleDeps, community: string) => {
+	const [row] = await deps.db
+		.select({ value: deps.tables.serviceState.value })
+		.from(deps.tables.serviceState)
+		.where(eq(deps.tables.serviceState.key, offeredDefaultsKey(community)))
+		.limit(1);
+
+	if (!row) return null;
+
+	try {
+		const parsed: unknown = JSON.parse(row.value);
+
+		return Array.isArray(parsed) ? parsed.filter((key) => typeof key === "string") : [];
+	} catch {
+		return [];
+	}
+};
+
+const saveOfferedDefaults = async (deps: DefaultRoleDeps, community: string): Promise<void> => {
+	const row = {
+		key: offeredDefaultsKey(community),
+		value: JSON.stringify(DEFAULT_ROLE_PERMISSIONS),
+		updatedAt: new Date().toISOString(),
+	};
+
+	await deps.db
+		.insert(deps.tables.serviceState)
+		.values(row)
+		.onConflictDoUpdate({
+			target: deps.tables.serviceState.key,
+			set: { value: row.value, updatedAt: row.updatedAt },
+		});
+};
 
 export const lowestRolePosition = (roles: ReadonlyArray<Pick<RoleState, "position">>): number =>
 	Math.min(0, ...roles.map((role) => role.position - 1));
@@ -80,14 +128,26 @@ export const defaultRoleRecord = (position: number): Record<string, unknown> => 
 	default: true,
 });
 
+const sameKeys = (left: readonly string[] | null, right: readonly string[]): boolean => {
+	return !!left && left.length === right.length && right.every((key) => left.includes(key));
+};
+
 const claimsVisibility = (record: Record<string, unknown> | null): boolean =>
 	!!record && (record.hoisted === true || record.mentionable === true);
+
+type ProvidedDefaultRole = {
+	role: string;
+	created: boolean;
+	normalized: boolean;
+	granted: string[];
+};
 
 const provideDefaultRole = async (
 	deps: DefaultRoleDeps,
 	community: string,
 	space: string,
-): Promise<{ role: string; created: boolean; normalized: boolean }> => {
+	offered: readonly string[],
+): Promise<ProvidedDefaultRole> => {
 	const roles = await deps.loader.roles(community);
 	const existing = roles.find((role) => role.isDefault);
 	if (!existing) {
@@ -98,7 +158,7 @@ const provideDefaultRole = async (
 			rkey: role,
 			record: defaultRoleRecord(lowestRolePosition(roles)),
 		});
-		return { role, created: true, normalized: false };
+		return { role, created: true, normalized: false, granted: [] };
 	}
 
 	const current = await deps.writer.currentRecord(
@@ -107,22 +167,37 @@ const provideDefaultRole = async (
 		COLLECTIONS.role,
 		existing.rkey,
 	);
-	if (!claimsVisibility(current)) {
-		return { role: existing.rkey, created: false, normalized: false };
+	const held = Array.isArray(current?.permissions)
+		? current.permissions.filter((key): key is string => typeof key === "string")
+		: existing.permissions;
+	const granted = DEFAULT_ROLE_PERMISSIONS.filter(
+		(permission) => !offered.includes(permission) && !held.includes(permission),
+	);
+
+	if (!claimsVisibility(current) && granted.length === 0) {
+		return { role: existing.rkey, created: false, normalized: false, granted };
 	}
+
+	const base = current ?? {
+		name: existing.name,
+		position: existing.position,
+		protected: false,
+	};
+
 	await deps.writer.put(community, {
 		space,
 		collection: COLLECTIONS.role,
 		rkey: existing.rkey,
 		record: {
-			...current,
+			...base,
 			$type: COLLECTIONS.role,
+			permissions: [...held, ...granted],
 			hoisted: false,
 			mentionable: false,
 			default: true,
 		},
 	});
-	return { role: existing.rkey, created: false, normalized: true };
+	return { role: existing.rkey, created: false, normalized: true, granted };
 };
 
 export const ensureDefaultRole = async (
@@ -130,7 +205,17 @@ export const ensureDefaultRole = async (
 	community: string,
 ): Promise<DefaultRoleBackfill | null> => {
 	const space = deps.writer.spaces(community).members;
-	const { role, created, normalized } = await provideDefaultRole(deps, community, space);
+	const offered = await readOfferedDefaults(deps, community);
+	const { role, created, normalized, granted } = await provideDefaultRole(
+		deps,
+		community,
+		space,
+		offered ?? FIRST_DEFAULT_ROLE_PERMISSIONS,
+	);
+
+	if (!sameKeys(offered, DEFAULT_ROLE_PERMISSIONS)) {
+		await saveOfferedDefaults(deps, community);
+	}
 
 	const members = await deps.db
 		.select()
@@ -161,5 +246,5 @@ export const ensureDefaultRole = async (
 	}
 
 	if (!created && !normalized && updated === 0 && failedMembers === 0) return null;
-	return { role, created, normalized, members: updated, failedMembers };
+	return { role, created, normalized, granted, members: updated, failedMembers };
 };

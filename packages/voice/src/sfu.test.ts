@@ -259,6 +259,67 @@ describe("VoiceSfu stored moderation", () => {
 	});
 });
 
+describe("VoiceSfu permission restrictions", () => {
+	it("applies a restriction set before the join", async () => {
+		const { sfu } = await createSfu();
+
+		await sfu.setRestriction(CHANNEL_A, "did:plc:a", { muted: true, deafened: true });
+		await sfu.join(CHANNEL_A, "did:plc:a");
+
+		expect(sfu.getVoiceState(CHANNEL_A, "did:plc:a")).toEqual({
+			muted: true,
+			deafened: true,
+			serverMuted: true,
+			serverDeafened: true,
+		});
+		expect(sfu.moderationOf(CHANNEL_A, "did:plc:a")).toEqual({
+			serverMuted: false,
+			serverDeafened: false,
+		});
+	});
+
+	it("updates a participant already in the call", async () => {
+		const { sfu } = await createSfu();
+		const changes: unknown[] = [];
+		sfu.on("voice-state-changed", (event) => changes.push(event));
+
+		await sfu.join(CHANNEL_A, "did:plc:a");
+		await sfu.setRestriction(CHANNEL_A, "did:plc:a", { muted: true, deafened: false });
+		await sfu.setRestriction(CHANNEL_A, "did:plc:a", { muted: true, deafened: false });
+
+		expect(sfu.restrictionOf(CHANNEL_A, "did:plc:a")).toEqual({ muted: true, deafened: false });
+		expect(changes).toEqual([
+			{
+				channel: CHANNEL_A,
+				did: "did:plc:a",
+				origin: "restriction",
+				muted: true,
+				deafened: false,
+				serverMuted: true,
+				serverDeafened: false,
+			},
+		]);
+	});
+
+	it("keeps moderator state apart from the restriction", async () => {
+		const { sfu } = await createSfu();
+
+		await sfu.join(CHANNEL_A, "did:plc:a");
+		await sfu.setRestriction(CHANNEL_A, "did:plc:a", { muted: true, deafened: false });
+		await sfu.moderate(CHANNEL_A, "did:plc:a", { muted: true });
+		await sfu.moderate(CHANNEL_A, "did:plc:a", { muted: false });
+
+		expect(sfu.moderationOf(CHANNEL_A, "did:plc:a")).toEqual({
+			serverMuted: false,
+			serverDeafened: false,
+		});
+		expect(sfu.getVoiceState(CHANNEL_A, "did:plc:a")).toMatchObject({
+			muted: true,
+			serverMuted: true,
+		});
+	});
+});
+
 describe("VoiceSfu stats", () => {
 	it("reports calls, participants, transports and worker CPU", async () => {
 		const workerPool = {

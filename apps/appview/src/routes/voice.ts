@@ -19,12 +19,6 @@ const notInVoice = (subject: string) =>
 const notVoiceChannel = (channel: string) =>
 	new InvalidRequestError(`${channel} is not a voice channel in the same space`, "NotVoiceChannel");
 
-const destinationForbidden = (subject: string) =>
-	new InvalidRequestError(
-		`${subject} cannot speak in the destination channel`,
-		"DestinationForbidden",
-	);
-
 const voiceUnavailable = () =>
 	new InvalidRequestError("this AppView has no voice SFU running", "VoiceUnavailable");
 
@@ -48,13 +42,18 @@ const callOwner = async (
 		: null;
 };
 
+type MoveDestination = {
+	channel: string;
+	needsGrant: boolean;
+};
+
 const moveDestination = async (
 	ctx: AppContext,
 	actor: string,
 	community: string,
 	moveTo: string,
 	subject: string,
-): Promise<string> => {
+): Promise<MoveDestination> => {
 	let parsed: ReturnType<typeof parseSpaceRef>;
 	try {
 		parsed = parseSpaceRef(moveTo);
@@ -72,9 +71,8 @@ const moveDestination = async (
 	if (!has(authz, "voice.moderate", destination.skey)) throw forbidden();
 
 	const subjectAuthz = await ctx.loader.authz(community, subject);
-	if (!canPost(subjectAuthz, destination)) throw destinationForbidden(subject);
 
-	return moveTo;
+	return { channel: moveTo, needsGrant: !canPost(subjectAuthz, destination) };
 };
 
 export const handleModerateVoice = async (
@@ -115,8 +113,12 @@ export const handleModerateVoice = async (
 		...(input.muted === undefined ? {} : { muted: input.muted }),
 		...(input.deafened === undefined ? {} : { deafened: input.deafened }),
 		...(input.disconnect ? { disconnect: true } : {}),
-		...(destination ? { moveTo: destination } : {}),
+		...(destination ? { moveTo: destination.channel } : {}),
 	};
+
+	if (destination?.needsGrant && !input.disconnect) {
+		await ctx.voiceCalls.grantMove(input.subject, destination.channel, actor);
+	}
 
 	if (owner.nodeId !== ctx.nodeId) {
 		ctx.announce.voiceCommand(owner.nodeId, command);

@@ -449,6 +449,107 @@ describe("VoiceRoom voice state", () => {
 		});
 	});
 
+	it("keeps a permission mute in place when a moderator unmutes", async () => {
+		const { room } = await createRoom();
+		const transport = await room.createTransport("did:plc:a", "send");
+		const mic = await room.produce("did:plc:a", transport.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "mic",
+		});
+
+		await room.setRestriction("did:plc:a", { muted: true, deafened: false });
+		await room.setServerState("did:plc:a", { muted: true });
+		await room.setServerState("did:plc:a", { muted: false });
+		await room.setSelfState("did:plc:a", { muted: false });
+
+		expect(mic.paused).toBe(true);
+		expect(room.getVoiceState("did:plc:a")).toEqual({
+			muted: true,
+			deafened: false,
+			serverMuted: true,
+			serverDeafened: false,
+		});
+
+		await room.setRestriction("did:plc:a", { muted: false, deafened: false });
+
+		expect(mic.paused).toBe(false);
+		expect(room.getVoiceState("did:plc:a").serverMuted).toBe(false);
+	});
+
+	it("keeps a moderator mute in place when the permission comes back", async () => {
+		const { room } = await createRoom();
+		await room.createTransport("did:plc:a", "send");
+
+		await room.setRestriction("did:plc:a", { muted: true, deafened: false });
+		await room.setServerState("did:plc:a", { muted: true });
+		await room.setRestriction("did:plc:a", { muted: false, deafened: false });
+
+		expect(room.getVoiceState("did:plc:a")).toMatchObject({ muted: true, serverMuted: true });
+	});
+
+	it("silences only the microphone of a member without voice.speak", async () => {
+		const { room } = await createRoom();
+		const transport = await room.createTransport("did:plc:a", "send");
+		await room.setRestriction("did:plc:a", { muted: true, deafened: false });
+
+		const mic = await room.produce("did:plc:a", transport.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "mic",
+		});
+		const screenSound = await room.produce("did:plc:a", transport.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "screen",
+		});
+
+		expect(mic.paused).toBe(true);
+		expect(screenSound.paused).toBe(false);
+	});
+
+	it("deafens a member without voice.listen and still sends them video", async () => {
+		const { room } = await createRoom();
+		const sendTransport = await room.createTransport("did:plc:sharer", "send");
+		const audio = await room.produce("did:plc:sharer", sendTransport.id, {
+			kind: "audio",
+			rtpParameters: {} as never,
+			source: "mic",
+		});
+		const video = await room.produce("did:plc:sharer", sendTransport.id, {
+			kind: "video",
+			rtpParameters: {} as never,
+			source: "camera",
+		});
+
+		const recvTransport = await room.createTransport("did:plc:listener", "recv");
+		const audioConsumer = await room.consume("did:plc:listener", recvTransport.id, {
+			producerId: audio.id,
+			rtpCapabilities: {},
+		});
+		const videoConsumer = await room.consume("did:plc:listener", recvTransport.id, {
+			producerId: video.id,
+			rtpCapabilities: {},
+		});
+		await room.resumeConsumer("did:plc:listener", audioConsumer.id);
+		await room.resumeConsumer("did:plc:listener", videoConsumer.id);
+
+		await room.setRestriction("did:plc:listener", { muted: false, deafened: true });
+		await room.setServerState("did:plc:listener", { deafened: false });
+		await room.resumeConsumer("did:plc:listener", audioConsumer.id);
+
+		expect(audioConsumer.paused).toBe(true);
+		expect(videoConsumer.paused).toBe(false);
+		expect(room.getVoiceState("did:plc:listener")).toMatchObject({
+			deafened: true,
+			serverDeafened: true,
+		});
+
+		await room.setRestriction("did:plc:listener", { muted: false, deafened: false });
+
+		expect(audioConsumer.paused).toBe(false);
+	});
+
 	it("reports a silent default for a did that never joined", async () => {
 		const { room } = await createRoom();
 		expect(room.getVoiceState("did:plc:unknown")).toEqual({

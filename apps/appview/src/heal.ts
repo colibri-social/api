@@ -49,11 +49,14 @@ const runDefaultRoleBackfill = async (ctx: AppContext, community: string): Promi
 			community,
 			role: backfill.role,
 			members: backfill.members,
+			...(backfill.granted.length > 0 ? { granted: backfill.granted } : {}),
 			code: backfill.created
 				? "DefaultRoleCreated"
-				: backfill.normalized
-					? "DefaultRoleNormalized"
-					: "DefaultRoleRepaired",
+				: backfill.granted.length > 0
+					? "DefaultRolePermissionsGranted"
+					: backfill.normalized
+						? "DefaultRoleNormalized"
+						: "DefaultRoleRepaired",
 		};
 		if (backfill.failedMembers > 0) {
 			ctx.log.warn(

@@ -1,7 +1,12 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { COLLECTIONS, communitySpaces, PERMISSIONS } from "@colibri-social/lexicons";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ensureDefaultRole, healOwnerPermissions, lowestRolePosition } from "./heal.js";
+import {
+	DEFAULT_ROLE_PERMISSIONS,
+	ensureDefaultRole,
+	healOwnerPermissions,
+	lowestRolePosition,
+} from "./heal.js";
 import { CommunityLoader } from "./loader.js";
 import type { CommunityWriter, RecordWrite } from "./writes.js";
 
@@ -140,7 +145,7 @@ describe("ensureDefaultRole", () => {
 		expect(role?.rkey).toBe(backfill.role);
 		expect(role?.record).toMatchObject({
 			name: "Members",
-			permissions: ["thread.create"],
+			permissions: [...DEFAULT_ROLE_PERMISSIONS],
 			position: 0,
 			default: true,
 			protected: false,
@@ -166,12 +171,12 @@ describe("ensureDefaultRole", () => {
 		]);
 	});
 
-	const seedDefaultRole = () =>
+	const seedDefaultRole = (permissions: string[] = [...DEFAULT_ROLE_PERMISSIONS]) =>
 		database.db.insert(database.tables.roles).values({
 			community: COMMUNITY,
 			rkey: "3lkmembers",
 			name: "Members",
-			permissions: ["thread.create"],
+			permissions,
 			position: 0,
 			isDefault: true,
 		});
@@ -179,6 +184,124 @@ describe("ensureDefaultRole", () => {
 	it("does nothing when the default role exists and every member holds it", async () => {
 		await seedDefaultRole();
 		await seedMember("did:plc:member", ["3lkmembers"]);
+
+		const writes: RecordWrite[] = [];
+
+		expect(await ensure(writes)).toBeNull();
+		expect(writes).toEqual([]);
+	});
+
+	it("adds the voice permissions to a default role that predates them", async () => {
+		await seedDefaultRole(["thread.create"]);
+		await seedMember("did:plc:member", ["3lkmembers"]);
+
+		const writes: RecordWrite[] = [];
+		const backfill = await ensure(writes, () => false, {
+			"3lkmembers": {
+				$type: COLLECTIONS.role,
+				name: "Everyone",
+				permissions: ["thread.create", "mention.roles"],
+				position: 0,
+				hoisted: false,
+				mentionable: false,
+				default: true,
+			},
+		});
+
+		expect(backfill).toMatchObject({
+			created: false,
+			normalized: true,
+			granted: ["voice.speak", "voice.listen", "voice.camera", "voice.screenshare", "voice.chat"],
+			members: 0,
+		});
+		expect(writes).toHaveLength(1);
+		expect(writes[0]?.rkey).toBe("3lkmembers");
+		expect(writes[0]?.record).toMatchObject({
+			name: "Everyone",
+			permissions: [
+				"thread.create",
+				"mention.roles",
+				"voice.speak",
+				"voice.listen",
+				"voice.camera",
+				"voice.screenshare",
+				"voice.chat",
+			],
+			default: true,
+		});
+	});
+
+	it("leaves out a permission the role already holds when it backfills", async () => {
+		await seedDefaultRole(["thread.create", "voice.speak"]);
+
+		const writes: RecordWrite[] = [];
+		const backfill = await ensure(writes);
+
+		expect(backfill?.granted).toEqual([
+			"voice.listen",
+			"voice.camera",
+			"voice.screenshare",
+			"voice.chat",
+		]);
+		expect(writes[0]?.record.permissions).toEqual([...DEFAULT_ROLE_PERMISSIONS]);
+	});
+
+	it("backfills the voice permissions once, so an admin can take them away again", async () => {
+		await seedDefaultRole(["thread.create"]);
+
+		await ensure([]);
+		await database.db
+			.update(database.tables.roles)
+			.set({ permissions: ["thread.create", "voice.listen"] });
+
+		const writes: RecordWrite[] = [];
+
+		expect(await ensure(writes)).toBeNull();
+		expect(writes).toEqual([]);
+	});
+
+	it("never re-adds thread.create to a default role an admin took it from", async () => {
+		await seedDefaultRole(["voice.speak"]);
+
+		const writes: RecordWrite[] = [];
+		const backfill = await ensure(writes);
+
+		expect(backfill?.granted).toEqual([
+			"voice.listen",
+			"voice.camera",
+			"voice.screenshare",
+			"voice.chat",
+		]);
+		expect(writes[0]?.record.permissions).not.toContain("thread.create");
+	});
+
+	it("tries the backfill again on the next run when the role write fails", async () => {
+		await seedDefaultRole(["thread.create"]);
+
+		await expect(ensure([], (write) => write.rkey === "3lkmembers")).rejects.toThrow(
+			"write refused",
+		);
+
+		const writes: RecordWrite[] = [];
+		const backfill = await ensure(writes);
+
+		expect(backfill?.granted).toHaveLength(5);
+	});
+
+	it("never backfills a default role it created itself", async () => {
+		await seedMember("did:plc:member", []);
+
+		const created = await ensure([]);
+
+		await database.db.insert(database.tables.roles).values({
+			community: COMMUNITY,
+			rkey: created?.role ?? "",
+			name: "Members",
+			permissions: ["thread.create"],
+			position: 0,
+			isDefault: true,
+		});
+		await database.db.update(database.tables.members).set({ roles: [created?.role ?? ""] });
 
 		const writes: RecordWrite[] = [];
 

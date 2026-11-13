@@ -1,14 +1,27 @@
 import type { Server as HttpServer, IncomingHttpHeaders } from "node:http";
-import { type ActorAuthz, type ChannelState, canPost } from "@colibri-social/community";
+import {
+	type ActorAuthz,
+	type CategoryAudience,
+	type ChannelState,
+	canPost,
+	canRead,
+	toChannelState,
+	type VoiceCapabilities,
+	voiceCapabilities,
+	voicePermissionKeys,
+} from "@colibri-social/community";
 import { ServiceAuthError } from "@colibri-social/identity";
 import { asDid, asSpaceRef, SPACE_TYPES, social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import type { VoiceSfu } from "@colibri-social/voice";
 import { trace } from "@opentelemetry/api";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { AppContext } from "../context.js";
 import { fireAndForget } from "../fire-and-forget.js";
 import { record } from "../metrics.js";
+import { ActorViews } from "../views/actor.js";
+import { CommunityViews } from "../views/community.js";
 import { participantStateIn, voiceStateIn } from "../views/voice-state.js";
 import type { VoiceCommand } from "../voice-calls.js";
 import { bearerToken, selectSubprotocol } from "./auth.js";
@@ -25,6 +38,7 @@ type Connection = {
 	socket: WebSocket;
 	did: string;
 	channel: string | null;
+	capabilities: VoiceCapabilities | null;
 	alive: boolean;
 	queue: Promise<void>;
 };
@@ -69,6 +83,47 @@ const toWireSource = (source: string): string => (source === "mic" ? "microphone
 
 const SHARING_SOURCES: ReadonlySet<string> = new Set(["camera", "screen"]);
 
+const callCapabilities = (
+	authz: ActorAuthz,
+	channel: ChannelState,
+	throughGrant: boolean,
+): VoiceCapabilities => {
+	const capabilities = voiceCapabilities(authz, channel);
+
+	return throughGrant ? { ...capabilities, chat: false } : capabilities;
+};
+
+const sameCapabilities = (left: VoiceCapabilities, right: VoiceCapabilities): boolean => {
+	return (
+		left.speak === right.speak &&
+		left.listen === right.listen &&
+		left.camera === right.camera &&
+		left.screenshare === right.screenshare &&
+		left.chat === right.chat
+	);
+};
+
+const restrictionOf = (capabilities: VoiceCapabilities) => {
+	return { muted: !capabilities.speak, deafened: !capabilities.listen };
+};
+
+const producerAllowed = (
+	capabilities: VoiceCapabilities,
+	kind: string,
+	source: string,
+): boolean => {
+	if (source === "mic") return kind !== "audio" || capabilities.speak;
+	if (source === "camera") return capabilities.camera;
+	if (source === "screen") return capabilities.screenshare;
+	return true;
+};
+
+const refusedProducerMessage = (source: string): string => {
+	if (source === "camera") return "you lack the voice.camera permission in this channel";
+	if (source === "screen") return "you lack the voice.screenshare permission in this channel";
+	return "you lack the voice.speak permission in this channel";
+};
+
 const messageOf = (cause: unknown): string =>
 	cause instanceof Error ? cause.message : "the sfu rejected this request";
 
@@ -83,8 +138,10 @@ export class VoiceServer {
 	private readonly persisting = new Map<string, Promise<void>>();
 	private heartbeat: NodeJS.Timeout | null = null;
 	private readonly stopWatchingAuthz: () => void;
+	private readonly communities: CommunityViews;
 
 	constructor(private readonly ctx: AppContext) {
+		this.communities = new CommunityViews(ctx, new ActorViews(ctx));
 		if (ctx.voice) this.wireVoiceEvents(ctx.voice);
 		this.stopWatchingAuthz = ctx.authzChanges.subscribe((change) => {
 			void this.revalidate(change.community).catch((error: unknown) => {
@@ -180,14 +237,90 @@ export class VoiceServer {
 	}
 
 	async move(channel: string, did: string, destination: string): Promise<void> {
-		for (const connection of this.joined(channel, did)) {
+		const connections = this.joined(channel, did);
+		const placement =
+			connections.length > 0 ? await this.destinationPlacement(did, destination) : null;
+
+		for (const connection of connections) {
 			this.send(connection, {
 				$type: "social.colibri.beta.voice.defs#moved",
 				channel: destination,
+				...(placement ? { view: placement.view } : {}),
+				...(placement?.after ? { after: placement.after } : {}),
 			});
 			this.forgetChannel(connection);
 		}
 		await this.ctx.voice?.leave(channel, did);
+	}
+
+	private async destinationPlacement(did: string, destination: string) {
+		try {
+			const state = await this.communities.channelState(destination);
+
+			if (!state) {
+				return null;
+			}
+
+			const authz = await this.ctx.loader.authz(parseSpaceRef(destination).authority, did);
+
+			return {
+				view: this.communities.channel(state.row, authz, state.category),
+				after: await this.readableBefore(state.row, authz, state.category),
+			};
+		} catch (error) {
+			this.ctx.log.warn(
+				{ did, channel: destination, code: "MoveViewFailed", reason: messageOf(error) },
+				"voice.moveViewFailed",
+			);
+
+			return null;
+		}
+	}
+
+	private async readableBefore(
+		destination: { community: string; skey: string; category: string | null },
+		authz: ActorAuthz,
+		category: CategoryAudience | null,
+	): Promise<string | null> {
+		const { db, tables } = this.ctx.database;
+		const siblings = await db
+			.select()
+			.from(tables.channels)
+			.where(
+				and(
+					eq(tables.channels.community, destination.community),
+					destination.category
+						? eq(tables.channels.category, destination.category)
+						: isNull(tables.channels.category),
+				),
+			)
+			.orderBy(asc(tables.channels.position));
+		const bySkey = new Map(siblings.map((row) => [row.skey, row]));
+		const order = destination.category
+			? await this.categoryOrder(destination.community, destination.category)
+			: siblings.map((row) => row.skey);
+		const index = order.indexOf(destination.skey);
+
+		for (const skey of order.slice(0, Math.max(0, index)).reverse()) {
+			const row = bySkey.get(skey);
+
+			if (row && canRead(authz, toChannelState(row, category))) {
+				return row.space;
+			}
+		}
+
+		return null;
+	}
+
+	private async categoryOrder(community: string, category: string): Promise<string[]> {
+		const { db, tables } = this.ctx.database;
+		const [row] = await db
+			.select({ channelOrder: tables.categories.channelOrder })
+			.from(tables.categories)
+			.where(and(eq(tables.categories.community, community), eq(tables.categories.rkey, category)))
+			.limit(1);
+
+		return row?.channelOrder ?? [];
 	}
 
 	async revalidate(community: string): Promise<void> {
@@ -211,12 +344,61 @@ export class VoiceServer {
 				rights.set(connection.did, await this.ctx.loader.authz(community, connection.did));
 			}
 			const authz = rights.get(connection.did);
+			const posts = !!channel && !!authz && canPost(authz, channel);
+			const throughGrant =
+				!!channel &&
+				!!authz &&
+				!posts &&
+				(await this.ctx.voiceCalls.hasMoveGrant(connection.did, space));
 
-			if (channel && authz && canPost(authz, channel)) continue;
+			if (!channel || !authz || (!posts && !throughGrant)) {
+				this.detach(connection, channel ? "forbidden" : "channelGone");
+				await this.ctx.voice?.leave(space, connection.did);
+				continue;
+			}
 
-			this.detach(connection, channel ? "forbidden" : "channelGone");
-			await this.ctx.voice?.leave(space, connection.did);
+			await this.refreshCapabilities(
+				connection,
+				space,
+				callCapabilities(authz, channel, throughGrant),
+			);
 		}
+	}
+
+	private async refreshCapabilities(
+		connection: Connection,
+		space: string,
+		capabilities: VoiceCapabilities,
+	): Promise<void> {
+		const voice = this.ctx.voice;
+		const previous = connection.capabilities;
+
+		if (!voice || connection.channel !== space) {
+			return;
+		}
+
+		if (previous && sameCapabilities(previous, capabilities)) {
+			return;
+		}
+
+		connection.capabilities = capabilities;
+
+		if (voice.presenceOf(connection.did) === space) {
+			await voice.setRestriction(space, connection.did, restrictionOf(capabilities));
+
+			for (const producer of await voice.listProducers(space)) {
+				if (producer.did !== connection.did) continue;
+				if (producerAllowed(capabilities, producer.kind, producer.source)) continue;
+
+				voice.closeProducer(space, connection.did, producer.producerId);
+			}
+		}
+
+		this.send(connection, {
+			$type: "social.colibri.beta.voice.defs#permissionsChanged",
+			channel: space,
+			permissions: voicePermissionKeys(capabilities),
+		});
 	}
 
 	attach(http: HttpServer): void {
@@ -289,6 +471,7 @@ export class VoiceServer {
 			socket,
 			did,
 			channel: null,
+			capabilities: null,
 			alive: true,
 			queue: Promise.resolve(),
 		};
@@ -329,6 +512,7 @@ export class VoiceServer {
 	private forgetChannel(connection: Connection): string | null {
 		const channel = connection.channel;
 		connection.channel = null;
+		connection.capabilities = null;
 		this.topics.unsubscribe(connection, this.topics.topicsOf(connection));
 		return channel;
 	}
@@ -473,10 +657,16 @@ export class VoiceServer {
 		}
 
 		const authz = await this.ctx.loader.authz(parsed.authority, connection.did);
-		if (!canPost(authz, state)) {
+		const posts = canPost(authz, state);
+		const throughGrant =
+			!posts && (await this.ctx.voiceCalls.hasMoveGrant(connection.did, frame.channel));
+
+		if (!posts && !throughGrant) {
 			this.error(connection, "Forbidden", "you cannot speak in this channel");
 			return;
 		}
+
+		const capabilities = callCapabilities(authz, state, throughGrant);
 
 		const claim = await this.ctx.voiceCalls.claim(frame.channel, {
 			acceptNew: !this.ctx.drain.draining,
@@ -492,11 +682,14 @@ export class VoiceServer {
 			return;
 		}
 
+		await this.ctx.voiceCalls.revokeOtherMoveGrants(connection.did, frame.channel);
+
 		voice.setModeration(
 			frame.channel,
 			connection.did,
 			await this.ctx.voiceCalls.moderationOf(parsed.authority, connection.did),
 		);
+		await voice.setRestriction(frame.channel, connection.did, restrictionOf(capabilities));
 
 		const elsewhere = await this.ctx.voiceCalls.participant(connection.did);
 
@@ -514,6 +707,7 @@ export class VoiceServer {
 		if (previous) await voice.leave(previous, connection.did);
 
 		connection.channel = frame.channel;
+		connection.capabilities = capabilities;
 		this.topics.subscribe(connection, [channelTopic(frame.channel)]);
 		const joinStarted = performance.now();
 
@@ -534,6 +728,7 @@ export class VoiceServer {
 			channel: frame.channel,
 			nodeId: this.ctx.nodeId,
 			...(this.ctx.config.NODE_REGION ? { region: this.ctx.config.NODE_REGION } : {}),
+			permissions: voicePermissionKeys(capabilities),
 		});
 
 		for (const did of voice.listParticipants(frame.channel)) {
@@ -779,7 +974,14 @@ export class VoiceServer {
 		}
 
 		const source = toInternalSource(frame.source);
-		if (kind === "audio" && voice.getVoiceState(connection.channel, connection.did).serverMuted) {
+		const capabilities = connection.capabilities;
+
+		if (capabilities && !producerAllowed(capabilities, kind, source)) {
+			this.error(connection, "Forbidden", refusedProducerMessage(source));
+			return;
+		}
+
+		if (kind === "audio" && voice.moderationOf(connection.channel, connection.did).serverMuted) {
 			this.error(connection, "Forbidden", "you are server-muted");
 			return;
 		}
@@ -926,6 +1128,7 @@ export class VoiceServer {
 				this.announceLeaveUnlessMoved(channel, did);
 			} else {
 				this.announce(channel, did, "leave");
+				this.queuePersist(did, () => this.ctx.voiceCalls.revokeMoveGrant(did, channel));
 			}
 			this.queuePersist(did, () => this.ctx.voiceCalls.left(did, channel));
 		});
@@ -994,10 +1197,7 @@ export class VoiceServer {
 			this.announce(channel, did, "update", voiceStateIn(voice, channel, did));
 			this.persist(voice, channel, did);
 			if (server.origin === "server") {
-				const state = {
-					serverMuted: server.serverMuted,
-					serverDeafened: server.serverDeafened,
-				};
+				const state = voice.moderationOf(channel, did);
 
 				fireAndForget(
 					this.ctx.log,

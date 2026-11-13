@@ -25,7 +25,7 @@ export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
 /** Acts on someone in a voice channel. An absent field leaves the current value unchanged. */
-const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","Forbidden","ChannelNotFound","NotInVoice","NotVoiceChannel","DestinationForbidden","VoiceUnavailable"]);
+const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","Forbidden","ChannelNotFound","NotInVoice","NotVoiceChannel","VoiceUnavailable"]);
 
 export { main };
 

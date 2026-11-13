@@ -15,10 +15,12 @@ import {
 	mediaCodecs,
 	type ParticipantLeftReason,
 	type ProducerSnapshot,
+	type RestrictionStore,
 	type ServerVoiceState,
 	type TransportDirection,
 	type TransportSample,
 	type VoicePatch,
+	type VoiceRestriction,
 	VoiceRoom,
 	type VoiceSharing,
 	type VoiceState,
@@ -75,6 +77,7 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 	private readonly roomGraceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 	private readonly presence = new Map<string, string>();
 	private readonly moderation = new Map<string, ModerationStore>();
+	private readonly restrictions = new Map<string, RestrictionStore>();
 	private closed = false;
 
 	private constructor(config: VoiceSfuConfig, workerPool: WorkerPoolLike) {
@@ -126,6 +129,40 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 		} else {
 			store.delete(did);
 		}
+	}
+
+	moderationOf(channel: string, did: string): ServerVoiceState {
+		const state = this.moderation.get(channel)?.get(did);
+
+		return {
+			serverMuted: state?.serverMuted ?? false,
+			serverDeafened: state?.serverDeafened ?? false,
+		};
+	}
+
+	async setRestriction(channel: string, did: string, restriction: VoiceRestriction): Promise<void> {
+		const room = this.rooms.get(channel);
+
+		if (room) {
+			await room.setRestriction(did, restriction);
+
+			return;
+		}
+
+		const store = this.restrictionsFor(channel);
+
+		if (restriction.muted || restriction.deafened) store.set(did, { ...restriction });
+		else store.delete(did);
+	}
+
+	restrictionOf(channel: string, did: string): VoiceRestriction {
+		const room = this.rooms.get(channel);
+
+		if (room) {
+			return room.getRestriction(did);
+		}
+
+		return this.restrictions.get(channel)?.get(did) ?? { muted: false, deafened: false };
 	}
 
 	presenceOf(did: string): string | undefined {
@@ -284,6 +321,7 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 		this.rooms.clear();
 		this.presence.clear();
 		this.moderation.clear();
+		this.restrictions.clear();
 
 		await this.workerPool.close();
 	}
@@ -333,6 +371,7 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 			maxRouters: this.workerPool.size ?? 1,
 			speakingDebounceMs: this.config.speakingDebounceMs,
 			moderation: this.moderationFor(channel),
+			restrictions: this.restrictionsFor(channel),
 		});
 
 		if (this.closed) {
@@ -380,6 +419,15 @@ export class VoiceSfu extends TypedEmitter<VoiceSfuEvents> {
 		if (!store) {
 			store = new Map();
 			this.moderation.set(channel, store);
+		}
+		return store;
+	}
+
+	private restrictionsFor(channel: string): RestrictionStore {
+		let store = this.restrictions.get(channel);
+		if (!store) {
+			store = new Map();
+			this.restrictions.set(channel, store);
 		}
 		return store;
 	}

@@ -1,7 +1,12 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
-import { type ActorAuthz, anonymousAuthz, type ChannelState } from "@colibri-social/community";
+import {
+	type ActorAuthz,
+	anonymousAuthz,
+	type ChannelState,
+	type RoleState,
+} from "@colibri-social/community";
 import { COLLECTIONS, channelSpace, SPACE_TYPES, social } from "@colibri-social/lexicons";
 import { VoiceSfu, type WorkerPoolLike } from "@colibri-social/voice";
 import { eq } from "drizzle-orm";
@@ -27,13 +32,36 @@ const VOICE_CHANNEL = channelSpace(COMMUNITY, SPACE_TYPES.channelVoice, "general
 const OTHER_VOICE_CHANNEL = channelSpace(COMMUNITY, SPACE_TYPES.channelVoice, "lounge");
 const TEXT_CHANNEL = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "chat");
 
-const memberAuthz = (did: string): ActorAuthz => ({
+const VOICE_PERMISSIONS = [
+	"voice.speak",
+	"voice.listen",
+	"voice.camera",
+	"voice.screenshare",
+	"voice.chat",
+];
+
+const membersRole = (
+	permissions: string[] = VOICE_PERMISSIONS,
+	channelOverrides: RoleState["channelOverrides"] = [],
+): RoleState => ({
+	rkey: "members",
+	name: "Members",
+	permissions,
+	position: 0,
+	hoisted: false,
+	mentionable: false,
+	protected: false,
+	isDefault: true,
+	channelOverrides,
+});
+
+const memberAuthz = (did: string, role: RoleState = membersRole()): ActorAuthz => ({
 	actor: did,
 	community: COMMUNITY,
 	isOwner: false,
 	isBanned: false,
-	member: { did, roles: [], joinedAt: "2026-01-01T00:00:00.000Z", nickname: null },
-	roles: [],
+	member: { did, roles: [role.rkey], joinedAt: "2026-01-01T00:00:00.000Z", nickname: null },
+	roles: [role],
 });
 
 const openChannel = (space: string, skey: string): ChannelState => ({
@@ -103,6 +131,7 @@ const buildCtx = (voice: VoiceSfu | null, database?: TestDatabase): Harness => {
 			channel: async (space: string) => channels.get(space) ?? null,
 			authz: async (community: string, actor: string) =>
 				authz.get(actor) ?? anonymousAuthz(actor, community),
+			categoryAudience: async () => null,
 		},
 	} as unknown as AppContext;
 
@@ -293,6 +322,7 @@ describe("VoiceServer", () => {
 			channel: VOICE_CHANNEL,
 			nodeId: "node-a",
 			region: "eu",
+			permissions: VOICE_PERMISSIONS,
 		});
 
 		send(ws, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
@@ -707,6 +737,399 @@ describe("VoiceServer", () => {
 		).toEqual([]);
 
 		ws.close();
+	});
+
+	describe("voice permissions", () => {
+		const HIDDEN = { ...openChannel(VOICE_CHANNEL, "general"), visibleToRoles: ["staff"] };
+
+		const join = async (ws: WebSocket, channel = VOICE_CHANNEL): Promise<Frame> => {
+			send(ws, { $type: "social.colibri.beta.voice.defs#join", channel });
+
+			return nextFrameOfType(ws, "joined");
+		};
+
+		const sendTransport = async (ws: WebSocket): Promise<string> => {
+			send(ws, { $type: "social.colibri.beta.voice.defs#createTransport", direction: "send" });
+
+			return (await nextFrameOfType(ws, "transportOptions")).id as string;
+		};
+
+		const produce = async (
+			ws: WebSocket,
+			transportId: string,
+			kind: string,
+			source: string,
+		): Promise<Frame> => {
+			send(ws, {
+				$type: "social.colibri.beta.voice.defs#produce",
+				transportId,
+				kind,
+				rtpParameters: {},
+				source,
+			});
+
+			for (;;) {
+				const frame = await nextFrame(ws);
+
+				if (frame.$type === "social.colibri.beta.voice.defs#error") return frame;
+				if (frame.$type === "social.colibri.beta.voice.defs#producerInfo") return frame;
+			}
+		};
+
+		const restrict = (did: string, deny: string[]) => {
+			harness.authz.set(
+				did,
+				memberAuthz(did, membersRole(VOICE_PERMISSIONS, [{ channel: "general", allow: [], deny }])),
+			);
+		};
+
+		it("hands the joiner the voice permissions it holds in the channel", async () => {
+			restrict(ALICE, ["voice.camera", "voice.chat"]);
+
+			const ws = connect("alice-token");
+			await waitForOpen(ws);
+
+			expect((await join(ws)).permissions).toEqual([
+				"voice.speak",
+				"voice.listen",
+				"voice.screenshare",
+			]);
+			ws.close();
+		});
+
+		it("force-mutes and force-deafens a member without speak and listen", async () => {
+			restrict(ALICE, ["voice.speak", "voice.listen"]);
+
+			const ws = connect("alice-token");
+			await waitForOpen(ws);
+			await join(ws);
+
+			expect(sfu.getVoiceState(VOICE_CHANNEL, ALICE)).toEqual({
+				muted: true,
+				deafened: true,
+				serverMuted: true,
+				serverDeafened: true,
+			});
+			ws.close();
+		});
+
+		it("keeps a permission mute when a moderator unmutes, and saves no moderation", async () => {
+			restrict(ALICE, ["voice.speak"]);
+
+			const ws = connect("alice-token");
+			await waitForOpen(ws);
+			await join(ws);
+
+			await voiceServer.apply({ channel: VOICE_CHANNEL, subject: ALICE, muted: true });
+			await voiceServer.apply({ channel: VOICE_CHANNEL, subject: ALICE, muted: false });
+
+			expect(sfu.getVoiceState(VOICE_CHANNEL, ALICE)).toMatchObject({
+				muted: true,
+				serverMuted: true,
+			});
+			await vi.waitFor(async () => {
+				expect(await harness.ctx.voiceCalls.moderationOf(COMMUNITY, ALICE)).toEqual({
+					serverMuted: false,
+					serverDeafened: false,
+				});
+			});
+			ws.close();
+		});
+
+		it("refuses the producers a missing permission covers and allows the rest", async () => {
+			restrict(ALICE, ["voice.speak", "voice.camera", "voice.screenshare"]);
+
+			const ws = connect("alice-token");
+			await waitForOpen(ws);
+			await join(ws);
+			const transportId = await sendTransport(ws);
+
+			expect(await produce(ws, transportId, "audio", "microphone")).toMatchObject({
+				error: "Forbidden",
+				message: "you lack the voice.speak permission in this channel",
+			});
+			expect(await produce(ws, transportId, "video", "camera")).toMatchObject({
+				error: "Forbidden",
+				message: "you lack the voice.camera permission in this channel",
+			});
+			expect(await produce(ws, transportId, "video", "screen")).toMatchObject({
+				error: "Forbidden",
+				message: "you lack the voice.screenshare permission in this channel",
+			});
+			expect(await produce(ws, transportId, "audio", "screen")).toMatchObject({
+				error: "Forbidden",
+			});
+			ws.close();
+		});
+
+		it("updates restrictions and closes producers when permissions change mid-call", async () => {
+			const ws = connect("alice-token");
+			await waitForOpen(ws);
+			await join(ws);
+			const transportId = await sendTransport(ws);
+			const mic = await produce(ws, transportId, "audio", "microphone");
+			const camera = await produce(ws, transportId, "video", "camera");
+
+			expect(mic.$type).toBe("social.colibri.beta.voice.defs#producerInfo");
+			expect(camera.$type).toBe("social.colibri.beta.voice.defs#producerInfo");
+
+			restrict(ALICE, ["voice.speak", "voice.camera", "voice.chat"]);
+			await voiceServer.revalidate(COMMUNITY);
+
+			expect(await nextFrameOfType(ws, "permissionsChanged")).toEqual({
+				$type: "social.colibri.beta.voice.defs#permissionsChanged",
+				channel: VOICE_CHANNEL,
+				permissions: ["voice.listen", "voice.screenshare"],
+			});
+			expect(sfu.getVoiceState(VOICE_CHANNEL, ALICE)).toMatchObject({ serverMuted: true });
+			expect(
+				(await sfu.listProducers(VOICE_CHANNEL)).filter((producer) => producer.did === ALICE),
+			).toEqual([]);
+
+			restrict(ALICE, []);
+			await voiceServer.revalidate(COMMUNITY);
+
+			expect((await nextFrameOfType(ws, "permissionsChanged")).permissions).toEqual(
+				VOICE_PERMISSIONS,
+			);
+			expect(sfu.getVoiceState(VOICE_CHANNEL, ALICE)).toMatchObject({ serverMuted: false });
+			ws.close();
+		});
+
+		it("sends nothing when an authz change leaves the permissions as they were", async () => {
+			const ws = connect("alice-token");
+			await waitForOpen(ws);
+			await join(ws);
+
+			await voiceServer.revalidate(COMMUNITY);
+
+			expect(
+				(inboxes.get(ws)?.held ?? []).filter(
+					(frame) => frame.$type === "social.colibri.beta.voice.defs#permissionsChanged",
+				),
+			).toEqual([]);
+			ws.close();
+		});
+
+		it("lets a moved member join a channel they can't see, without its chat", async () => {
+			harness.channels.set(VOICE_CHANNEL, HIDDEN);
+			await harness.ctx.voiceCalls.grantMove(ALICE, VOICE_CHANNEL, BOB);
+
+			const ws = connect("alice-token");
+			await waitForOpen(ws);
+
+			expect((await join(ws)).permissions).toEqual([
+				"voice.speak",
+				"voice.listen",
+				"voice.camera",
+				"voice.screenshare",
+			]);
+
+			await voiceServer.revalidate(COMMUNITY);
+
+			expect(voiceServer.isJoined(VOICE_CHANNEL, ALICE)).toBe(true);
+			ws.close();
+		});
+
+		it("refuses a channel the member can't see without a grant", async () => {
+			harness.channels.set(VOICE_CHANNEL, HIDDEN);
+
+			const ws = connect("alice-token");
+			await waitForOpen(ws);
+			send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+
+			expect(await nextFrameOfType(ws, "error")).toMatchObject({ error: "Forbidden" });
+			ws.close();
+		});
+
+		it("ends the grant when the moved member leaves, so they can't rejoin", async () => {
+			harness.channels.set(VOICE_CHANNEL, HIDDEN);
+			await harness.ctx.voiceCalls.grantMove(ALICE, VOICE_CHANNEL, BOB);
+
+			const ws = connect("alice-token");
+			await waitForOpen(ws);
+			await join(ws);
+
+			send(ws, { $type: "social.colibri.beta.voice.defs#leave" });
+
+			await vi.waitFor(async () => {
+				expect(await harness.ctx.voiceCalls.hasMoveGrant(ALICE, VOICE_CHANNEL)).toBe(false);
+			});
+
+			send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+
+			expect(await nextFrameOfType(ws, "error")).toMatchObject({ error: "Forbidden" });
+			ws.close();
+		});
+
+		it("ends the grant when the moved member's connection drops", async () => {
+			harness.channels.set(VOICE_CHANNEL, HIDDEN);
+			await harness.ctx.voiceCalls.grantMove(ALICE, VOICE_CHANNEL, BOB);
+
+			const ws = connect("alice-token");
+			await waitForOpen(ws);
+			await join(ws);
+			ws.close();
+
+			await vi.waitFor(async () => {
+				expect(await harness.ctx.voiceCalls.hasMoveGrant(ALICE, VOICE_CHANNEL)).toBe(false);
+			});
+		});
+
+		it("ends every other grant when the member joins a channel", async () => {
+			await harness.ctx.voiceCalls.grantMove(ALICE, OTHER_VOICE_CHANNEL, BOB);
+
+			const ws = connect("alice-token");
+			await waitForOpen(ws);
+			await join(ws);
+
+			expect(await harness.ctx.voiceCalls.hasMoveGrant(ALICE, OTHER_VOICE_CHANNEL)).toBe(false);
+			ws.close();
+		});
+
+		it("hands a moved member the destination's channel view", async () => {
+			await database.db.insert(database.tables.channels).values({
+				space: OTHER_VOICE_CHANNEL,
+				community: COMMUNITY,
+				spaceType: SPACE_TYPES.channelVoice,
+				skey: "lounge",
+				name: "Lounge",
+				category: "3lkcategory",
+				visibleToRoles: ["staff"],
+			});
+
+			const ws = connect("alice-token");
+			await waitForOpen(ws);
+			await join(ws);
+
+			await voiceServer.move(VOICE_CHANNEL, ALICE, OTHER_VOICE_CHANNEL);
+
+			const moved = await nextFrameOfType(ws, "moved");
+
+			expect(moved).toMatchObject({
+				channel: OTHER_VOICE_CHANNEL,
+				view: {
+					space: OTHER_VOICE_CHANNEL,
+					type: SPACE_TYPES.channelVoice,
+					name: "Lounge",
+					category: "3lkcategory",
+					private: true,
+					viewer: { canRead: false, canPost: false },
+				},
+			});
+			expect(social.colibri.beta.voice.defs.moved.safeParse(moved).success).toBe(true);
+			ws.close();
+		});
+
+		describe("placing the destination", () => {
+			const FIRST = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "first");
+			const SECRET = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "secret");
+			const LAST = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "last");
+
+			const putChannel = (
+				space: string,
+				skey: string,
+				options: { category?: string; position?: number; visibleToRoles?: string[] } = {},
+			) =>
+				database.db.insert(database.tables.channels).values({
+					space,
+					community: COMMUNITY,
+					spaceType: space.includes("voice") ? SPACE_TYPES.channelVoice : SPACE_TYPES.channelText,
+					skey,
+					name: skey,
+					category: options.category ?? null,
+					position: options.position ?? 0,
+					visibleToRoles: options.visibleToRoles ?? [],
+				});
+
+			const movedFrame = async (): Promise<Frame> => {
+				const ws = connect("alice-token");
+				await waitForOpen(ws);
+				await join(ws);
+
+				await voiceServer.move(VOICE_CHANNEL, ALICE, OTHER_VOICE_CHANNEL);
+
+				const frame = await nextFrameOfType(ws, "moved");
+
+				expect(social.colibri.beta.voice.defs.moved.safeParse(frame).success).toBe(true);
+				ws.close();
+
+				return frame;
+			};
+
+			it("names the nearest readable channel before it in the category's order", async () => {
+				await database.db.insert(database.tables.categories).values({
+					community: COMMUNITY,
+					rkey: "3lkcategory",
+					name: "Voice",
+					channelOrder: ["first", "secret", "lounge", "last"],
+				});
+				await putChannel(FIRST, "first", { category: "3lkcategory" });
+				await putChannel(SECRET, "secret", {
+					category: "3lkcategory",
+					visibleToRoles: ["staff"],
+				});
+				await putChannel(OTHER_VOICE_CHANNEL, "lounge", {
+					category: "3lkcategory",
+					visibleToRoles: ["staff"],
+				});
+				await putChannel(LAST, "last", { category: "3lkcategory" });
+
+				expect((await movedFrame()).after).toBe(FIRST);
+			});
+
+			it("leaves after out when no readable channel comes before it", async () => {
+				await database.db.insert(database.tables.categories).values({
+					community: COMMUNITY,
+					rkey: "3lkcategory",
+					name: "Voice",
+					channelOrder: ["secret", "lounge", "first"],
+				});
+				await putChannel(SECRET, "secret", {
+					category: "3lkcategory",
+					visibleToRoles: ["staff"],
+				});
+				await putChannel(OTHER_VOICE_CHANNEL, "lounge", { category: "3lkcategory" });
+				await putChannel(FIRST, "first", { category: "3lkcategory" });
+
+				const frame = await movedFrame();
+
+				expect(frame.view).toMatchObject({ space: OTHER_VOICE_CHANNEL });
+				expect(frame).not.toHaveProperty("after");
+			});
+
+			it("follows channel positions for a channel outside any category", async () => {
+				await putChannel(FIRST, "first", { position: 0 });
+				await putChannel(LAST, "last", { position: 1 });
+				await putChannel(OTHER_VOICE_CHANNEL, "lounge", {
+					position: 2,
+					visibleToRoles: ["staff"],
+				});
+				await putChannel(SECRET, "secret", { category: "3lkcategory", position: 1 });
+
+				expect((await movedFrame()).after).toBe(LAST);
+			});
+		});
+
+		it("keeps a grant through a move's leave of the old channel", async () => {
+			await harness.ctx.voiceCalls.grantMove(ALICE, OTHER_VOICE_CHANNEL, BOB);
+
+			const ws = connect("alice-token");
+			await waitForOpen(ws);
+			await harness.ctx.voiceCalls.revokeMoveGrant(ALICE, VOICE_CHANNEL);
+			send(ws, { $type: "social.colibri.beta.voice.defs#join", channel: VOICE_CHANNEL });
+			await nextFrameOfType(ws, "joined");
+			await harness.ctx.voiceCalls.grantMove(ALICE, OTHER_VOICE_CHANNEL, BOB);
+
+			await voiceServer.move(VOICE_CHANNEL, ALICE, OTHER_VOICE_CHANNEL);
+			await nextFrameOfType(ws, "moved");
+
+			await vi.waitFor(async () => {
+				expect(await harness.ctx.voiceCalls.participant(ALICE)).toBeNull();
+			});
+			expect(await harness.ctx.voiceCalls.hasMoveGrant(ALICE, OTHER_VOICE_CHANNEL)).toBe(true);
+			ws.close();
+		});
 	});
 
 	it("tells the room and the community about a peer that has not created a transport", async () => {

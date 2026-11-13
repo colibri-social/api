@@ -64,6 +64,7 @@ let roster: {
 };
 let voiceCommand: ReturnType<typeof vi.fn>;
 let participant: ReturnType<typeof vi.fn>;
+let grantMove: ReturnType<typeof vi.fn>;
 let ctx: AppContext;
 
 const moved = (destination: string) => {
@@ -77,10 +78,11 @@ beforeEach(() => {
 	};
 	voiceCommand = vi.fn();
 	participant = vi.fn(async () => null);
+	grantMove = vi.fn(async () => {});
 	ctx = {
 		nodeId: "node-a",
 		announce: { voiceCommand },
-		voiceCalls: { participant },
+		voiceCalls: { participant, grantMove },
 		loader: {
 			channel: async (space: string) => channels.get(space) ?? null,
 			authz: async (_community: string, actor: string) =>
@@ -174,15 +176,56 @@ describe("handleModerateVoice moveTo", () => {
 		expect(roster.apply).not.toHaveBeenCalled();
 	});
 
-	it("rejects a destination the subject cannot speak in", async () => {
+	it("grants a call in a destination the subject cannot join on their own", async () => {
 		channels.set(LOUNGE, channel(LOUNGE, "lounge", ["speakers"]));
+		roster.apply.mockImplementation(async () => {
+			expect(grantMove).toHaveBeenCalledWith(MEMBER, LOUNGE, MOD);
+		});
 		try {
-			await expect(
-				handleModerateVoice(ctx, MOD, { channel: GENERAL, subject: MEMBER, moveTo: LOUNGE }),
-			).rejects.toMatchObject({ customErrorName: "DestinationForbidden" });
+			await handleModerateVoice(ctx, MOD, { channel: GENERAL, subject: MEMBER, moveTo: LOUNGE });
 		} finally {
 			channels.set(LOUNGE, channel(LOUNGE, "lounge"));
 		}
+
+		expect(roster.apply).toHaveBeenCalledWith(moved(LOUNGE));
+	});
+
+	it("grants the call before the hosting node hears about the move", async () => {
+		channels.set(LOUNGE, { ...channel(LOUNGE, "lounge"), visibleToRoles: ["staff"] });
+		ctx.voice = { presenceOf: () => undefined } as unknown as AppContext["voice"];
+		roster.isJoined.mockReturnValue(false);
+		participant.mockResolvedValue({ did: MEMBER, channel: GENERAL, nodeId: "node-b" });
+		voiceCommand.mockImplementation(() => {
+			expect(grantMove).toHaveBeenCalledWith(MEMBER, LOUNGE, MOD);
+		});
+		try {
+			await handleModerateVoice(ctx, MOD, { channel: GENERAL, subject: MEMBER, moveTo: LOUNGE });
+		} finally {
+			channels.set(LOUNGE, channel(LOUNGE, "lounge"));
+		}
+
+		expect(voiceCommand).toHaveBeenCalledWith("node-b", moved(LOUNGE));
+	});
+
+	it("grants nothing when the subject may join the destination anyway", async () => {
+		await handleModerateVoice(ctx, MOD, { channel: GENERAL, subject: MEMBER, moveTo: LOUNGE });
+
+		expect(grantMove).not.toHaveBeenCalled();
+	});
+
+	it("grants nothing when the subject is not in the call", async () => {
+		channels.set(LOUNGE, channel(LOUNGE, "lounge", ["speakers"]));
+		roster.isJoined.mockReturnValue(false);
+		ctx.voice = { presenceOf: () => undefined } as unknown as AppContext["voice"];
+		try {
+			await expect(
+				handleModerateVoice(ctx, MOD, { channel: GENERAL, subject: MEMBER, moveTo: LOUNGE }),
+			).rejects.toMatchObject({ customErrorName: "NotInVoice" });
+		} finally {
+			channels.set(LOUNGE, channel(LOUNGE, "lounge"));
+		}
+
+		expect(grantMove).not.toHaveBeenCalled();
 	});
 
 	it("rejects a move by someone without the permission", async () => {

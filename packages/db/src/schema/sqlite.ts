@@ -857,6 +857,17 @@ export const voiceModeration = sqliteTable(
 	(t) => [primaryKey({ columns: [t.community, t.did] })],
 );
 
+export const voiceMoveGrants = sqliteTable(
+	"voice_move_grants",
+	{
+		did: text("did").notNull(),
+		channel: text("channel").notNull(),
+		grantedBy: text("granted_by").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [primaryKey({ columns: [t.did, t.channel] })],
+);
+
 export const voiceParticipants = sqliteTable(
 	"voice_participants",
 	{
@@ -1051,6 +1062,7 @@ export const schema = {
 	voiceCalls,
 	voiceParticipants,
 	voiceModeration,
+	voiceMoveGrants,
 	eventPayloads,
 	telemetryState,
 	legacyRecords,

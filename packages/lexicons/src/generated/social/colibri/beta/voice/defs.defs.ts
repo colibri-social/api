@@ -3,6 +3,7 @@
  */
 
 import { l } from "@atproto/lex";
+import * as CommunityDefs from "../community/defs.defs.js";
 
 const $nsid = "social.colibri.beta.voice.defs";
 
@@ -431,12 +432,17 @@ type Joined = { $type?: "social.colibri.beta.voice.defs#joined";
   /**
    * The region of the node hosting the call.
    */
-  "region"?:string };
+  "region"?:string;
+
+  /**
+   * The voice permissions this member holds in the channel: voice.speak, voice.listen, voice.camera, voice.screenshare and voice.chat. A member a moderator moved into a channel they can't otherwise join never holds voice.chat.
+   */
+  "permissions"?:(string)[] };
 
 export type { Joined };
 
 /** Confirms this connection has joined a voice channel. */
-const joined = /*#__PURE__*/ l.typedObject<Joined>($nsid, "joined", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"nodeId":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"region":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())}));
+const joined = /*#__PURE__*/ l.typedObject<Joined>($nsid, "joined", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"nodeId":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"region":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"permissions":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ))}));
 
 export { joined };
 
@@ -526,14 +532,44 @@ type Moved = { $type?: "social.colibri.beta.voice.defs#moved";
   /**
    * The voice channel to join.
    */
-  "channel":l.SpaceRefString };
+  "channel":l.SpaceRefString;
+
+  /**
+   * The destination channel as this client sees it, so a client that can't read the channel can still show it in its channel list for the length of the call.
+   */
+  "view"?:CommunityDefs.ChannelView;
+
+  /**
+   * The nearest channel before the destination in its category's channel order that this client can read. Absent when there is none, which places the destination first in its category.
+   */
+  "after"?:l.SpaceRefString };
 
 export type { Moved };
 
 /** A moderator moved this client to another voice channel. The server has already removed it from the previous one. Sent only to the client it applies to. */
-const moved = /*#__PURE__*/ l.typedObject<Moved>($nsid, "moved", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"})}));
+const moved = /*#__PURE__*/ l.typedObject<Moved>($nsid, "moved", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"view":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<CommunityDefs.ChannelView>((() => CommunityDefs.channelView) as any)),"after":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"}))}));
 
 export { moved };
+
+/** The voice permissions this client holds in its current call changed. Sent only to the client it applies to. */
+type PermissionsChanged = { $type?: "social.colibri.beta.voice.defs#permissionsChanged";
+
+  /**
+   * The voice channel the permissions apply to.
+   */
+  "channel":l.SpaceRefString;
+
+  /**
+   * The voice permissions this member now holds in the channel, with the same meaning as in joined.
+   */
+  "permissions":(string)[] };
+
+export type { PermissionsChanged };
+
+/** The voice permissions this client holds in its current call changed. Sent only to the client it applies to. */
+const permissionsChanged = /*#__PURE__*/ l.typedObject<PermissionsChanged>($nsid, "permissionsChanged", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"permissions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), )}));
+
+export { permissionsChanged };
 
 /** A peer's mute or deafen state changed, whether they did it themselves or a moderator did it to them. */
 type ModerationChanged = { $type?: "social.colibri.beta.voice.defs#moderationChanged";
@@ -554,12 +590,12 @@ type ModerationChanged = { $type?: "social.colibri.beta.voice.defs#moderationCha
   "deafened":boolean;
 
   /**
-   * Whether a moderator muted them. When this is true the peer cannot unmute themselves.
+   * Whether a moderator muted them or they lack the voice.speak permission in this channel. When this is true the peer cannot unmute themselves.
    */
   "serverMuted"?:boolean;
 
   /**
-   * Whether a moderator deafened them. When this is true the peer cannot undeafen themselves.
+   * Whether a moderator deafened them or they lack the voice.listen permission in this channel. When this is true the peer cannot undeafen themselves.
    */
   "serverDeafened"?:boolean };
 

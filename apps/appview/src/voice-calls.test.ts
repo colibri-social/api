@@ -1,6 +1,6 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createVoiceCalls } from "./voice-calls.js";
+import { createVoiceCalls, UNUSED_MOVE_GRANT_MS } from "./voice-calls.js";
 
 const CHANNEL = "ats://did:plc:community/social.colibri.beta.channel.voice/3lkvoice00000";
 const ALICE = "did:plc:alice";
@@ -139,5 +139,60 @@ describe("createVoiceCalls", () => {
 		});
 
 		expect(await database.db.select().from(database.tables.voiceModeration)).toEqual([]);
+	});
+
+	it("keeps a move grant per member and channel until it is revoked", async () => {
+		const a = createVoiceCalls({ database, nodeId: "node-a" });
+		const b = createVoiceCalls({ database, nodeId: "node-b" });
+
+		await a.grantMove(ALICE, CHANNEL, BOB);
+		await a.grantMove(ALICE, `${CHANNEL}x`, BOB);
+
+		expect(await b.hasMoveGrant(ALICE, CHANNEL)).toBe(true);
+		expect(await b.hasMoveGrant(BOB, CHANNEL)).toBe(false);
+
+		await b.revokeMoveGrant(ALICE, CHANNEL);
+
+		expect(await a.hasMoveGrant(ALICE, CHANNEL)).toBe(false);
+		expect(await a.hasMoveGrant(ALICE, `${CHANNEL}x`)).toBe(true);
+	});
+
+	it("revokes every other move grant of a member who joins a channel", async () => {
+		const calls = createVoiceCalls({ database, nodeId: "node-a" });
+
+		await calls.grantMove(ALICE, CHANNEL, BOB);
+		await calls.grantMove(ALICE, `${CHANNEL}x`, BOB);
+		await calls.grantMove(BOB, `${CHANNEL}x`, ALICE);
+		await calls.revokeOtherMoveGrants(ALICE, CHANNEL);
+
+		expect(await calls.hasMoveGrant(ALICE, CHANNEL)).toBe(true);
+		expect(await calls.hasMoveGrant(ALICE, `${CHANNEL}x`)).toBe(false);
+		expect(await calls.hasMoveGrant(BOB, `${CHANNEL}x`)).toBe(true);
+	});
+
+	it("sweeps the move grants of swept participants and of moves nobody followed", async () => {
+		await registerNode("node-dead", { heartbeatAgoMs: 5 * 60_000 });
+
+		let clock = new Date(Date.now() - UNUSED_MOVE_GRANT_MS);
+		const main = createVoiceCalls({ database, nodeId: "node-a", now: () => clock });
+		const dead = createVoiceCalls({ database, nodeId: "node-dead" });
+
+		await main.grantMove(ALICE, CHANNEL, BOB);
+		await main.joined(ALICE, CHANNEL, SILENT);
+		await main.grantMove(BOB, CHANNEL, ALICE);
+		await dead.joined(BOB, CHANNEL, SILENT);
+		await main.grantMove("did:plc:carol", CHANNEL, ALICE);
+		await main.grantMove("did:plc:dave", `${CHANNEL}x`, ALICE);
+
+		clock = new Date(clock.getTime() + UNUSED_MOVE_GRANT_MS + 1);
+
+		await main.grantMove("did:plc:dave", CHANNEL, ALICE);
+		await main.sweep();
+
+		expect(await main.hasMoveGrant(ALICE, CHANNEL)).toBe(true);
+		expect(await main.hasMoveGrant(BOB, CHANNEL)).toBe(false);
+		expect(await main.hasMoveGrant("did:plc:carol", CHANNEL)).toBe(false);
+		expect(await main.hasMoveGrant("did:plc:dave", `${CHANNEL}x`)).toBe(false);
+		expect(await main.hasMoveGrant("did:plc:dave", CHANNEL)).toBe(true);
 	});
 });

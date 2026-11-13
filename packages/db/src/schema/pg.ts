@@ -863,6 +863,17 @@ export const voiceModeration = pgTable(
 	(t) => [primaryKey({ columns: [t.community, t.did] })],
 );
 
+export const voiceMoveGrants = pgTable(
+	"voice_move_grants",
+	{
+		did: text("did").notNull(),
+		channel: text("channel").notNull(),
+		grantedBy: text("granted_by").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [primaryKey({ columns: [t.did, t.channel] })],
+);
+
 export const voiceParticipants = pgTable(
 	"voice_participants",
 	{
@@ -1057,6 +1068,7 @@ export const schema = {
 	voiceCalls,
 	voiceParticipants,
 	voiceModeration,
+	voiceMoveGrants,
 	eventPayloads,
 	telemetryState,
 	legacyRecords,

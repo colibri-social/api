@@ -65,8 +65,17 @@ export const decideSpaceAccess = (input: SpaceAccessInput): AccessDecision => {
 				? allow("the requester may read the moderation log")
 				: deny("the requester lacks moderation.viewLog");
 
-		case SPACE_TYPES.channelText:
 		case SPACE_TYPES.channelVoice:
+			if (!channel) return deny("no such channel in this community");
+			if (writing)
+				return canPost(authz, channel) && has(authz, "voice.chat", channel.skey)
+					? allow("the requester may post in this voice channel's chat")
+					: deny("the requester may not post in this voice channel's chat");
+			return canRead(authz, channel) && has(authz, "voice.chat", channel.skey)
+				? allow("the requester may read this voice channel's chat")
+				: deny("this voice channel's chat is not visible to the requester");
+
+		case SPACE_TYPES.channelText:
 			if (!channel) return deny("no such channel in this community");
 			if (writing)
 				return canPost(authz, channel)

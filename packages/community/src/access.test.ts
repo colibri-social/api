@@ -398,6 +398,31 @@ describe("space access decisions", () => {
 		).toBe(false);
 	});
 
+	it("requires voice.chat to read a voice channel's chat", () => {
+		const voice = channel({ skey: "3lkvoice" });
+		const chatting = authz({ roles: [role({ permissions: ["voice.chat"] })] });
+		const denied = authz({
+			roles: [
+				role({
+					permissions: ["voice.chat"],
+					channelOverrides: [{ channel: "3lkvoice", allow: [], deny: ["voice.chat"] }],
+				}),
+			],
+		});
+
+		expect(decide(SPACE_TYPES.channelVoice, chatting, { channel: voice }).authorized).toBe(true);
+		expect(decide(SPACE_TYPES.channelVoice, authz(), { channel: voice }).authorized).toBe(false);
+		expect(decide(SPACE_TYPES.channelVoice, denied, { channel: voice }).authorized).toBe(false);
+		expect(decide(SPACE_TYPES.channelText, authz(), { channel: voice }).authorized).toBe(true);
+	});
+
+	it("refuses a voice channel's chat to a member who cannot read the channel", () => {
+		const hidden = channel({ skey: "3lkvoice", visibleToRoles: ["3lksecret"] });
+		const chatting = authz({ roles: [role({ permissions: ["voice.chat"] })] });
+
+		expect(decide(SPACE_TYPES.channelVoice, chatting, { channel: hidden }).authorized).toBe(false);
+	});
+
 	it("always admits the community itself", () => {
 		const owner = authz({ isOwner: true });
 		expect(decide(SPACE_TYPES.communityModeration, owner).authorized).toBe(true);
@@ -461,6 +486,18 @@ describe("write access decisions", () => {
 
 	it("lets a member post in a channel they may read and post in", () => {
 		expect(decide(SPACE_TYPES.channelText, authz(), { channel: channel() }).authorized).toBe(true);
+	});
+
+	it("requires voice.chat to post in a voice channel's chat", () => {
+		const voice = channel({ skey: "3lkvoice" });
+		const chatting = authz({ roles: [role({ permissions: ["voice.chat"] })] });
+		const readOnly = channel({ skey: "3lkvoice", ownerOnly: true });
+
+		expect(decide(SPACE_TYPES.channelVoice, chatting, { channel: voice }).authorized).toBe(true);
+		expect(decide(SPACE_TYPES.channelVoice, authz(), { channel: voice }).authorized).toBe(false);
+		expect(decide(SPACE_TYPES.channelVoice, chatting, { channel: readOnly }).authorized).toBe(
+			false,
+		);
 	});
 
 	it("refuses a member who may read an owner-only channel but not post in it", () => {

@@ -7,6 +7,9 @@ import {
 	canRead,
 	inheritCategory,
 	isPrivateCategory,
+	type RoleState,
+	voiceCapabilities,
+	voicePermissionKeys,
 } from "./authz.js";
 
 const COMMUNITY = "did:plc:community";
@@ -92,5 +95,79 @@ describe("category inheritance", () => {
 	it("reports a category as private only when it restricts reading", () => {
 		expect(isPrivateCategory(category({ ownerOnly: true }))).toBe(false);
 		expect(isPrivateCategory(category({ visibleToMembers: ["did:plc:a"] }))).toBe(true);
+	});
+});
+
+describe("voice capabilities", () => {
+	const ALL_VOICE = [
+		"voice.speak",
+		"voice.listen",
+		"voice.camera",
+		"voice.screenshare",
+		"voice.chat",
+	];
+
+	const holder = (role: Partial<RoleState>): ActorAuthz => ({
+		...member("did:plc:a"),
+		roles: [
+			{
+				rkey: "members",
+				name: "Members",
+				permissions: ALL_VOICE,
+				position: 0,
+				hoisted: false,
+				mentionable: false,
+				protected: false,
+				isDefault: true,
+				channelOverrides: [],
+				...role,
+			},
+		],
+	});
+
+	it("grants every capability the member's roles list", () => {
+		expect(voiceCapabilities(holder({}), channel())).toEqual({
+			speak: true,
+			listen: true,
+			camera: true,
+			screenshare: true,
+			chat: true,
+		});
+	});
+
+	it("withholds every capability from a member with no roles", () => {
+		expect(voicePermissionKeys(voiceCapabilities(member("did:plc:a"), channel()))).toEqual([]);
+	});
+
+	it("applies a channel override that denies a capability in that channel only", () => {
+		const denied = holder({
+			channelOverrides: [{ channel: "general", allow: [], deny: ["voice.speak", "voice.camera"] }],
+		});
+
+		expect(voicePermissionKeys(voiceCapabilities(denied, channel()))).toEqual([
+			"voice.listen",
+			"voice.screenshare",
+			"voice.chat",
+		]);
+		expect(voiceCapabilities(denied, channel({ skey: "lounge" })).speak).toBe(true);
+	});
+
+	it("applies a channel override that allows a capability the role lacks", () => {
+		const allowed = holder({
+			permissions: [],
+			channelOverrides: [{ channel: "general", allow: ["voice.chat"], deny: [] }],
+		});
+
+		expect(voicePermissionKeys(voiceCapabilities(allowed, channel()))).toEqual(["voice.chat"]);
+	});
+
+	it("grants an admin every capability whatever the overrides say", () => {
+		const admin = holder({
+			protected: true,
+			permissions: [],
+			channelOverrides: [{ channel: "general", allow: [], deny: ALL_VOICE }],
+		});
+
+		expect(voicePermissionKeys(voiceCapabilities(admin, channel()))).toEqual(ALL_VOICE);
 	});
 });

@@ -2,6 +2,7 @@ import { communitySpaces, SPACE_TYPES } from "@colibri-social/lexicons";
 import { type PdsAdmin, type PdsClient, type PdsSession, XrpcError } from "@colibri-social/space";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { CommunityCredentials, StoredCredentials } from "./credentials.js";
+import { DEFAULT_ROLE_PERMISSIONS } from "./heal.js";
 import { CommunityProvisioner, ProvisioningRefused } from "./provisioning.js";
 import type { SpaceRegistry } from "./spaces.js";
 
@@ -277,7 +278,7 @@ describe("adopting an existing account", () => {
 			expect.objectContaining({ name: "Owner", protected: true }),
 			expect.objectContaining({
 				name: "Members",
-				permissions: ["thread.create"],
+				permissions: [...DEFAULT_ROLE_PERMISSIONS],
 				position: 0,
 				default: true,
 			}),

@@ -1,5 +1,5 @@
 import type { Database, NodeRole } from "@colibri-social/appview-db";
-import { and, eq, gt, inArray, ne, notInArray } from "drizzle-orm";
+import { and, eq, gt, inArray, lt, ne, notInArray } from "drizzle-orm";
 import { PEER_HEARTBEAT_WINDOW_MS } from "./drain.js";
 
 export type VoiceNode = {
@@ -56,6 +56,10 @@ export type VoiceCalls = {
 	participants: (dids: readonly string[]) => Promise<Map<string, ParticipantRow>>;
 	forgetNode: () => Promise<ParticipantRow[]>;
 	sweep: () => Promise<ParticipantRow[]>;
+	grantMove: (did: string, channel: string, grantedBy: string) => Promise<void>;
+	hasMoveGrant: (did: string, channel: string) => Promise<boolean>;
+	revokeMoveGrant: (did: string, channel: string) => Promise<void>;
+	revokeOtherMoveGrants: (did: string, channel: string) => Promise<void>;
 };
 
 export type VoiceCallsDeps = {
@@ -66,6 +70,8 @@ export type VoiceCallsDeps = {
 };
 
 const CLAIM_ATTEMPTS = 3;
+
+export const UNUSED_MOVE_GRANT_MS = 5 * 60_000;
 
 type ParticipantSelect = Database["tables"]["voiceParticipants"]["$inferSelect"];
 
@@ -239,6 +245,35 @@ export const createVoiceCalls = (deps: VoiceCallsDeps): VoiceCalls => {
 		return readParticipants({ db: source, tables }, dids);
 	};
 
+	const revokeMoveGrant = async (did: string, channel: string) => {
+		await primary
+			.delete(tables.voiceMoveGrants)
+			.where(and(eq(tables.voiceMoveGrants.did, did), eq(tables.voiceMoveGrants.channel, channel)));
+	};
+
+	const dropUnusedMoveGrants = async () => {
+		const cutoff = new Date(now().getTime() - UNUSED_MOVE_GRANT_MS).toISOString();
+		const old = await primary
+			.select()
+			.from(tables.voiceMoveGrants)
+			.where(lt(tables.voiceMoveGrants.createdAt, cutoff));
+
+		if (old.length === 0) {
+			return;
+		}
+
+		const present = await participants(
+			old.map((grant) => grant.did),
+			primary,
+		);
+
+		for (const grant of old) {
+			if (present.get(grant.did)?.channel === grant.channel) continue;
+
+			await revokeMoveGrant(grant.did, grant.channel);
+		}
+	};
+
 	return {
 		claim: (channel, options) => claim(channel, options),
 		ownerOf: async (channel) => {
@@ -352,7 +387,43 @@ export const createVoiceCalls = (deps: VoiceCallsDeps): VoiceCalls => {
 
 			await primary.delete(tables.voiceCalls).where(notInArray(tables.voiceCalls.nodeId, keep));
 
+			for (const row of stale) {
+				await revokeMoveGrant(row.did, row.channel);
+			}
+
+			await dropUnusedMoveGrants();
+
 			return stale.map(toParticipant);
+		},
+		grantMove: async (did, channel, grantedBy) => {
+			const row = { did, channel, grantedBy, createdAt: now().toISOString() };
+
+			await primary
+				.insert(tables.voiceMoveGrants)
+				.values(row)
+				.onConflictDoUpdate({
+					target: [tables.voiceMoveGrants.did, tables.voiceMoveGrants.channel],
+					set: { grantedBy, createdAt: row.createdAt },
+				});
+		},
+		hasMoveGrant: async (did, channel) => {
+			const [row] = await primary
+				.select({ did: tables.voiceMoveGrants.did })
+				.from(tables.voiceMoveGrants)
+				.where(
+					and(eq(tables.voiceMoveGrants.did, did), eq(tables.voiceMoveGrants.channel, channel)),
+				)
+				.limit(1);
+
+			return row !== undefined;
+		},
+		revokeMoveGrant,
+		revokeOtherMoveGrants: async (did, channel) => {
+			await primary
+				.delete(tables.voiceMoveGrants)
+				.where(
+					and(eq(tables.voiceMoveGrants.did, did), ne(tables.voiceMoveGrants.channel, channel)),
+				);
 		},
 	};
 };

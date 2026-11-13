@@ -108,6 +108,43 @@ export const effectivePermissions = (authz: ActorAuthz, channel?: string): Permi
 	return PERMISSIONS.filter((permission) => has(authz, permission, channel));
 };
 
+export type VoiceCapabilities = {
+	speak: boolean;
+	listen: boolean;
+	camera: boolean;
+	screenshare: boolean;
+	chat: boolean;
+};
+
+export const VOICE_CAPABILITY_PERMISSIONS = {
+	speak: "voice.speak",
+	listen: "voice.listen",
+	camera: "voice.camera",
+	screenshare: "voice.screenshare",
+	chat: "voice.chat",
+} as const satisfies Record<keyof VoiceCapabilities, Permission>;
+
+const VOICE_CAPABILITIES = Object.keys(VOICE_CAPABILITY_PERMISSIONS) as (keyof VoiceCapabilities)[];
+
+export const voiceCapabilities = (
+	authz: ActorAuthz,
+	channel: Pick<ChannelState, "skey">,
+): VoiceCapabilities => {
+	return {
+		speak: has(authz, VOICE_CAPABILITY_PERMISSIONS.speak, channel.skey),
+		listen: has(authz, VOICE_CAPABILITY_PERMISSIONS.listen, channel.skey),
+		camera: has(authz, VOICE_CAPABILITY_PERMISSIONS.camera, channel.skey),
+		screenshare: has(authz, VOICE_CAPABILITY_PERMISSIONS.screenshare, channel.skey),
+		chat: has(authz, VOICE_CAPABILITY_PERMISSIONS.chat, channel.skey),
+	};
+};
+
+export const voicePermissionKeys = (capabilities: VoiceCapabilities): Permission[] => {
+	return VOICE_CAPABILITIES.filter((capability) => capabilities[capability]).map(
+		(capability) => VOICE_CAPABILITY_PERMISSIONS[capability],
+	);
+};
+
 export const outranks = (actor: ActorAuthz, target: ActorAuthz): boolean => {
 	if (actor.isOwner) return true;
 	if (target.isOwner) return false;

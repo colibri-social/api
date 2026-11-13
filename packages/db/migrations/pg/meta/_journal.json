@@ -267,6 +267,13 @@
 			"when": 1794436641618,
 			"tag": "0037_ancient_blacklash",
 			"breakpoints": true
+		},
+		{
+			"idx": 38,
+			"version": "7",
+			"when": 1794580565947,
+			"tag": "0038_perfect_proudstar",
+			"breakpoints": true
 		}
 	]
 }
