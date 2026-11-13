@@ -6,7 +6,7 @@ import { migrateUnderLock } from "./locks.js";
 const adminUrl = process.env.TEST_DATABASE_URL;
 
 const setReadOnly = async (url: string, value: "on" | "off"): Promise<void> => {
-	const client = new pg.Client({ connectionString: url });
+	const client = new pg.Client({ connectionString: adminUrl });
 	const name = new URL(url).pathname.slice(1);
 
 	await client.connect();
