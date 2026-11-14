@@ -3,6 +3,7 @@
  */
 
 import { l } from "@atproto/lex";
+import * as BetaDefs from "./defs.defs.js";
 
 const $nsid = "social.colibri.beta.channel";
 
@@ -24,17 +25,17 @@ type Main = { $type: "social.colibri.beta.channel";
   "description"?:string;
 
   /**
-   * Whether only community admins may post.
+   * @deprecated , superseded by permissionOverrides. Honoured only while permissionOverrides is absent.
    */
   "ownerOnly"?:boolean;
 
   /**
-   * Roles allowed to post here. Empty means no role restriction.
+   * @deprecated , superseded by permissionOverrides. Honoured only while permissionOverrides is absent.
    */
   "allowedRoles"?:(l.RecordKeyString)[];
 
   /**
-   * Members allowed to post here in addition to allowedRoles.
+   * @deprecated , superseded by permissionOverrides. Honoured only while permissionOverrides is absent.
    */
   "allowedMembers"?:(l.DidString)[];
 
@@ -49,19 +50,24 @@ type Main = { $type: "social.colibri.beta.channel";
   "migratedFrom"?:l.AtUriString;
 
   /**
-   * Roles that may read this channel. Empty or absent means every member may read it. A non-empty list makes the channel private: the community declines space credentials for it to anyone outside the list, so it is enforced by the protocol rather than only by a read handler.
+   * @deprecated , superseded by permissionOverrides. Honoured only while permissionOverrides is absent.
    */
   "visibleToRoles"?:(l.RecordKeyString)[];
 
   /**
-   * Members that may read this channel in addition to visibleToRoles.
+   * @deprecated , superseded by permissionOverrides. Honoured only while permissionOverrides is absent.
    */
-  "visibleToMembers"?:(l.DidString)[] };
+  "visibleToMembers"?:(l.DidString)[];
+
+  /**
+   * Per-role and per-member permission overrides in this channel.
+   */
+  "permissionOverrides"?:(BetaDefs.PermissionOverride)[] };
 
 export type { Main };
 
 /** A channel's configuration. Lives at key 'self' in the channel's own space. The space type says whether it is a text or voice channel, and the space key is the channel's identity. */
-const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256})),"ownerOnly":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"allowedRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"allowedMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"linkEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"migratedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ))}));
+const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256})),"ownerOnly":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"allowedRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"allowedMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"linkEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"migratedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"permissionOverrides":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<BetaDefs.PermissionOverride>((() => BetaDefs.permissionOverride) as any), {"maxLength":200}))}));
 
 export { main };
 

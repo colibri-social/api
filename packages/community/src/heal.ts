@@ -2,8 +2,8 @@ import type { Queryable, Schema } from "@colibri-social/appview-db";
 import { COLLECTIONS, PERMISSIONS } from "@colibri-social/lexicons";
 import { nextTid } from "@colibri-social/space";
 import { eq } from "drizzle-orm";
-import type { RoleState } from "./authz.js";
-import type { CommunityLoader } from "./loader.js";
+import { BASELINE_PERMISSIONS, type RoleState } from "./authz.js";
+import { type CommunityLoader, offeredDefaultsKey } from "./loader.js";
 import type { CommunityWriter } from "./writes.js";
 
 export type HealDeps = {
@@ -66,6 +66,7 @@ export type DefaultRoleBackfill = {
 export const DEFAULT_ROLE_NAME = "Members";
 
 export const DEFAULT_ROLE_PERMISSIONS: readonly string[] = [
+	...BASELINE_PERMISSIONS,
 	"thread.create",
 	"voice.speak",
 	"voice.listen",
@@ -75,28 +76,6 @@ export const DEFAULT_ROLE_PERMISSIONS: readonly string[] = [
 ];
 
 const FIRST_DEFAULT_ROLE_PERMISSIONS: readonly string[] = ["thread.create"];
-
-const offeredDefaultsKey = (community: string): string => {
-	return `defaultRolePermissions:${community}`;
-};
-
-const readOfferedDefaults = async (deps: DefaultRoleDeps, community: string) => {
-	const [row] = await deps.db
-		.select({ value: deps.tables.serviceState.value })
-		.from(deps.tables.serviceState)
-		.where(eq(deps.tables.serviceState.key, offeredDefaultsKey(community)))
-		.limit(1);
-
-	if (!row) return null;
-
-	try {
-		const parsed: unknown = JSON.parse(row.value);
-
-		return Array.isArray(parsed) ? parsed.filter((key) => typeof key === "string") : [];
-	} catch {
-		return [];
-	}
-};
 
 const saveOfferedDefaults = async (deps: DefaultRoleDeps, community: string): Promise<void> => {
 	const row = {
@@ -205,7 +184,7 @@ export const ensureDefaultRole = async (
 	community: string,
 ): Promise<DefaultRoleBackfill | null> => {
 	const space = deps.writer.spaces(community).members;
-	const offered = await readOfferedDefaults(deps, community);
+	const offered = await deps.loader.offeredDefaults(community);
 	const { role, created, normalized, granted } = await provideDefaultRole(
 		deps,
 		community,

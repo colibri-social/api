@@ -1,16 +1,18 @@
 import type { Schema } from "@colibri-social/appview-db";
 import {
 	type ActorAuthz,
-	type CategoryAudience,
+	type CategoryScope,
 	type ChannelState,
 	canPost,
 	canRead,
 	effectivePermissions,
 	isAdmin,
 	isMember,
-	isPrivateCategory,
 	isPrivateChannel,
-	toCategoryAudience,
+	isPrivateScope,
+	type PermissionOverride,
+	type RoleState,
+	toCategoryScope,
 	toChannelState,
 } from "@colibri-social/community";
 import {
@@ -29,6 +31,7 @@ import { and, asc, eq, gt, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { loadEmojis, parseEmojiUri } from "../emoji.js";
 import { signBlobUrl } from "../media-token.js";
+import { currentOverrides } from "../routes/permission-overrides.js";
 import type { ActorViews } from "./actor.js";
 
 export type CommunityView = social.colibri.beta.community.defs.CommunityView;
@@ -49,6 +52,24 @@ const INVALID_HANDLE = "handle.invalid";
 
 const ROLE_SCAN_BATCH = 500;
 const MAX_MEMBER_SCAN_ROUNDS = 20;
+
+export type ChannelScopeContext = {
+	category: CategoryScope | null;
+	roles: readonly RoleState[];
+};
+
+const defaultRoleOf = (roles: readonly RoleState[]) => {
+	return roles.find((role) => role.isDefault)?.rkey ?? null;
+};
+
+const overrideViews = (overrides: readonly PermissionOverride[]) => {
+	return overrides.map((override) => ({
+		...(override.role ? { role: asRecordKey(override.role) } : {}),
+		...(override.member ? { member: asDid(override.member) } : {}),
+		allow: override.allow,
+		deny: override.deny,
+	}));
+};
 
 export class CommunityViews {
 	constructor(
@@ -127,25 +148,32 @@ export class CommunityViews {
 		} as CommunityView;
 	}
 
-	channel(row: ChannelRow, authz: ActorAuthz, category?: CategoryAudience | null): ChannelView {
-		const state = toChannelState(row, category);
+	channel(row: ChannelRow, authz: ActorAuthz, scope: ChannelScopeContext): ChannelView {
+		const state = toChannelState(row, scope.category);
+		const defaultRole = defaultRoleOf(scope.roles);
+		const roleOverrides = scope.roles.flatMap((role) =>
+			role.channelOverrides
+				.filter((override) => override.channel === row.skey)
+				.map((override) => ({ role: role.rkey, override })),
+		);
 		return {
 			space: asSpaceRef(row.space),
 			type: row.spaceType,
 			name: row.name,
 			description: row.description ?? undefined,
 			category: row.category ? asRecordKey(row.category) : undefined,
-			ownerOnly: row.ownerOnly,
-			allowedRoles: row.allowedRoles.map(asRecordKey),
-			allowedMembers: row.allowedMembers.map(asDid),
-			visibleToRoles: row.visibleToRoles.map(asRecordKey),
-			visibleToMembers: row.visibleToMembers.map(asDid),
-			private: isPrivateChannel(state),
+			permissionOverrides: overrideViews(
+				currentOverrides(state.overrides ?? null, state, scope.roles, {
+					postingKeys: [state.voice ? "voice.connect" : "message.send"],
+					roleOverrides,
+				}),
+			),
+			private: isPrivateChannel(state, defaultRole),
 			linkEmbeds: row.linkEmbeds ?? undefined,
 			viewer: {
 				canRead: canRead(authz, state),
 				canPost: canPost(authz, state),
-				permissions: effectivePermissions(authz, row.skey),
+				permissions: effectivePermissions(authz, state),
 			},
 		} as ChannelView;
 	}
@@ -250,11 +278,6 @@ export class CommunityViews {
 			mentionable: row.mentionable,
 			protected: row.protected,
 			default: row.isDefault,
-			channelOverrides: row.channelOverrides.map((override) => ({
-				channel: asRecordKey(override.channel),
-				allow: override.allow,
-				deny: override.deny,
-			})),
 			memberCount,
 		} as RoleView;
 	}
@@ -265,9 +288,17 @@ export class CommunityViews {
 			.from(this.ctx.database.tables.channels)
 			.where(eq(this.ctx.database.tables.channels.community, community))
 			.orderBy(asc(this.ctx.database.tables.channels.position));
-		const audiences = await this.ctx.loader.categoryAudiences(community);
+		const [scopes, roles] = await Promise.all([
+			this.ctx.loader.categoryScopes(community),
+			this.ctx.loader.roles(community),
+		]);
 		return rows
-			.map((row) => this.channel(row, authz, row.category ? audiences.get(row.category) : null))
+			.map((row) =>
+				this.channel(row, authz, {
+					category: row.category ? (scopes.get(row.category) ?? null) : null,
+					roles,
+				}),
+			)
 			.filter((view) => view.viewer.canRead);
 	}
 
@@ -277,20 +308,21 @@ export class CommunityViews {
 	}
 
 	async categories(community: string, authz: ActorAuthz): Promise<CategoryView[]> {
-		const [categories, channels] = await Promise.all([
+		const [categories, channels, roles] = await Promise.all([
 			this.ctx.database.db
 				.select()
 				.from(this.ctx.database.tables.categories)
 				.where(eq(this.ctx.database.tables.categories.community, community))
 				.orderBy(asc(this.ctx.database.tables.categories.position)),
 			this.channels(community, authz),
+			this.ctx.loader.roles(community),
 		]);
 
 		const bySkey = new Map(
 			channels.map((channel) => [channel.space.split("/").pop() as string, channel]),
 		);
 		return categories.map((category) => ({
-			...this.categoryAudienceView(toCategoryAudience(category)),
+			...this.categoryScopeView(toCategoryScope(category), roles),
 			rkey: asRecordKey(category.rkey),
 			name: category.name,
 			channels: category.channelOrder
@@ -391,23 +423,24 @@ export class CommunityViews {
 		return rows.map((row) => this.role(row, viewer, undefined, emojis));
 	}
 
-	categoryAudienceView(
-		audience: CategoryAudience,
+	categoryScopeView(
+		scope: CategoryScope,
+		roles: readonly RoleState[],
 	): Omit<CategoryView, "rkey" | "name" | "channels"> {
 		return {
-			ownerOnly: audience.ownerOnly,
-			allowedRoles: audience.allowedRoles.map(asRecordKey),
-			allowedMembers: audience.allowedMembers.map(asDid),
-			visibleToRoles: audience.visibleToRoles.map(asRecordKey),
-			visibleToMembers: audience.visibleToMembers.map(asDid),
-			private: isPrivateCategory(audience),
+			permissionOverrides: overrideViews(
+				currentOverrides(scope.overrides ?? null, scope, roles, {
+					postingKeys: ["message.send", "voice.connect"],
+				}),
+			),
+			private: isPrivateScope(scope, defaultRoleOf(roles)),
 		};
 	}
 
 	async channelState(space: string): Promise<{
 		row: ChannelRow;
 		state: ChannelState;
-		category: CategoryAudience | null;
+		scope: ChannelScopeContext;
 	} | null> {
 		const [row] = await this.ctx.database.db
 			.select()
@@ -415,7 +448,10 @@ export class CommunityViews {
 			.where(and(eq(this.ctx.database.tables.channels.space, space)))
 			.limit(1);
 		if (!row) return null;
-		const category = await this.ctx.loader.categoryAudience(row.community, row.category);
-		return { row, state: toChannelState(row, category), category };
+		const [category, roles] = await Promise.all([
+			this.ctx.loader.categoryScope(row.community, row.category),
+			this.ctx.loader.roles(row.community),
+		]);
+		return { row, state: toChannelState(row, category), scope: { category, roles } };
 	}
 }

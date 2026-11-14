@@ -85,7 +85,7 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 			}
 			return {
 				encoding: "application/json" as const,
-				body: { channel: communities.channel(state.row, authz, state.category) },
+				body: { channel: communities.channel(state.row, authz, state.scope) },
 			};
 		},
 	});

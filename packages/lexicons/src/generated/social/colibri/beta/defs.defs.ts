@@ -59,3 +59,33 @@ export type { SpaceRecordRef };
 const spaceRecordRef = /*#__PURE__*/ l.typedObject<SpaceRecordRef>($nsid, "spaceRecordRef", /*#__PURE__*/ l.object({"space":/*#__PURE__*/ l.string({"format":"space-ref"}),"did":/*#__PURE__*/ l.string({"format":"did"}),"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"cid":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"cid"}))}));
 
 export { spaceRecordRef };
+
+/** Allow and deny lists for one role or one member, scoped to the channel or category that holds them. Exactly one of role and member is set. A permission in neither list inherits from the category, then from the target's role permissions. */
+type PermissionOverride = { $type?: "social.colibri.beta.defs#permissionOverride";
+
+  /**
+   * The record key of the role this override applies to.
+   */
+  "role"?:l.RecordKeyString;
+
+  /**
+   * The member this override applies to.
+   */
+  "member"?:l.DidString;
+
+  /**
+   * Permissions granted here.
+   */
+  "allow"?:(string)[];
+
+  /**
+   * Permissions denied here. A permission listed in both allow and deny is denied.
+   */
+  "deny"?:(string)[] };
+
+export type { PermissionOverride };
+
+/** Allow and deny lists for one role or one member, scoped to the channel or category that holds them. Exactly one of role and member is set. A permission in neither list inherits from the category, then from the target's role permissions. */
+const permissionOverride = /*#__PURE__*/ l.typedObject<PermissionOverride>($nsid, "permissionOverride", /*#__PURE__*/ l.object({"role":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"record-key"})),"member":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"did"})),"allow":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), )),"deny":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ))}));
+
+export { permissionOverride };

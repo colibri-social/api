@@ -18,6 +18,7 @@ import {
 	type SpacePolicy,
 	XrpcError,
 } from "@colibri-social/space";
+import type { PermissionOverride } from "./authz.js";
 import type { CommunityCredentials, CommunityHost } from "./credentials.js";
 import { generateHandlePrefix, generatePassword } from "./crypto.js";
 import { defaultRoleRecord } from "./heal.js";
@@ -438,11 +439,7 @@ export class CommunityProvisioner {
 			type: string;
 			name: string;
 			description?: string;
-			ownerOnly?: boolean;
-			allowedRoles?: string[];
-			allowedMembers?: string[];
-			visibleToRoles?: string[];
-			visibleToMembers?: string[];
+			permissionOverrides?: PermissionOverride[];
 		},
 	): Promise<string> {
 		const skey = nextTid();
@@ -463,11 +460,7 @@ export class CommunityProvisioner {
 				$type: COLLECTIONS.channel,
 				name: channel.name,
 				...(channel.description ? { description: channel.description } : {}),
-				...(channel.ownerOnly ? { ownerOnly: true } : {}),
-				...(channel.allowedRoles?.length ? { allowedRoles: channel.allowedRoles } : {}),
-				...(channel.allowedMembers?.length ? { allowedMembers: channel.allowedMembers } : {}),
-				...(channel.visibleToRoles?.length ? { visibleToRoles: channel.visibleToRoles } : {}),
-				...(channel.visibleToMembers?.length ? { visibleToMembers: channel.visibleToMembers } : {}),
+				permissionOverrides: channel.permissionOverrides ?? [],
 			},
 		});
 

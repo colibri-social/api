@@ -1,6 +1,11 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
-import { type CommunityWriter, has } from "@colibri-social/community";
-import { asRecordKey, COLLECTIONS, social } from "@colibri-social/lexicons";
+import { type ActorAuthz, type CommunityWriter, has } from "@colibri-social/community";
+import {
+	asRecordKey,
+	COLLECTIONS,
+	type PermissionOverrideShape,
+	social,
+} from "@colibri-social/lexicons";
 import { nextTid } from "@colibri-social/space";
 import { and, eq } from "drizzle-orm";
 import { categoryEvent } from "../announce.js";
@@ -11,7 +16,7 @@ import { ActorViews } from "../views/actor.js";
 import type { CategoryView } from "../views/community.js";
 import { CommunityViews } from "../views/community.js";
 import { type CategoryFields, categoryFields, categoryRecord } from "./category-record.js";
-import { assertVisibilityHierarchy } from "./channel-write.js";
+import { authorizeOverrideWrite, currentOverrides } from "./permission-overrides.js";
 import { currentCategoryOrder, writeCommunitySettings } from "./settings.js";
 import type { RouteDeps } from "./types.js";
 
@@ -42,24 +47,34 @@ const requirePermission = async (
 };
 
 export type CategoryPermissionInput = {
-	ownerOnly?: boolean;
-	allowedRoles?: readonly string[];
-	allowedMembers?: readonly string[];
-	visibleToRoles?: readonly string[];
-	visibleToMembers?: readonly string[];
+	permissionOverrides?: readonly PermissionOverrideShape[];
 };
 
-const applyPermissions = (
+const CATEGORY_POSTING_KEYS = ["message.send", "voice.connect"];
+
+const applyPermissions = async (
+	ctx: AppContext,
+	community: string,
+	authz: ActorAuthz,
 	fields: CategoryFields,
 	input: CategoryPermissionInput,
-): CategoryFields => ({
-	...fields,
-	ownerOnly: input.ownerOnly ?? fields.ownerOnly,
-	allowedRoles: input.allowedRoles ? [...input.allowedRoles] : fields.allowedRoles,
-	allowedMembers: input.allowedMembers ? [...input.allowedMembers] : fields.allowedMembers,
-	visibleToRoles: input.visibleToRoles ? [...input.visibleToRoles] : fields.visibleToRoles,
-	visibleToMembers: input.visibleToMembers ? [...input.visibleToMembers] : fields.visibleToMembers,
-});
+): Promise<CategoryFields> => {
+	if (!input.permissionOverrides) return fields;
+
+	const roles = await ctx.loader.roles(community);
+	const previous = currentOverrides(fields.overrides ?? null, fields, roles, {
+		postingKeys: CATEGORY_POSTING_KEYS,
+	});
+	const overrides = await authorizeOverrideWrite(
+		ctx,
+		community,
+		authz,
+		previous,
+		input.permissionOverrides,
+	);
+
+	return { ...fields, overrides };
+};
 
 const loadCategoryRow = async (ctx: AppContext, community: string, rkey: string) => {
 	const [row] = await ctx.database.db
@@ -86,19 +101,16 @@ export const handleCreateCategory = async (
 	try {
 		await requireCommunity(ctx, community);
 		const authz = await requirePermission(ctx, community, actor, "category.create");
-		await assertVisibilityHierarchy(
+		const rkey = nextTid();
+		const order = await currentCategoryOrder(ctx, community);
+		const fields = await applyPermissions(
 			ctx,
 			community,
 			authz,
-			input.visibleToRoles && [...input.visibleToRoles],
-		);
-
-		const rkey = nextTid();
-		const order = await currentCategoryOrder(ctx, community);
-		const fields = applyPermissions(
 			{
 				name: input.name,
 				channelOrder: [],
+				overrides: [],
 				ownerOnly: false,
 				allowedRoles: [],
 				allowedMembers: [],
@@ -119,7 +131,7 @@ export const handleCreateCategory = async (
 
 		return {
 			category: {
-				...communities.categoryAudienceView(fields),
+				...communities.categoryScopeView(fields, await ctx.loader.roles(community)),
 				rkey: asRecordKey(rkey),
 				name: input.name,
 				channels: [],
@@ -142,17 +154,13 @@ export const handleUpdateCategory = async (
 	try {
 		await requireCommunity(ctx, community);
 		const authz = await requirePermission(ctx, community, actor, "category.update");
-		await assertVisibilityHierarchy(
-			ctx,
-			community,
-			authz,
-			input.visibleToRoles && [...input.visibleToRoles],
-		);
-
 		const existing = await loadCategoryRow(ctx, community, rkey);
 		if (!existing) throw categoryNotFound();
 
-		const fields = applyPermissions(
+		const fields = await applyPermissions(
+			ctx,
+			community,
+			authz,
 			{ ...categoryFields(existing), name: input.name ?? existing.name },
 			input,
 		);
@@ -171,7 +179,7 @@ export const handleUpdateCategory = async (
 
 		return {
 			category: {
-				...communities.categoryAudienceView(fields),
+				...communities.categoryScopeView(fields, await ctx.loader.roles(community)),
 				rkey: asRecordKey(rkey),
 				name: fields.name,
 				channels: view?.channels ?? [],
@@ -218,11 +226,7 @@ const permissionInput = <T extends { name?: string } & CategoryPermissionInput>(
 	body: T,
 ): Pick<T, "name"> & CategoryPermissionInput => ({
 	name: body.name,
-	ownerOnly: body.ownerOnly,
-	allowedRoles: body.allowedRoles,
-	allowedMembers: body.allowedMembers,
-	visibleToRoles: body.visibleToRoles,
-	visibleToMembers: body.visibleToMembers,
+	permissionOverrides: body.permissionOverrides,
 });
 
 export const registerCategoryRoutes = ({ server, ctx, auth }: RouteDeps): void => {

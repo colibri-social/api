@@ -3,6 +3,7 @@
  */
 
 import { l } from "@atproto/lex";
+import * as BetaDefs from "./defs.defs.js";
 
 const $nsid = "social.colibri.beta.category";
 
@@ -24,34 +25,39 @@ type Main = { $type: "social.colibri.beta.category";
   "channelOrder":(l.RecordKeyString)[];
 
   /**
-   * Whether only community admins may post in the category's channels. A channel that sets its own posting restriction overrides this.
+   * @deprecated , superseded by permissionOverrides. Honoured only while permissionOverrides is absent.
    */
   "ownerOnly"?:boolean;
 
   /**
-   * Roles allowed to post in the category's channels. Empty means no role restriction. A channel that sets its own posting restriction overrides this.
+   * @deprecated , superseded by permissionOverrides. Honoured only while permissionOverrides is absent.
    */
   "allowedRoles"?:(l.RecordKeyString)[];
 
   /**
-   * Members allowed to post in the category's channels in addition to allowedRoles.
+   * @deprecated , superseded by permissionOverrides. Honoured only while permissionOverrides is absent.
    */
   "allowedMembers"?:(l.DidString)[];
 
   /**
-   * Roles that may read the category's channels. Empty or absent means every member may read them. A channel with its own non-empty visibleToRoles or visibleToMembers overrides this. A non-empty list makes the category's other channels private, enforced the same way as a private channel.
+   * @deprecated , superseded by permissionOverrides. Honoured only while permissionOverrides is absent.
    */
   "visibleToRoles"?:(l.RecordKeyString)[];
 
   /**
-   * Members that may read the category's channels in addition to visibleToRoles.
+   * @deprecated , superseded by permissionOverrides. Honoured only while permissionOverrides is absent.
    */
-  "visibleToMembers"?:(l.DidString)[] };
+  "visibleToMembers"?:(l.DidString)[];
+
+  /**
+   * Per-role and per-member permission overrides for every channel in this category. A channel's own override for the same permission and target takes precedence.
+   */
+  "permissionOverrides"?:(BetaDefs.PermissionOverride)[] };
 
 export type { Main };
 
 /** A named group of channels within a community. */
-const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"channelOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), ),"ownerOnly":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"allowedRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"allowedMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ))}));
+const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"channelOrder":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), ),"ownerOnly":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.withDefault(/*#__PURE__*/ l.boolean(), false)),"allowedRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"allowedMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"permissionOverrides":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<BetaDefs.PermissionOverride>((() => BetaDefs.permissionOverride) as any), {"maxLength":200}))}));
 
 export { main };
 

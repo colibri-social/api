@@ -3,9 +3,9 @@ import { SPACE_TYPES } from "@colibri-social/lexicons";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import {
 	type ActorAuthz,
-	type CategoryAudience,
+	BASELINE_PERMISSIONS,
+	type CategoryScope,
 	type ChannelState,
-	inheritCategory,
 	type RoleState,
 	type ThreadState,
 } from "./authz.js";
@@ -29,22 +29,32 @@ const toRole = (row: Schema["roles"]["$inferSelect"]): RoleState => ({
 	channelOverrides: row.channelOverrides,
 });
 
-const toChannel = (row: Schema["channels"]["$inferSelect"]): ChannelState => ({
-	space: row.space,
-	skey: row.skey,
-	ownerOnly: row.ownerOnly,
-	allowedRoles: row.allowedRoles,
-	allowedMembers: row.allowedMembers,
-	visibleToRoles: row.visibleToRoles,
-	visibleToMembers: row.visibleToMembers,
-});
+export const offeredDefaultsKey = (community: string): string => {
+	return `defaultRolePermissions:${community}`;
+};
 
-export const toCategoryAudience = (
+const parseOffered = (value: string): string[] => {
+	try {
+		const parsed: unknown = JSON.parse(value);
+
+		return Array.isArray(parsed) ? parsed.filter((key) => typeof key === "string") : [];
+	} catch {
+		return [];
+	}
+};
+
+export const toCategoryScope = (
 	row: Pick<
 		Schema["categories"]["$inferSelect"],
-		"ownerOnly" | "allowedRoles" | "allowedMembers" | "visibleToRoles" | "visibleToMembers"
+		| "ownerOnly"
+		| "allowedRoles"
+		| "allowedMembers"
+		| "visibleToRoles"
+		| "visibleToMembers"
+		| "permissionOverrides"
 	>,
-): CategoryAudience => ({
+): CategoryScope => ({
+	overrides: row.permissionOverrides ?? null,
 	ownerOnly: row.ownerOnly,
 	allowedRoles: row.allowedRoles ?? [],
 	allowedMembers: row.allowedMembers ?? [],
@@ -54,8 +64,19 @@ export const toCategoryAudience = (
 
 export const toChannelState = (
 	row: Schema["channels"]["$inferSelect"],
-	category?: CategoryAudience | null,
-): ChannelState => inheritCategory(toChannel(row), category);
+	category?: CategoryScope | null,
+): ChannelState => ({
+	space: row.space,
+	skey: row.skey,
+	voice: row.spaceType === SPACE_TYPES.channelVoice,
+	overrides: row.permissionOverrides ?? null,
+	ownerOnly: row.ownerOnly,
+	allowedRoles: row.allowedRoles,
+	allowedMembers: row.allowedMembers,
+	visibleToRoles: row.visibleToRoles,
+	visibleToMembers: row.visibleToMembers,
+	category: category ?? null,
+});
 
 const toThread = (row: Schema["threads"]["$inferSelect"]): ThreadState => ({
 	space: row.space,
@@ -87,13 +108,10 @@ export class CommunityLoader {
 			.where(eq(this.deps.tables.channels.space, space))
 			.limit(1);
 		if (!row) return null;
-		return toChannelState(row, await this.categoryAudience(row.community, row.category));
+		return toChannelState(row, await this.categoryScope(row.community, row.category));
 	}
 
-	async categoryAudience(
-		community: string,
-		category: string | null,
-	): Promise<CategoryAudience | null> {
+	async categoryScope(community: string, category: string | null): Promise<CategoryScope | null> {
 		if (!category) return null;
 		const [row] = await this.deps.db
 			.select()
@@ -105,15 +123,15 @@ export class CommunityLoader {
 				),
 			)
 			.limit(1);
-		return row ? toCategoryAudience(row) : null;
+		return row ? toCategoryScope(row) : null;
 	}
 
-	async categoryAudiences(community: string): Promise<Map<string, CategoryAudience>> {
+	async categoryScopes(community: string): Promise<Map<string, CategoryScope>> {
 		const rows = await this.deps.db
 			.select()
 			.from(this.deps.tables.categories)
 			.where(eq(this.deps.tables.categories.community, community));
-		return new Map(rows.map((row) => [row.rkey, toCategoryAudience(row)]));
+		return new Map(rows.map((row) => [row.rkey, toCategoryScope(row)]));
 	}
 
 	async threadRow(space: string) {
@@ -167,6 +185,22 @@ export class CommunityLoader {
 		return rows.map(toRole);
 	}
 
+	async offeredDefaults(community: string): Promise<string[] | null> {
+		const [row] = await this.deps.db
+			.select({ value: this.deps.tables.serviceState.value })
+			.from(this.deps.tables.serviceState)
+			.where(eq(this.deps.tables.serviceState.key, offeredDefaultsKey(community)))
+			.limit(1);
+
+		return row ? parseOffered(row.value) : null;
+	}
+
+	async baseline(community: string): Promise<string[]> {
+		const offered = (await this.offeredDefaults(community)) ?? [];
+
+		return BASELINE_PERMISSIONS.filter((permission) => !offered.includes(permission));
+	}
+
 	async isBanned(community: string, actor: string): Promise<boolean> {
 		const [latest] = await this.deps.db
 			.select({ action: this.deps.tables.moderationLog.action })
@@ -206,6 +240,7 @@ export class CommunityLoader {
 
 		const held = memberRow.roles;
 		const roles = held.length === 0 ? [] : await this.rolesByKey(community, held);
+		const baseline = await this.baseline(community);
 
 		return {
 			actor,
@@ -219,6 +254,7 @@ export class CommunityLoader {
 				nickname: memberRow.nickname,
 			},
 			roles,
+			baseline,
 		};
 	}
 

@@ -14,7 +14,7 @@ import type { DrainReason } from "../drain.js";
 import { fireAndForget } from "../fire-and-forget.js";
 import { ConnectionPresence, isOnlineState, PresenceTracker } from "../presence.js";
 import { ActorViews } from "../views/actor.js";
-import { CommunityViews } from "../views/community.js";
+import { type ChannelView, CommunityViews } from "../views/community.js";
 import { bearerToken, selectSubprotocol } from "./auth.js";
 import {
 	bridgeTopic,
@@ -49,6 +49,11 @@ type Connection = {
 	hints: HintBudget;
 	holds: Set<string>;
 	grants: Map<string, Set<string>>;
+	access: Map<string, string>;
+};
+
+const accessSignature = (view: ChannelView) => {
+	return [...(view.viewer.permissions ?? [])].sort().join(",");
 };
 
 const clientFrames = {
@@ -202,6 +207,7 @@ export class EventServer {
 			hints: { count: 0, windowStartedAt: 0 },
 			holds: new Set(),
 			grants: new Map(),
+			access: new Map(),
 		};
 		const first = this.presence.connections(did) === 0;
 		this.connections.add(connection);
@@ -433,7 +439,9 @@ export class EventServer {
 				if (!authz.member && !authz.isOwner) continue;
 				topics.push(communityTopic(community));
 				communities.push(community);
-				const readable = await this.communities.readableChannels(community, authz);
+				const views = await this.communities.channels(community, authz);
+				const readable = views.map((view) => view.space as string);
+				this.rememberAccess(connection, views);
 				const previous = connection.grants.get(community) ?? new Set<string>();
 				connection.grants.set(community, new Set(readable));
 				const dropped = [...previous].filter((space) => !this.isWanted(connection, space));
@@ -537,6 +545,10 @@ export class EventServer {
 		});
 	}
 
+	private rememberAccess(connection: Connection, views: readonly ChannelView[]): void {
+		for (const view of views) connection.access.set(view.space, accessSignature(view));
+	}
+
 	private async revalidateChannelsOnly(community: string): Promise<void> {
 		for (const connection of [...this.connections]) {
 			if (this.topics.topicsOf(connection).includes(communityTopic(community))) continue;
@@ -559,10 +571,9 @@ export class EventServer {
 
 		for (const connection of affected) {
 			const authz = await this.ctx.loader.authz(community, connection.did);
-			const readable =
-				authz.member || authz.isOwner
-					? await this.communities.readableChannels(community, authz)
-					: [];
+			const views =
+				authz.member || authz.isOwner ? await this.communities.channels(community, authz) : [];
+			const readable = views.map((view) => view.space as string);
 			const wanted = new Set(readable);
 			const threads = this.threadsHeldIn(connection, community);
 			const held = new Set(
@@ -575,6 +586,16 @@ export class EventServer {
 				if (!(await this.mayReadSpace(connection.did, space))) lost.push(space);
 			}
 			connection.grants.set(community, wanted);
+
+			for (const view of views) {
+				const previous = connection.access.get(view.space);
+				if (previous !== undefined && previous !== accessSignature(view)) {
+					this.send(connection, channelEvent("update", community, view.space, view));
+				}
+			}
+
+			for (const space of lost) connection.access.delete(space);
+			this.rememberAccess(connection, views);
 			if (gained.length === 0 && lost.length === 0) continue;
 
 			for (const space of lost) {

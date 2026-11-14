@@ -20,6 +20,7 @@ const OWNER = "did:plc:owner";
 const MOD = "did:plc:moderator";
 const MEMBER = "did:plc:member";
 const STAFFER = "did:plc:staffer";
+const EDITOR = "did:plc:editor";
 const NOW = "2026-10-12T00:00:00.000Z";
 
 type CategoryRecord = {
@@ -30,7 +31,10 @@ type CategoryRecord = {
 	allowedMembers?: string[];
 	visibleToRoles?: string[];
 	visibleToMembers?: string[];
+	permissionOverrides?: PermissionOverride[];
 };
+
+type PermissionOverride = { role?: string; member?: string; allow: string[]; deny: string[] };
 
 let database: TestDatabase;
 let ctx: AppContext;
@@ -72,6 +76,7 @@ const fakeWriter = (): CommunityWriter => {
 					allowedMembers: record.allowedMembers ?? [],
 					visibleToRoles: record.visibleToRoles ?? [],
 					visibleToMembers: record.visibleToMembers ?? [],
+					permissionOverrides: record.permissionOverrides ?? null,
 				};
 				await database.db
 					.insert(database.tables.categories)
@@ -90,7 +95,13 @@ const fakeWriter = (): CommunityWriter => {
 	return fake as unknown as CommunityWriter;
 };
 
-const addRole = (rkey: string, position: number, isProtected = false, permissions: string[] = []) =>
+const addRole = (
+	rkey: string,
+	position: number,
+	isProtected = false,
+	permissions: string[] = [],
+	isDefault = false,
+) =>
 	database.db.insert(database.tables.roles).values({
 		community: COMMUNITY,
 		rkey,
@@ -101,6 +112,7 @@ const addRole = (rkey: string, position: number, isProtected = false, permission
 		hoisted: false,
 		mentionable: false,
 		protected: isProtected,
+		isDefault,
 		channelOverrides: [],
 	});
 
@@ -180,11 +192,13 @@ beforeEach(async () => {
 		indexedAt: NOW,
 	});
 	await addRole("owner", 1000, true);
-	await addRole("mod", 100, false, ["category.create", "category.update"]);
+	await addRole("mod", 100, false, ["category.create", "category.update", "role.manage"]);
+	await addRole("editor", 80, false, ["category.create", "category.update"]);
 	await addRole("staff", 50);
 	await addRole("lead", 500);
 	await addMember(OWNER, ["owner"]);
 	await addMember(MOD, ["mod"]);
+	await addMember(EDITOR, ["editor"]);
 	await addMember(MEMBER, []);
 	await addMember(STAFFER, ["staff"]);
 });
@@ -237,17 +251,33 @@ describe("transferOwnership", () => {
 	});
 });
 
+const HIDDEN: PermissionOverride[] = [
+	{ role: "members", allow: [], deny: ["channel.view"] },
+	{ role: "staff", allow: ["channel.view"], deny: [] },
+];
+
 describe("category permissions", () => {
-	it("stores the permissions on the record and serves them on the view", async () => {
+	beforeEach(async () => {
+		await addRole("members", 0, false, [], true);
+		for (const [did, roles] of [
+			[MEMBER, ["members"]],
+			[STAFFER, ["staff", "members"]],
+		] as const) {
+			await database.db
+				.update(database.tables.members)
+				.set({ roles: [...roles] })
+				.where(eq(database.tables.members.did, did));
+		}
+	});
+
+	it("stores the overrides on the record and serves them on the view", async () => {
 		const { category } = await handleCreateCategory(ctx, writer, communities, COMMUNITY, MOD, {
 			name: "Staff",
-			visibleToRoles: ["staff"],
-			allowedMembers: [STAFFER],
+			permissionOverrides: [...HIDDEN, { member: STAFFER, allow: ["message.send"], deny: [] }],
 		});
 		expect(category).toMatchObject({
 			name: "Staff",
-			visibleToRoles: ["staff"],
-			allowedMembers: [STAFFER],
+			permissionOverrides: [...HIDDEN, { member: STAFFER, allow: ["message.send"], deny: [] }],
 			private: true,
 		});
 		const record = writes.find((entry) => entry.write.collection === COLLECTIONS.category)?.write
@@ -256,8 +286,7 @@ describe("category permissions", () => {
 			$type: COLLECTIONS.category,
 			name: "Staff",
 			channelOrder: [],
-			allowedMembers: [STAFFER],
-			visibleToRoles: ["staff"],
+			permissionOverrides: [...HIDDEN, { member: STAFFER, allow: ["message.send"], deny: [] }],
 		});
 	});
 
@@ -270,7 +299,7 @@ describe("category permissions", () => {
 		await addChannel("guests", category.rkey, [MEMBER]);
 
 		await handleUpdateCategory(ctx, writer, communities, COMMUNITY, MOD, category.rkey, {
-			visibleToRoles: ["staff"],
+			permissionOverrides: HIDDEN,
 		});
 
 		expect(await readable(MEMBER)).toEqual(["general", "guests"]);
@@ -278,10 +307,10 @@ describe("category permissions", () => {
 		expect(await readable(OWNER)).toEqual(["general", "guests", "lounge"]);
 	});
 
-	it("keeps the permissions when only the name changes", async () => {
+	it("keeps the overrides when only the name changes", async () => {
 		const { category } = await handleCreateCategory(ctx, writer, communities, COMMUNITY, MOD, {
 			name: "Staff",
-			visibleToRoles: ["staff"],
+			permissionOverrides: HIDDEN,
 		});
 		const updated = await handleUpdateCategory(
 			ctx,
@@ -292,7 +321,7 @@ describe("category permissions", () => {
 			category.rkey,
 			{ name: "Crew" },
 		);
-		expect(updated.category).toMatchObject({ name: "Crew", visibleToRoles: ["staff"] });
+		expect(updated.category).toMatchObject({ name: "Crew", permissionOverrides: HIDDEN });
 		const [row] = await database.db
 			.select()
 			.from(database.tables.categories)
@@ -302,15 +331,42 @@ describe("category permissions", () => {
 					eq(database.tables.categories.rkey, category.rkey),
 				),
 			);
-		expect(row?.visibleToRoles).toEqual(["staff"]);
+		expect(row?.permissionOverrides).toEqual(HIDDEN);
 	});
 
-	it("refuses granting visibility to a role at or above the caller's own", async () => {
+	it("refuses overrides for a role at or above the caller's own", async () => {
 		await expect(
 			handleCreateCategory(ctx, writer, communities, COMMUNITY, MOD, {
 				name: "Leads",
-				visibleToRoles: ["lead"],
+				permissionOverrides: [{ role: "lead", allow: ["channel.view"], deny: [] }],
 			}),
 		).rejects.toMatchObject({ customErrorName: "Forbidden" });
+	});
+
+	it("refuses overrides from a caller without role.manage", async () => {
+		await expect(
+			handleCreateCategory(ctx, writer, communities, COMMUNITY, EDITOR, {
+				name: "Staff",
+				permissionOverrides: HIDDEN,
+			}),
+		).rejects.toMatchObject({ customErrorName: "Forbidden" });
+	});
+
+	it("refuses changing a permission the caller doesn't have", async () => {
+		await expect(
+			handleCreateCategory(ctx, writer, communities, COMMUNITY, MOD, {
+				name: "Stage",
+				permissionOverrides: [{ role: "staff", allow: ["voice.moderate"], deny: [] }],
+			}),
+		).rejects.toMatchObject({ customErrorName: "Forbidden" });
+	});
+
+	it("rejects a permission that only exists Space-wide", async () => {
+		await expect(
+			handleCreateCategory(ctx, writer, communities, COMMUNITY, MOD, {
+				name: "Staff",
+				permissionOverrides: [{ role: "staff", allow: ["member.kick"], deny: [] }],
+			}),
+		).rejects.toMatchObject({ customErrorName: "InvalidRequest" });
 	});
 });

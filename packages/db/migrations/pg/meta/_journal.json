@@ -281,6 +281,13 @@
 			"when": 1794609745224,
 			"tag": "0039_swift_silver_samurai",
 			"breakpoints": true
+		},
+		{
+			"idx": 40,
+			"version": "7",
+			"when": 1794648784836,
+			"tag": "0040_whole_reavers",
+			"breakpoints": true
 		}
 	]
 }

@@ -202,7 +202,7 @@ export const registerThreadWriteRoutes = ({ server, ctx, auth }: RouteDeps): voi
 	> => {
 		const channel = await ctx.loader.channel(row.channel);
 		const state = toThreadState(row);
-		return (check) => (channel ? check(authz, channel, state) : canManageThread(authz));
+		return (check) => (channel ? check(authz, channel, state) : canManageThread(authz, channel));
 	};
 
 	const requireChannel = async (space: string): Promise<ChannelState> => {
@@ -225,9 +225,10 @@ export const registerThreadWriteRoutes = ({ server, ctx, auth }: RouteDeps): voi
 				}
 
 				const authz = await ctx.loader.authz(community, actor);
-				if (!has(authz, "thread.create")) throw forbidden("you lack the thread.create permission");
-
 				const channel = await requireChannel(input.body.channel);
+				if (!has(authz, "thread.create", channel)) {
+					throw forbidden("you lack the thread.create permission");
+				}
 				if (!canPost(authz, channel)) throw forbidden("you may not post in that channel");
 
 				await assertVisibilityHierarchy(ctx, community, authz, input.body.visibleToRoles);
@@ -292,16 +293,17 @@ export const registerThreadWriteRoutes = ({ server, ctx, auth }: RouteDeps): voi
 				const authz = await ctx.loader.authz(existing.community, actor);
 
 				const allows = await openerCheck(existing, authz);
+				const parent = await ctx.loader.channel(existing.channel);
 				const { name, closed, locked } = input.body;
 				const changesVisibility =
 					input.body.visibleToRoles !== undefined || input.body.visibleToMembers !== undefined;
 				const changesLock = locked !== undefined && locked !== existing.locked;
 				const changesClosed = closed !== undefined && closed !== (existing.closedAt !== null);
 				const permitted =
-					(!changesVisibility || canManageThread(authz)) &&
+					(!changesVisibility || canManageThread(authz, parent)) &&
 					(name === undefined || allows(canRenameThread)) &&
 					(!changesClosed || allows(canCloseThread)) &&
-					(!changesLock || canLockThread(authz));
+					(!changesLock || canLockThread(authz, parent));
 				if (!permitted) throw forbidden("you may not change this thread");
 
 				await assertVisibilityHierarchy(
@@ -366,7 +368,7 @@ export const registerThreadWriteRoutes = ({ server, ctx, auth }: RouteDeps): voi
 				const existing = await loadThread(input.body.thread);
 				const authz = await ctx.loader.authz(existing.community, actor);
 				const anchor = input.body.anchor;
-				const manages = canManageThread(authz);
+				const manages = canManageThread(authz, await ctx.loader.channel(existing.channel));
 				if (!manages && !(anchor && existing.anchorAuthor === actor && anchor.did === actor)) {
 					throw forbidden("you lack the thread.manage permission");
 				}
@@ -481,7 +483,10 @@ export const moveMessages = async (
 
 	const community = source.authority;
 	const authz = await ctx.loader.authz(community, actor);
-	if (!has(authz, "thread.move")) throw forbidden("you lack the thread.move permission");
+	const origin = await ctx.loader.spaceStates(source.uri, source.spaceType);
+	if (!has(authz, "thread.move", origin.channel)) {
+		throw forbidden("you lack the thread.move permission");
+	}
 
 	await requireReadable(ctx, source.uri, source.spaceType, authz);
 	await requirePostable(ctx, destination.uri, destination.spaceType, authz);
@@ -650,7 +655,9 @@ const requirePostable = async (
 	const states = await ctx.loader.spaceStates(space, spaceType);
 	if (!states.channel) throw new InvalidRequestError(`no space at ${space}`, "SpaceNotFound");
 	if (!canPost(authz, states.channel)) throw forbidden("you may not post in that space");
-	if (states.thread?.locked && !canManageThread(authz)) throw forbidden("that thread is locked");
+	if (states.thread?.locked && !canManageThread(authz, states.channel)) {
+		throw forbidden("that thread is locked");
+	}
 };
 
 const movedDestination = async (

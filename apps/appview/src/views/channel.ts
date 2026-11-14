@@ -2,7 +2,7 @@ import type { BridgedAttribution, ReactionEmojiRef, Schema } from "@colibri-soci
 import { isResizableImage, type Variant } from "@colibri-social/blobs";
 import {
 	type ActorAuthz,
-	type CategoryAudience,
+	type CategoryScope,
 	canRead,
 	customEmojiPolicy,
 	filterCustomEmojiFacets,
@@ -307,8 +307,15 @@ export class ChannelViews {
 		return {
 			community: row,
 			sources: [...new Set([...(row?.labelers ?? []), community])],
-			seesHidden: viewerAuthz ? has(viewerAuthz, "label.apply", parseSpaceRef(space).skey) : false,
+			seesHidden: viewerAuthz ? await this.seesHidden(viewerAuthz, space) : false,
 		};
+	}
+
+	private async seesHidden(authz: ActorAuthz, space: string): Promise<boolean> {
+		const parsed = parseSpaceRef(space);
+		const { channel } = await this.ctx.loader.spaceStates(parsed.uri, parsed.spaceType);
+
+		return has(authz, "label.apply", channel);
 	}
 
 	private async labelPolicy(
@@ -525,9 +532,9 @@ export class ChannelViews {
 			.from(table)
 			.where(and(eq(table.community, community), inArray(table.spaceType, CHANNEL_SPACE_TYPES)))
 			.orderBy(asc(table.position));
-		const audiences = await this.ctx.loader.categoryAudiences(community);
+		const scopes = await this.ctx.loader.categoryScopes(community);
 		const readable = rows.filter((row) =>
-			canRead(authz, toChannelState(row, row.category ? audiences.get(row.category) : null)),
+			canRead(authz, toChannelState(row, row.category ? scopes.get(row.category) : null)),
 		);
 		const latest = await this.latestSummaries(
 			readable.map((row) => row.space),
@@ -985,7 +992,7 @@ export class ChannelViews {
 		if (channelRows.length === 0) return [];
 
 		const authzByCommunity = new Map<string, ActorAuthz>();
-		const audiencesByCommunity = new Map<string, Map<string, CategoryAudience>>();
+		const audiencesByCommunity = new Map<string, Map<string, CategoryScope>>();
 		const readable: ChannelRow[] = [];
 		for (const row of channelRows) {
 			let authz = authzByCommunity.get(row.community);
@@ -995,7 +1002,7 @@ export class ChannelViews {
 			}
 			let audiences = audiencesByCommunity.get(row.community);
 			if (!audiences) {
-				audiences = await this.ctx.loader.categoryAudiences(row.community);
+				audiences = await this.ctx.loader.categoryScopes(row.community);
 				audiencesByCommunity.set(row.community, audiences);
 			}
 			const category = row.category ? audiences.get(row.category) : null;

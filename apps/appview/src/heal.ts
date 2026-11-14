@@ -2,6 +2,7 @@ import {
 	CommunityCredentialError,
 	ensureDefaultRole,
 	healOwnerPermissions,
+	healPermissionOverrides,
 } from "@colibri-social/community";
 import { COLLECTIONS } from "@colibri-social/lexicons";
 import { XrpcError } from "@colibri-social/space";
@@ -12,6 +13,20 @@ const failureCode = (error: unknown): string => {
 	if (error instanceof CommunityCredentialError) return error.failure;
 	if (error instanceof XrpcError) return error.code;
 	return "Unknown";
+};
+
+const healOverrides = async (ctx: AppContext, community: string): Promise<void> => {
+	const healed = await healPermissionOverrides(
+		{
+			db: ctx.database.db,
+			tables: ctx.database.tables,
+			loader: ctx.loader,
+			writer: ctx.writer,
+		},
+		community,
+	);
+	if (healed)
+		ctx.log.info({ community, ...healed, code: "PermissionOverridesHealed" }, "heal.overrides");
 };
 
 const backfills = new Map<string, Promise<void>>();
@@ -35,7 +50,10 @@ const runDefaultRoleBackfill = async (ctx: AppContext, community: string): Promi
 			},
 			community,
 		);
-		if (!backfill) return;
+		if (!backfill) {
+			await healOverrides(ctx, community);
+			return;
+		}
 		if (backfill.created || backfill.normalized) {
 			ctx.announce.toCommunity(
 				community,
@@ -58,6 +76,7 @@ const runDefaultRoleBackfill = async (ctx: AppContext, community: string): Promi
 						? "DefaultRoleNormalized"
 						: "DefaultRoleRepaired",
 		};
+		await healOverrides(ctx, community);
 		if (backfill.failedMembers > 0) {
 			ctx.log.warn(
 				{ ...detail, failedMembers: backfill.failedMembers, code: "MemberWriteFailed" },

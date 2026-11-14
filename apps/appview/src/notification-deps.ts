@@ -1,5 +1,5 @@
 import type { ChannelState, ThreadState } from "@colibri-social/community";
-import { decideSpaceAccess, isPrivateChannel, isPrivateThread } from "@colibri-social/community";
+import { decideSpaceAccess } from "@colibri-social/community";
 import type { NotificationDeps } from "@colibri-social/notifications";
 import { isChannelSpace, isThreadSpace, spaceContextFor } from "@colibri-social/projections";
 import type { AppContext } from "./context.js";
@@ -13,9 +13,6 @@ export const mayReadStates = async (
 	did: string,
 ): Promise<boolean> => {
 	if (!states.channel) return false;
-	if (!isPrivateChannel(states.channel) && !(states.thread && isPrivateThread(states.thread))) {
-		return true;
-	}
 
 	const authz = await ctx.loader.authz(space.community, did);
 	return decideSpaceAccess({

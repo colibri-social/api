@@ -1,11 +1,11 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
+import { type CommunityWriter, has } from "@colibri-social/community";
 import {
-	type ActorAuthz,
-	type CommunityWriter,
-	has,
-	outranksPosition,
-} from "@colibri-social/community";
-import { COLLECTIONS, social } from "@colibri-social/lexicons";
+	COLLECTIONS,
+	type PermissionOverrideShape,
+	SPACE_TYPES,
+	social,
+} from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import { and, eq } from "drizzle-orm";
 import { categoryEvent } from "../announce.js";
@@ -22,7 +22,12 @@ import type { AppContext } from "../context.js";
 import { toXrpcError } from "../errors.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
-import { type ChannelView, CommunityViews } from "../views/community.js";
+import { type ChannelScopeContext, type ChannelView, CommunityViews } from "../views/community.js";
+import {
+	authorizeOverrideWrite,
+	currentOverrides,
+	overridesRecordFields,
+} from "./permission-overrides.js";
 import type { RouteDeps } from "./types.js";
 
 type ChannelRow = Awaited<ReturnType<typeof loadChannelRow>>;
@@ -80,22 +85,43 @@ async function loadChannelRow(ctx: AppContext, space: string) {
 	return row ?? null;
 }
 
-export const assertVisibilityHierarchy = async (
+const LEGACY_CLEARED = {
+	ownerOnly: false,
+	allowedRoles: [],
+	allowedMembers: [],
+	visibleToRoles: [],
+	visibleToMembers: [],
+};
+
+const scopeContext = async (
 	ctx: AppContext,
 	community: string,
-	authz: ActorAuthz,
-	visibleToRoles: string[] | undefined,
-): Promise<void> => {
-	if (!visibleToRoles || visibleToRoles.length === 0) return;
+	category: string | null,
+): Promise<ChannelScopeContext> => {
+	const [scope, roles] = await Promise.all([
+		ctx.loader.categoryScope(community, category),
+		ctx.loader.roles(community),
+	]);
+
+	return { category: scope, roles };
+};
+
+const existingOverrides = async (
+	ctx: AppContext,
+	community: string,
+	row: NonNullable<ChannelRow>,
+) => {
 	const roles = await ctx.loader.roles(community);
-	const byKey = new Map(roles.map((role) => [role.rkey, role]));
-	for (const rkey of visibleToRoles) {
-		const role = byKey.get(rkey);
-		if (!role) continue;
-		if (!outranksPosition(authz, role.position)) {
-			throw forbidden(`you may not grant visibility to the role ${role.name}`);
-		}
-	}
+	const roleOverrides = roles.flatMap((role) =>
+		role.channelOverrides
+			.filter((override) => override.channel === row.skey)
+			.map((override) => ({ role: role.rkey, override })),
+	);
+
+	return currentOverrides(row.permissionOverrides ?? null, row, roles, {
+		postingKeys: [row.spaceType === SPACE_TYPES.channelVoice ? "voice.connect" : "message.send"],
+		roleOverrides,
+	});
 };
 
 const categoriesListing = async (ctx: AppContext, community: string, skey: string) => {
@@ -136,11 +162,7 @@ export const handleCreateChannel = async (
 		name: string;
 		category: string;
 		description?: string;
-		ownerOnly?: boolean;
-		allowedRoles?: string[];
-		allowedMembers?: string[];
-		visibleToRoles?: string[];
-		visibleToMembers?: string[];
+		permissionOverrides?: readonly PermissionOverrideShape[];
 	},
 ): Promise<{ channel: ChannelView }> => {
 	try {
@@ -150,7 +172,9 @@ export const handleCreateChannel = async (
 		const category = await loadCategoryRow(ctx, community, input.category);
 		if (!category) throw categoryNotFound();
 
-		await assertVisibilityHierarchy(ctx, community, authz, input.visibleToRoles);
+		const permissionOverrides = input.permissionOverrides
+			? await authorizeOverrideWrite(ctx, community, authz, [], input.permissionOverrides)
+			: [];
 
 		const host = await ctx.credentials.connect(community);
 
@@ -158,11 +182,7 @@ export const handleCreateChannel = async (
 			type: input.type,
 			name: input.name,
 			description: input.description,
-			ownerOnly: input.ownerOnly,
-			allowedRoles: input.allowedRoles,
-			allowedMembers: input.allowedMembers,
-			visibleToRoles: input.visibleToRoles,
-			visibleToMembers: input.visibleToMembers,
+			permissionOverrides,
 		});
 		const skey = space.split("/").pop() as string;
 
@@ -181,21 +201,18 @@ export const handleCreateChannel = async (
 			description: input.description ?? null,
 			category: category.rkey,
 			position: order.length,
-			ownerOnly: input.ownerOnly ?? false,
-			allowedRoles: input.allowedRoles ?? [],
-			allowedMembers: input.allowedMembers ?? [],
-			visibleToRoles: input.visibleToRoles ?? [],
-			visibleToMembers: input.visibleToMembers ?? [],
+			ownerOnly: false,
+			allowedRoles: [],
+			allowedMembers: [],
+			visibleToRoles: [],
+			visibleToMembers: [],
 			linkEmbeds: null,
 			migratedFrom: null,
+			permissionOverrides,
 		};
 
 		return {
-			channel: communities.channel(
-				row,
-				authz,
-				await ctx.loader.categoryAudience(community, row.category),
-			),
+			channel: communities.channel(row, authz, await scopeContext(ctx, community, row.category)),
 		};
 	} catch (error) {
 		throw toXrpcError(error);
@@ -212,13 +229,9 @@ export const handleUpdateChannel = async (
 		name?: string;
 		description?: string;
 		category?: string;
-		ownerOnly?: boolean;
-		allowedRoles?: string[];
-		allowedMembers?: string[];
 		linkEmbeds?: boolean;
 		removeLinkEmbeds?: boolean;
-		visibleToRoles?: string[];
-		visibleToMembers?: string[];
+		permissionOverrides?: readonly PermissionOverrideShape[];
 	},
 ): Promise<{ channel: ChannelView }> => {
 	try {
@@ -228,7 +241,15 @@ export const handleUpdateChannel = async (
 		const community = parseSpaceRef(space).authority;
 		const authz = await requirePermission(ctx, community, actor, "channel.update");
 
-		await assertVisibilityHierarchy(ctx, community, authz, input.visibleToRoles);
+		const permissionOverrides = input.permissionOverrides
+			? await authorizeOverrideWrite(
+					ctx,
+					community,
+					authz,
+					await existingOverrides(ctx, community, existing),
+					input.permissionOverrides,
+				)
+			: (existing.permissionOverrides ?? null);
 
 		let category = existing.category;
 		if (input.category !== undefined && input.category !== existing.category) {
@@ -266,13 +287,8 @@ export const handleUpdateChannel = async (
 
 		const name = input.name ?? existing.name;
 		const description = input.description ?? existing.description ?? undefined;
-		const ownerOnly = input.ownerOnly ?? existing.ownerOnly;
-		const allowedRoles = input.allowedRoles ?? existing.allowedRoles;
-		const allowedMembers = input.allowedMembers ?? existing.allowedMembers;
 		const linkEmbeds =
 			input.linkEmbeds ?? (input.removeLinkEmbeds ? undefined : (existing.linkEmbeds ?? undefined));
-		const visibleToRoles = input.visibleToRoles ?? existing.visibleToRoles;
-		const visibleToMembers = input.visibleToMembers ?? existing.visibleToMembers;
 
 		await writer.put(community, {
 			space,
@@ -282,11 +298,7 @@ export const handleUpdateChannel = async (
 				$type: COLLECTIONS.channel,
 				name,
 				...(description ? { description } : {}),
-				...(ownerOnly ? { ownerOnly: true } : {}),
-				...(allowedRoles.length ? { allowedRoles } : {}),
-				...(allowedMembers.length ? { allowedMembers } : {}),
-				...(visibleToRoles.length ? { visibleToRoles } : {}),
-				...(visibleToMembers.length ? { visibleToMembers } : {}),
+				...overridesRecordFields(permissionOverrides, existing),
 				...(linkEmbeds === undefined ? {} : { linkEmbeds }),
 				...(existing.migratedFrom ? { migratedFrom: existing.migratedFrom } : {}),
 			},
@@ -297,22 +309,15 @@ export const handleUpdateChannel = async (
 			name,
 			description: description ?? null,
 			category,
-			ownerOnly,
-			allowedRoles,
-			allowedMembers,
-			visibleToRoles,
-			visibleToMembers,
+			...(permissionOverrides ? LEGACY_CLEARED : {}),
+			permissionOverrides,
 			linkEmbeds: linkEmbeds ?? null,
 		};
 
 		ctx.announce.channelChanged(community, space, "update");
 
 		return {
-			channel: communities.channel(
-				row,
-				authz,
-				await ctx.loader.categoryAudience(community, row.category),
-			),
+			channel: communities.channel(row, authz, await scopeContext(ctx, community, row.category)),
 		};
 	} catch (error) {
 		throw toXrpcError(error);
@@ -404,11 +409,7 @@ export const registerChannelWriteRoutes = ({ server, ctx, auth }: RouteDeps): vo
 					name: input.body.name,
 					category: input.body.category,
 					description: input.body.description,
-					ownerOnly: input.body.ownerOnly,
-					allowedRoles: input.body.allowedRoles,
-					allowedMembers: input.body.allowedMembers,
-					visibleToRoles: input.body.visibleToRoles,
-					visibleToMembers: input.body.visibleToMembers,
+					permissionOverrides: input.body.permissionOverrides,
 				},
 			),
 		}),
@@ -428,13 +429,9 @@ export const registerChannelWriteRoutes = ({ server, ctx, auth }: RouteDeps): vo
 					name: input.body.name,
 					description: input.body.description,
 					category: input.body.category,
-					ownerOnly: input.body.ownerOnly,
-					allowedRoles: input.body.allowedRoles,
-					allowedMembers: input.body.allowedMembers,
 					linkEmbeds: input.body.linkEmbeds,
 					removeLinkEmbeds: input.body.removeLinkEmbeds,
-					visibleToRoles: input.body.visibleToRoles,
-					visibleToMembers: input.body.visibleToMembers,
+					permissionOverrides: input.body.permissionOverrides,
 				},
 			),
 		}),

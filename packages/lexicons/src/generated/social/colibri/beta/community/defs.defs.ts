@@ -3,6 +3,7 @@
  */
 
 import { l } from "@atproto/lex";
+import * as BetaDefs from "../defs.defs.js";
 import * as RichtextFacet from "../richtext/facet.defs.js";
 import * as ActorDefs from "../actor/defs.defs.js";
 
@@ -166,39 +167,19 @@ type CategoryView = { $type?: "social.colibri.beta.community.defs#categoryView";
   "channels":(ChannelView)[];
 
   /**
-   * Whether only community admins may post in the category's channels. A channel that sets its own posting restriction overrides this.
+   * Whether the default role is denied channel.view in the category.
    */
-  "ownerOnly"?:boolean;
+  "private"?:boolean;
 
   /**
-   * Roles allowed to post in the category's channels. Empty means no role restriction. A channel that sets its own posting restriction overrides this.
+   * Per-role and per-member permission overrides set here.
    */
-  "allowedRoles"?:(l.RecordKeyString)[];
-
-  /**
-   * Members allowed to post in the category's channels in addition to allowedRoles.
-   */
-  "allowedMembers"?:(l.DidString)[];
-
-  /**
-   * Roles that may read the category's channels. Empty or absent means every member may read them. A channel with its own non-empty visibleToRoles or visibleToMembers overrides this. A non-empty list makes the category's other channels private, enforced the same way as a private channel.
-   */
-  "visibleToRoles"?:(l.RecordKeyString)[];
-
-  /**
-   * Members that may read the category's channels in addition to visibleToRoles.
-   */
-  "visibleToMembers"?:(l.DidString)[];
-
-  /**
-   * Whether the category restricts who may read its channels.
-   */
-  "private"?:boolean };
+  "permissionOverrides"?:(BetaDefs.PermissionOverride)[] };
 
 export type { CategoryView };
 
 /** A category and the channels in it. */
-const categoryView = /*#__PURE__*/ l.typedObject<CategoryView>($nsid, "categoryView", /*#__PURE__*/ l.object({"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"name":/*#__PURE__*/ l.string(),"channels":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ChannelView>((() => channelView) as any), ),"ownerOnly":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"allowedRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"allowedMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"private":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
+const categoryView = /*#__PURE__*/ l.typedObject<CategoryView>($nsid, "categoryView", /*#__PURE__*/ l.object({"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"name":/*#__PURE__*/ l.string(),"channels":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<ChannelView>((() => channelView) as any), ),"private":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"permissionOverrides":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<BetaDefs.PermissionOverride>((() => BetaDefs.permissionOverride) as any), {"maxLength":200}))}));
 
 export { categoryView };
 
@@ -231,21 +212,6 @@ type ChannelView = { $type?: "social.colibri.beta.community.defs#channelView";
   "category"?:l.RecordKeyString;
 
   /**
-   * Whether only admins may post.
-   */
-  "ownerOnly"?:boolean;
-
-  /**
-   * Roles allowed to post.
-   */
-  "allowedRoles"?:(l.RecordKeyString)[];
-
-  /**
-   * Members allowed to post.
-   */
-  "allowedMembers"?:(l.DidString)[];
-
-  /**
    * Whether link previews are shown here.
    */
   "linkEmbeds"?:boolean;
@@ -261,24 +227,19 @@ type ChannelView = { $type?: "social.colibri.beta.community.defs#channelView";
   "viewer":ChannelViewerState;
 
   /**
-   * Roles that may read this channel. Empty means every member may.
+   * Whether the default role is denied channel.view in the channel, directly or through its category.
    */
-  "visibleToRoles"?:(l.RecordKeyString)[];
+  "private"?:boolean;
 
   /**
-   * Members that may read this channel beyond visibleToRoles.
+   * Per-role and per-member permission overrides set here.
    */
-  "visibleToMembers"?:(l.DidString)[];
-
-  /**
-   * Whether the channel restricts who may read it, rather than only who may post.
-   */
-  "private"?:boolean };
+  "permissionOverrides"?:(BetaDefs.PermissionOverride)[] };
 
 export type { ChannelView };
 
 /** A channel as the AppView serves it. The channel's identity is its space. */
-const channelView = /*#__PURE__*/ l.typedObject<ChannelView>($nsid, "channelView", /*#__PURE__*/ l.object({"space":/*#__PURE__*/ l.string({"format":"space-ref"}),"type":/*#__PURE__*/ l.string<{"knownValues":["social.colibri.beta.channel.text","social.colibri.beta.channel.voice"]}>(),"name":/*#__PURE__*/ l.string(),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"category":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"record-key"})),"ownerOnly":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"allowedRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"allowedMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"linkEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"migratedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"viewer":/*#__PURE__*/ l.ref<ChannelViewerState>((() => channelViewerState) as any),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"private":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
+const channelView = /*#__PURE__*/ l.typedObject<ChannelView>($nsid, "channelView", /*#__PURE__*/ l.object({"space":/*#__PURE__*/ l.string({"format":"space-ref"}),"type":/*#__PURE__*/ l.string<{"knownValues":["social.colibri.beta.channel.text","social.colibri.beta.channel.voice"]}>(),"name":/*#__PURE__*/ l.string(),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"category":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"record-key"})),"linkEmbeds":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"migratedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"})),"viewer":/*#__PURE__*/ l.ref<ChannelViewerState>((() => channelViewerState) as any),"private":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"permissionOverrides":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<BetaDefs.PermissionOverride>((() => BetaDefs.permissionOverride) as any), {"maxLength":200}))}));
 
 export { channelView };
 
@@ -296,7 +257,7 @@ type ChannelViewerState = { $type?: "social.colibri.beta.community.defs#channelV
   "canPost":boolean;
 
   /**
-   * Effective permissions in this channel, after per-channel role overrides.
+   * The requesting user's effective permissions in this channel, after category and channel overrides.
    */
   "permissions"?:(string)[] };
 
@@ -361,11 +322,6 @@ type RoleView = { $type?: "social.colibri.beta.community.defs#roleView";
   "default"?:boolean;
 
   /**
-   * Per-channel overrides.
-   */
-  "channelOverrides"?:(RoleChannelOverride)[];
-
-  /**
    * Number of members holding this role.
    */
   "memberCount"?:number };
@@ -373,34 +329,9 @@ type RoleView = { $type?: "social.colibri.beta.community.defs#roleView";
 export type { RoleView };
 
 /** A role. */
-const roleView = /*#__PURE__*/ l.typedObject<RoleView>($nsid, "roleView", /*#__PURE__*/ l.object({"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"name":/*#__PURE__*/ l.string(),"color":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":7})),"badge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<RoleIconBadge>((() => roleIconBadge) as any),/*#__PURE__*/ l.typedRef<RoleImageBadgeView>((() => roleImageBadgeView) as any),/*#__PURE__*/ l.typedRef<RoleEmojiBadgeView>((() => roleEmojiBadgeView) as any)], false)),"permissions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ),"position":/*#__PURE__*/ l.integer(),"hoisted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"mentionable":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"protected":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"default":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"channelOverrides":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RoleChannelOverride>((() => roleChannelOverride) as any), )),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer())}));
+const roleView = /*#__PURE__*/ l.typedObject<RoleView>($nsid, "roleView", /*#__PURE__*/ l.object({"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"name":/*#__PURE__*/ l.string(),"color":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":7})),"badge":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<RoleIconBadge>((() => roleIconBadge) as any),/*#__PURE__*/ l.typedRef<RoleImageBadgeView>((() => roleImageBadgeView) as any),/*#__PURE__*/ l.typedRef<RoleEmojiBadgeView>((() => roleEmojiBadgeView) as any)], false)),"permissions":/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ),"position":/*#__PURE__*/ l.integer(),"hoisted":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"mentionable":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"protected":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"default":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"memberCount":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer())}));
 
 export { roleView };
-
-/** Allow and deny lists scoped to one channel. */
-type RoleChannelOverride = { $type?: "social.colibri.beta.community.defs#roleChannelOverride";
-
-  /**
-   * The channel's space key.
-   */
-  "channel":l.RecordKeyString;
-
-  /**
-   * Permissions granted here.
-   */
-  "allow"?:(string)[];
-
-  /**
-   * Permissions denied here.
-   */
-  "deny"?:(string)[] };
-
-export type { RoleChannelOverride };
-
-/** Allow and deny lists scoped to one channel. */
-const roleChannelOverride = /*#__PURE__*/ l.typedObject<RoleChannelOverride>($nsid, "roleChannelOverride", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"record-key"}),"allow":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), )),"deny":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ))}));
-
-export { roleChannelOverride };
 
 /** A role badge drawn from the client's curated icon set. */
 type RoleIconBadge = { $type?: "social.colibri.beta.community.defs#roleIconBadge";

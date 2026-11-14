@@ -211,7 +211,16 @@ describe("ensureDefaultRole", () => {
 		expect(backfill).toMatchObject({
 			created: false,
 			normalized: true,
-			granted: ["voice.speak", "voice.listen", "voice.camera", "voice.screenshare", "voice.chat"],
+			granted: [
+				"channel.view",
+				"message.send",
+				"voice.connect",
+				"voice.speak",
+				"voice.listen",
+				"voice.camera",
+				"voice.screenshare",
+				"voice.chat",
+			],
 			members: 0,
 		});
 		expect(writes).toHaveLength(1);
@@ -221,6 +230,9 @@ describe("ensureDefaultRole", () => {
 			permissions: [
 				"thread.create",
 				"mention.roles",
+				"channel.view",
+				"message.send",
+				"voice.connect",
 				"voice.speak",
 				"voice.listen",
 				"voice.camera",
@@ -238,12 +250,17 @@ describe("ensureDefaultRole", () => {
 		const backfill = await ensure(writes);
 
 		expect(backfill?.granted).toEqual([
+			"channel.view",
+			"message.send",
+			"voice.connect",
 			"voice.listen",
 			"voice.camera",
 			"voice.screenshare",
 			"voice.chat",
 		]);
-		expect(writes[0]?.record.permissions).toEqual([...DEFAULT_ROLE_PERMISSIONS]);
+		expect([...((writes[0]?.record.permissions as string[]) ?? [])].sort()).toEqual(
+			[...DEFAULT_ROLE_PERMISSIONS].sort(),
+		);
 	});
 
 	it("backfills the voice permissions once, so an admin can take them away again", async () => {
@@ -267,6 +284,9 @@ describe("ensureDefaultRole", () => {
 		const backfill = await ensure(writes);
 
 		expect(backfill?.granted).toEqual([
+			"channel.view",
+			"message.send",
+			"voice.connect",
 			"voice.listen",
 			"voice.camera",
 			"voice.screenshare",
@@ -285,7 +305,7 @@ describe("ensureDefaultRole", () => {
 		const writes: RecordWrite[] = [];
 		const backfill = await ensure(writes);
 
-		expect(backfill?.granted).toHaveLength(5);
+		expect(backfill?.granted).toHaveLength(8);
 	});
 
 	it("never backfills a default role it created itself", async () => {

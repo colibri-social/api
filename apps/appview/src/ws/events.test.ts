@@ -4,6 +4,7 @@ import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db"
 import {
 	type ActorAuthz,
 	anonymousAuthz,
+	BASELINE_PERMISSIONS,
 	type ChannelState,
 	type RoleState,
 } from "@colibri-social/community";
@@ -36,6 +37,7 @@ const memberAuthz = (did: string): ActorAuthz => ({
 	isBanned: false,
 	member: { did, roles: [], joinedAt: "2026-01-01T00:00:00.000Z", nickname: null },
 	roles: [],
+	baseline: BASELINE_PERMISSIONS,
 });
 
 const insiderRole = (): RoleState => ({
@@ -151,7 +153,9 @@ describe("EventServer", () => {
 			},
 			loader: {
 				channel: async (space: string) => channels.get(space) ?? null,
-				categoryAudiences: async () => new Map(),
+				categoryScopes: async () => new Map(),
+				categoryScope: async () => null,
+				roles: async () => [],
 				spaceStates: async (space: string) => ({
 					channel: channels.get(space) ?? null,
 					thread: null,
@@ -482,6 +486,47 @@ describe("EventServer", () => {
 		});
 
 		ws.close();
+	});
+
+	it("pushes a personalised channel update when a member override makes it read-only", async () => {
+		await putChannelRow(CHANNEL, "3lkgeneral");
+
+		const alice = connect("alice-token");
+		const bob = connect("bob-token");
+		await Promise.all([waitForOpen(alice), waitForOpen(bob)]);
+		for (const ws of [alice, bob]) {
+			send(ws, { $type: "social.colibri.beta.sync.defs#subscribe", communities: [COMMUNITY] });
+			await nextFrameOfType(ws, "subscribed");
+		}
+
+		await database.db.update(database.tables.channels).set({
+			permissionOverrides: [{ member: ALICE, allow: [], deny: ["message.send"] }],
+		});
+		authzChanges.publish({ community: COMMUNITY, collection: COLLECTIONS.channel });
+
+		const update = await nextFrameOfType(alice, "channelEvent");
+
+		expect(update).toMatchObject({
+			event: "update",
+			community: COMMUNITY,
+			space: CHANNEL,
+			channel: { space: CHANNEL, viewer: { canRead: true, canPost: false } },
+		});
+		expect(
+			(update.channel as { viewer: { permissions: string[] } }).viewer.permissions,
+		).not.toContain("message.send");
+
+		await database.db.update(database.tables.channels).set({ permissionOverrides: [] });
+		authzChanges.publish({ community: COMMUNITY, collection: COLLECTIONS.channel });
+
+		expect(await nextFrameOfType(alice, "channelEvent")).toMatchObject({
+			event: "update",
+			channel: { viewer: { canPost: true } },
+		});
+		expect(heldOfType(bob, "channelEvent")).toEqual([]);
+
+		alice.close();
+		bob.close();
 	});
 
 	it("hands over a channel that was just created", async () => {

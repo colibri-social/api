@@ -68,7 +68,7 @@ const moveDestination = async (
 	if (!destination) throw channelNotFound(moveTo);
 
 	const authz = await ctx.loader.authz(community, actor);
-	if (!has(authz, "voice.moderate", destination.skey)) throw forbidden();
+	if (!has(authz, "voice.moderate", destination, { admitted: true })) throw forbidden();
 
 	const subjectAuthz = await ctx.loader.authz(community, subject);
 
@@ -92,7 +92,7 @@ export const handleModerateVoice = async (
 
 	const community = parseSpaceRef(input.channel).authority;
 	const authz = await ctx.loader.authz(community, actor);
-	if (!has(authz, "voice.moderate", channel.skey)) throw forbidden();
+	if (!has(authz, "voice.moderate", channel)) throw forbidden();
 
 	const destination =
 		input.moveTo !== undefined && input.moveTo !== input.channel

@@ -13,6 +13,12 @@ const flag = (name: string) => integer(name, { mode: "boolean" });
 
 export type SpaceRepoState = "pending" | "active" | "diverged" | "error" | "gone";
 export type RoleChannelOverride = { channel: string; allow: string[]; deny: string[] };
+export type PermissionOverride = {
+	role?: string;
+	member?: string;
+	allow: string[];
+	deny: string[];
+};
 export type RoleBadge =
 	| { kind: "icon"; icon: string; color?: string }
 	| { kind: "image"; cid: string; mimeType: string; size: number }
@@ -207,6 +213,7 @@ export const categories = sqliteTable(
 		allowedMembers: json<string[]>("allowed_members"),
 		visibleToRoles: json<string[]>("visible_to_roles"),
 		visibleToMembers: json<string[]>("visible_to_members"),
+		permissionOverrides: json<PermissionOverride[]>("permission_overrides"),
 	},
 	(t) => [primaryKey({ columns: [t.community, t.rkey] })],
 );
@@ -237,6 +244,7 @@ export const channels = sqliteTable(
 			.$defaultFn(() => []),
 		linkEmbeds: flag("link_embeds"),
 		migratedFrom: text("migrated_from"),
+		permissionOverrides: json<PermissionOverride[]>("permission_overrides"),
 	},
 	(t) => [index("channels_community_idx").on(t.community, t.category)],
 );

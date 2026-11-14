@@ -333,3 +333,70 @@ describe("reordering a category's channels", () => {
 		expect(categoryOrders(OTHER_CATEGORY)).toEqual([]);
 	});
 });
+
+describe("updating a channel's permission overrides", () => {
+	beforeEach(async () => {
+		await database.db
+			.update(database.tables.roles)
+			.set({ permissions: ["channel.update", "channel.delete", "role.manage"] })
+			.where(eq(database.tables.roles.rkey, "admin"));
+		await database.db.insert(database.tables.roles).values({
+			community: COMMUNITY,
+			rkey: "members",
+			name: "Members",
+			permissions: [],
+			position: 0,
+			isDefault: true,
+		});
+	});
+
+	it("converts the legacy audience and writes only the overrides", async () => {
+		await database.db
+			.update(database.tables.channels)
+			.set({ visibleToRoles: ["admin"], ownerOnly: true })
+			.where(eq(database.tables.channels.space, SPACE));
+
+		const { channel } = await update({
+			permissionOverrides: [
+				{ role: "members", allow: [], deny: ["channel.view"] },
+				{ role: "admin", allow: ["channel.view"], deny: [] },
+			],
+		});
+
+		expect(channelRecords().at(-1)).toEqual({
+			$type: COLLECTIONS.channel,
+			name: "general",
+			permissionOverrides: [
+				{ role: "members", allow: [], deny: ["channel.view"] },
+				{ role: "admin", allow: ["channel.view"], deny: [] },
+			],
+		});
+		expect(channel).toMatchObject({ private: true });
+	});
+
+	it("serves the legacy audience as overrides before the record is converted", async () => {
+		await database.db
+			.update(database.tables.channels)
+			.set({ allowedRoles: ["admin"] })
+			.where(eq(database.tables.channels.space, SPACE));
+
+		const { channel } = await update({ name: "general" });
+
+		expect(channel.permissionOverrides).toEqual([
+			{ role: "members", allow: [], deny: ["message.send"] },
+			{ role: "admin", allow: ["message.send"], deny: [] },
+		]);
+		expect(channelRecords().at(-1)).toMatchObject({ allowedRoles: ["admin"] });
+	});
+
+	it("refuses overrides from a caller without role.manage", async () => {
+		await database.db
+			.update(database.tables.roles)
+			.set({ permissions: ["channel.update"] })
+			.where(eq(database.tables.roles.rkey, "admin"));
+
+		await expect(
+			update({ permissionOverrides: [{ member: ADMIN, allow: [], deny: ["message.send"] }] }),
+		).rejects.toMatchObject({ customErrorName: "Forbidden" });
+	});
+});

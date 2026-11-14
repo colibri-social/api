@@ -3,6 +3,7 @@ import {
 	blobCid,
 	COLLECTIONS,
 	communitySpaces,
+	normalizePermissionOverrides,
 	SELF,
 	SPACE_TYPES,
 	social,
@@ -172,6 +173,9 @@ export const category: Projector<social.colibri.beta.category.Main> = {
 			allowedMembers: [...(value.allowedMembers ?? [])],
 			visibleToRoles: [...(value.visibleToRoles ?? [])],
 			visibleToMembers: [...(value.visibleToMembers ?? [])],
+			permissionOverrides: value.permissionOverrides
+				? normalizePermissionOverrides(value.permissionOverrides)
+				: null,
 		};
 		await deps.db
 			.insert(deps.tables.categories)
@@ -339,6 +343,9 @@ export const channel: Projector<social.colibri.beta.channel.Main> = {
 			visibleToMembers: [...(value.visibleToMembers ?? [])],
 			linkEmbeds: value.linkEmbeds ?? null,
 			migratedFrom: value.migratedFrom ?? null,
+			permissionOverrides: value.permissionOverrides
+				? normalizePermissionOverrides(value.permissionOverrides)
+				: null,
 		};
 		const placement = await listingCategory(deps, community, ref.space.uri, ref.space.skey);
 		const placed = placement ? { ...row, ...placement } : row;

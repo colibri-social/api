@@ -1195,10 +1195,17 @@ describe("voice channel pushes", () => {
 			skey: VOICE_SKEY,
 			name: "lounge",
 		});
+		await database.db.insert(database.tables.roles).values({
+			community: COMMUNITY,
+			rkey: "3lkvoicechat",
+			name: "Voice chat",
+			permissions: ["voice.chat"],
+			position: 1,
+		});
 		await database.db.insert(database.tables.members).values([
 			{ community: COMMUNITY, did: AUTHOR, roles: [], joinedAt: NOW },
-			{ community: COMMUNITY, did: LISTENER, roles: [], joinedAt: NOW },
-			{ community: COMMUNITY, did: ELSEWHERE, roles: [], joinedAt: NOW },
+			{ community: COMMUNITY, did: LISTENER, roles: ["3lkvoicechat"], joinedAt: NOW },
+			{ community: COMMUNITY, did: ELSEWHERE, roles: ["3lkvoicechat"], joinedAt: NOW },
 		]);
 	});
 

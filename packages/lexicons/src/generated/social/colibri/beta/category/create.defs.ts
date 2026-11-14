@@ -3,6 +3,7 @@
  */
 
 import { l } from "@atproto/lex";
+import * as BetaDefs from "../defs.defs.js";
 import * as CommunityDefs from "../community/defs.defs.js";
 
 const $nsid = "social.colibri.beta.category.create";
@@ -15,7 +16,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"community":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"ownerOnly":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"allowedRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"allowedMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), )),"visibleToRoles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"visibleToMembers":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), ))});
+export const $input = /*#__PURE__*/ l.jsonPayload({"community":/*#__PURE__*/ l.string({"format":"did"}),"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"permissionOverrides":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<BetaDefs.PermissionOverride>((() => BetaDefs.permissionOverride) as any), {"maxLength":200}))});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;

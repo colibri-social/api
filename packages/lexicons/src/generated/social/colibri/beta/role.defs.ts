@@ -60,7 +60,7 @@ type Main = { $type: "social.colibri.beta.role";
   "default"?:boolean;
 
   /**
-   * Per-channel permission overrides.
+   * @deprecated , superseded by permissionOverrides on channel records. Honoured only for channels without permissionOverrides.
    */
   "channelOverrides"?:(ChannelOverride)[] };
 

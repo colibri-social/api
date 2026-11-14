@@ -21,7 +21,6 @@ import { ActorViews } from "../views/actor.js";
 import { CommunityViews, type RoleView } from "../views/community.js";
 import type { RouteDeps } from "./types.js";
 
-type RoleChannelOverrideInput = { channel: string; allow?: string[]; deny?: string[] };
 type IconBadgeInput = { icon: string; color?: string };
 type EmojiBadgeInput = { emoji?: string; customEmoji?: { uri: string; cid?: string } };
 
@@ -159,16 +158,6 @@ const assertHoldsPermissions = (authz: ActorAuthz, permissions: string[]): void 
 	}
 };
 
-const assertHoldsOverridePermissions = (
-	authz: ActorAuthz,
-	overrides: RoleChannelOverrideInput[],
-): void => {
-	assertHoldsPermissions(
-		authz,
-		overrides.flatMap((override) => override.allow ?? []),
-	);
-};
-
 const loadRoleRow = async (ctx: AppContext, community: string, rkey: string) => {
 	const [row] = await ctx.database.db
 		.select()
@@ -269,7 +258,6 @@ export const handleUpdateRole = async (
 		position?: number;
 		hoisted?: boolean;
 		mentionable?: boolean;
-		channelOverrides?: RoleChannelOverrideInput[];
 		badge?: IconBadgeInput;
 		emojiBadge?: EmojiBadgeInput;
 		removeBadge?: boolean;
@@ -291,7 +279,6 @@ export const handleUpdateRole = async (
 		}
 
 		if (input.permissions) assertHoldsPermissions(authz, input.permissions);
-		if (input.channelOverrides) assertHoldsOverridePermissions(authz, input.channelOverrides);
 
 		const badge = badgeInput(input) ?? (input.removeBadge ? null : (existing.badge ?? null));
 		const name = input.name ?? existing.name;
@@ -299,13 +286,7 @@ export const handleUpdateRole = async (
 		const permissions = input.permissions ?? existing.permissions;
 		const hoisted = !existing.isDefault && (input.hoisted ?? existing.hoisted);
 		const mentionable = !existing.isDefault && (input.mentionable ?? existing.mentionable);
-		const channelOverrides = (input.channelOverrides ?? existing.channelOverrides).map(
-			(override) => ({
-				channel: override.channel,
-				allow: override.allow ?? [],
-				deny: override.deny ?? [],
-			}),
-		);
+		const channelOverrides = existing.channelOverrides;
 
 		await writer.put(community, {
 			space: writer.spaces(community).members,
@@ -320,7 +301,7 @@ export const handleUpdateRole = async (
 				mentionable,
 				protected: false,
 				...defaultFlag(existing.isDefault),
-				channelOverrides,
+				...(channelOverrides.length ? { channelOverrides } : {}),
 				...(color ? { color } : {}),
 				...badgeRecord(badge),
 			},
@@ -485,7 +466,7 @@ export const handlePutRoleBadgeImage = async (
 				mentionable: !existing.isDefault && existing.mentionable,
 				protected: false,
 				...defaultFlag(existing.isDefault),
-				channelOverrides,
+				...(channelOverrides.length ? { channelOverrides } : {}),
 				...(existing.color ? { color: existing.color } : {}),
 				...badgeRecord(badge),
 			},
@@ -546,7 +527,6 @@ export const registerRoleRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 					position: input.body.position,
 					hoisted: input.body.hoisted,
 					mentionable: input.body.mentionable,
-					channelOverrides: input.body.channelOverrides,
 					badge: input.body.badge,
 					emojiBadge: input.body.emojiBadge,
 					removeBadge: input.body.removeBadge,

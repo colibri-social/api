@@ -1,7 +1,7 @@
 import type { Server as HttpServer, IncomingHttpHeaders } from "node:http";
 import {
 	type ActorAuthz,
-	type CategoryAudience,
+	type CategoryScope,
 	type ChannelState,
 	canPost,
 	canRead,
@@ -88,7 +88,7 @@ const callCapabilities = (
 	channel: ChannelState,
 	throughGrant: boolean,
 ): VoiceCapabilities => {
-	const capabilities = voiceCapabilities(authz, channel);
+	const capabilities = voiceCapabilities(authz, channel, { admitted: throughGrant });
 
 	return throughGrant ? { ...capabilities, chat: false } : capabilities;
 };
@@ -264,8 +264,8 @@ export class VoiceServer {
 			const authz = await this.ctx.loader.authz(parseSpaceRef(destination).authority, did);
 
 			return {
-				view: this.communities.channel(state.row, authz, state.category),
-				after: await this.readableBefore(state.row, authz, state.category),
+				view: this.communities.channel(state.row, authz, state.scope),
+				after: await this.readableBefore(state.row, authz, state.scope.category),
 			};
 		} catch (error) {
 			this.ctx.log.warn(
@@ -280,7 +280,7 @@ export class VoiceServer {
 	private async readableBefore(
 		destination: { community: string; skey: string; category: string | null },
 		authz: ActorAuthz,
-		category: CategoryAudience | null,
+		category: CategoryScope | null,
 	): Promise<string | null> {
 		const { db, tables } = this.ctx.database;
 		const siblings = await db

@@ -4,6 +4,7 @@ import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db"
 import {
 	type ActorAuthz,
 	anonymousAuthz,
+	BASELINE_PERMISSIONS,
 	type ChannelState,
 	type RoleState,
 } from "@colibri-social/community";
@@ -62,6 +63,7 @@ const memberAuthz = (did: string, role: RoleState = membersRole()): ActorAuthz =
 	isBanned: false,
 	member: { did, roles: [role.rkey], joinedAt: "2026-01-01T00:00:00.000Z", nickname: null },
 	roles: [role],
+	baseline: BASELINE_PERMISSIONS,
 });
 
 const openChannel = (space: string, skey: string): ChannelState => ({
@@ -131,7 +133,8 @@ const buildCtx = (voice: VoiceSfu | null, database?: TestDatabase): Harness => {
 			channel: async (space: string) => channels.get(space) ?? null,
 			authz: async (community: string, actor: string) =>
 				authz.get(actor) ?? anonymousAuthz(actor, community),
-			categoryAudience: async () => null,
+			categoryScope: async () => null,
+			roles: async () => [],
 		},
 	} as unknown as AppContext;
 
@@ -893,6 +896,35 @@ describe("VoiceServer", () => {
 				VOICE_PERMISSIONS,
 			);
 			expect(sfu.getVoiceState(VOICE_CHANNEL, ALICE)).toMatchObject({ serverMuted: false });
+			ws.close();
+		});
+
+		it("force-mutes a member as soon as a channel override takes voice.speak away", async () => {
+			const ws = connect("alice-token");
+			await waitForOpen(ws);
+			await join(ws);
+			const transportId = await sendTransport(ws);
+
+			expect((await produce(ws, transportId, "audio", "microphone")).$type).toBe(
+				"social.colibri.beta.voice.defs#producerInfo",
+			);
+
+			const open = harness.channels.get(VOICE_CHANNEL);
+			if (!open) throw new Error("the voice channel is missing");
+
+			harness.channels.set(VOICE_CHANNEL, {
+				...open,
+				overrides: [{ member: ALICE, allow: [], deny: ["voice.speak"] }],
+			});
+			harness.authzChanges.publish({ community: COMMUNITY, collection: COLLECTIONS.channel });
+
+			expect((await nextFrameOfType(ws, "permissionsChanged")).permissions).not.toContain(
+				"voice.speak",
+			);
+			expect(sfu.getVoiceState(VOICE_CHANNEL, ALICE)).toMatchObject({ serverMuted: true });
+			expect(
+				(await sfu.listProducers(VOICE_CHANNEL)).filter((producer) => producer.did === ALICE),
+			).toEqual([]);
 			ws.close();
 		});
 

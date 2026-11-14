@@ -11,6 +11,7 @@ export * from "./loader.js";
 export * from "./membership.js";
 export * from "./migrate.js";
 export * from "./moderation.js";
+export * from "./permission-heal.js";
 export * from "./provisioning.js";
 export * from "./purge.js";
 export * from "./spaces.js";

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { decideSpaceAccess, type SpaceAccess } from "./access.js";
 import {
 	type ActorAuthz,
+	BASELINE_PERMISSIONS,
 	type ChannelState,
 	canCloseThread,
 	canDeleteThread,
@@ -44,6 +45,7 @@ const authz = (overrides: Partial<ActorAuthz> = {}): ActorAuthz => ({
 	isBanned: false,
 	member: { did: ACTOR, roles: [], joinedAt: "2026-01-01T00:00:00.000Z", nickname: null },
 	roles: [],
+	baseline: BASELINE_PERMISSIONS,
 	...overrides,
 });
 
@@ -69,7 +71,8 @@ describe("permissions", () => {
 
 	it("grants nothing to a member with no roles", () => {
 		expect(has(authz(), "member.kick")).toBe(false);
-		expect(effectivePermissions(authz())).toEqual([]);
+		expect(effectivePermissions(authz({ baseline: [] }))).toEqual([]);
+		expect(effectivePermissions(authz())).toEqual([...BASELINE_PERMISSIONS]);
 	});
 
 	it("grants a permission listed on any held role", () => {
@@ -85,7 +88,7 @@ describe("permissions", () => {
 			],
 		});
 		expect(has(scoped, "label.apply")).toBe(false);
-		expect(has(scoped, "label.apply", "3lkchan")).toBe(true);
+		expect(has(scoped, "label.apply", channel())).toBe(true);
 	});
 
 	it("lets a channel override deny a permission the base role grants", () => {
@@ -98,7 +101,7 @@ describe("permissions", () => {
 			],
 		});
 		expect(has(scoped, "label.apply")).toBe(true);
-		expect(has(scoped, "label.apply", "3lkchan")).toBe(false);
+		expect(has(scoped, "label.apply", channel())).toBe(false);
 	});
 
 	it("lets deny beat allow when two roles disagree in the same channel", () => {
@@ -114,7 +117,7 @@ describe("permissions", () => {
 				}),
 			],
 		});
-		expect(has(conflicted, "label.apply", "3lkchan")).toBe(false);
+		expect(has(conflicted, "label.apply", channel())).toBe(false);
 	});
 
 	it("ignores an override belonging to another channel", () => {
@@ -126,7 +129,7 @@ describe("permissions", () => {
 				}),
 			],
 		});
-		expect(has(scoped, "label.apply", "3lkchan")).toBe(true);
+		expect(has(scoped, "label.apply", channel())).toBe(true);
 	});
 
 	it("grants everything to a holder of the protected role, whatever it lists", () => {

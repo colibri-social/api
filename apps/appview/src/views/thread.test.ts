@@ -1,5 +1,5 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
-import { type ActorAuthz, CommunityLoader } from "@colibri-social/community";
+import { type ActorAuthz, BASELINE_PERMISSIONS, CommunityLoader } from "@colibri-social/community";
 import {
 	COLLECTIONS,
 	channelSpace,
@@ -168,6 +168,7 @@ describe("ThreadViews close and lock state", () => {
 		isOwner: false,
 		isBanned: false,
 		roles: [],
+		baseline: BASELINE_PERMISSIONS,
 	});
 
 	const putOpenedThread = async (values: { closedAt?: string; locked?: boolean } = {}) => {
@@ -405,6 +406,7 @@ describe("ThreadViews last message", () => {
 		isOwner: false,
 		isBanned: false,
 		roles: [],
+		baseline: BASELINE_PERMISSIONS,
 	});
 
 	const postInThread = async (

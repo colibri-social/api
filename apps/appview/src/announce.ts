@@ -127,11 +127,17 @@ export const threadFrameForBridges =
 		return view ? threadEvent(event, row.community, { channel: row.channel, thread: view }) : null;
 	};
 
-export const channelEvent = (event: Lifecycle, community: string, space: string): ServerFrame => ({
+export const channelEvent = (
+	event: Lifecycle,
+	community: string,
+	space: string,
+	channel?: social.colibri.beta.community.defs.ChannelView,
+): ServerFrame => ({
 	$type: "social.colibri.beta.sync.defs#channelEvent",
 	event,
 	community,
 	space,
+	...(channel ? { channel } : {}),
 });
 
 export const threadEvent = (

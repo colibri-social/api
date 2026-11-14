@@ -369,7 +369,8 @@ export const handleApplyLabel = async (
 	await requireKnownSpace(ctx, parsed);
 
 	const authz = await ctx.loader.authz(community, callerDid);
-	if (!has(authz, "label.apply", parsed.skey)) throw forbidden("label.apply");
+	const { channel } = await ctx.loader.spaceStates(parsed.uri, parsed.spaceType);
+	if (!has(authz, "label.apply", channel)) throw forbidden("label.apply");
 
 	try {
 		await moderation.applyLabel(community, input.space, input.subject, input.val, {
@@ -409,7 +410,8 @@ export const handleNegateLabel = async (
 	await requireKnownSpace(ctx, parsed);
 
 	const authz = await ctx.loader.authz(community, callerDid);
-	if (!has(authz, "label.apply", parsed.skey)) throw forbidden("label.apply");
+	const { channel } = await ctx.loader.spaceStates(parsed.uri, parsed.spaceType);
+	if (!has(authz, "label.apply", channel)) throw forbidden("label.apply");
 
 	try {
 		await moderation.negateLabel(community, input.space, input.subject, input.val, input.reason);

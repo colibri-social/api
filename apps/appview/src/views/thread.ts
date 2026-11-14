@@ -249,11 +249,11 @@ export class ThreadViews {
 					viewer: {
 						canRead: true,
 						canPost: canPostInThread(authz, channel, state),
-						canManage: canManageThread(authz),
+						canManage: canManageThread(authz, channel),
 						canEdit: canRenameThread(authz, channel, state),
 						canClose: canCloseThread(authz, channel, state),
 						canDelete: canDeleteThread(authz, channel, state),
-						canLock: canLockThread(authz),
+						canLock: canLockThread(authz, channel),
 						following: followed.has(row.space),
 						muted: muted.has(row.space),
 						hasUnread,
@@ -291,6 +291,7 @@ export class ThreadViews {
 			this.ctx.loader.roles(row.community),
 		]);
 
+		const baseline = await this.ctx.loader.baseline(row.community);
 		const memberTable = this.ctx.database.tables.members;
 		const memberRows = await this.ctx.database.db
 			.select()
@@ -356,6 +357,7 @@ export class ThreadViews {
 					nickname: member.nickname,
 				},
 				roles: member.roles.flatMap((key) => rolesByKey.get(key) ?? []),
+				baseline,
 			};
 			if (canReadThread(authz, channel, state)) out.push(did);
 		}

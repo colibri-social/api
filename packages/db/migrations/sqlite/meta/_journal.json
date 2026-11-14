@@ -281,6 +281,13 @@
 			"when": 1794609737220,
 			"tag": "0039_safe_jackal",
 			"breakpoints": true
+		},
+		{
+			"idx": 40,
+			"version": "6",
+			"when": 1794648784366,
+			"tag": "0040_organic_reptil",
+			"breakpoints": true
 		}
 	]
 }

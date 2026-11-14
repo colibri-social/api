@@ -68,10 +68,10 @@ export const decideSpaceAccess = (input: SpaceAccessInput): AccessDecision => {
 		case SPACE_TYPES.channelVoice:
 			if (!channel) return deny("no such channel in this community");
 			if (writing)
-				return canPost(authz, channel) && has(authz, "voice.chat", channel.skey)
+				return canPost(authz, channel) && has(authz, "voice.chat", channel)
 					? allow("the requester may post in this voice channel's chat")
 					: deny("the requester may not post in this voice channel's chat");
-			return canRead(authz, channel) && has(authz, "voice.chat", channel.skey)
+			return has(authz, "voice.chat", channel)
 				? allow("the requester may read this voice channel's chat")
 				: deny("this voice channel's chat is not visible to the requester");
 

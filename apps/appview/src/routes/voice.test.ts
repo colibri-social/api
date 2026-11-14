@@ -1,4 +1,9 @@
-import type { ActorAuthz, ChannelState, RoleState } from "@colibri-social/community";
+import {
+	type ActorAuthz,
+	BASELINE_PERMISSIONS,
+	type ChannelState,
+	type RoleState,
+} from "@colibri-social/community";
 import { channelSpace, SPACE_TYPES } from "@colibri-social/lexicons";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppContext } from "../context.js";
@@ -39,6 +44,7 @@ const authzOf = (did: string, roles: RoleState[]): ActorAuthz => ({
 		nickname: null,
 	},
 	roles,
+	baseline: BASELINE_PERMISSIONS,
 });
 
 const channel = (space: string, skey: string, allowedRoles: string[] = []): ChannelState => ({
