@@ -1,5 +1,23 @@
 # @colibri-social/admin
 
+## 0.3.0
+
+### Minor Changes
+
+- 919ce39: Adds `colibri-admin db status`, runs safety checks before `db switchover` and `db failback`, and waits until the old primary streams again. Commands that interrupt clients or delete data describe what they do and ask for confirmation, with `--yes` and `--confirm <node id>` for runs without a terminal. Nodes report their `DATABASE_URL` hosts in the heartbeat
+
+### Patch Changes
+
+- Updated dependencies [919ce39]
+- Updated dependencies [e7543ed]
+- Updated dependencies [61e8260]
+- Updated dependencies [61e8260]
+- Updated dependencies [61e8260]
+- Updated dependencies [6c5818a]
+  - @colibri-social/appview@2.41.0
+  - @colibri-social/appview-db@0.25.0
+  - @colibri-social/community@2.17.0
+
 ## 0.2.2
 
 ### Patch Changes

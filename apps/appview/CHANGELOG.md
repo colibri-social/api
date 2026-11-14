@@ -1,5 +1,74 @@
 # @colibri-social/appview
 
+## 2.41.0
+
+### Minor Changes
+
+- 919ce39: Adds `colibri-admin db status`, runs safety checks before `db switchover` and `db failback`, and waits until the old primary streams again. Commands that interrupt clients or delete data describe what they do and ask for confirmation, with `--yes` and `--confirm <node id>` for runs without a terminal. Nodes report their `DATABASE_URL` hosts in the heartbeat
+- e7543ed: Adds per-category and per-channel permission overrides for roles and single members. Each override sets a channel permission to Allow or Deny, and anything it leaves out inherits.
+  
+  The AppView resolves a permission in a channel in this order:
+  
+  - The member's own override wins.
+  - Otherwise the highest role the member holds that sets the permission decides it. The default role ranks lowest.
+  - A channel that leaves the permission open falls back to its category, then to the member's role permissions.
+  
+  Seeing and posting are now permissions: `channel.view`, `message.send` and `voice.connect`. Without `channel.view` a member has no other permission in that channel. Owners and holders of the owner role still get everything.
+  
+  Permission changes reach connected clients right away. The event socket sends each affected viewer a `channelEvent` update carrying their new `channelView`, and the voice socket mutes, closes producers or disconnects members who lose `voice.speak`, a sharing permission, `voice.connect` or `channel.view`. A member moved into a hidden voice channel keeps their voice permissions there. Notifications now check `channel.view` and `voice.chat` for every recipient.
+  
+  At startup the Members role gains `channel.view`, `message.send` and `voice.connect` once, and every category, channel and role record is rewritten from the old audience fields to overrides. Until a Space is rewritten, the AppView keeps honoring the old fields and grants the three new permissions to every member.
+  
+  Lexicons:
+  - New `social.colibri.beta.defs#permissionOverride` with `role` or `member`, `allow` and `deny`.
+  - `permissionOverrides` on the `channel` and `category` records, the `channel.create`, `channel.update`, `category.create` and `category.update` inputs, and `channelView` and `categoryView`. Setting overrides needs `role.manage`, a permission you hold for every changed key, and a target role below your own.
+  - `ownerOnly`, `allowedRoles`, `allowedMembers`, `visibleToRoles` and `visibleToMembers` are gone from those inputs and views. On the records they are deprecated.
+  - `channelOverrides` is gone from `roleView` and `role.update`, and deprecated on the `role` record.
+  - New permissions `channel.view`, `message.send` and `voice.connect`, plus `CHANNEL_PERMISSIONS` and `normalizePermissionOverrides`.
+  
+  `@colibri-social/community` adds `healPermissionOverrides`, `legacyToOverrides`, `isPrivateScope` and `BASELINE_PERMISSIONS`. `has` takes a `ChannelState` instead of a channel key. `@colibri-social/appview-db` adds a `permission_overrides` column to `channels` and `categories`.
+- 61e8260: The compose files can run a SeaweedFS bucket server for attachments of people whose server can't host spaces yet. Turn it on with `COMPOSE_PROFILES=blobs` on the main node, and set `POLYFILL_S3_BUCKET`, `POLYFILL_S3_ACCESS_KEY_ID` and `POLYFILL_S3_SECRET_ACCESS_KEY`. The AppView creates the bucket on the first upload. Sub nodes get the same settings when they're provisioned, and reach the main node's bucket over the tailnet on port 8333.
+- 61e8260: Stores attachments for accounts whose repos the AppView hosts in an S3-compatible bucket.
+  
+  - `social.colibri.beta.polyfill.uploadBlob` stores up to 75 MB under the raw sha256 CID and returns a blob ref. Without a bucket it fails with `BlobStorageUnavailable`.
+  - `social.colibri.beta.polyfill.getBlob` returns a blob to the account that stored it.
+  - `social.colibri.beta.blob.get` serves stored blobs to other members from the bucket, with the same CID check, previews and ranges.
+  - Blobs no record references within 24 hours are deleted.
+  
+  Set `POLYFILL_S3_BUCKET`, `POLYFILL_S3_ACCESS_KEY_ID` and `POLYFILL_S3_SECRET_ACCESS_KEY` to turn storage on. `POLYFILL_S3_ENDPOINT`, `POLYFILL_S3_REGION` and `POLYFILL_S3_FORCE_PATH_STYLE` point it at a host other than AWS.
+  
+  `@colibri-social/blobs` adds `S3BlobBucket`, `MemoryBlobBucket`, `blobBucketKey` and a `polyfill` option on `BlobService` that serves blobs from such a bucket before asking the author's host.
+- 61e8260: Hosts the space repos of accounts whose PDS can't serve spaces, and hands them back once it can.
+  
+  - `social.colibri.beta.polyfill.getStatus` reports where an account's repos live and whether its PDS serves spaces. It checks the PDS through the service descriptor first and a probe second, caching a yes for 24 hours and a no for an hour. An account whose PDS lacks spaces is hosted from its first status check or write.
+  - `social.colibri.beta.polyfill.applyWrites` authorizes a write the way the space authority would, stores it, projects it, and emits the same live events as a synced write. A repo on the account's PDS gets `RepoNotHosted`.
+  - `social.colibri.beta.polyfill.getRecord` and `listRecords` read the account's hosted records.
+  - `social.colibri.beta.polyfill.beginMigration`, `listForMigration` and `completeMigration` move each repo to the PDS. Completion reads the PDS copy with MAC verification and compares its set hash with the hosted copy. A match hands the repo to the sync engine with its cursor in place. A mismatch keeps the repo hosted and lists the records that differ.
+  - An account whose sync fails because its PDS dropped spaces is hosted again once a fresh check confirms it.
+  - The uploadBlob and getBlob routes are registered, writes mark the blobs they reference, and the blob sweeper runs on main nodes.
+  
+  `@colibri-social/appview-db` adds the `polyfill_actors`, `polyfill_repos`, `polyfill_pds_support` and `polyfill_blobs` tables.
+  
+  `@colibri-social/space-sync` skips repos the AppView hosts in sweeps and write hints, reports members whose PDS lacks spaces through `SyncStore.spacesUnsupported`, and adds `SpaceSyncEngine.publish`, `fetchVerifiedRepo` and `recordCid`.
+  
+  `@colibri-social/projections` accepts a message whose record key is more than a day older than its commit when the AppView already holds it.
+
+### Patch Changes
+
+- Updated dependencies [919ce39]
+- Updated dependencies [e7543ed]
+- Updated dependencies [61e8260]
+- Updated dependencies [61e8260]
+- Updated dependencies [61e8260]
+- Updated dependencies [6c5818a]
+  - @colibri-social/appview-db@0.25.0
+  - @colibri-social/lexicons@2.39.0
+  - @colibri-social/community@2.17.0
+  - @colibri-social/projections@1.16.0
+  - @colibri-social/blobs@0.4.0
+  - @colibri-social/space-sync@0.10.0
+  - @colibri-social/notifications@1.11.1
+
 ## 2.40.0
 
 ### Minor Changes
