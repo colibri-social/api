@@ -112,6 +112,7 @@ export const handleListMigratable = async (
 			if (includeUnadministered) communities.push(unreadableView(did));
 			continue;
 		}
+		if (legacy.ownerRepo) continue;
 		if (legacy.migratedTo && !migration) continue;
 		if (!legacy.viewerIsAdmin && !includeUnadministered) continue;
 		communities.push(await legacyView(ctx, legacy, migration));

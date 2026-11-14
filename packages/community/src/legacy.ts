@@ -103,14 +103,6 @@ export const legacyCandidates = async (deps: LegacyDeps, actor: string): Promise
 		dids.push(did);
 	};
 
-	const ownCommunities = await listCapped<unknown>(repo, actor, LEGACY_COLLECTIONS.community, 1)
-		.then((page) => page.records.some((record) => !record.uri.endsWith(`/${SELF}`)))
-		.catch(() => false);
-	if (ownCommunities) {
-		seen.add(actor);
-		dids.push(actor);
-	}
-
 	for (const did of ordered) add(did.startsWith("did:") ? did : null);
 	for (const record of joined) add(communityDidOf(record.value.community));
 	for (const record of read) add(communityDidOf(record.value.channel));

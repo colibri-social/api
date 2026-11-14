@@ -108,10 +108,10 @@ describe("legacyCandidates", () => {
 		expect(await legacyCandidates(deps, ACTOR)).toEqual([OWNED]);
 	});
 
-	it("lists the actor's own repo when it holds an owner-repo community", async () => {
+	it("does not list the actor's own repo when it holds an owner-repo community", async () => {
 		seed(ACTOR, LEGACY_COLLECTIONS.community, "3lkcommunity1", { name: "Old flock" });
 
-		expect(await legacyCandidates(deps, ACTOR)).toEqual([ACTOR]);
+		expect(await legacyCandidates(deps, ACTOR)).toEqual([]);
 	});
 
 	it("returns nothing rather than throwing when the actor has no legacy records", async () => {
