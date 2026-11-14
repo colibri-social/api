@@ -1,5 +1,11 @@
 # @colibri-social/blobs
 
+## 0.4.1
+
+### Patch Changes
+
+- cc530b6: Skip the PDS for blobs of polyfill-hosted authors
+
 ## 0.4.0
 
 ### Minor Changes

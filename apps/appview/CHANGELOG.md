@@ -1,5 +1,13 @@
 # @colibri-social/appview
 
+## 2.41.2
+
+### Patch Changes
+
+- cc530b6: Serve timeline previews, polyfill-hosted blobs and invite page images correctly
+- Updated dependencies [cc530b6]
+  - @colibri-social/blobs@0.4.1
+
 ## 2.41.1
 
 ### Patch Changes
