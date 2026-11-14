@@ -97,6 +97,7 @@ export type ClientPreferences = {
 	blueskyClient?: string;
 	customBlueskyClientBase?: string;
 	developerMode?: boolean;
+	recordExplorer?: string;
 	hideModeratedMessages?: boolean;
 	inboxPresentation?: string;
 	voiceView?: StoredVoiceView;

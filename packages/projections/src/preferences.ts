@@ -50,6 +50,7 @@ export const toStoredClientPreferences = (value: ClientPreferencesIn): ClientPre
 		blueskyClient: value.blueskyClient,
 		customBlueskyClientBase: value.customBlueskyClientBase,
 		developerMode: value.developerMode,
+		recordExplorer: value.recordExplorer,
 		hideModeratedMessages: value.hideModeratedMessages,
 		inboxPresentation: value.inboxPresentation,
 		voiceView:
