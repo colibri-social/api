@@ -1,5 +1,11 @@
 # @colibri-social/community
 
+## 2.17.1
+
+### Patch Changes
+
+- 1e1ed11: `social.colibri.beta.community.listMigratable` leaves out legacy communities stored in their owner's repo. `legacyCandidates` no longer lists the actor's own repo for them.
+
 ## 2.17.0
 
 ### Minor Changes

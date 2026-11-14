@@ -1,5 +1,15 @@
 # @colibri-social/appview
 
+## 2.41.1
+
+### Patch Changes
+
+- 1e1ed11: `social.colibri.beta.community.listMigratable` leaves out legacy communities stored in their owner's repo. `legacyCandidates` no longer lists the actor's own repo for them.
+- cd35eb6: Rollouts update the main node first when a release brings database migrations, so other nodes no longer start against an old schema. Nodes without the main role wait at startup until the main node has applied every migration they know.
+- 672fcb0: `colibri-admin node shutdown` on the main node moves the Postgres primary and the main role to the failover node first, then drains the old main. The switchover picks a node with the failover role when no other main node is free.
+- Updated dependencies [1e1ed11]
+  - @colibri-social/community@2.17.1
+
 ## 2.41.0
 
 ### Minor Changes

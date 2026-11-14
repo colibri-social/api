@@ -1,5 +1,16 @@
 # @colibri-social/admin
 
+## 0.3.1
+
+### Patch Changes
+
+- 672fcb0: `colibri-admin node shutdown` on the main node moves the Postgres primary and the main role to the failover node first, then drains the old main. The switchover picks a node with the failover role when no other main node is free.
+- Updated dependencies [1e1ed11]
+- Updated dependencies [cd35eb6]
+- Updated dependencies [672fcb0]
+  - @colibri-social/appview@2.41.1
+  - @colibri-social/community@2.17.1
+
 ## 0.3.0
 
 ### Minor Changes
