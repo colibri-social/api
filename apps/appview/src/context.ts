@@ -280,7 +280,7 @@ export const createContext = async (config: Config) => {
 
 	const blobs = new BlobService({
 		spaceClient,
-		polyfill: polyfillBlobSource(polyfillBlobs.index, polyfillBlobs.bucket),
+		polyfill: polyfillBlobSource(polyfillBlobs.index, polyfillBlobs.bucket, database),
 		hosts: {
 			hostFor: async (did) => (await identity.resolveDid(did)).pds ?? config.PDS_URL,
 		},

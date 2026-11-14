@@ -54,6 +54,7 @@ export type PolyfilledBlob = {
 
 export type PolyfillBlobSource = {
 	open: (did: string, cid: string) => Promise<PolyfilledBlob | null>;
+	hosts?: (did: string, space: SpaceRefString) => Promise<boolean>;
 };
 
 export type BlobServiceOptions = {
@@ -402,6 +403,10 @@ export class BlobService {
 
 		if (held) {
 			return upstreamOfPolyfill(held);
+		}
+
+		if (space && (await this.polyfill?.hosts?.(did, space))) {
+			throw new BlobNotFoundError();
 		}
 
 		const host = await this.hosts.hostFor(did);

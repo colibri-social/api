@@ -4,10 +4,11 @@ import {
 	BlobNotFoundError,
 	BlobRejectedError,
 	isDownloadMimeType,
+	isVariant,
 	type Variant,
 } from "@colibri-social/blobs";
 import { decideSpaceAccess } from "@colibri-social/community";
-import { blobCid } from "@colibri-social/lexicons";
+import { blobCid, SPACE_TYPES } from "@colibri-social/lexicons";
 import { movedInto } from "@colibri-social/projections";
 import { tryParseSpaceRef } from "@colibri-social/space";
 import { and, eq, inArray } from "drizzle-orm";
@@ -16,14 +17,12 @@ import type { AppContext } from "../context.js";
 import { verifyMediaGrant } from "../media-token.js";
 import { asyncHandler } from "./async-handler.js";
 
-const VARIANTS: readonly Variant[] = ["thumbnail", "avatar", "banner", "spaceBanner", "full"];
-
 const asString = (value: unknown): string | undefined =>
 	typeof value === "string" && value.length > 0 ? value : undefined;
 
 const asVariant = (value: unknown): Variant | undefined => {
 	const name = asString(value);
-	return name && (VARIANTS as readonly string[]).includes(name) ? (name as Variant) : undefined;
+	return name && isVariant(name) ? name : undefined;
 };
 
 const bearerToken = (value: string | string[] | undefined): string | null => {
@@ -141,8 +140,7 @@ export const mountBlobRoutes = (ctx: AppContext, app: Router): void => {
 
 		let viewer: string | null = null;
 		if (signature) {
-			const signedViewer = asString(req.query.viewer) ?? null;
-			const candidate = signedViewer ?? null;
+			const candidate = typeof req.query.viewer === "string" ? req.query.viewer : null;
 			if (candidate === null) {
 				return unauthenticated("this media link is missing its viewer");
 			}
@@ -156,6 +154,11 @@ export const mountBlobRoutes = (ctx: AppContext, app: Router): void => {
 				)
 			) {
 				return unauthenticated("this media link is invalid or has expired");
+			}
+			if (candidate === "") {
+				return parsed.spaceType === SPACE_TYPES.communityProfile
+					? { authorized: true }
+					: forbid("an anonymous media link only covers a community profile");
 			}
 			viewer = candidate;
 		} else {

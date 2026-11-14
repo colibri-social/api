@@ -290,6 +290,19 @@ describe("blob.get authorization", () => {
 		expect(served).toBe(0);
 	});
 
+	it("serves a community profile image through an anonymous signed link", async () => {
+		const profile = communitySpaces(COMMUNITY).profile;
+		const result = await get({ did: AUTHOR, cid: CID, space: profile, ...signedFor("", profile) });
+		expect(result.status).toBe(200);
+		expect(served).toBe(1);
+	});
+
+	it("refuses an anonymous signed link for a channel", async () => {
+		const result = await get({ did: AUTHOR, cid: CID, space: SPACE, ...signedFor("") });
+		expect(result.status).toBe(403);
+		expect(served).toBe(0);
+	});
+
 	it("refuses a link whose viewer was swapped after signing", async () => {
 		const signed = signedFor(OUTSIDER);
 		const result = await get({ did: AUTHOR, cid: CID, space: SPACE, ...signed, viewer: MEMBER });

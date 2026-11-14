@@ -13,11 +13,13 @@ import {
 	verifyingStream,
 } from "@colibri-social/blobs";
 import { blobCid, social, toLexForm } from "@colibri-social/lexicons";
+import { tryParseSpaceRef } from "@colibri-social/space";
 import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import type { AuthVerifiers } from "../auth.js";
 import { ColibriError, notFound, toXrpcError } from "../errors.js";
 import type { Logger } from "../logger.js";
 import { route } from "../route.js";
+import { isAuthoritativeHere, repoHostMode } from "./host-mode.js";
 
 export const POLYFILL_BLOB_MAX_BYTES = 75 * 1024 * 1024;
 export const POLYFILL_BLOB_UNREFERENCED_MS = 24 * 60 * 60_000;
@@ -246,8 +248,16 @@ export const handleGetPolyfillBlob = async (
 export const polyfillBlobSource = (
 	index: PolyfillBlobIndex,
 	bucket: BlobBucket | null,
+	database: Pick<Database, "primary" | "tables">,
 ): PolyfillBlobSource => {
+	const tables = { db: database.primary, tables: database.tables };
+
 	return {
+		hosts: async (did, space) => {
+			const uri = tryParseSpaceRef(space)?.uri;
+
+			return uri !== undefined && isAuthoritativeHere(await repoHostMode(tables, uri, did));
+		},
 		open: async (did, cid) => {
 			if (!bucket) {
 				return null;

@@ -5,7 +5,7 @@ import {
 	cidForRawBytes,
 	MemoryBlobBucket,
 } from "@colibri-social/blobs";
-import { blobCid } from "@colibri-social/lexicons";
+import { blobCid, channelSpace, SPACE_TYPES } from "@colibri-social/lexicons";
 import type { SpaceClient } from "@colibri-social/space";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -23,6 +23,7 @@ import {
 
 const AUTHOR = "did:plc:author";
 const STRANGER = "did:plc:stranger";
+const COMMUNITY = "did:plc:2hnjxkqm6bpuvvpjbztkxxxx";
 const SPACE =
 	"at://did:plc:2hnjxkqm6bpuvvpjbztkxxxx/social.colibri.beta.channel.text/3lkabcdefgh2k";
 const NOW = new Date("2026-11-14T12:00:00.000Z");
@@ -166,7 +167,7 @@ describe("polyfill blob serving", () => {
 				},
 			} as unknown as SpaceClient,
 			hosts: { hostFor: async () => "https://pds.test" },
-			polyfill: polyfillBlobSource(index, bucket),
+			polyfill: polyfillBlobSource(index, bucket, database),
 		});
 
 		const result = await service.fetch({ did: AUTHOR, cid, space: SPACE, range: "bytes=0-7" });
@@ -181,9 +182,26 @@ describe("polyfill blob serving", () => {
 
 	it("leaves blobs it doesn't hold to the author's host", async () => {
 		const cid = await upload();
-		const source = polyfillBlobSource(index, bucket);
+		const source = polyfillBlobSource(index, bucket, database);
 
 		expect(await source.open(STRANGER, cid)).toBeNull();
+	});
+
+	it("reports which authors' repos it hosts in a space", async () => {
+		await database.db.insert(database.tables.polyfillActors).values({
+			did: AUTHOR,
+			mode: "polyfill",
+			pds: "https://pds.test",
+			pdsSupportsSpaces: false,
+			checkedAt: NOW.toISOString(),
+		});
+
+		const source = polyfillBlobSource(index, bucket, database);
+
+		const space = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkabcdefgh2k");
+
+		expect(await source.hosts?.(AUTHOR, space)).toBe(true);
+		expect(await source.hosts?.(STRANGER, space)).toBe(false);
 	});
 });
 

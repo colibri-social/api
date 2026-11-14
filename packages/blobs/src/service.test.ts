@@ -668,6 +668,30 @@ describe("BlobService polyfill source", () => {
 		expect(result.status).toBe("ok");
 	});
 
+	it("skips the author's host when the polyfill hosts the author's repo", async () => {
+		const { client, callCount } = fakeSpaceClient(() => new Response(bytes));
+		const { source } = heldSource(() => null);
+		const asked: string[] = [];
+		const service = new BlobService({
+			spaceClient: client,
+			hosts: staticHosts(),
+			polyfill: {
+				...source,
+				hosts: async (did, space) => {
+					asked.push(`${did} ${space}`);
+
+					return true;
+				},
+			},
+		});
+
+		await expect(service.fetch({ did: DID, cid, space: SPACE })).rejects.toBeInstanceOf(
+			BlobNotFoundError,
+		);
+		expect(asked).toEqual([`${DID} ${SPACE}`]);
+		expect(callCount()).toBe(0);
+	});
+
 	it("reports a failing bucket as an upstream error", async () => {
 		const service = new BlobService({
 			spaceClient: {} as unknown as SpaceClient,
