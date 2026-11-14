@@ -85,7 +85,9 @@ export const checkSwitchover = async (
 		targetId ??
 		nodes.find(
 			(node) =>
-				node.id !== status.primary && node.state !== "retired" && node.roles.includes("main"),
+				node.id !== status.primary &&
+				node.state !== "retired" &&
+				(node.roles.includes("main") || node.roles.includes("failover")),
 		)?.id ??
 		null;
 
@@ -97,7 +99,7 @@ export const checkSwitchover = async (
 				{
 					ok: false,
 					required: true,
-					label: "a node with the main role is free to take the primary",
+					label: "a node with the main or failover role is free to take the primary",
 					detail: "Name the node to switch over to with `colibri-admin db switchover <node>`",
 				},
 			],

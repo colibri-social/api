@@ -36,6 +36,8 @@ export const SWITCHOVER_POLL_MS = 5_000;
 
 export const SWITCHOVER_WAIT_MS = 15 * 60_000;
 
+export const MAIN_HANDOVER_WAIT_MS = 2 * 60_000;
+
 export class UsageError extends Error {}
 
 export class RefusedError extends Error {}
@@ -266,15 +268,25 @@ export const nodeShutdown = async (
 	}
 
 	const node = await requireNode(admin, options.id);
+	const main = await admin.registry.mainNode();
+	const handover =
+		main?.id === node.id
+			? await planSwitchover(admin, {
+					force: false,
+					warnHint: `Fix the WARN lines above, then run it again. To skip them, move the primary first with \`colibri-admin db switchover --force\`.`,
+				})
+			: null;
 	const drain = options.grace
 		? `for up to ${options.grace}`
 		: "for up to DRAIN_GRACE_MINUTES (120 minutes by default)";
+	const action = options.retire ? `retire ${node.id}` : `put ${node.id} into maintenance`;
 
 	await admin.confirm({
 		risk: options.force ? "irreversible" : "disruptive",
-		title: options.retire ? `retire ${node.id}` : `put ${node.id} into maintenance`,
+		title: handover ? `move the main role to ${handover.target}, then ${action}` : action,
 		token: node.id,
 		effects: [
+			...(handover ? switchoverEffects(node.id, handover.target) : []),
 			`${node.id} stops taking new sockets and calls and drains ${drain}.`,
 			`${clientsOf(node)}, which move to other nodes.`,
 			...(options.retire
@@ -291,6 +303,11 @@ export const nodeShutdown = async (
 		],
 	});
 
+	if (handover) {
+		await runOrder(admin, { kind: "failback", id: randomUUID(), node: handover.target });
+		await waitForMain(admin, handover.target);
+	}
+
 	await runOrder(admin, {
 		kind: "shutdown",
 		id: randomUUID(),
@@ -299,6 +316,12 @@ export const nodeShutdown = async (
 		...(options.grace === undefined ? {} : { graceMinutes: parseGrace(options.grace) }),
 		...(options.force ? { force: true } : {}),
 	});
+
+	if (handover) {
+		admin.print(
+			`${node.id}'s Postgres keeps rebuilding as a replica of ${handover.target}. Run \`colibri-admin db status\` to follow it.`,
+		);
+	}
 };
 
 export const nodeResume = async (admin: Admin, id: string): Promise<void> => {
@@ -386,10 +409,10 @@ const waitForReplica = async (admin: Admin, node: string): Promise<void> => {
 	);
 };
 
-export const dbSwitchover = async (
+const planSwitchover = async (
 	admin: Admin,
-	options: { node?: string | undefined; force: boolean; wait: boolean },
-): Promise<void> => {
+	options: { node?: string | undefined; force: boolean; warnHint?: string },
+): Promise<{ target: string; primary: string | null }> => {
 	const check = await admin.sendOrder({
 		kind: "switchoverCheck",
 		id: randomUUID(),
@@ -410,11 +433,46 @@ export const dbSwitchover = async (
 
 	if (/^WARN /m.test(report) && !options.force) {
 		throw new RefusedError(
-			"Fix the WARN lines above, then run it again. --force skips them, at the risk the lines describe.",
+			options.warnHint ??
+				"Fix the WARN lines above, then run it again. --force skips them, at the risk the lines describe.",
 		);
 	}
 
 	const status = await admin.databaseStatus();
+
+	return { target, primary: status.primary };
+};
+
+const switchoverEffects = (primary: string, target: string): string[] => {
+	return [
+		`Writes stop for a few seconds while ${target} catches up and is promoted. Sub nodes queue them for up to WRITE_QUEUE_SECONDS (90 seconds by default).`,
+		`${primary}'s Postgres turns read-only and is rebuilt as a replica of ${target}. That copies the whole database and can take a while.`,
+		`${target} takes the main role. Rollouts pause during the move.`,
+	];
+};
+
+const waitForMain = async (admin: Admin, target: string): Promise<void> => {
+	const deadline = admin.now().getTime() + MAIN_HANDOVER_WAIT_MS;
+
+	while (admin.now().getTime() < deadline) {
+		if ((await admin.registry.mainNode())?.id === target) {
+			return;
+		}
+
+		await admin.sleep(SWITCHOVER_POLL_MS);
+	}
+
+	throw new RefusedError(
+		`${target} is the Postgres primary, but it hasn't taken the main role yet. Run the shutdown again once \`colibri-admin node list\` marks ${target} with *`,
+	);
+};
+
+export const dbSwitchover = async (
+	admin: Admin,
+	options: { node?: string | undefined; force: boolean; wait: boolean },
+): Promise<void> => {
+	const status = await planSwitchover(admin, options);
+	const { target } = status;
 	const primary = status.primary ?? "the current primary";
 
 	await admin.confirm({
@@ -422,9 +480,7 @@ export const dbSwitchover = async (
 		title: `move the Postgres primary from ${primary} to ${target}`,
 		token: target,
 		effects: [
-			`Writes stop for a few seconds while ${target} catches up and is promoted. Sub nodes queue them for up to WRITE_QUEUE_SECONDS (90 seconds by default).`,
-			`${primary}'s Postgres turns read-only and is rebuilt as a replica of ${target}. That copies the whole database and can take a while.`,
-			`${target} takes the main role. Rollouts pause during the move.`,
+			...switchoverEffects(primary, target),
 			`To move back, run \`colibri-admin db switchover ${primary}\`.`,
 			...(options.force
 				? [

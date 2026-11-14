@@ -427,6 +427,87 @@ describe("database switching", () => {
 		);
 	});
 
+	describe("shutting down the main node", () => {
+		const shutdownOptions = { id: "hel-1", maintenance: true, retire: false, force: false };
+
+		beforeEach(async () => {
+			await registry.register(
+				{ id: "hel-1", region: "eu", roles: ["main"] },
+				{ publicUrl: "https://hel-1.test", tailnetUrl: "http://hel-1:3100", version: "2.36.0" },
+			);
+			await registry.register(
+				{ id: "fsn-1", region: "eu", roles: ["failover"] },
+				{ publicUrl: "https://fsn-1.test", tailnetUrl: "http://fsn-1:3100", version: "2.36.0" },
+			);
+			await registry.claimMain("hel-1");
+			vi.mocked(admin.databaseStatus).mockResolvedValue({ primary: "hel-1", nodes: [] });
+		});
+
+		const handingOver = (lines: string[], takesMain = true) => {
+			const check = checked(lines);
+
+			return vi.fn(async (order: { id: string; kind: string }) => {
+				if (order.kind === "failback" && takesMain) {
+					await registry.claimMain("fsn-1");
+				}
+
+				return order.kind === "shutdown"
+					? { id: order.id, ok: true, message: "hel-1 is draining" }
+					: check(order);
+			});
+		};
+
+		it("switches over first, then drains the old main", async () => {
+			admin.sendOrder = handingOver(["ok   fsn-1 can hold the main role"]);
+
+			await nodeShutdown(admin, shutdownOptions);
+
+			expect(vi.mocked(admin.sendOrder).mock.calls.map(([order]) => order.kind)).toEqual([
+				"switchoverCheck",
+				"failback",
+				"shutdown",
+			]);
+			expect(admin.confirm).toHaveBeenCalledTimes(1);
+			expect(admin.confirm).toHaveBeenCalledWith(
+				expect.objectContaining({
+					title: "move the main role to fsn-1, then put hel-1 into maintenance",
+					token: "hel-1",
+				}),
+			);
+			expect(printed).toContain("hel-1 is draining");
+		});
+
+		it("stops on a failed check and on a warning even with --force", async () => {
+			admin.sendOrder = handingOver(["FAIL fsn-1's Postgres streams from the primary"]);
+
+			await expect(nodeShutdown(admin, shutdownOptions)).rejects.toThrow(/FAIL/);
+
+			admin.sendOrder = handingOver(["WARN fsn-1 is less than 16.0 MB behind"]);
+
+			await expect(nodeShutdown(admin, { ...shutdownOptions, force: true })).rejects.toThrow(
+				/db switchover --force/,
+			);
+			expect(admin.confirm).not.toHaveBeenCalled();
+		});
+
+		it("doesn't drain when the new primary never takes the main role", async () => {
+			let clock = new Date("2026-11-09T12:00:30Z").getTime();
+
+			admin.now = () => new Date(clock);
+			admin.sleep = vi.fn(async (ms: number) => {
+				clock += ms;
+			});
+			admin.sendOrder = handingOver(["ok   fsn-1 can hold the main role"], false);
+
+			await expect(nodeShutdown(admin, shutdownOptions)).rejects.toThrow(
+				/hasn't taken the main role yet/,
+			);
+			expect(admin.sendOrder).not.toHaveBeenCalledWith(
+				expect.objectContaining({ kind: "shutdown" }),
+			);
+		});
+	});
+
 	it("shows the database layout and who is ready to take over", async () => {
 		await register("eu-2");
 		await registry.register(

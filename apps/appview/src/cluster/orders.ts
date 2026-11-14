@@ -120,10 +120,7 @@ const shutdown = async (
 	}
 
 	if (target.id === deps.self) {
-		return refused(
-			order,
-			`${order.node} is the main node. Hand writes to the failover node before shutting it down`,
-		);
+		return refused(order, `${order.node} took the main role again. Run the shutdown again`);
 	}
 
 	if (!order.force) {
