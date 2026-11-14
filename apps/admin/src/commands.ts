@@ -5,13 +5,19 @@ import {
 	type BackupType,
 	type ClusterOrder,
 	type ConfigStore,
+	capableNodes,
+	type DatabaseStatus,
+	formatBytes,
 	isSharedKey,
+	missingDatabaseHost,
 	NODE_ROLES,
 	type NodeRow,
 	type OrderResult,
 	type Registry,
+	switchoverChecks,
 } from "@colibri-social/appview/cluster";
 import type { NodeRole } from "@colibri-social/appview-db";
+import type { ConfirmRequest } from "./confirm.js";
 
 export type Admin = {
 	registry: Registry;
@@ -19,9 +25,16 @@ export type Admin = {
 	sendOrder: (order: ClusterOrder) => Promise<OrderResult>;
 	setRolloutPaused: (paused: boolean) => Promise<void>;
 	readFile: (path: string) => Promise<string>;
+	confirm: (request: ConfirmRequest) => Promise<void>;
+	databaseStatus: () => Promise<DatabaseStatus>;
+	sleep: (ms: number) => Promise<void>;
 	now: () => Date;
 	print: (line: string) => void;
 };
+
+export const SWITCHOVER_POLL_MS = 5_000;
+
+export const SWITCHOVER_WAIT_MS = 15 * 60_000;
 
 export class UsageError extends Error {}
 
@@ -224,6 +237,20 @@ export const nodeLocation = async (
 	);
 };
 
+const requireNode = async (admin: Admin, id: string): Promise<NodeRow> => {
+	const node = await admin.registry.node(id);
+
+	if (!node) {
+		throw new RefusedError(`no node is called ${id}`);
+	}
+
+	return node;
+};
+
+const clientsOf = (node: NodeRow): string => {
+	return `${node.id} has ${node.connections} open sockets and ${node.activeCalls} calls`;
+};
+
 export const nodeShutdown = async (
 	admin: Admin,
 	options: {
@@ -237,6 +264,32 @@ export const nodeShutdown = async (
 	if (options.maintenance === options.retire) {
 		throw new UsageError("pass exactly one of --maintenance or --retire");
 	}
+
+	const node = await requireNode(admin, options.id);
+	const drain = options.grace
+		? `for up to ${options.grace}`
+		: "for up to DRAIN_GRACE_MINUTES (120 minutes by default)";
+
+	await admin.confirm({
+		risk: options.force ? "irreversible" : "disruptive",
+		title: options.retire ? `retire ${node.id}` : `put ${node.id} into maintenance`,
+		token: node.id,
+		effects: [
+			`${node.id} stops taking new sockets and calls and drains ${drain}.`,
+			`${clientsOf(node)}, which move to other nodes.`,
+			...(options.retire
+				? [
+						`${node.id} leaves the cluster. \`colibri-admin node remove ${node.id}\` then deletes its stack and data.`,
+						`To bring it back, add it again with \`colibri-admin node add\`.`,
+					]
+				: [
+						`${node.id} answers every request with 503 until \`colibri-admin node resume ${node.id}\`.`,
+					]),
+			...(options.force
+				? ["--force skips the quorum floor. Too few nodes may stay up to serve every client."]
+				: []),
+		],
+	});
 
 	await runOrder(admin, {
 		kind: "shutdown",
@@ -256,6 +309,23 @@ export const nodeRemove = async (
 	admin: Admin,
 	options: { id: string; force: boolean },
 ): Promise<void> => {
+	const node = await requireNode(admin, options.id);
+
+	await admin.confirm({
+		risk: "irreversible",
+		title: `remove ${node.id}`,
+		token: node.id,
+		effects: [
+			`Deletes the AppView stack on ${node.id}, its Docker volumes and the Postgres data on that server.`,
+			`Deletes its DNS record and forgets the node.`,
+			...(options.force && node.state !== "retired"
+				? [
+						`${node.id} is ${node.state}, and --force removes it without draining. ${clientsOf(node)}, which drop.`,
+					]
+				: []),
+		],
+	});
+
 	await runOrder(admin, {
 		kind: "deprovision",
 		id: randomUUID(),
@@ -265,6 +335,17 @@ export const nodeRemove = async (
 };
 
 export const nodeRecover = async (admin: Admin, id: string): Promise<void> => {
+	const node = await requireNode(admin, id);
+
+	await admin.confirm({
+		risk: "disruptive",
+		title: `restart the stack on ${node.id}`,
+		effects: [
+			`Restarts every container on ${node.id} and reads its .env again.`,
+			`${clientsOf(node)}. Sockets reconnect to other nodes, and calls on it drop for a few seconds.`,
+		],
+	});
+
 	await runOrder(admin, { kind: "recover", id: randomUUID(), node: id });
 };
 
@@ -276,12 +357,174 @@ export const monitoringDeploy = async (admin: Admin, id: string): Promise<void> 
 	await runOrder(admin, { kind: "deployMonitoring", id: randomUUID(), node: id });
 };
 
-export const dbSwitchover = async (admin: Admin, node: string): Promise<void> => {
-	await runOrder(admin, { kind: "failback", id: randomUUID(), node });
+const waitForReplica = async (admin: Admin, node: string): Promise<void> => {
+	const deadline = admin.now().getTime() + SWITCHOVER_WAIT_MS;
+	let last = "";
+
+	admin.print(`Waiting for ${node}'s Postgres to stream from the new primary.`);
+
+	while (admin.now().getTime() < deadline) {
+		const row = (await admin.databaseStatus()).nodes.find((entry) => entry.id === node);
+		const state = row ? `${row.postgres}${row.streaming ? ", streaming" : ""}` : "unknown";
+
+		if (state !== last) {
+			admin.print(`${node}: ${state}`);
+			last = state;
+		}
+
+		if (row?.postgres === "replica" && row.streaming) {
+			admin.print(`${node} is a streaming replica again. The switchover is complete.`);
+
+			return;
+		}
+
+		await admin.sleep(SWITCHOVER_POLL_MS);
+	}
+
+	admin.print(
+		`${node} isn't streaming yet. Run \`colibri-admin db status\` to keep watching. It rebuilds on its own.`,
+	);
 };
 
-export const dbFailback = async (admin: Admin, node: string | undefined): Promise<void> => {
-	await runOrder(admin, { kind: "failback", id: randomUUID(), node: node ?? "" });
+export const dbSwitchover = async (
+	admin: Admin,
+	options: { node?: string | undefined; force: boolean; wait: boolean },
+): Promise<void> => {
+	const check = await admin.sendOrder({
+		kind: "switchoverCheck",
+		id: randomUUID(),
+		node: options.node ?? "",
+	});
+	const [target = "", ...lines] = check.message.split("\n");
+	const report = lines.join("\n");
+
+	if (!report) {
+		throw new RefusedError(check.message);
+	}
+
+	admin.print(report);
+
+	if (/^FAIL /m.test(report)) {
+		throw new RefusedError("Fix the FAIL lines above, then run it again.");
+	}
+
+	if (/^WARN /m.test(report) && !options.force) {
+		throw new RefusedError(
+			"Fix the WARN lines above, then run it again. --force skips them, at the risk the lines describe.",
+		);
+	}
+
+	const status = await admin.databaseStatus();
+	const primary = status.primary ?? "the current primary";
+
+	await admin.confirm({
+		risk: options.force ? "irreversible" : "disruptive",
+		title: `move the Postgres primary from ${primary} to ${target}`,
+		token: target,
+		effects: [
+			`Writes stop for a few seconds while ${target} catches up and is promoted. Sub nodes queue them for up to WRITE_QUEUE_SECONDS (90 seconds by default).`,
+			`${primary}'s Postgres turns read-only and is rebuilt as a replica of ${target}. That copies the whole database and can take a while.`,
+			`${target} takes the main role. Rollouts pause during the move.`,
+			`To move back, run \`colibri-admin db switchover ${primary}\`.`,
+			...(options.force
+				? [
+						"--force skips the WARN lines above. Nodes they name can lose writes until they restart.",
+					]
+				: []),
+		],
+	});
+
+	await runOrder(admin, {
+		kind: "failback",
+		id: randomUUID(),
+		node: target,
+		...(options.force ? { force: true } : {}),
+	});
+
+	if (options.wait && status.primary) {
+		await waitForReplica(admin, status.primary);
+	}
+};
+
+const yesNo = (value: boolean): string => {
+	return value ? "yes" : "no";
+};
+
+export const dbStatus = async (admin: Admin): Promise<void> => {
+	const [nodes, main, status] = await Promise.all([
+		admin.registry.list(),
+		admin.registry.mainNode(),
+		admin.databaseStatus(),
+	]);
+
+	if (status.nodes.length === 0) {
+		admin.print("No node with the main or failover role is registered.");
+
+		return;
+	}
+
+	const byId = new Map(nodes.map((node) => [node.id, node]));
+	const rows = status.nodes.map((entry) => {
+		const node = byId.get(entry.id);
+
+		return [
+			entry.id === main?.id ? `${entry.id} *` : entry.id,
+			node?.roles.join(",") ?? "-",
+			entry.postgres,
+			entry.epoch === null ? "-" : String(entry.epoch),
+			entry.postgres === "replica" ? yesNo(entry.streaming) : "-",
+			entry.lagBytes === null ? "-" : formatBytes(entry.lagBytes),
+			node ? yesNo(missingDatabaseHost(nodes, node).length === 0) : "-",
+		];
+	});
+
+	for (const line of formatTable([
+		["NODE", "ROLES", "POSTGRES", "EPOCH", "STREAMING", "LAG", "REACHABLE BY ALL"],
+		...rows,
+	])) {
+		admin.print(line);
+	}
+
+	admin.print("");
+	admin.print("* holds the main role");
+	admin.print("");
+
+	if (!status.primary) {
+		admin.print(
+			"No Postgres accepts writes. If the primary is gone for good, run `colibri-admin db promote` on the failover node.",
+		);
+
+		return;
+	}
+
+	const candidates = capableNodes(nodes).filter((node) => node.id !== status.primary);
+	const ready: string[] = [];
+
+	for (const node of candidates) {
+		const failed = switchoverChecks({
+			status,
+			nodes,
+			target: node.id,
+			version: main?.version ?? "",
+			now: admin.now().getTime(),
+			rolloutRunning: false,
+			busy: null,
+		}).filter((check) => !check.ok);
+
+		if (failed.length === 0) {
+			ready.push(node.id);
+		} else {
+			admin.print(
+				`${node.id} isn't ready: ${failed.map((check) => check.detail ?? check.label).join(". ")}`,
+			);
+		}
+	}
+
+	admin.print(
+		ready.length > 0
+			? `Ready to switch over to: ${ready.join(", ")}`
+			: "No node is ready to take the primary.",
+	);
 };
 
 export const dbBackup = async (admin: Admin, type: string | undefined): Promise<void> => {
@@ -304,6 +547,16 @@ export const DEFAULT_ROLLOUT_GRACE_MINUTES = 2;
 
 export const rolloutNow = async (admin: Admin, grace: string | undefined): Promise<void> => {
 	const graceMinutes = grace === undefined ? DEFAULT_ROLLOUT_GRACE_MINUTES : parseGrace(grace);
+
+	await admin.confirm({
+		risk: "disruptive",
+		title: "update every node now",
+		effects: [
+			"Updates every node to the stable image, one at a time: sub nodes, then the failover node, then the main node.",
+			`Each node drains for ${graceMinutes} minutes, and its sockets and calls move to other nodes.`,
+			"Without a failover node on the new version, writes wait for up to WRITE_QUEUE_SECONDS while the main node restarts.",
+		],
+	});
 
 	await runOrder(admin, { kind: "rolloutNow", id: randomUUID(), graceMinutes });
 };
@@ -332,6 +585,17 @@ export const configSet = async (admin: Admin, key: string, value: string): Promi
 };
 
 export const configUnset = async (admin: Admin, key: string): Promise<void> => {
+	if ((await admin.config.keys()).includes(key)) {
+		await admin.confirm({
+			risk: "disruptive",
+			title: `remove the shared setting ${key}`,
+			effects: [
+				`Removes ${key} from the settings every node shares. The stored value is gone afterwards.`,
+				`Nodes that start after this use their own .env value for ${key}, or the default.`,
+			],
+		});
+	}
+
 	const removed = await admin.config.unset(key);
 
 	admin.print(removed ? `Removed ${key}.` : `${key} was not stored.`);
@@ -346,6 +610,21 @@ export const configImport = async (
 	);
 	const shared = entries.filter(([key]) => isSharedKey(key));
 	const skipped = entries.filter(([key]) => !isSharedKey(key)).map(([key]) => key);
+	const stored = await admin.config.values();
+	const replaced = shared
+		.filter(([key, value]) => stored[key] !== undefined && stored[key] !== value)
+		.map(([key]) => key);
+
+	if (!options.dryRun && replaced.length > 0) {
+		await admin.confirm({
+			risk: "disruptive",
+			title: `replace ${replaced.length} shared settings`,
+			effects: [
+				`Replaces the stored values of ${replaced.join(", ")}. The old values are gone afterwards.`,
+				"Nodes pick up the new values when they next start.",
+			],
+		});
+	}
 
 	if (!options.dryRun) {
 		for (const [key, value] of shared) {

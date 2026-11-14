@@ -1,7 +1,7 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlaybookRun } from "./ansible.js";
-import { handleOrder, type OrderDeps } from "./orders.js";
+import { clusterBusy, handleOrder, type OrderDeps } from "./orders.js";
 import { createRegistry } from "./registry.js";
 
 let database: TestDatabase;
@@ -431,15 +431,41 @@ describe("Ansible orders", () => {
 	});
 
 	it("passes failback to the main node's database", async () => {
-		const failback = vi.fn(async () => ({ ok: true, message: "hel-1 is the primary now" }));
+		const run = vi.fn(async () => ({ ok: true, message: "hel-1 is the primary now" }));
+		const check = vi.fn(async () => ({ ok: false, message: "hel-1\nFAIL hel-1 streams" }));
+		const failback = { run, check };
 		const result = await handleOrder(
 			{ ...deps, failback },
-			{ kind: "failback", id: "f1", node: "" },
+			{ kind: "failback", id: "f1", node: "", force: true },
 		);
 
 		expect(result).toMatchObject({ ok: true, message: "hel-1 is the primary now" });
-		expect(failback).toHaveBeenCalledWith(undefined);
+		expect(run).toHaveBeenCalledWith(undefined, true);
+		expect(
+			await handleOrder(
+				{ ...deps, failback },
+				{ kind: "switchoverCheck", id: "f3", node: "hel-1" },
+			),
+		).toMatchObject({ ok: false, message: "hel-1\nFAIL hel-1 streams" });
+		expect(check).toHaveBeenCalledWith("hel-1");
 		expect((await handleOrder(deps, { kind: "failback", id: "f2", node: "hel-1" })).ok).toBe(false);
+	});
+
+	it("marks the cluster busy during a switchover", async () => {
+		let seen: string | null = null;
+		const run = vi.fn(async () => {
+			seen = clusterBusy();
+
+			return { ok: true, message: "done" };
+		});
+
+		await handleOrder(
+			{ ...deps, failback: { run, check: vi.fn() } },
+			{ kind: "failback", id: "f4", node: "hel-1" },
+		);
+
+		expect(seen).toBe("switchover");
+		expect(clusterBusy()).toBeNull();
 	});
 
 	it("refuses to remove a node that still runs", async () => {

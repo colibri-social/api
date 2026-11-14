@@ -7,7 +7,9 @@ import {
 	connectKuma,
 	createConfigStore,
 	createRegistry,
+	probeNode,
 	promoteLocal,
+	readDatabaseStatus,
 	slotName,
 } from "@colibri-social/appview/cluster";
 import { hostUrls, openDatabase, pickPrimary, probeHost } from "@colibri-social/appview-db";
@@ -19,7 +21,7 @@ import {
 	configSet,
 	configUnset,
 	dbBackup,
-	dbFailback,
+	dbStatus,
 	dbSwitchover,
 	monitoringDeploy,
 	nodeAdd,
@@ -35,6 +37,7 @@ import {
 	statusDeploy,
 	UsageError,
 } from "./commands.js";
+import { type ConfirmPrompts, type ConfirmRequest, createConfirm } from "./confirm.js";
 import { CopyRefusedError, copyDatabase } from "./db-copy.js";
 import { openOrderBus, sendOrder } from "./orders.js";
 import {
@@ -52,16 +55,31 @@ import { type Prompts, runStatusTui } from "./status/tui.js";
 
 const USAGE = `colibri-admin, run it inside the AppView container of the main node
 
+Nodes
   node list
   node add <id> --region <region> --roles <roles> [--location <text>]
                    [--public-url <url>] [--ip <public ip> [--workers <n>]]
   node location <id> [<text>]
-  node shutdown <id> --maintenance|--retire [--grace 15m] [--force]
+  node shutdown <id> --maintenance|--retire [--grace 15m]      [disruptive]
+  node shutdown <id> ... --force                               [irreversible]
   node resume <id>
-  node recover <id>
-  node remove <id> [--force]
+  node recover <id>                                            [disruptive]
+  node remove <id> [--force]                                   [irreversible]
+
+Database
+  db status
+  db switchover <node> [--no-wait]                             [disruptive]
+  db failback [--no-wait]                                      [disruptive]
+  db switchover|failback ... --force                           [irreversible]
+  db promote                                                   [irreversible]
+  db backup [full|diff|incr]
+  db copy --from <libSQL url> --to <Postgres url> [--truncate] [irreversible with --truncate]
+
+Rollouts
   rollout pause|resume
-  rollout now [--grace 2m]
+  rollout now [--grace 2m]                                     [disruptive]
+
+Status page and monitoring
   status
   status deploy <node>
   status incident list [--all]
@@ -72,15 +90,16 @@ const USAGE = `colibri-admin, run it inside the AppView container of the main no
   status maintenance schedule <title> --start now|+30m|<ISO> --end +2h|<ISO> [--nodes a,b] [--message <text>]
   status maintenance end <id>
   monitoring deploy <node>
+
+Shared settings
   config list
   config set <KEY> <value>
-  config unset <KEY>
-  config import <file|-> [--dry-run]
-  db copy --from <libSQL url> --to <Postgres url> [--truncate]
-  db backup [full|diff|incr]
-  db failback [<node>]
-  db switchover <node>
-  db promote`;
+  config unset <KEY>                                           [disruptive]
+  config import <file|-> [--dry-run]                           [disruptive when it replaces values]
+
+Disruptive commands describe what they do and ask before they run. Pass --yes to skip the
+question. Irreversible commands ask you to type the node ID, or "truncate" for db copy. Pass
+--confirm <node id> to skip that question. Without a terminal, both refuse unless you pass the flag.`;
 
 const fail = (message: string, code: number): never => {
 	process.stderr.write(`${message}\n`);
@@ -95,7 +114,9 @@ const required = (value: string | undefined, name: string): string => {
 	return value;
 };
 
-const promoteHere = async (): Promise<number> => {
+type Confirm = (request: ConfirmRequest) => Promise<void>;
+
+const promoteHere = async (confirm: Confirm): Promise<number> => {
 	const localUrl = process.env.LOCAL_POSTGRES_URL || process.env.DATABASE_READ_URL;
 	const databaseUrl = process.env.DATABASE_URL;
 	const nodeId = process.env.NODE_ID;
@@ -118,6 +139,32 @@ const promoteHere = async (): Promise<number> => {
 		);
 
 		return 1;
+	}
+
+	const replica = await probeNode(localUrl);
+
+	try {
+		await confirm({
+			risk: "irreversible",
+			title: `promote ${nodeId}'s Postgres to the primary`,
+			token: nodeId,
+			effects: [
+				`${nodeId}'s Postgres becomes the primary with a new epoch, and ${nodeId} takes the main role.`,
+				replica?.replayedAt
+					? `Writes made after ${replica.replayedAt} that didn't reach this replica are lost.`
+					: "This replica reports no replayed writes. Anything the old primary had and this replica didn't is lost.",
+				"If the old primary comes back, it's fenced and rebuilt as a replica, and its writes that never reached this node are dropped.",
+				"Use this only when the primary is gone for good. While it runs, use `colibri-admin db switchover` instead.",
+			],
+		});
+	} catch (error) {
+		if (error instanceof RefusedError) {
+			process.stderr.write(`${error.message}\n`);
+
+			return 1;
+		}
+
+		throw error;
 	}
 
 	const local = openDatabase({ url: localUrl, maxConnections: 1 });
@@ -153,9 +200,10 @@ const promoteHere = async (): Promise<number> => {
 const runDbCommand = async (
 	command: string | undefined,
 	values: { from?: string | undefined; to?: string | undefined; truncate?: boolean },
+	confirm: Confirm,
 ): Promise<number> => {
 	if (command === "promote") {
-		return promoteHere();
+		return promoteHere(confirm);
 	}
 
 	if (command !== "copy" || !values.from || !values.to) {
@@ -173,6 +221,16 @@ const runDbCommand = async (
 			source,
 			target,
 			truncate: values.truncate ?? false,
+			beforeTruncate: (tables) =>
+				confirm({
+					risk: "irreversible",
+					title: "empty the target database",
+					token: "truncate",
+					effects: [
+						`Empties every table in the target Postgres database before copying. ${tables.length} tables have rows now: ${tables.join(", ")}.`,
+						"Those rows are gone afterwards. Take a backup of the target first if you need them.",
+					],
+				}),
 			print: (line) => process.stdout.write(`${line}\n`),
 		});
 		const rows = copied.reduce((total, table) => total + table.rows, 0);
@@ -183,7 +241,7 @@ const runDbCommand = async (
 
 		return 0;
 	} catch (error) {
-		if (error instanceof CopyRefusedError) {
+		if (error instanceof CopyRefusedError || error instanceof RefusedError) {
 			process.stderr.write(`${error.message}\n`);
 
 			return 1;
@@ -221,6 +279,9 @@ const main = async (): Promise<void> => {
 			end: { type: "string" },
 			nodes: { type: "string" },
 			all: { type: "boolean", default: false },
+			yes: { type: "boolean", default: false },
+			confirm: { type: "string" },
+			"no-wait": { type: "boolean", default: false },
 			help: { type: "boolean", default: false },
 		},
 	});
@@ -231,8 +292,14 @@ const main = async (): Promise<void> => {
 		process.exit(values.help ? 0 : 2);
 	}
 
-	if (group === "db" && !["failback", "switchover", "backup"].includes(command ?? "")) {
-		process.exit(await runDbCommand(command, values));
+	const confirm = createConfirm(
+		clack as unknown as ConfirmPrompts,
+		{ yes: values.yes, confirm: values.confirm },
+		Boolean(process.stdin.isTTY && process.stdout.isTTY),
+	);
+
+	if (group === "db" && !["failback", "switchover", "backup", "status"].includes(command ?? "")) {
+		process.exit(await runDbCommand(command, values, confirm));
 	}
 
 	const url = process.env.DATABASE_URL ?? fail("DATABASE_URL is not set", 2);
@@ -273,6 +340,10 @@ const main = async (): Promise<void> => {
 					set: { rolloutPaused: paused, updatedAt },
 				});
 		},
+		confirm,
+		databaseStatus: async () =>
+			readDatabaseStatus({ databaseUrl: url, nodes: await createRegistry(database).list() }),
+		sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 		readFile: async (path) => {
 			if (path !== "-") {
 				return readFile(path, "utf8");
@@ -422,10 +493,16 @@ const main = async (): Promise<void> => {
 				return nodeRemove(admin, { id: required(first, "<id>"), force: values.force });
 			case "db backup":
 				return dbBackup(admin, first);
+			case "db status":
+				return dbStatus(admin);
 			case "db failback":
-				return dbFailback(admin, first);
+				return dbSwitchover(admin, { force: values.force, wait: !values["no-wait"] });
 			case "db switchover":
-				return dbSwitchover(admin, required(first, "<node>"));
+				return dbSwitchover(admin, {
+					node: required(first, "<node>"),
+					force: values.force,
+					wait: !values["no-wait"],
+				});
 			case "rollout pause":
 				return rollout(admin, true);
 			case "rollout resume":

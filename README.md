@@ -398,16 +398,48 @@ connections. A node with the SSH key rebuilds its own Postgres as a replica of t
 primary with the `rejoin-replica` playbook, and the main node does the same for other nodes with
 the `main` or `failover` role.
 
-`colibri-admin db failback [<node>]` moves the primary back to a node with the `main` role
-during a quiet moment. The current primary turns read-only, waits up to 30 seconds for the target
-to replay everything, and the target is promoted with the next epoch and takes the main role.
-The old primary is then rebuilt as its replica. Writes fail for the few seconds this takes, and
-sub nodes hold them in their write queue.
+#### Moving the primary by hand
 
-`colibri-admin db switchover <node>` does the same in either direction, for example to move the
-primary to the failover box before maintenance on the Helsinki host. The target needs the `main`
-or `failover` role. A failover node keeps the main role while its own Postgres is the primary, and
-hands it back to a `main` node only after `db failback` has moved the primary there.
+`colibri-admin db status` shows each node with the `main` or `failover` role: whether its Postgres
+is the primary, a replica or fenced, its epoch, whether it streams, how far it's behind, and
+whether every active node lists it in `DATABASE_URL`. It ends with the nodes that are ready to take
+the primary, and what holds back the others.
+
+`colibri-admin db switchover <node>` moves the primary to another node with the `main` or
+`failover` role, for example to the failover box before maintenance on the Helsinki host.
+`colibri-admin db failback` moves it to the node with the `main` role. Both run these checks
+first and print each one:
+
+- The target can hold the main role, isn't the primary already, and its Postgres streams from the
+  primary.
+- The target is active, heartbeats and runs the same version as the main node.
+- The target is less than 16 MB behind.
+- Every active node lists the target's host in `DATABASE_URL`. Nodes report the list in their
+  heartbeat. A node that doesn't list it needs `colibri-admin node recover <id>` to read the
+  current `.env`.
+- No rollout, backup or other switchover is running.
+
+A `FAIL` line stops the switchover. A `WARN` line stops it unless you pass `--force`. After you
+confirm, rollouts pause, the current primary turns read-only and waits up to 30 seconds for the
+target to replay everything, and the target is promoted with the next epoch and takes the main
+role. Writes fail for the few seconds this takes, and sub nodes hold them in their write queue.
+The old primary is then rebuilt as a replica of the target, and the command waits up to 15
+minutes until it streams again. Pass `--no-wait` to return right after the promotion. A failover
+node keeps the main role while its own Postgres is the primary.
+
+#### Confirmations
+
+Commands that interrupt clients or delete data are marked in `colibri-admin --help`. Each one
+prints what it's about to do before it runs:
+
+- Disruptive commands ask yes or no: `node shutdown`, `node recover`, `rollout now`,
+  `config unset`, `config import` when it replaces stored values, `db switchover` and
+  `db failback`. Pass `--yes` to skip the question.
+- Irreversible commands ask you to type the node ID: `node remove`, `db promote`, and any command
+  with `--force`. `db copy --truncate` asks for `truncate` when the target has rows. Pass
+  `--confirm <node id>` to skip the question.
+
+Without a terminal, both kinds refuse unless you pass the flag.
 
 On the main node, set `REPLICATION_SLOT` in `.env` to its ID with underscores, for example
 `hel_1`, so it can be rebuilt as a replica.

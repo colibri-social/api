@@ -13,6 +13,7 @@ export type CopyOptions = {
 	source: Database;
 	target: Database;
 	truncate?: boolean;
+	beforeTruncate?: (tables: string[]) => Promise<void>;
 	print: (line: string) => void;
 };
 
@@ -131,6 +132,7 @@ export const copyDatabase = async (options: CopyOptions): Promise<TableCopy[]> =
 	}
 
 	if (filled.length > 0) {
+		await options.beforeTruncate?.(filled);
 		await truncateAll(
 			target,
 			pairs.map((pair) => pair.to),

@@ -5,14 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	type Admin,
 	configImport,
+	configUnset,
 	dbBackup,
-	dbFailback,
+	dbStatus,
 	dbSwitchover,
 	formatTable,
 	monitoringDeploy,
 	nodeAdd,
 	nodeList,
 	nodeLocation,
+	nodeRecover,
 	nodeRemove,
 	nodeShutdown,
 	parseGrace,
@@ -45,6 +47,9 @@ beforeEach(async () => {
 		sendOrder: vi.fn(async (order) => ({ id: order.id, ok: true, message: "eu-2 is draining" })),
 		setRolloutPaused: vi.fn(async () => {}),
 		readFile: vi.fn(async () => ""),
+		confirm: vi.fn(async () => {}),
+		databaseStatus: vi.fn(async () => ({ nodes: [], primary: null })),
+		sleep: vi.fn(async () => {}),
 		now: () => new Date("2026-11-09T12:00:30Z"),
 		print: (line) => printed.push(line),
 	};
@@ -129,6 +134,7 @@ describe("node commands", () => {
 	});
 
 	it("sends a shutdown order and reports the main node's answer", async () => {
+		await register("eu-2");
 		await nodeShutdown(admin, {
 			id: "eu-2",
 			maintenance: true,
@@ -178,6 +184,7 @@ describe("node commands", () => {
 	});
 
 	it("turns a refused order into a refusal", async () => {
+		await register("eu-2");
 		vi.mocked(admin.sendOrder).mockResolvedValue({ id: "x", ok: false, message: "below quorum" });
 
 		await expect(
@@ -192,27 +199,20 @@ describe("node commands", () => {
 	});
 
 	it("asks the main node to remove a node", async () => {
+		await register("eu-2");
 		await nodeRemove(admin, { id: "eu-2", force: true });
 
+		expect(admin.confirm).toHaveBeenCalledWith(
+			expect.objectContaining({ risk: "irreversible", token: "eu-2" }),
+		);
 		expect(admin.sendOrder).toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "deprovision", node: "eu-2", force: true }),
 		);
 	});
 
-	it("asks the main node to switch the primary over", async () => {
-		await dbSwitchover(admin, "fsn-1");
-
-		expect(admin.sendOrder).toHaveBeenCalledWith(
-			expect.objectContaining({ kind: "failback", node: "fsn-1" }),
-		);
-	});
-
-	it("asks the main node to fail back", async () => {
-		await dbFailback(admin, "hel-1");
-
-		expect(admin.sendOrder).toHaveBeenCalledWith(
-			expect.objectContaining({ kind: "failback", node: "hel-1" }),
-		);
+	it("refuses an unknown node before asking", async () => {
+		await expect(nodeRemove(admin, { id: "nope-1", force: false })).rejects.toThrow(RefusedError);
+		expect(admin.confirm).not.toHaveBeenCalled();
 	});
 
 	it("asks the main node to deploy monitoring", async () => {
@@ -284,5 +284,211 @@ describe("config import", () => {
 		await configImport(admin, { file: ".env", dryRun: true });
 
 		expect(await admin.config.keys()).toEqual([]);
+	});
+});
+
+describe("confirmation", () => {
+	beforeEach(async () => {
+		await register("eu-2");
+	});
+
+	it("asks before a shutdown and labels it by risk", async () => {
+		await nodeShutdown(admin, { id: "eu-2", maintenance: true, retire: false, force: false });
+		await nodeShutdown(admin, { id: "eu-2", maintenance: false, retire: true, force: true });
+
+		expect(vi.mocked(admin.confirm).mock.calls.map(([request]) => request.risk)).toEqual([
+			"disruptive",
+			"irreversible",
+		]);
+		expect(vi.mocked(admin.confirm).mock.calls[1]?.[0]).toMatchObject({ token: "eu-2" });
+	});
+
+	it("sends nothing when the confirmation is declined", async () => {
+		vi.mocked(admin.confirm).mockRejectedValue(new RefusedError("Cancelled. Nothing changed."));
+
+		await expect(
+			nodeShutdown(admin, { id: "eu-2", maintenance: true, retire: false, force: false }),
+		).rejects.toThrow(/Cancelled/);
+		await expect(nodeRecover(admin, "eu-2")).rejects.toThrow(/Cancelled/);
+		await expect(rolloutNow(admin, undefined)).rejects.toThrow(/Cancelled/);
+		expect(admin.sendOrder).not.toHaveBeenCalled();
+	});
+
+	it("asks before removing a stored setting only", async () => {
+		await configUnset(admin, "PDS_URL");
+
+		expect(admin.confirm).not.toHaveBeenCalled();
+
+		await admin.config.set("PDS_URL", "https://pds.test");
+		await configUnset(admin, "PDS_URL");
+
+		expect(admin.confirm).toHaveBeenCalledWith(expect.objectContaining({ risk: "disruptive" }));
+	});
+
+	it("asks before an import replaces stored values", async () => {
+		vi.mocked(admin.readFile).mockResolvedValue("PDS_URL=https://pds.test\n");
+		await configImport(admin, { file: ".env", dryRun: false });
+
+		expect(admin.confirm).not.toHaveBeenCalled();
+
+		vi.mocked(admin.readFile).mockResolvedValue("PDS_URL=https://other.test\n");
+		await configImport(admin, { file: ".env", dryRun: false });
+
+		expect(admin.confirm).toHaveBeenCalledWith(
+			expect.objectContaining({ title: "replace 1 shared settings" }),
+		);
+	});
+});
+
+describe("database switching", () => {
+	const checked = (lines: string[]) => {
+		return vi.fn(async (order: { id: string; kind: string }) =>
+			order.kind === "switchoverCheck"
+				? {
+						id: order.id,
+						ok: !lines.some((line) => !line.startsWith("ok")),
+						message: ["fsn-1", ...lines].join("\n"),
+					}
+				: { id: order.id, ok: true, message: "fsn-1 is the primary now" },
+		);
+	};
+
+	it("checks, asks, switches over and waits for the old primary to stream", async () => {
+		admin.sendOrder = checked(["ok   fsn-1 can hold the main role"]);
+		vi.mocked(admin.databaseStatus)
+			.mockResolvedValueOnce({ primary: "hel-1", nodes: [] })
+			.mockResolvedValueOnce({
+				primary: "fsn-1",
+				nodes: [
+					{
+						id: "hel-1",
+						postgres: "fenced",
+						epoch: 2,
+						streaming: false,
+						lagBytes: null,
+						replayedAt: null,
+					},
+				],
+			})
+			.mockResolvedValueOnce({
+				primary: "fsn-1",
+				nodes: [
+					{
+						id: "hel-1",
+						postgres: "replica",
+						epoch: 3,
+						streaming: true,
+						lagBytes: 0,
+						replayedAt: null,
+					},
+				],
+			});
+
+		await dbSwitchover(admin, { node: "fsn-1", force: false, wait: true });
+
+		expect(admin.confirm).toHaveBeenCalledWith(
+			expect.objectContaining({
+				risk: "disruptive",
+				title: "move the Postgres primary from hel-1 to fsn-1",
+			}),
+		);
+		expect(admin.sendOrder).toHaveBeenLastCalledWith(
+			expect.objectContaining({ kind: "failback", node: "fsn-1" }),
+		);
+		expect(printed).toContain("hel-1: fenced");
+		expect(printed).toContain("hel-1 is a streaming replica again. The switchover is complete.");
+	});
+
+	it("stops on a failed check and on a warning without --force", async () => {
+		admin.sendOrder = checked(["FAIL fsn-1's Postgres streams from the primary"]);
+
+		await expect(dbSwitchover(admin, { node: "fsn-1", force: true, wait: false })).rejects.toThrow(
+			/FAIL/,
+		);
+
+		admin.sendOrder = checked(["WARN fsn-1 is less than 16.0 MB behind"]);
+
+		await expect(dbSwitchover(admin, { node: "fsn-1", force: false, wait: false })).rejects.toThrow(
+			/WARN/,
+		);
+		expect(admin.confirm).not.toHaveBeenCalled();
+	});
+
+	it("asks for the node ID when --force skips warnings", async () => {
+		admin.sendOrder = checked(["WARN fsn-1 is less than 16.0 MB behind"]);
+
+		await dbSwitchover(admin, { node: "fsn-1", force: true, wait: false });
+
+		expect(admin.confirm).toHaveBeenCalledWith(
+			expect.objectContaining({ risk: "irreversible", token: "fsn-1" }),
+		);
+		expect(admin.sendOrder).toHaveBeenLastCalledWith(
+			expect.objectContaining({ kind: "failback", node: "fsn-1", force: true }),
+		);
+	});
+
+	it("shows the database layout and who is ready to take over", async () => {
+		await register("eu-2");
+		await registry.register(
+			{ id: "hel-1", region: "eu", roles: ["main"] },
+			{ publicUrl: "https://hel-1.test", tailnetUrl: "http://hel-1:3100", version: "2.36.0" },
+		);
+		await registry.register(
+			{ id: "fsn-1", region: "eu", roles: ["failover"] },
+			{ publicUrl: "https://fsn-1.test", tailnetUrl: "http://fsn-1:3100", version: "2.36.0" },
+		);
+		await registry.claimMain("hel-1");
+		await registry.heartbeat("hel-1", {
+			connections: 0,
+			activeCalls: 0,
+			version: "2.36.0",
+			databaseHosts: ["fsn-1", "postgres"],
+		});
+		await registry.heartbeat("fsn-1", {
+			connections: 0,
+			activeCalls: 0,
+			version: "2.36.0",
+			databaseHosts: ["hel-1", "postgres"],
+		});
+		await registry.heartbeat("eu-2", {
+			connections: 0,
+			activeCalls: 0,
+			version: "2.36.0",
+			databaseHosts: ["hel-1"],
+		});
+		vi.mocked(admin.databaseStatus).mockResolvedValue({
+			primary: "hel-1",
+			nodes: [
+				{
+					id: "hel-1",
+					postgres: "primary",
+					epoch: 2,
+					streaming: false,
+					lagBytes: null,
+					replayedAt: null,
+				},
+				{
+					id: "fsn-1",
+					postgres: "replica",
+					epoch: 2,
+					streaming: true,
+					lagBytes: 2048,
+					replayedAt: null,
+				},
+			],
+		});
+
+		await dbStatus(admin);
+
+		expect(printed[0]).toMatch(/^NODE\s+ROLES\s+POSTGRES\s+EPOCH\s+STREAMING\s+LAG/);
+		expect(
+			printed.some((line) => /^fsn-1\s+failover\s+replica\s+2\s+yes\s+2 KB\s+no/.test(line)),
+		).toBe(true);
+		expect(
+			printed.some(
+				(line) =>
+					line.startsWith("fsn-1 isn't ready:") && line.includes("eu-2's DATABASE_URL lists hel-1"),
+			),
+		).toBe(true);
 	});
 });

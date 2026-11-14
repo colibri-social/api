@@ -3,7 +3,12 @@ import { access, readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { hostname } from "node:os";
 import { resolve } from "node:path";
-import type { NodeRole, NodeState, WriteMode } from "@colibri-social/appview-db";
+import {
+	type NodeRole,
+	type NodeState,
+	parsePostgresUrl,
+	type WriteMode,
+} from "@colibri-social/appview-db";
 import { eq } from "drizzle-orm";
 import pg from "pg";
 import type { AppContext } from "../context.js";
@@ -12,7 +17,8 @@ import { createAnsibleRunner } from "./ansible.js";
 import { type Cloudflare, createCloudflare, parseGeoRegions } from "./cloudflare.js";
 import { ControlClient } from "./control-client.js";
 import { ControlServer } from "./control-server.js";
-import { runFailback } from "./failback.js";
+import { blocking, formatChecks } from "./db-status.js";
+import { checkSwitchover, type FailbackDeps, runFailback } from "./failback.js";
 import { askAlive, createFailoverWatch, FAILOVER_CHECK_MS, watchPrimary } from "./failover.js";
 import { createFencing, FENCE_CHECK_MS } from "./fencing.js";
 import { createHandover, type DeferState, shouldDefer } from "./handover.js";
@@ -24,7 +30,7 @@ import {
 	monitoringFingerprint,
 } from "./monitoring-sync.js";
 import { joinCluster, ownCredentials } from "./node-secret.js";
-import { type ClusterOrder, handleOrder, type OrderDeps } from "./orders.js";
+import { type ClusterOrder, clusterBusy, handleOrder, type OrderDeps } from "./orders.js";
 import { ALIVE_PATH, type Alive, aliveSchema, type DrainMode, type NodeFrame } from "./protocol.js";
 import {
 	type BackupKeys,
@@ -453,6 +459,9 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 	handoverTimer?.unref?.();
 
 	const postgresUrl = ctx.database.dialect === "postgres" ? config.DATABASE_URL : null;
+	const databaseHosts = postgresUrl
+		? parsePostgresUrl(postgresUrl).hosts.map((entry) => entry.host)
+		: null;
 	const ownTailnetHost = new URL(address.tailnetUrl).hostname;
 
 	const rejoin = ansible
@@ -529,11 +538,28 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 
 	const heartbeat = setInterval(() => {
 		void registry
-			.heartbeat(ctx.nodeId, { ...deps.load(), version: address.version })
+			.heartbeat(ctx.nodeId, { ...deps.load(), version: address.version, databaseHosts })
 			.catch((error: unknown) => log.warn({ err: error }, "cluster.heartbeatFailed"));
 	}, HEARTBEAT_MS);
 
 	heartbeat.unref?.();
+
+	const failbackDeps = (databaseUrl: string): FailbackDeps => ({
+		self: ctx.nodeId,
+		localUrl,
+		databaseUrl,
+		nodes: () => registry.list(),
+		yieldMain: deps.yieldMain,
+		log,
+		version: address.version,
+		rollouts: {
+			running: () => rollout?.running ?? false,
+			rolloutPaused: () => registry.rolloutPaused(),
+			pauseRollout: () => registry.pauseRollout(),
+			resumeRollout: () => registry.resumeRollout(),
+		},
+		busy: clusterBusy,
+	});
 
 	const orderDeps = (background?: (work: Promise<unknown>) => void): OrderDeps => ({
 		registry,
@@ -559,18 +585,18 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 							db_user: databaseParts(postgresUrl).db_user,
 						}),
 					},
-					failback: (target: string | undefined) =>
-						runFailback(
-							{
-								self: ctx.nodeId,
-								localUrl,
-								databaseUrl: postgresUrl,
-								nodes: () => registry.list(),
-								yieldMain: deps.yieldMain,
-								log,
-							},
-							target,
-						),
+					failback: {
+						run: (target: string | undefined, force: boolean) =>
+							runFailback(failbackDeps(postgresUrl), target, { force }),
+						check: async (target: string | undefined) => {
+							const plan = await checkSwitchover(failbackDeps(postgresUrl), target);
+
+							return {
+								ok: blocking(plan.checks, false).length === 0,
+								message: `${plan.target ?? ""}\n${formatChecks(plan.checks)}`,
+							};
+						},
+					},
 				}
 			: {}),
 		...(cloudflare

@@ -35,12 +35,14 @@ export type NodeRow = NodeIdentity &
 		activeCalls: number;
 		heartbeatAt: string | null;
 		drainDeadline: string | null;
+		databaseHosts?: string[] | null;
 	};
 
 export type NodeLoad = {
 	connections: number;
 	activeCalls: number;
 	version: string;
+	databaseHosts?: string[] | null;
 };
 
 export type LeaveDecision = { allowed: true } | { allowed: false; reason: string };
@@ -110,6 +112,7 @@ export const createRegistry = (
 			activeCalls: row.activeCalls,
 			heartbeatAt: row.heartbeatAt,
 			drainDeadline: row.drainDeadline,
+			databaseHosts: row.databaseHosts ?? null,
 		};
 	};
 

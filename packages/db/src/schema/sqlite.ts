@@ -814,6 +814,7 @@ export const nodes = sqliteTable(
 		secretHash: text("secret_hash"),
 		registeredAt: timestamp("registered_at").notNull(),
 		heartbeatAt: timestamp("heartbeat_at"),
+		databaseHosts: json<string[]>("database_hosts"),
 	},
 	(t) => [index("nodes_state_idx").on(t.state, t.region)],
 );

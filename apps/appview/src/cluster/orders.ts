@@ -29,7 +29,8 @@ export type ClusterOrder =
 	| { kind: "deprovision"; id: string; node: string; force?: boolean }
 	| { kind: "deployStatus"; id: string; node: string }
 	| { kind: "deployMonitoring"; id: string; node: string }
-	| { kind: "failback"; id: string; node: string }
+	| { kind: "failback"; id: string; node: string; force?: boolean }
+	| { kind: "switchoverCheck"; id: string; node: string }
 	| { kind: "rolloutNow"; id: string; graceMinutes: number }
 	| { kind: "backup"; id: string; type: BackupType };
 
@@ -60,7 +61,10 @@ export type OrderDeps = {
 		remove: (host: string) => Promise<boolean>;
 		alias?: (host: string, target: string) => Promise<void>;
 	};
-	failback?: (target: string | undefined) => Promise<{ ok: boolean; message: string }>;
+	failback?: {
+		run: (target: string | undefined, force: boolean) => Promise<{ ok: boolean; message: string }>;
+		check: (target: string | undefined) => Promise<{ ok: boolean; message: string }>;
+	};
 	monitoring?: {
 		vars: () => Record<string, unknown> | null;
 		remoteWriteUrl: () => string | null;
@@ -473,6 +477,22 @@ const deployMonitoring = async (
 	);
 };
 
+let busyWith: string | null = null;
+
+export const clusterBusy = (): string | null => {
+	return busyWith;
+};
+
+const exclusive = async <T>(label: string, work: () => Promise<T>): Promise<T> => {
+	busyWith = label;
+
+	try {
+		return await work();
+	} finally {
+		busyWith = null;
+	}
+};
+
 const failback = async (
 	deps: OrderDeps,
 	order: Extract<ClusterOrder, { kind: "failback" }>,
@@ -481,7 +501,24 @@ const failback = async (
 		return refused(order, "this main node has no Postgres to hand over");
 	}
 
-	const result = await deps.failback(order.node === "" ? undefined : order.node);
+	const { run } = deps.failback;
+	const target = order.node === "" ? undefined : order.node;
+	const result = busyWith
+		? await run(target, order.force ?? false)
+		: await exclusive("switchover", () => run(target, order.force ?? false));
+
+	return result.ok ? done(order, result.message) : refused(order, result.message);
+};
+
+const switchoverCheck = async (
+	deps: OrderDeps,
+	order: Extract<ClusterOrder, { kind: "switchoverCheck" }>,
+): Promise<OrderResult> => {
+	if (!deps.failback) {
+		return refused(order, "this main node has no Postgres to hand over");
+	}
+
+	const result = await deps.failback.check(order.node === "" ? undefined : order.node);
 
 	return result.ok ? done(order, result.message) : refused(order, result.message);
 };
@@ -530,11 +567,14 @@ const backup = async (
 		return refused(order, "this main node can't run Ansible");
 	}
 
-	const result = await ansible.run({
-		playbook: "backup",
-		host: hostOf(self.tailnetUrl),
-		vars: { ...deps.backup.vars(), backup_type: order.type },
-	});
+	if (busyWith) {
+		return refused(order, `a ${busyWith} is running. Try again when it's done`);
+	}
+
+	const vars = { ...deps.backup.vars(), backup_type: order.type };
+	const result = await exclusive("backup", () =>
+		ansible.run({ playbook: "backup", host: hostOf(self.tailnetUrl), vars }),
+	);
 
 	if (!result.ok) {
 		return refused(order, `the ${order.type} backup failed:\n${result.tail.slice(-15).join("\n")}`);
@@ -552,6 +592,7 @@ export const ORDER_TIMEOUTS_MS: Record<ClusterOrder["kind"], number> = {
 	deployStatus: 30_000,
 	deployMonitoring: 30_000,
 	failback: 3 * 60_000,
+	switchoverCheck: 30_000,
 	rolloutNow: 30_000,
 	backup: 3 * 60 * 60_000,
 };
@@ -574,6 +615,8 @@ export const handleOrder = (deps: OrderDeps, order: ClusterOrder): Promise<Order
 			return deployMonitoring(deps, order);
 		case "failback":
 			return failback(deps, order);
+		case "switchoverCheck":
+			return switchoverCheck(deps, order);
 		case "rolloutNow":
 			return rolloutNow(deps, order);
 		case "backup":

@@ -1,0 +1,1 @@
+ALTER TABLE `nodes` ADD `database_hosts` text;

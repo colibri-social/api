@@ -288,6 +288,13 @@
 			"when": 1794648784836,
 			"tag": "0040_whole_reavers",
 			"breakpoints": true
+		},
+		{
+			"idx": 41,
+			"version": "7",
+			"when": 1794650540048,
+			"tag": "0041_furry_george_stacy",
+			"breakpoints": true
 		}
 	]
 }

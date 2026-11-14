@@ -1,0 +1,1 @@
+ALTER TABLE "nodes" ADD COLUMN "database_hosts" jsonb;
