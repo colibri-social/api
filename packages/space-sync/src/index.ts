@@ -1,6 +1,7 @@
 export * from "./emitter.js";
 export * from "./engine.js";
 export * from "./queue.js";
+export * from "./record-cid.js";
 export * from "./repo-sync.js";
 export * from "./types.js";
 export * from "./verify-jobs.js";

@@ -11,6 +11,7 @@ import { KeyedWorkQueue } from "./queue.js";
 import { RepoSync } from "./repo-sync.js";
 import type {
 	ChangeTiming,
+	RepoChange,
 	RepoCursor,
 	RepoHostResolver,
 	SyncEvents,
@@ -24,6 +25,16 @@ const hostLacksSpaces = (error: unknown): boolean =>
 	error instanceof XrpcError &&
 	error.code === "InvalidToken" &&
 	error.message.includes("Atproto-Space");
+
+const lacksKemKey = (error: unknown): boolean => {
+	if (!(error instanceof Error)) return false;
+	if (error.name === "MissingKemKeyError") return true;
+
+	return error.cause instanceof Error && error.cause.name === "MissingKemKeyError";
+};
+
+export const signalsSpacesUnsupported = (error: unknown): boolean =>
+	hostLacksSpaces(error) || lacksKemKey(error);
 
 export type NotifyWriteHint = {
 	rev?: string;
@@ -218,6 +229,10 @@ export class SpaceSyncEngine {
 		this.queue.push(key);
 	}
 
+	publish(change: RepoChange): void {
+		this.emit("changed", change);
+	}
+
 	notifyRepoRemoved(space: string, author: string, hint: SpaceRevHint = {}): void {
 		if (hint.spaceRev) this.trackSpaceRev(space, hint.spaceRev, hint.prevSpaceRev);
 
@@ -378,15 +393,37 @@ export class SpaceSyncEngine {
 			stale.push(encodeKey(space, repo));
 		}
 
+		const hosted = await this.hostedAuthors(space, [...new Set([...seen, ...cursors.keys()])]);
+
 		for (const [author, cursor] of cursors) {
-			if (seen.has(author)) continue;
+			if (seen.has(author) || hosted.has(author)) continue;
 			const kept = expected.has(author) || cursor.state === "gone";
 			if (kept && !removed.has(author)) continue;
 			await this.removeRepo(space, author);
 		}
 
 		if (latest) this.spaceRevs.set(space, latest);
-		this.queue.pushAll(stale);
+		this.queue.pushAll(stale.filter((key) => !hosted.has(decodeKey(key).author)));
+	}
+
+	private async hostedAuthors(space: string, authors: string[]): Promise<Set<string>> {
+		if (!this.options.store.hostedAuthors || authors.length === 0) return new Set();
+
+		const hosted = await this.options.store
+			.hostedAuthors(space, authors)
+			.catch((error: unknown) => {
+				this.log("hostedAuthors.failed", { space, error });
+
+				return authors;
+			});
+
+		return new Set(hosted);
+	}
+
+	private async isHosted(space: string, author: string): Promise<boolean> {
+		if (!this.options.store.isHosted) return false;
+
+		return this.options.store.isHosted(space, author);
 	}
 
 	private async sweepEligible(space: string): Promise<boolean> {
@@ -626,6 +663,12 @@ export class SpaceSyncEngine {
 			return;
 		}
 
+		if (await this.isHosted(space, author)) {
+			this.targets.delete(key);
+			this.log("repo.hostedSkipped", { space, author }, "debug");
+			return;
+		}
+
 		try {
 			const outcome = await this.repos.sync(space, author);
 			const committedAt = Date.now();
@@ -719,10 +762,20 @@ export class SpaceSyncEngine {
 				this.now().getTime() + backoffFor(failures, this.options.maxBackoffMs ?? 3_600_000),
 			),
 		});
-		this.log(
-			"repo.syncFailed",
-			{ space, author, failures, error },
-			hostLacksSpaces(error) ? "debug" : "warn",
-		);
+		const unsupported = signalsSpacesUnsupported(error);
+
+		this.log("repo.syncFailed", { space, author, failures, error }, unsupported ? "debug" : "warn");
+
+		if (unsupported) this.reportUnsupported(space, author);
+	}
+
+	private reportUnsupported(space: string, author: string): void {
+		const store = this.options.store;
+		if (!store.spacesUnsupported) return;
+
+		void this.options.hosts
+			.hostFor(author)
+			.then((host) => store.spacesUnsupported?.(space, author, host))
+			.catch((error: unknown) => this.log("spacesUnsupported.failed", { space, author, error }));
 	}
 }

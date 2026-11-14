@@ -958,3 +958,90 @@ describe("space notices", () => {
 		expect(spaceClient.allWriters).toHaveBeenCalledWith(SPACE, "3s1");
 	});
 });
+
+describe("repos the AppView hosts", () => {
+	const hostedStore = (hosted: string[], unsupported: string[] = []): SyncStore => ({
+		...store([ALICE]),
+		hostedAuthors: async (_space, authors) => authors.filter((author) => hosted.includes(author)),
+		isHosted: async (_space, author) => hosted.includes(author),
+		spacesUnsupported: async (_space, author, host) => void unsupported.push(`${author} ${host}`),
+	});
+
+	it("never pulls or drops a hosted repo during a sweep", async () => {
+		cursors.set(BOB, cursor(BOB, "3a"));
+		const pulled: string[] = [];
+		const { engine } = engineFor([], async (_space, author) => void pulled.push(author), {
+			engine: { store: hostedStore([BOB]) },
+		});
+
+		await engine.sweepSpace(SPACE);
+		await engine.drain();
+
+		expect(pulled).toEqual([ALICE]);
+		expect(dropped).toEqual([]);
+	});
+
+	it("ignores write hints for a hosted repo", async () => {
+		const pulled: string[] = [];
+		const { engine } = engineFor([], async (_space, author) => void pulled.push(author), {
+			engine: { store: hostedStore([ALICE]) },
+		});
+
+		engine.notifyWrite(SPACE, ALICE, { trigger: "clientHint" });
+		await engine.drain();
+
+		expect(pulled).toEqual([]);
+	});
+
+	it("reports a member whose host can't serve spaces", async () => {
+		const unsupported: string[] = [];
+		const { engine } = engineFor(
+			[],
+			async () => {
+				throw new XrpcError(
+					400,
+					"InvalidToken",
+					"Unsupported authorization type: Atproto-Space",
+					"com.atproto.space.getRepo",
+				);
+			},
+			{ engine: { store: hostedStore([], unsupported) } },
+		);
+		engine.on("failed", () => undefined);
+
+		engine.notifyWrite(SPACE, ALICE);
+		await engine.drain();
+		await settle();
+
+		expect(unsupported).toEqual([`${ALICE} https://pds.test`]);
+	});
+
+	it("reports a member who publishes no KEM key", async () => {
+		const unsupported: string[] = [];
+		const missing = Object.assign(new Error("no #atproto_kem key"), { name: "MissingKemKeyError" });
+		const { engine } = engineFor(
+			[],
+			async () => {
+				throw missing;
+			},
+			{ engine: { store: hostedStore([], unsupported) } },
+		);
+		engine.on("failed", () => undefined);
+
+		engine.notifyWrite(SPACE, ALICE);
+		await engine.drain();
+		await settle();
+
+		expect(unsupported).toEqual([`${ALICE} https://pds.test`]);
+	});
+
+	it("emits a published change like a synced one", () => {
+		const changes: string[] = [];
+		const { engine } = engineFor([], async () => undefined);
+		engine.on("changed", (change) => void changes.push(change.author));
+
+		engine.publish({ space: SPACE, author: ALICE, puts: [], deletes: [] });
+
+		expect(changes).toEqual([ALICE]);
+	});
+});

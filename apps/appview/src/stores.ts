@@ -12,6 +12,9 @@ import type { CredentialStorage } from "@colibri-social/space";
 import type { RepoChange, RepoCursor, SyncStore } from "@colibri-social/space-sync";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { STORED_PREVIEW_TTL_MS, type StoredPreviews } from "./link-embeds.js";
+import { type SupportProbe, spacesSupport, spacesSupportProbe } from "./polyfill/detect.js";
+import { hostedAuthorsIn, isAuthoritativeHere, repoHostMode } from "./polyfill/host-mode.js";
+import { checkFallback } from "./polyfill/migration.js";
 
 export type NotifyTokens = {
 	tokenFor(space: string): Promise<string>;
@@ -142,6 +145,7 @@ const toCursor = (row: {
 
 export type SyncStoreOptions = {
 	threadIdleSeconds: number;
+	probe?: SupportProbe;
 };
 
 export const drizzleSyncStore = (
@@ -151,6 +155,13 @@ export const drizzleSyncStore = (
 ): SyncStore => {
 	const { db, tables } = database;
 	const now = () => new Date().toISOString();
+	const support = spacesSupport({ database, probe: options.probe ?? spacesSupportProbe() });
+
+	const withoutHosted = async (space: string, authors: string[]): Promise<string[]> => {
+		const hosted = new Set(await hostedAuthorsIn({ db, tables }, space, authors));
+
+		return authors.filter((author) => !hosted.has(author));
+	};
 
 	const writeCursor = async (
 		tx: Queryable,
@@ -235,6 +246,16 @@ export const drizzleSyncStore = (
 				.where(eq(tables.notifyRegistrations.space, space));
 		},
 
+		hostedAuthors: async (space, authors) => hostedAuthorsIn({ db, tables }, space, authors),
+
+		isHosted: async (space, author) => {
+			return isAuthoritativeHere(await repoHostMode({ db, tables }, space, author));
+		},
+
+		spacesUnsupported: async (_space, author, host) => {
+			await checkFallback({ database, support }, author, host);
+		},
+
 		expectedRepos: async (space) => {
 			const [row] = await db
 				.select({
@@ -252,7 +273,9 @@ export const drizzleSyncStore = (
 					.select({ author: tables.spaceRepos.author })
 					.from(tables.spaceRepos)
 					.where(eq(tables.spaceRepos.space, space));
-				return [...new Set([row.authority, ...writers.map((writer) => writer.author)])];
+				return withoutHosted(space, [
+					...new Set([row.authority, ...writers.map((writer) => writer.author)]),
+				]);
 			}
 
 			if (!row.community || !isChannelSpaceType(row.spaceType)) return [row.authority];
@@ -261,7 +284,7 @@ export const drizzleSyncStore = (
 				.select({ did: tables.members.did })
 				.from(tables.members)
 				.where(eq(tables.members.community, row.community));
-			return [row.authority, ...members.map((member) => member.did)];
+			return withoutHosted(space, [row.authority, ...members.map((member) => member.did)]);
 		},
 
 		sweepEligible: async (space) => {

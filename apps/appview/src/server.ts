@@ -5,6 +5,7 @@ import { isWrite } from "./cluster/write-proxy.js";
 import type { AppContext } from "./context.js";
 import { corsMiddleware, nodeHeaderMiddleware } from "./cors.js";
 import { record, xrpcMethod } from "./metrics.js";
+import { registerPolyfillRoutes } from "./polyfill/routes.js";
 import { registerActorRoutes } from "./routes/actor.js";
 import { registerActorWriteRoutes } from "./routes/actor-write.js";
 import { asyncHandler } from "./routes/async-handler.js";
@@ -178,5 +179,6 @@ const registerXrpcRoutes = (deps: Parameters<typeof registerProtocolRoutes>[0]):
 	registerEmojiRoutes(deps);
 	registerNotificationRoutes(deps);
 	registerServerRoutes(deps);
+	registerPolyfillRoutes(deps);
 	// NOTE: Humming was dropped with the rebuild, implementation follows after reconsideration
 };

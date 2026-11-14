@@ -166,3 +166,38 @@ describe("cluster defaults", () => {
 		expect(config.WRITE_QUEUE_SECONDS).toBe(90);
 	});
 });
+
+describe("POLYFILL_S3_*", () => {
+	const withBucket = (values: Record<string, string>) => {
+		return loadConfig({ ...REQUIRED, APPVIEW_DID: "did:web:appview.example.com", ...values });
+	};
+
+	it("leaves polyfill blob storage off without a bucket", () => {
+		expect(withBucket({}).polyfillBucket).toBeNull();
+	});
+
+	it("builds the bucket config from the environment", () => {
+		expect(
+			withBucket({
+				POLYFILL_S3_ENDPOINT: "https://s3.example.com",
+				POLYFILL_S3_BUCKET: "colibri-blobs",
+				POLYFILL_S3_ACCESS_KEY_ID: "key",
+				POLYFILL_S3_SECRET_ACCESS_KEY: "secret",
+				POLYFILL_S3_FORCE_PATH_STYLE: "true",
+			}).polyfillBucket,
+		).toEqual({
+			endpoint: "https://s3.example.com",
+			region: "us-east-1",
+			bucket: "colibri-blobs",
+			accessKeyId: "key",
+			secretAccessKey: "secret",
+			forcePathStyle: true,
+		});
+	});
+
+	it("refuses a bucket without credentials", () => {
+		expect(() => withBucket({ POLYFILL_S3_BUCKET: "colibri-blobs" })).toThrow(
+			/POLYFILL_S3_ACCESS_KEY_ID/,
+		);
+	});
+});

@@ -58,6 +58,7 @@ import {
 } from "./link-embeds.js";
 import { migrateUnderLock } from "./locks.js";
 import { createLogger, type Logger } from "./logger.js";
+import { polyfillBlobIndex, polyfillBlobSource, polyfillBucket } from "./polyfill/blobs.js";
 import {
 	drizzleCredentialStorage,
 	drizzleIdentityStore,
@@ -270,8 +271,14 @@ export const createContext = async (config: Config) => {
 		...(config.COMMUNITY_EMAIL_DOMAIN ? { emailDomain: config.COMMUNITY_EMAIL_DOMAIN } : {}),
 	});
 
+	const polyfillBlobs = {
+		index: polyfillBlobIndex(database),
+		bucket: polyfillBucket(config.polyfillBucket),
+	};
+
 	const blobs = new BlobService({
 		spaceClient,
+		polyfill: polyfillBlobSource(polyfillBlobs.index, polyfillBlobs.bucket),
 		hosts: {
 			hostFor: async (did) => (await identity.resolveDid(did)).pds ?? config.PDS_URL,
 		},
@@ -375,6 +382,7 @@ export const createContext = async (config: Config) => {
 		projections,
 		sync,
 		blobs,
+		polyfillBlobs,
 		gifs,
 		previews,
 		linkEmbeds,

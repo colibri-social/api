@@ -803,6 +803,16 @@ describe("message time window", () => {
 		expect(skipped[0]?.reason).toBe("message createdAt is in the future");
 	});
 
+	it("accepts an old record key for a message it already holds, as after a migration", async () => {
+		const rkey = tidAt(hoursFromNow(-25), "a");
+
+		await applyChange(deps, live(MEMBER, rkey, tidAt(hoursFromNow(-25), "rev")));
+		await applyChange(deps, live(MEMBER, rkey, tidAt(NOW, "rev"), { text: "moved" }));
+
+		expect(skipped).toEqual([]);
+		expect((await messageRows()).map((row) => row.text)).toEqual(["moved"]);
+	});
+
 	it("refuses a live create whose record key is 25 hours older than its commit", async () => {
 		await applyChange(deps, live(MEMBER, tidAt(hoursFromNow(-25), "a"), tidAt(NOW, "rev")));
 

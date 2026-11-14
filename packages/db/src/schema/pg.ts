@@ -18,6 +18,7 @@ const json = <T>(name: string) => jsonb(name).$type<T>();
 const flag = (name: string) => boolean(name);
 
 export type SpaceRepoState = "pending" | "active" | "diverged" | "error" | "gone";
+export type PolyfillHostMode = "polyfill" | "migrating" | "native";
 export type RoleChannelOverride = { channel: string; allow: string[]; deny: string[] };
 export type PermissionOverride = {
 	role?: string;
@@ -160,6 +161,54 @@ export const records = pgTable(
 	(t) => [
 		primaryKey({ columns: [t.space, t.author, t.collection, t.rkey] }),
 		index("records_collection_idx").on(t.space, t.collection),
+	],
+);
+
+export const polyfillActors = pgTable("polyfill_actors", {
+	did: text("did").primaryKey(),
+	mode: text("mode").notNull().$type<PolyfillHostMode>(),
+	pds: text("pds"),
+	pdsSupportsSpaces: flag("pds_supports_spaces").notNull().default(false),
+	checkedAt: timestamp("checked_at").notNull(),
+});
+
+export const polyfillRepos = pgTable(
+	"polyfill_repos",
+	{
+		space: text("space").notNull(),
+		author: text("author").notNull(),
+		mode: text("mode").notNull().$type<PolyfillHostMode>(),
+		rev: text("rev"),
+		setHash: text("set_hash"),
+		migratedRev: text("migrated_rev"),
+		updatedAt: timestamp("updated_at").notNull(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.space, t.author] }),
+		index("polyfill_repos_author_idx").on(t.author, t.mode),
+	],
+);
+
+export const polyfillPdsSupport = pgTable("polyfill_pds_support", {
+	pdsEndpoint: text("pds_endpoint").primaryKey(),
+	supported: flag("supported").notNull(),
+	checkedAt: timestamp("checked_at").notNull(),
+});
+
+export const polyfillBlobs = pgTable(
+	"polyfill_blobs",
+	{
+		cid: text("cid").notNull(),
+		author: text("author").notNull(),
+		mime: text("mime").notNull(),
+		size: integer("size").notNull(),
+		s3Key: text("s3_key").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+		referencedAt: timestamp("referenced_at"),
+	},
+	(t) => [
+		primaryKey({ columns: [t.author, t.cid] }),
+		index("polyfill_blobs_unreferenced_idx").on(t.referencedAt, t.createdAt),
 	],
 );
 
@@ -1033,6 +1082,10 @@ export const schema = {
 	spaces,
 	spaceRepos,
 	records,
+	polyfillActors,
+	polyfillRepos,
+	polyfillPdsSupport,
+	polyfillBlobs,
 	spaceCredentials,
 	notifyRegistrations,
 	communities,

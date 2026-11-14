@@ -60,6 +60,8 @@ services:
       METRICS_HOST: 0.0.0.0
       BLOB_DISK_CACHE_DIR: /data/blob-cache
       NODE_SECRET_FILE: /data/node-secret
+      POLYFILL_S3_ENDPOINT: ${POLYFILL_S3_ENDPOINT:-http://seaweedfs:8333}
+      POLYFILL_S3_FORCE_PATH_STYLE: ${POLYFILL_S3_FORCE_PATH_STYLE:-true}
     ports:
       - "${TAILNET_IP:-127.0.0.1}:3100:3100"
       - "40000-40031:40000-40031/udp"
@@ -72,6 +74,20 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.51
+    profiles: [blobs]
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/colibri-entrypoint.sh"]
+    environment:
+      S3_ACCESS_KEY: ${POLYFILL_S3_ACCESS_KEY_ID:-}
+      S3_SECRET_KEY: ${POLYFILL_S3_SECRET_ACCESS_KEY:-}
+    ports:
+      - "${TAILNET_IP:-127.0.0.1}:8333:8333"
+    volumes:
+      - ./deploy/seaweedfs/entrypoint.sh:/colibri-entrypoint.sh:ro
+      - seaweedfs-data:/data
 
   caddy:
     image: caddy:2.10
@@ -142,6 +158,8 @@ services:
       NODE_PUBLIC_URL: http://localhost:3001
       NODE_TAILNET_URL: http://sub:3100
       NODE_SECRET_FILE: /data/node-secret
+      POLYFILL_S3_ENDPOINT: ${POLYFILL_S3_ENDPOINT:-http://seaweedfs:8333}
+      POLYFILL_S3_FORCE_PATH_STYLE: ${POLYFILL_S3_FORCE_PATH_STYLE:-true}
       DATABASE_URL: postgres://colibri:${POSTGRES_PASSWORD}@postgres:5432/colibri
       DATABASE_READ_URL: postgres://colibri:${POSTGRES_PASSWORD}@replica:5432/colibri
     ports:
@@ -164,6 +182,8 @@ services:
       NODE_PUBLIC_URL: http://localhost:3002
       NODE_TAILNET_URL: http://voice:3100
       NODE_SECRET_FILE: /data/node-secret
+      POLYFILL_S3_ENDPOINT: ${POLYFILL_S3_ENDPOINT:-http://seaweedfs:8333}
+      POLYFILL_S3_FORCE_PATH_STYLE: ${POLYFILL_S3_FORCE_PATH_STYLE:-true}
       DATABASE_URL: postgres://colibri:${POSTGRES_PASSWORD}@postgres:5432/colibri
       SFU_RTC_PORT: 41000
     ports:
@@ -185,3 +205,4 @@ volumes:
   replica-data:
   sub-data:
   voice-data:
+  seaweedfs-data:

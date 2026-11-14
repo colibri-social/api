@@ -1,3 +1,4 @@
+export * from "./bucket.js";
 export * from "./cache.js";
 export * from "./disk-cache.js";
 export * from "./errors.js";

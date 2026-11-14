@@ -22,6 +22,7 @@ export * as permissionCommunity from "./beta/permissionCommunity.js";
 export * as permissionMessaging from "./beta/permissionMessaging.js";
 export * as permissionNotification from "./beta/permissionNotification.js";
 export * as permissionPush from "./beta/permissionPush.js";
+export * as polyfill from "./beta/polyfill.js";
 export * as reaction from "./beta/reaction.js";
 export * as richtext from "./beta/richtext.js";
 export * as role from "./beta/role.js";

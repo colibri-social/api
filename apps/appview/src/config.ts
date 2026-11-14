@@ -1,4 +1,5 @@
 import type { NodeRole } from "@colibri-social/appview-db";
+import type { BlobBucketConfig } from "@colibri-social/blobs";
 import {
 	apnsConfigSchema,
 	configuredProviders,
@@ -226,6 +227,15 @@ export const configSchema = z.object({
 		.nonnegative()
 		.default(10 * 1024 * 1024 * 1024),
 	BLOB_RENDER_CONCURRENCY: z.coerce.number().int().positive().optional(),
+	POLYFILL_S3_ENDPOINT: z
+		.url()
+		.optional()
+		.or(z.literal("").transform(() => undefined)),
+	POLYFILL_S3_REGION: z.string().trim().min(1).default("us-east-1"),
+	POLYFILL_S3_BUCKET: optionalString,
+	POLYFILL_S3_ACCESS_KEY_ID: optionalString,
+	POLYFILL_S3_SECRET_ACCESS_KEY: optionalString,
+	POLYFILL_S3_FORCE_PATH_STYLE: boolish(false),
 
 	VAPID_PUBLIC_KEY: optionalString,
 	VAPID_PRIVATE_KEY: optionalString,
@@ -284,6 +294,7 @@ export type Config = RawConfig & {
 	gifsEnabled: boolean;
 	corsOrigins: string[];
 	telemetryEnabled: boolean;
+	polyfillBucket: BlobBucketConfig | null;
 };
 
 export class ConfigError extends Error {
@@ -292,6 +303,35 @@ export class ConfigError extends Error {
 		this.name = "ConfigError";
 	}
 }
+
+const POLYFILL_BUCKET_KEYS = [
+	"POLYFILL_S3_BUCKET",
+	"POLYFILL_S3_ACCESS_KEY_ID",
+	"POLYFILL_S3_SECRET_ACCESS_KEY",
+] as const;
+
+const polyfillBucketOf = (raw: RawConfig): BlobBucketConfig | null => {
+	const missing = POLYFILL_BUCKET_KEYS.filter((key) => !raw[key]);
+
+	if (missing.length === POLYFILL_BUCKET_KEYS.length) {
+		return null;
+	}
+
+	if (missing.length > 0) {
+		throw new ConfigError(
+			missing.map((key) => `${key}: required once any POLYFILL_S3_* bucket setting is set`),
+		);
+	}
+
+	return {
+		region: raw.POLYFILL_S3_REGION,
+		bucket: raw.POLYFILL_S3_BUCKET as string,
+		accessKeyId: raw.POLYFILL_S3_ACCESS_KEY_ID as string,
+		secretAccessKey: raw.POLYFILL_S3_SECRET_ACCESS_KEY as string,
+		forcePathStyle: raw.POLYFILL_S3_FORCE_PATH_STYLE,
+		...(raw.POLYFILL_S3_ENDPOINT ? { endpoint: raw.POLYFILL_S3_ENDPOINT } : {}),
+	};
+};
 
 export const loadConfig = (env: NodeJS.ProcessEnv = process.env): Config => {
 	const parsed = configSchema.safeParse(env);
@@ -342,6 +382,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): Config => {
 		gifsEnabled: Boolean(raw.KLIPY_API_KEY),
 		corsOrigins,
 		telemetryEnabled: !raw.COLIBRI_TELEMETRY_DISABLED && !raw.DO_NOT_TRACK,
+		polyfillBucket: polyfillBucketOf(raw),
 	};
 };
 
@@ -358,6 +399,9 @@ export const describeConfig = (config: Config): Record<string, string> => ({
 	gifs: config.gifsEnabled ? "enabled" : "disabled",
 	hostSignIn: config.HOST_OAUTH_PRIVATE_KEY ? "enabled" : "disabled, no HOST_OAUTH_PRIVATE_KEY",
 	voice: config.VOICE_ENABLED ? "enabled" : "disabled",
+	polyfillBlobs: config.polyfillBucket
+		? `bucket ${config.polyfillBucket.bucket}`
+		: "disabled, no POLYFILL_S3_BUCKET",
 	cors: config.corsOrigins.length ? config.corsOrigins.join(" ") : "no browser origin allowed",
 	jetstream: config.JETSTREAM_ENABLED
 		? jetstreamEndpoint(config.JETSTREAM_URL).toString()

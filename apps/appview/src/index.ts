@@ -25,6 +25,7 @@ import { observe, startMetrics } from "./metrics.js";
 import { migrationJobs } from "./migrations.js";
 import { NotificationPruner } from "./notification-prune.js";
 import { connectPipeline } from "./pipeline.js";
+import { PolyfillBlobSweeper } from "./polyfill/blobs.js";
 import { healProfilePolicies } from "./profile-policies.js";
 import { resyncBrokenCids } from "./resync-broken-cids.js";
 import { resolveVersion } from "./routes/server.js";
@@ -73,12 +74,14 @@ const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<Main
 	const activities = new ActivitySweeper(ctx);
 	const handOvers = new HandOverSweeper(ctx);
 	const notificationPruner = new NotificationPruner(ctx);
+	const polyfillBlobSweeper = new PolyfillBlobSweeper({ ...ctx.polyfillBlobs, log: ctx.log });
 
 	await ctx.sync.start();
 	await jetstream.start();
 	activities.start();
 	handOvers.start();
 	notificationPruner.start();
+	polyfillBlobSweeper.start();
 
 	const telemetry = startTelemetry({
 		database: ctx.database,
@@ -135,6 +138,7 @@ const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<Main
 		stop: async () => {
 			clearInterval(housekeeping);
 			notificationPruner.stop();
+			polyfillBlobSweeper.stop();
 			telemetry.stop();
 			await jetstream.stop();
 			await activities.stop();

@@ -54,6 +54,38 @@ export const databaseHosts = (
 	};
 };
 
+const LOCAL_BUCKET_HOST = "seaweedfs";
+
+const polyfillBucketVars = (
+	config: Pick<
+		Config,
+		| "POLYFILL_S3_ENDPOINT"
+		| "POLYFILL_S3_BUCKET"
+		| "POLYFILL_S3_ACCESS_KEY_ID"
+		| "POLYFILL_S3_SECRET_ACCESS_KEY"
+		| "POLYFILL_S3_FORCE_PATH_STYLE"
+	>,
+): Record<string, unknown> => {
+	if (
+		!config.POLYFILL_S3_BUCKET ||
+		!config.POLYFILL_S3_ACCESS_KEY_ID ||
+		!config.POLYFILL_S3_SECRET_ACCESS_KEY
+	) {
+		return {};
+	}
+
+	const endpoint = config.POLYFILL_S3_ENDPOINT;
+	const sharedEndpoint = endpoint && hostOf(endpoint) !== LOCAL_BUCKET_HOST ? endpoint : null;
+
+	return {
+		polyfill_s3_bucket: config.POLYFILL_S3_BUCKET,
+		polyfill_s3_access_key_id: config.POLYFILL_S3_ACCESS_KEY_ID,
+		polyfill_s3_secret_access_key: config.POLYFILL_S3_SECRET_ACCESS_KEY,
+		polyfill_s3_force_path_style: config.POLYFILL_S3_FORCE_PATH_STYLE ? "true" : "false",
+		...(sharedEndpoint ? { polyfill_s3_endpoint: sharedEndpoint } : {}),
+	};
+};
+
 export const provisionVars = (
 	config: Pick<
 		Config,
@@ -72,6 +104,11 @@ export const provisionVars = (
 		| "BACKUP_REPO_USER"
 		| "BACKUP_REPO_PATH"
 		| "BACKUP_CIPHER_PASS"
+		| "POLYFILL_S3_ENDPOINT"
+		| "POLYFILL_S3_BUCKET"
+		| "POLYFILL_S3_ACCESS_KEY_ID"
+		| "POLYFILL_S3_SECRET_ACCESS_KEY"
+		| "POLYFILL_S3_FORCE_PATH_STYLE"
 	>,
 	main: MainAddress,
 	target: ProvisionTarget,
@@ -97,6 +134,7 @@ export const provisionVars = (
 	return {
 		postgres_image: config.POSTGRES_IMAGE,
 		...backups,
+		...polyfillBucketVars(config),
 		node_id: target.node,
 		node_region: target.region,
 		node_roles: target.roles,

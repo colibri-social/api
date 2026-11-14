@@ -28,6 +28,7 @@ export const bridgedFromKey = (attribution: { registration: string; remoteId: st
 
 export const MESSAGE_FUTURE_SLACK_MS = 15 * 60 * 1000;
 const STALE_CREATE_MS = 24 * 60 * 60 * 1000;
+const STALE_CREATE_REFUSAL = "message record key is more than a day older than its commit";
 
 export type MessageTimeRef = Pick<RecordRef, "author" | "rkey" | "rev"> & {
 	space: Pick<RecordRef["space"], "authority">;
@@ -61,10 +62,35 @@ export const messageTimeRefusal = (
 	if (futureRefusal) return futureRefusal;
 	if (!ref.rev || isBridgeImport(ref, value)) return null;
 	const revTime = tidTime(ref.rev);
-	if (revTime !== null && keyTime < revTime - STALE_CREATE_MS) {
-		return "message record key is more than a day older than its commit";
-	}
+	if (revTime !== null && keyTime < revTime - STALE_CREATE_MS) return STALE_CREATE_REFUSAL;
 	return null;
+};
+
+const holdsMessage = async (deps: ProjectionDeps, ref: RecordRef): Promise<boolean> => {
+	const [row] = await deps.db
+		.select({ rkey: deps.tables.messages.rkey })
+		.from(deps.tables.messages)
+		.where(
+			and(
+				eq(deps.tables.messages.space, ref.space.uri),
+				eq(deps.tables.messages.author, ref.author),
+				eq(deps.tables.messages.rkey, ref.rkey),
+			),
+		)
+		.limit(1);
+
+	return row !== undefined;
+};
+
+export const messageRefusal = async (
+	deps: ProjectionDeps,
+	ref: RecordRef,
+	value: MessageTimeValue,
+): Promise<string | null> => {
+	const refusal = messageTimeRefusal(deps, ref, value);
+	if (refusal !== STALE_CREATE_REFUSAL) return refusal;
+
+	return (await holdsMessage(deps, ref)) ? null : refusal;
 };
 
 const earlierOf = (first: string, second: string) =>
@@ -129,7 +155,7 @@ export const message: Projector<social.colibri.beta.message.Main> = {
 	admission: { rows: "messages" },
 	spaceTypes: [SPACE_TYPES.channelText, SPACE_TYPES.channelVoice, SPACE_TYPES.channelThread],
 	schema: social.colibri.beta.message,
-	refuse: messageTimeRefusal,
+	refuse: messageRefusal,
 	put: async (deps, ref, value) => {
 		const now = deps.now();
 		const content = {

@@ -96,6 +96,66 @@ const collectStar = async (
 	return bytes;
 };
 
+export type FetchedRepo = {
+	rev: string | null;
+	setHashBase64: string;
+	records: RecordWrite[];
+};
+
+export type FetchRepoDeps = Pick<RepoSyncDeps, "client" | "hosts" | "keys" | "maxRepoBytes"> & {
+	verifier?: Verifier;
+};
+
+const fetchOnce = async (
+	deps: FetchRepoDeps,
+	verifier: Verifier,
+	space: string,
+	author: string,
+): Promise<FetchedRepo> => {
+	const host = await deps.hosts.hostFor(author);
+	let repo: RepoStar;
+	try {
+		repo = await deps.client.getRepoStar(space, host, author);
+	} catch (error) {
+		if (!isEmpty(error)) throw error;
+
+		return { rev: null, setHashBase64: setHashToBase64(emptySetHash()), records: [] };
+	}
+
+	const verified = await verifier.repo({
+		space,
+		author,
+		keyShare: repo.keyShare,
+		sharedSecret: repo.sharedSecret,
+		headers: repo.headers,
+		star: await collectStar(repo.star, deps.maxRepoBytes ?? DEFAULT_MAX_REPO_BYTES, space, author),
+	});
+	if (!verified.authentic) throw new RepoUnverifiedError(space, author);
+
+	return {
+		rev: verified.commit.rev,
+		setHashBase64: verified.setHashBase64,
+		records: verified.records,
+	};
+};
+
+export const fetchVerifiedRepo = async (
+	deps: FetchRepoDeps,
+	space: string,
+	author: string,
+): Promise<FetchedRepo> => {
+	const verifier = deps.verifier ?? inlineVerifier();
+
+	try {
+		return await fetchOnce(deps, verifier, space, author);
+	} catch (error) {
+		if (!(error instanceof RepoUnverifiedError)) throw error;
+		await deps.keys.kemKeyFor(author, true);
+
+		return fetchOnce(deps, verifier, space, author);
+	}
+};
+
 export class RepoSync {
 	private readonly verifier: Verifier;
 

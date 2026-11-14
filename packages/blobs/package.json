@@ -21,6 +21,7 @@
 		"clean": "tsc --build --clean"
 	},
 	"dependencies": {
+		"@aws-sdk/client-s3": "catalog:",
 		"@atproto/lex-data": "catalog:",
 		"@colibri-social/space": "workspace:*",
 		"file-type": "catalog:",

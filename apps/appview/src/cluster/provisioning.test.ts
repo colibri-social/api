@@ -25,9 +25,82 @@ const config = {
 	BACKUP_REPO_USER: undefined,
 	BACKUP_REPO_PATH: "/home/colibri",
 	BACKUP_CIPHER_PASS: undefined,
+	POLYFILL_S3_ENDPOINT: undefined,
+	POLYFILL_S3_BUCKET: undefined,
+	POLYFILL_S3_ACCESS_KEY_ID: undefined,
+	POLYFILL_S3_SECRET_ACCESS_KEY: undefined,
+	POLYFILL_S3_FORCE_PATH_STYLE: false,
 };
 
 describe("provisionVars", () => {
+	it("points a node at the main node's bucket over the tailnet", () => {
+		const withBucket = {
+			...config,
+			POLYFILL_S3_ENDPOINT: "http://seaweedfs:8333",
+			POLYFILL_S3_BUCKET: "colibri-blobs",
+			POLYFILL_S3_ACCESS_KEY_ID: "key",
+			POLYFILL_S3_SECRET_ACCESS_KEY: "secret",
+			POLYFILL_S3_FORCE_PATH_STYLE: true,
+		};
+		const vars = provisionVars(
+			withBucket,
+			{ tailnetUrl: "http://hel-1:3100" },
+			{
+				node: "eu-2",
+				region: "eu",
+				roles: ["api"],
+				publicUrl: "https://eu-2.nodes.colibri.social",
+			},
+		);
+
+		expect(vars).toMatchObject({
+			polyfill_s3_bucket: "colibri-blobs",
+			polyfill_s3_access_key_id: "key",
+			polyfill_s3_secret_access_key: "secret",
+			polyfill_s3_force_path_style: "true",
+		});
+		expect(vars).not.toHaveProperty("polyfill_s3_endpoint");
+	});
+
+	it("passes a hosted bucket's endpoint through unchanged", () => {
+		const vars = provisionVars(
+			{
+				...config,
+				POLYFILL_S3_ENDPOINT: "https://account.r2.cloudflarestorage.com",
+				POLYFILL_S3_BUCKET: "colibri-blobs",
+				POLYFILL_S3_ACCESS_KEY_ID: "key",
+				POLYFILL_S3_SECRET_ACCESS_KEY: "secret",
+			},
+			{ tailnetUrl: "http://hel-1:3100" },
+			{
+				node: "eu-2",
+				region: "eu",
+				roles: ["api"],
+				publicUrl: "https://eu-2.nodes.colibri.social",
+			},
+		);
+
+		expect(vars).toMatchObject({
+			polyfill_s3_endpoint: "https://account.r2.cloudflarestorage.com",
+			polyfill_s3_force_path_style: "false",
+		});
+	});
+
+	it("leaves the bucket out when the main node has none", () => {
+		const vars = provisionVars(
+			config,
+			{ tailnetUrl: "http://hel-1:3100" },
+			{
+				node: "eu-2",
+				region: "eu",
+				roles: ["api"],
+				publicUrl: "https://eu-2.nodes.colibri.social",
+			},
+		);
+
+		expect(vars).not.toHaveProperty("polyfill_s3_bucket");
+	});
+
 	it("gives only the failover node the backup settings and keys", () => {
 		const withBackups = {
 			...config,

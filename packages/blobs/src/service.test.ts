@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BlobCache } from "./cache.js";
 import { DiskVariantCache } from "./disk-cache.js";
 import { BlobNotFoundError, BlobUpstreamError } from "./errors.js";
-import { BlobService } from "./service.js";
+import { BlobService, type PolyfillBlobSource } from "./service.js";
 
 const renderLoad = vi.hoisted(() => ({ current: 0, peak: 0 }));
 
@@ -561,5 +561,126 @@ describe("BlobService variants", () => {
 
 		expect(results.map((result) => result.status)).toEqual(["ok", "ok", "ok"]);
 		expect(renderLoad.peak).toBe(1);
+	});
+});
+
+describe("BlobService polyfill source", () => {
+	let bytes: Uint8Array;
+	let cid: string;
+
+	beforeEach(async () => {
+		bytes = new Uint8Array(await pngBytes());
+		cid = (await cidForRawBytes(bytes)).toString();
+	});
+
+	const heldSource = (stored: () => Uint8Array | null) => {
+		const opened: string[] = [];
+		const source: PolyfillBlobSource = {
+			open: async (did, blobCid) => {
+				opened.push(`${did} ${blobCid}`);
+
+				const held = stored();
+
+				if (!held) {
+					return null;
+				}
+
+				return {
+					stream: (async function* () {
+						yield held.subarray(0, 10);
+						yield held.subarray(10);
+					})(),
+					size: held.byteLength,
+				};
+			},
+		};
+
+		return { source, opened };
+	};
+
+	it("serves a held blob from the bucket without asking the author's host", async () => {
+		const { client, callCount } = fakeSpaceClient(() => new Response(null, { status: 500 }));
+		const { source, opened } = heldSource(() => bytes);
+		const service = new BlobService({
+			spaceClient: client,
+			hosts: staticHosts(),
+			polyfill: source,
+		});
+
+		const result = await service.fetch({ did: DID, cid, space: SPACE });
+
+		expect(opened).toEqual([`${DID} ${cid}`]);
+		expect(callCount()).toBe(0);
+		expect(result.status).toBe("ok");
+
+		if (result.status === "ok") {
+			expect(result.mimeType).toBe("image/png");
+			expect(result.bytes).toEqual(bytes);
+		}
+	});
+
+	it("applies a range and renders variants from a held blob", async () => {
+		const { source } = heldSource(() => bytes);
+		const service = new BlobService({
+			spaceClient: {} as unknown as SpaceClient,
+			hosts: staticHosts(),
+			polyfill: source,
+		});
+
+		const ranged = await service.fetch({ did: DID, cid, space: SPACE, range: "bytes=0-9" });
+		const thumbnail = await service.fetch({ did: DID, cid, space: SPACE, variant: "thumbnail" });
+
+		expect(ranged.status === "ok" && ranged.bytes).toEqual(bytes.subarray(0, 10));
+		expect(ranged.status === "ok" && ranged.range).toEqual({ start: 0, end: 9 });
+		expect(thumbnail.status === "ok" && thumbnail.mimeType).toBe("image/webp");
+	});
+
+	it("rejects held bytes that do not match the CID", async () => {
+		const tampered = new Uint8Array(bytes);
+
+		tampered[0] = (tampered[0] ?? 0) ^ 0xff;
+
+		const { source } = heldSource(() => tampered);
+		const service = new BlobService({
+			spaceClient: {} as unknown as SpaceClient,
+			hosts: staticHosts(),
+			polyfill: source,
+		});
+
+		await expect(service.fetch({ did: DID, cid, space: SPACE })).rejects.toMatchObject({
+			name: "BlobRejectedError",
+			reason: "cidMismatch",
+		});
+	});
+
+	it("falls back to the author's host when the bucket holds nothing", async () => {
+		const { client, callCount } = fakeSpaceClient(() => new Response(bytes));
+		const { source } = heldSource(() => null);
+		const service = new BlobService({
+			spaceClient: client,
+			hosts: staticHosts(),
+			polyfill: source,
+		});
+
+		const result = await service.fetch({ did: DID, cid, space: SPACE });
+
+		expect(callCount()).toBe(1);
+		expect(result.status).toBe("ok");
+	});
+
+	it("reports a failing bucket as an upstream error", async () => {
+		const service = new BlobService({
+			spaceClient: {} as unknown as SpaceClient,
+			hosts: staticHosts(),
+			polyfill: {
+				open: async () => {
+					throw new Error("bucket offline");
+				},
+			},
+		});
+
+		await expect(service.fetch({ did: DID, cid, space: SPACE })).rejects.toBeInstanceOf(
+			BlobUpstreamError,
+		);
 	});
 });

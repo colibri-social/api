@@ -47,8 +47,18 @@ export type BlobResult =
 			totalSize: number;
 	  };
 
+export type PolyfilledBlob = {
+	stream: AsyncIterable<Uint8Array>;
+	size: number | null;
+};
+
+export type PolyfillBlobSource = {
+	open: (did: string, cid: string) => Promise<PolyfilledBlob | null>;
+};
+
 export type BlobServiceOptions = {
 	spaceClient: SpaceClient;
+	polyfill?: PolyfillBlobSource;
 	hosts: SpaceHostResolver;
 	cache?: BlobCache;
 	disk?: DiskVariantCache;
@@ -68,6 +78,12 @@ type StreamedOriginal = {
 };
 
 type Original = { kind: "bytes"; entry: BlobCacheEntry } | StreamedOriginal;
+
+type Upstream = {
+	stream: AsyncIterable<Uint8Array>;
+	declaredSize: number | null;
+	cancel: () => Promise<void>;
+};
 
 const streamOf = (response: Response): AsyncIterable<Uint8Array> => {
 	const body = response.body;
@@ -159,6 +175,28 @@ const declaredSizeOf = (response: Response): number | null => {
 	return Number.isSafeInteger(size) ? size : null;
 };
 
+const upstreamOf = (response: Response): Upstream => {
+	return {
+		stream: streamOf(response),
+		declaredSize: declaredSizeOf(response),
+		cancel: async () => {
+			await response.body?.cancel().catch(() => undefined);
+		},
+	};
+};
+
+const upstreamOfPolyfill = (blob: PolyfilledBlob): Upstream => {
+	return {
+		stream: blob.stream,
+		declaredSize: blob.size,
+		cancel: async () => {
+			await blob.stream[Symbol.asyncIterator]()
+				.return?.()
+				.catch(() => undefined);
+		},
+	};
+};
+
 const shareable = (): {
 	promise: Promise<BlobCacheEntry | null>;
 	resolve: (entry: BlobCacheEntry | null) => void;
@@ -177,6 +215,7 @@ const shareable = (): {
 export class BlobService {
 	private readonly spaceClient: SpaceClient;
 	private readonly hosts: SpaceHostResolver;
+	private readonly polyfill: PolyfillBlobSource | undefined;
 	private readonly cache: BlobCache;
 	private readonly fetchImpl: typeof globalThis.fetch;
 	private readonly maxBlobBytes: number;
@@ -193,6 +232,7 @@ export class BlobService {
 			options.renderConcurrency ?? Math.max(1, Math.floor(availableParallelism() / 2));
 		this.spaceClient = options.spaceClient;
 		this.hosts = options.hosts;
+		this.polyfill = options.polyfill;
 		this.cache = options.cache ?? new BlobCache();
 		this.fetchImpl = options.fetch ?? globalThis.fetch;
 		this.maxBlobBytes = options.maxBlobBytes ?? DEFAULT_MAX_BLOB_BYTES;
@@ -311,16 +351,16 @@ export class BlobService {
 		needsBytes: boolean,
 		range: string | null,
 	): Promise<Original> {
-		const response = await this.fetchUpstream(key.did, key.cid, key.space);
-		const declaredSize = declaredSizeOf(response);
+		const upstream = await this.fetchUpstream(key.did, key.cid, key.space);
+		const declaredSize = upstream.declaredSize;
 		if (declaredSize !== null && declaredSize > this.maxBlobBytes) {
-			await response.body?.cancel().catch(() => undefined);
+			await upstream.cancel();
 			throw new BlobRejectedError("tooLarge");
 		}
 
 		const buffers = needsBytes || (range !== null && declaredSize === null);
 		const limit = buffers ? this.maxBlobBytes : this.cache.maxEntryBytes;
-		const iterator = verifyingStream(capped(streamOf(response), this.maxBlobBytes), key.cid)[
+		const iterator = verifyingStream(capped(upstream.stream, this.maxBlobBytes), key.cid)[
 			Symbol.asyncIterator
 		]();
 
@@ -357,10 +397,32 @@ export class BlobService {
 		did: string,
 		cid: string,
 		space: SpaceRefString | undefined,
-	): Promise<Response> {
+	): Promise<Upstream> {
+		const held = await this.fetchPolyfilled(did, cid);
+
+		if (held) {
+			return upstreamOfPolyfill(held);
+		}
+
 		const host = await this.hosts.hostFor(did);
-		if (space) return this.fetchFromSpace(space, host, did, cid);
-		return this.fetchPublic(host, did, cid);
+
+		if (space) {
+			return upstreamOf(await this.fetchFromSpace(space, host, did, cid));
+		}
+
+		return upstreamOf(await this.fetchPublic(host, did, cid));
+	}
+
+	private async fetchPolyfilled(did: string, cid: string): Promise<PolyfilledBlob | null> {
+		if (!this.polyfill) {
+			return null;
+		}
+
+		try {
+			return await this.polyfill.open(did, cid);
+		} catch (cause) {
+			throw new BlobUpstreamError(`failed to read stored blob ${cid} for ${did}`, { cause });
+		}
 	}
 
 	private async fetchFromSpace(

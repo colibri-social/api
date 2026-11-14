@@ -33,6 +33,7 @@ catalog:
   "@libsql/client": ^0.17.4
   pg: ^8.23.0
   "@types/pg": ^8.23.1
+  "@aws-sdk/client-s3": 3.1161.0
 
   # server
   hono: ^4.13.3
