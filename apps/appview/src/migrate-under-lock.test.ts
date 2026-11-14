@@ -1,7 +1,12 @@
-import { openDatabase, openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
+import {
+	knownMigrations,
+	openDatabase,
+	openTestDatabase,
+	type TestDatabase,
+} from "@colibri-social/appview-db";
 import pg from "pg";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { migrateUnderLock } from "./locks.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { migrateUnderLock, waitForMigrations } from "./locks.js";
 
 const adminUrl = process.env.TEST_DATABASE_URL;
 
@@ -27,6 +32,62 @@ describe("migrateUnderLock", () => {
 		} finally {
 			await database.destroy();
 		}
+	});
+});
+
+describe("waitForMigrations", () => {
+	let database: TestDatabase;
+
+	beforeEach(async () => {
+		database = await openTestDatabase();
+	});
+
+	afterEach(async () => {
+		await database.destroy();
+	});
+
+	it("returns at once on a migrated database", async () => {
+		const log = { info: vi.fn() };
+		const sleep = vi.fn(async () => {});
+
+		await waitForMigrations(database, log, { sleep });
+
+		expect(sleep).not.toHaveBeenCalled();
+		expect(log.info).not.toHaveBeenCalled();
+	});
+
+	it("waits until the main node applied every known migration", async () => {
+		const known = knownMigrations(database.dialect);
+		const counts = [known - 1, known - 1, known];
+		const log = { info: vi.fn() };
+		const sleep = vi.fn(async () => {});
+
+		await waitForMigrations(database, log, {
+			applied: async () => counts.shift() ?? known,
+			sleep,
+		});
+
+		expect(sleep).toHaveBeenCalledTimes(2);
+		expect(log.info).toHaveBeenCalledWith(
+			{ applied: known - 1, known },
+			"migrations.waitingForMain",
+		);
+	});
+
+	it("starts an older node against a newer schema", async () => {
+		const known = knownMigrations(database.dialect);
+		const sleep = vi.fn(async () => {});
+
+		await waitForMigrations(
+			database,
+			{ info: vi.fn() },
+			{
+				applied: async () => known + 1,
+				sleep,
+			},
+		);
+
+		expect(sleep).not.toHaveBeenCalled();
 	});
 });
 

@@ -32,7 +32,9 @@ jobs:
           if [ "$version" != "$previous" ]; then
             tags="${tags},${IMAGE}:${version},${IMAGE}:stable"
           fi
+          migrations=$(jq '.entries | length' packages/db/migrations/pg/meta/_journal.json)
           echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "migrations=${migrations}" >> "$GITHUB_OUTPUT"
           echo "tags=${tags}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Buildx
@@ -55,6 +57,7 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.tags.outputs.version }}
+            social.colibri.migrations=${{ steps.tags.outputs.migrations }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

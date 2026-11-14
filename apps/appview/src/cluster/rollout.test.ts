@@ -65,8 +65,10 @@ const setup = (nodes: NodeRow[], overrides: Partial<RolloutDeps> = {}) => {
 		resolve: async () => ({
 			digest: "sha256:new",
 			version: "2.0.0",
+			migrations: 42,
 			pinned: "ghcr.io/colibri-social/api@sha256:new",
 		}),
+		appliedMigrations: async () => 42,
 		ansible,
 		send,
 		drained: async () => true,
@@ -96,6 +98,20 @@ describe("rolloutOrder", () => {
 		);
 
 		expect(order.map((node) => node.id)).toEqual(["eu-2", "us-1", "fsn-1", "hel-1"]);
+	});
+
+	it("puts the main node first when asked", () => {
+		const order = rolloutOrder(
+			[
+				row("hel-1", { roles: ["main", "api"] }),
+				row("fsn-1", { roles: ["failover", "api"] }),
+				row("eu-2"),
+			],
+			"hel-1",
+			{ mainFirst: true },
+		);
+
+		expect(order.map((node) => node.id)).toEqual(["hel-1", "eu-2", "fsn-1"]);
 	});
 });
 
@@ -174,6 +190,60 @@ describe("createRollout", () => {
 		expect(await createRollout(deps).tick()).toBe("restarting");
 		expect(yieldMain).not.toHaveBeenCalled();
 		expect(runs.at(-1)?.vars).toMatchObject({ detach: true });
+	});
+
+	it("restarts only the main node when the release brings new migrations", async () => {
+		const { deps, runs, send } = setup(
+			[
+				row("hel-1", { roles: ["main", "api"] }),
+				row("fsn-1", { roles: ["failover", "api"] }),
+				row("eu-2"),
+			],
+			{ appliedMigrations: async () => 41 },
+		);
+
+		expect(await createRollout(deps).tick()).toBe("restarting");
+		expect(runs.map((run) => run.host)).toEqual(["hel-1.tail"]);
+		expect(runs[0]?.vars).toMatchObject({ detach: true });
+		expect(send).not.toHaveBeenCalled();
+	});
+
+	it("goes main first when the image has no migration label", async () => {
+		const { deps, runs } = setup([row("hel-1", { roles: ["main", "api"] }), row("eu-2")], {
+			resolve: async () => ({
+				digest: "sha256:new",
+				version: "2.0.0",
+				migrations: null,
+				pinned: "ghcr.io/colibri-social/api@sha256:new",
+			}),
+		});
+
+		expect(await createRollout(deps).tick()).toBe("restarting");
+		expect(runs.map((run) => run.host)).toEqual(["hel-1.tail"]);
+	});
+
+	it("updates the other nodes once the updated main node has migrated", async () => {
+		const { deps, runs } = setup([
+			row("hel-1", { roles: ["main", "api"], version: "2.0.0" }),
+			row("eu-2"),
+		]);
+
+		expect(await createRollout(deps).tick()).toBe("updated");
+		expect(runs.map((run) => run.host)).toEqual(["eu-2.tail", "eu-2.tail"]);
+	});
+
+	it("holds the other nodes while the updated main node hasn't migrated", async () => {
+		const { deps, runs } = setup(
+			[row("hel-1", { roles: ["main", "api"], version: "2.0.0" }), row("eu-2")],
+			{ appliedMigrations: async () => 41 },
+		);
+
+		expect(await createRollout(deps).tick()).toBe("waiting");
+		expect(runs).toEqual([]);
+		expect(deps.log.warn).toHaveBeenCalledWith(
+			{ version: "2.0.0", migrations: 42, applied: 41 },
+			"rollout.waitingForMigrations",
+		);
 	});
 
 	it("does nothing when every node runs the stable version", async () => {
@@ -288,7 +358,7 @@ describe("createRollout", () => {
 		expect(await createRollout(unreachable.deps).tick()).toBe("unreachable");
 
 		const unversioned = setup([row("eu-2")], {
-			resolve: async () => ({ digest: "sha256:x", version: null, pinned: "x" }),
+			resolve: async () => ({ digest: "sha256:x", version: null, migrations: null, pinned: "x" }),
 		});
 
 		expect(await createRollout(unversioned.deps).tick()).toBe("unversioned");

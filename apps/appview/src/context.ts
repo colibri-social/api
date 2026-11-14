@@ -56,7 +56,7 @@ import {
 	PREVIEW_CACHE_MAX_ENTRIES,
 	PREVIEW_CACHE_TTL_MS,
 } from "./link-embeds.js";
-import { migrateUnderLock } from "./locks.js";
+import { migrateUnderLock, waitForMigrations } from "./locks.js";
 import { createLogger, type Logger } from "./logger.js";
 import { polyfillBlobIndex, polyfillBlobSource, polyfillBucket } from "./polyfill/blobs.js";
 import {
@@ -96,7 +96,9 @@ export const createContext = async (config: Config) => {
 		...(config.DATABASE_READ_URL ? { readUrl: config.DATABASE_READ_URL } : {}),
 	});
 
-	if (config.ROLES.includes("main") && !(await migrateUnderLock(database))) {
+	if (!config.ROLES.includes("main")) {
+		await waitForMigrations(database, log);
+	} else if (!(await migrateUnderLock(database))) {
 		log.warn("migrations.deferredReadOnly");
 	}
 

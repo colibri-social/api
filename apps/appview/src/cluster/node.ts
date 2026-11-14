@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { hostname } from "node:os";
 import { resolve } from "node:path";
 import {
+	appliedMigrations,
 	type NodeRole,
 	type NodeState,
 	parsePostgresUrl,
@@ -325,6 +326,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 								? { user: config.REGISTRY_USER ?? "colibri", token: config.REGISTRY_TOKEN }
 								: undefined,
 						}),
+					appliedMigrations: () => appliedMigrations(ctx.database),
 					ansible,
 					send,
 					...(control

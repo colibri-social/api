@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 
 export const VERSION_LABEL = "org.opencontainers.image.version";
 
+export const MIGRATIONS_LABEL = "social.colibri.migrations";
+
 const INDEX_TYPES = [
 	"application/vnd.oci.image.index.v1+json",
 	"application/vnd.docker.distribution.manifest.list.v2+json",
@@ -24,6 +26,7 @@ export type ImageRef = {
 export type ResolvedImage = {
 	digest: string;
 	version: string | null;
+	migrations: number | null;
 	pinned: string;
 };
 
@@ -98,6 +101,14 @@ const challengeParams = (header: string): Record<string, string> => {
 	}
 
 	return params;
+};
+
+export const migrationCount = (label: string | undefined): number | null => {
+	if (label === undefined || !/^\d+$/.test(label)) {
+		return null;
+	}
+
+	return Number(label);
 };
 
 export const resolveImage = async (
@@ -212,9 +223,12 @@ export const resolveImage = async (
 			})
 		: null;
 
+	const labels = config?.config?.Labels ?? {};
+
 	return {
 		digest,
-		version: config?.config?.Labels?.[VERSION_LABEL] ?? null,
+		version: labels[VERSION_LABEL] ?? null,
+		migrations: migrationCount(labels[MIGRATIONS_LABEL]),
 		pinned: pinnedImage(ref, digest),
 	};
 };

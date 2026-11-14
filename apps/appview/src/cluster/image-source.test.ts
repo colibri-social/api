@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parseImageRef, resolveImage, VERSION_LABEL } from "./image-source.js";
+import {
+	MIGRATIONS_LABEL,
+	migrationCount,
+	parseImageRef,
+	resolveImage,
+	VERSION_LABEL,
+} from "./image-source.js";
 
 const INDEX = "application/vnd.oci.image.index.v1+json";
 const MANIFEST = "application/vnd.oci.image.manifest.v1+json";
@@ -92,7 +98,9 @@ describe("resolveImage", () => {
 			"blobs.example/cfg": ({ headers }) => {
 				expect(headers.get("authorization")).toBeNull();
 
-				return json({ config: { Labels: { [VERSION_LABEL]: "0.9.0" } } });
+				return json({
+					config: { Labels: { [VERSION_LABEL]: "0.9.0", [MIGRATIONS_LABEL]: "43" } },
+				});
 			},
 		});
 
@@ -104,6 +112,7 @@ describe("resolveImage", () => {
 		expect(resolved).toEqual({
 			digest: "sha256:top",
 			version: "0.9.0",
+			migrations: 43,
 			pinned: "ghcr.io/colibri-social/api@sha256:top",
 		});
 	});
@@ -118,7 +127,17 @@ describe("resolveImage", () => {
 		const resolved = await resolveImage("ghcr.io/a/b:stable", { fetch: registry.request });
 
 		expect(resolved.version).toBeNull();
+		expect(resolved.migrations).toBeNull();
 		expect(resolved.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+	});
+
+	it("reads the migration count only from a plain number", () => {
+		expect(migrationCount("43")).toBe(43);
+		expect(migrationCount("0")).toBe(0);
+		expect(migrationCount(undefined)).toBeNull();
+		expect(migrationCount("")).toBeNull();
+		expect(migrationCount("4.3")).toBeNull();
+		expect(migrationCount("-1")).toBeNull();
 	});
 
 	it("fails on a missing tag", async () => {

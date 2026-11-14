@@ -41,6 +41,7 @@ export type RolloutDeps = {
 	stackDir: string;
 	drainMinutes: number;
 	resolve: (image: string) => Promise<ResolvedImage>;
+	appliedMigrations: () => Promise<number>;
 	ansible: AnsibleRunner;
 	send: (nodeId: string, frame: MainFrame) => boolean;
 	linkState?: (nodeId: string) => LinkState;
@@ -71,9 +72,17 @@ const isoOrNull = (at: number | null): string | null => {
 	return at === null ? null : new Date(at).toISOString();
 };
 
-export const rolloutOrder = (nodes: readonly NodeRow[], self: string): NodeRow[] => {
+export type RolloutOrderOptions = {
+	mainFirst?: boolean;
+};
+
+export const rolloutOrder = (
+	nodes: readonly NodeRow[],
+	self: string,
+	options: RolloutOrderOptions = {},
+): NodeRow[] => {
 	const rank = (node: NodeRow) => {
-		if (node.id === self) return 2;
+		if (node.id === self) return options.mainFirst ? -1 : 2;
 		if (node.roles.includes("failover")) return 1;
 
 		return 0;
@@ -317,6 +326,27 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 			return "current";
 		}
 
+		const applied = await deps.appliedMigrations();
+		const migrates = target.migrations !== null && target.migrations > applied;
+		const mainFirst = target.migrations === null || migrates;
+		const selfBehind = behind.some((node) => node.id === deps.self);
+
+		if (migrates && !selfBehind) {
+			deps.log.warn(
+				{ version: target.version, migrations: target.migrations, applied },
+				"rollout.waitingForMigrations",
+			);
+
+			return "waiting";
+		}
+
+		if (mainFirst && selfBehind) {
+			deps.log.info(
+				{ version: target.version, migrations: target.migrations, applied },
+				"rollout.mainFirst",
+			);
+		}
+
 		deps.log.info(
 			{
 				version: target.version,
@@ -326,7 +356,7 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 			"rollout.started",
 		);
 
-		for (const node of rolloutOrder(behind, deps.self)) {
+		for (const node of rolloutOrder(behind, deps.self, { mainFirst })) {
 			if (await deps.registry.rolloutPaused()) {
 				return "paused";
 			}
@@ -336,6 +366,10 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 			}
 
 			const result = await step(node, target, options);
+
+			if (result.ok && restarting) {
+				break;
+			}
 
 			if (result.ok) {
 				continue;
