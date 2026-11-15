@@ -74,7 +74,11 @@ const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<Main
 	const activities = new ActivitySweeper(ctx);
 	const handOvers = new HandOverSweeper(ctx);
 	const notificationPruner = new NotificationPruner(ctx);
-	const polyfillBlobSweeper = new PolyfillBlobSweeper({ ...ctx.polyfillBlobs, log: ctx.log });
+	const polyfillBlobSweeper = new PolyfillBlobSweeper({
+		index: ctx.polyfillBlobs.index,
+		bucket: ctx.polyfillBlobs.ownBucket,
+		log: ctx.log,
+	});
 
 	await ctx.sync.start();
 	await jetstream.start();

@@ -399,9 +399,13 @@ export const describeConfig = (config: Config): Record<string, string> => ({
 	gifs: config.gifsEnabled ? "enabled" : "disabled",
 	hostSignIn: config.HOST_OAUTH_PRIVATE_KEY ? "enabled" : "disabled, no HOST_OAUTH_PRIVATE_KEY",
 	voice: config.VOICE_ENABLED ? "enabled" : "disabled",
-	polyfillBlobs: config.polyfillBucket
-		? `bucket ${config.polyfillBucket.bucket}`
-		: "disabled, no POLYFILL_S3_BUCKET",
+	polyfillBlobs: !config.ROLES.includes("main")
+		? config.MAIN_NODE_URL
+			? `read from the main node at ${config.MAIN_NODE_URL}`
+			: "disabled, no MAIN_NODE_URL"
+		: config.polyfillBucket
+			? `bucket ${config.polyfillBucket.bucket}`
+			: "disabled, no POLYFILL_S3_BUCKET",
 	cors: config.corsOrigins.length ? config.corsOrigins.join(" ") : "no browser origin allowed",
 	jetstream: config.JETSTREAM_ENABLED
 		? jetstreamEndpoint(config.JETSTREAM_URL).toString()

@@ -34,6 +34,12 @@ export const NODE_LOCAL_KEYS: ReadonlySet<string> = new Set([
 	"BLOB_DISK_CACHE_DIR",
 	"BLOB_DISK_CACHE_MAX_BYTES",
 	"BLOB_RENDER_CONCURRENCY",
+	"POLYFILL_S3_ENDPOINT",
+	"POLYFILL_S3_REGION",
+	"POLYFILL_S3_BUCKET",
+	"POLYFILL_S3_ACCESS_KEY_ID",
+	"POLYFILL_S3_SECRET_ACCESS_KEY",
+	"POLYFILL_S3_FORCE_PATH_STYLE",
 ]);
 
 const sealedSchema = z.object({ c: z.string(), n: z.string() });
@@ -86,7 +92,7 @@ export const createConfigStore = (
 			return rows.map((row) => row.key);
 		},
 		values: async () => {
-			const rows = await primary.select().from(table);
+			const rows = (await primary.select().from(table)).filter((row) => isSharedKey(row.key));
 			const entries = await Promise.all(
 				rows.map(async (row) => {
 					const sealed = sealedSchema.parse(JSON.parse(row.ciphertext));

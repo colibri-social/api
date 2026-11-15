@@ -1,9 +1,13 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { BlobBucket } from "@colibri-social/blobs";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { Logger } from "../logger.js";
 import {
 	ALIVE_PATH,
 	type Alive,
+	BLOB_PATH,
 	CLOSE_MAIN_RELEASED,
 	CLOSE_REPLACED,
 	CONFIG_PATH,
@@ -20,9 +24,12 @@ import {
 	parseFrame,
 } from "./protocol.js";
 import type { Registry } from "./registry.js";
+import { parseRangeHeader } from "./remote-bucket.js";
 import { PING_PATH } from "./write-proxy.js";
 
 const MAX_BODY_BYTES = 16 * 1024;
+
+const POLYFILL_KEY_PREFIX = "polyfill/";
 
 export type ControlServerDeps = {
 	registry: Registry;
@@ -35,6 +42,7 @@ export type ControlServerDeps = {
 	routes?: (request: IncomingMessage, response: ServerResponse) => boolean;
 	config?: (nodeId: string) => Promise<Record<string, string>>;
 	app?: (request: IncomingMessage, response: ServerResponse) => void;
+	blobs?: Pick<BlobBucket, "get"> | null;
 };
 
 const VERIFIED_TTL_MS = 60_000;
@@ -208,6 +216,12 @@ export class ControlServer {
 			return;
 		}
 
+		if (request.method === "GET" && path === BLOB_PATH) {
+			await this.serveBlob(request, response);
+
+			return;
+		}
+
 		if (path.startsWith("/xrpc/") && this.deps.app) {
 			await this.forwardWrite(request, response, this.deps.app);
 
@@ -309,6 +323,59 @@ export class ControlServer {
 
 		delete request.headers[NODE_SECRET_HEADER];
 		app(request, response);
+	}
+
+	private async serveBlob(request: IncomingMessage, response: ServerResponse): Promise<void> {
+		if (!(await this.trusted(request))) {
+			respond(response, 401, { error: "Unauthorized" });
+
+			return;
+		}
+
+		const { blobs } = this.deps;
+
+		if (!blobs) {
+			respond(response, 503, { error: "BlobStorageUnavailable" });
+
+			return;
+		}
+
+		const key = new URL(request.url ?? "/", "http://localhost").searchParams.get("key") ?? "";
+
+		if (!key.startsWith(POLYFILL_KEY_PREFIX)) {
+			respond(response, 400, { error: "InvalidRequest" });
+
+			return;
+		}
+
+		const range = parseRangeHeader(headerOf(request, "range") ?? undefined);
+		const object = await blobs.get(key, range ?? undefined).catch((error: unknown) => {
+			this.deps.log.warn({ code: "BlobStoreFailed", err: error, key }, "cluster.blobFailed");
+
+			return undefined;
+		});
+
+		if (object === undefined) {
+			respond(response, 502, { error: "BlobStoreFailed" });
+
+			return;
+		}
+
+		if (object === null) {
+			respond(response, 404, { error: "BlobNotFound" });
+
+			return;
+		}
+
+		response.writeHead(range ? 206 : 200, {
+			"content-type": "application/octet-stream",
+			...(object.length === null ? {} : { "content-length": String(object.length) }),
+		});
+
+		await pipeline(Readable.from(object.stream), response).catch((error: unknown) => {
+			this.deps.log.warn({ code: "BlobStreamFailed", err: error, key }, "cluster.blobStreamFailed");
+			response.destroy();
+		});
 	}
 
 	private async serveConfig(request: IncomingMessage, response: ServerResponse): Promise<void> {

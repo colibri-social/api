@@ -47,6 +47,7 @@ import { type Announcer, silentAnnouncer } from "./announce.js";
 import { type AuthzChanges, createAuthzChanges } from "./authz-changes.js";
 import { createConfigStore } from "./cluster/config-store.js";
 import { createRegistry } from "./cluster/registry.js";
+import { remoteBlobBucket } from "./cluster/remote-bucket.js";
 import type { WriteProxy } from "./cluster/write-proxy.js";
 import type { Config } from "./config.js";
 import { createDrainState } from "./drain.js";
@@ -273,9 +274,15 @@ export const createContext = async (config: Config) => {
 		...(config.COMMUNITY_EMAIL_DOMAIN ? { emailDomain: config.COMMUNITY_EMAIL_DOMAIN } : {}),
 	});
 
+	const ownBucket = config.ROLES.includes("main") ? polyfillBucket(config.polyfillBucket) : null;
 	const polyfillBlobs = {
 		index: polyfillBlobIndex(database),
-		bucket: polyfillBucket(config.polyfillBucket),
+		ownBucket,
+		bucket:
+			ownBucket ??
+			(config.MAIN_NODE_URL
+				? remoteBlobBucket({ mainUrl: config.MAIN_NODE_URL, secretFile: config.NODE_SECRET_FILE })
+				: null),
 	};
 
 	const blobs = new BlobService({

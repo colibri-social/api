@@ -197,6 +197,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 				primaryDownSince: () => primaryWatch?.downSince ?? null,
 				config: () => ctx.clusterConfig.values(),
 				app: deps.app,
+				blobs: ctx.polyfillBlobs.ownBucket,
 				onFrame: (nodeId, frame) => {
 					log.info({ node: nodeId, mode: frame.mode }, "cluster.drained");
 

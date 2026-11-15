@@ -8,6 +8,8 @@ export const CONFIG_PATH = "/cluster/config";
 
 export const ALIVE_PATH = "/cluster/alive";
 
+export const BLOB_PATH = "/cluster/blob";
+
 export const NODE_ID_HEADER = "x-colibri-node";
 
 export const NODE_SECRET_HEADER = "x-colibri-node-secret";

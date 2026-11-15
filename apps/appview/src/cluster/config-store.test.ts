@@ -1,5 +1,6 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { SecretBox } from "@colibri-social/community";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type ConfigStore, createConfigStore, isSharedKey } from "./config-store.js";
 
@@ -20,6 +21,7 @@ describe("isSharedKey", () => {
 		expect(isSharedKey("SIGNING_KEY")).toBe(true);
 		expect(isSharedKey("NODE_ID")).toBe(false);
 		expect(isSharedKey("DATABASE_READ_URL")).toBe(false);
+		expect(isSharedKey("POLYFILL_S3_ACCESS_KEY_ID")).toBe(false);
 		expect(isSharedKey("NOT_A_SETTING")).toBe(false);
 	});
 });
@@ -47,6 +49,17 @@ describe("createConfigStore", () => {
 		expect(await store.unset("PDS_URL")).toBe(true);
 		expect(await store.unset("PDS_URL")).toBe(false);
 		expect(await store.keys()).toEqual([]);
+	});
+
+	it("skips stored rows for settings that are node-local now", async () => {
+		await store.set("PDS_URL", "https://pds.test");
+		await store.set("SIGNING_KEY", "a".repeat(64));
+		await database.db
+			.update(database.tables.clusterConfig)
+			.set({ key: "POLYFILL_S3_ACCESS_KEY_ID" })
+			.where(eq(database.tables.clusterConfig.key, "SIGNING_KEY"));
+
+		expect(await store.values()).toEqual({ PDS_URL: "https://pds.test" });
 	});
 
 	it("refuses node-local settings", async () => {
