@@ -1,5 +1,12 @@
 # @colibri-social/appview
 
+## 2.41.3
+
+### Patch Changes
+
+- b261ecb: Send smaller animated webp previews for GIF picker tiles
+- ded8dc5: Read polyfilled blobs through the main node on every other node, so only the main node holds the SeaweedFS credentials
+
 ## 2.41.2
 
 ### Patch Changes
