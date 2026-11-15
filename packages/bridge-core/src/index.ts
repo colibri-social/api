@@ -5,5 +5,6 @@ export * from "./connector.js";
 export * from "./events.js";
 export * from "./identity.js";
 export * from "./markdown.js";
+export * from "./nodes.js";
 export * from "./store.js";
 export * from "./text.js";

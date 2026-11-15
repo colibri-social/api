@@ -197,6 +197,7 @@ export class Bridge {
 			onFrame: (frame) => this.onFrame(frame),
 			onOpen: () => this.onStreamOpen(),
 			onClose: (reason) => this.log.warn({ reason }, "bridge.stream.closed"),
+			onMove: (move) => this.log.info(move, "bridge.stream.moving"),
 		};
 		this.stream = options.createEventStream
 			? options.createEventStream(streamOptions)

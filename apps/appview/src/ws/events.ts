@@ -96,6 +96,7 @@ export class EventServer {
 	private readonly stopWatchingAuthz: () => void;
 	private heartbeat: NodeJS.Timeout | null = null;
 	private writeMode: WriteMode = "normal";
+	private drainNotice: ServerFrame | null = null;
 
 	constructor(private readonly ctx: AppContext) {
 		this.presence = new PresenceTracker({
@@ -138,6 +139,8 @@ export class EventServer {
 			deadline: deadline.toISOString(),
 			...(reason ? { reason } : {}),
 		};
+
+		this.drainNotice = frame;
 
 		for (const connection of this.connections) {
 			this.send(connection, frame);
@@ -212,6 +215,11 @@ export class EventServer {
 		const first = this.presence.connections(did) === 0;
 		this.connections.add(connection);
 		this.send(connection, writeStateFrame(this.writeMode));
+
+		if (this.drainNotice) {
+			this.send(connection, this.drainNotice);
+		}
+
 		this.topics.subscribe(connection, [userTopic(did)]);
 		void this.trackPresence(did, "opened", () => this.presence.opened(did));
 		void this.trackPresence(did, "opened", () =>

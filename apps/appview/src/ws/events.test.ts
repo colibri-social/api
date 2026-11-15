@@ -262,6 +262,27 @@ describe("EventServer", () => {
 		late.close();
 	});
 
+	it("tells sockets that connect during a drain that the node is going offline", async () => {
+		const ws = connect("alice-token");
+
+		await nextFrameOfType(ws, "writeState");
+		events.announceDrain(new Date("2026-11-15T13:21:38.302Z"), "update");
+
+		const notice = {
+			$type: "social.colibri.beta.sync.defs#drainNotice",
+			deadline: "2026-11-15T13:21:38.302Z",
+			reason: "update",
+		};
+
+		expect(await nextFrameOfType(ws, "drainNotice")).toEqual(notice);
+
+		const late = connect("alice-token");
+
+		expect(await nextFrameOfType(late, "drainNotice")).toEqual(notice);
+		ws.close();
+		late.close();
+	});
+
 	it("grants a subscription to a channel the caller can read", async () => {
 		const ws = connect("alice-token");
 		await waitForOpen(ws);

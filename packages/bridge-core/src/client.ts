@@ -126,11 +126,19 @@ export class ColibriRequestError extends Error {
 	}
 }
 
+export type WriteMode = "normal" | "queued" | "readOnly";
+
+export const READ_ONLY_WAIT_MS = 5 * 60_000;
+
+export const READ_ONLY_RETRY_MS = 30_000;
+
 export type ColibriClientOptions = {
 	appviewUrl: string;
 	appviewDid: string;
 	signer: ServiceAuthSigner;
 	fetch?: typeof fetch;
+	readOnlyWaitMs?: number;
+	readOnlyRetryMs?: number;
 };
 
 export const resolveAppviewDid = async (
@@ -147,6 +155,8 @@ export const resolveAppviewDid = async (
 
 export class ColibriClient {
 	private readonly fetcher: typeof fetch;
+	private readonly writable = new Set<() => void>();
+	private mode: WriteMode = "normal";
 
 	constructor(private readonly options: ColibriClientOptions) {
 		this.fetcher = options.fetch ?? fetch;
@@ -154,6 +164,37 @@ export class ColibriClient {
 
 	get appviewUrl(): string {
 		return this.options.appviewUrl;
+	}
+
+	get writeMode(): WriteMode {
+		return this.mode;
+	}
+
+	setWriteMode(mode: WriteMode): void {
+		this.mode = mode;
+
+		if (mode === "readOnly") {
+			return;
+		}
+
+		for (const resume of [...this.writable]) resume();
+	}
+
+	private untilWritable(): Promise<void> {
+		if (this.mode !== "readOnly") {
+			return Promise.resolve();
+		}
+
+		return new Promise((resolve) => {
+			const resume = () => {
+				clearTimeout(timer);
+				this.writable.delete(resume);
+				resolve();
+			};
+			const timer = setTimeout(resume, this.options.readOnlyWaitMs ?? READ_ONLY_WAIT_MS);
+
+			this.writable.add(resume);
+		});
 	}
 
 	get appviewDid(): string {
@@ -201,12 +242,32 @@ export class ColibriClient {
 		return this.send<T>(nsid, this.url(nsid, params), { method: "GET" });
 	}
 
-	procedure<T>(nsid: string, input: unknown): Promise<T> {
-		return this.send<T>(nsid, this.url(nsid), {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify(input),
-		});
+	async procedure<T>(nsid: string, input: unknown): Promise<T> {
+		const post = async () => {
+			await this.untilWritable();
+
+			return this.send<T>(nsid, this.url(nsid), {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(input),
+			});
+		};
+
+		try {
+			return await post();
+		} catch (error) {
+			if (!(error instanceof ColibriRequestError) || error.error !== "ReadOnly") {
+				throw error;
+			}
+
+			const delayMs = error.retryAfterSeconds
+				? error.retryAfterSeconds * 1_000
+				: (this.options.readOnlyRetryMs ?? READ_ONLY_RETRY_MS);
+
+			await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+			return post();
+		}
 	}
 
 	async getConfiguration(): Promise<RegistrationView[]> {
