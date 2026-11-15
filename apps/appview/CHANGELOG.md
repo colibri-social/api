@@ -1,5 +1,12 @@
 # @colibri-social/appview
 
+## 2.41.4
+
+### Patch Changes
+
+- d49a097: Send the drain notice to sockets that connect while the node is draining
+- b06b82a: Log the wait for a main node once instead of every 30 seconds on the node that holds the main role
+
 ## 2.41.3
 
 ### Patch Changes
