@@ -42,7 +42,10 @@ describe("createGifsClient", () => {
 							file: {
 								hd: { gif: { url: "https://cdn/hd.gif", width: 480, height: 360 } },
 								md: { gif: { url: "https://cdn/md.gif", width: 320, height: 240 } },
-								sm: { gif: { url: "https://cdn/sm.gif", width: 160, height: 120 } },
+								sm: {
+									gif: { url: "https://cdn/sm.gif", width: 160, height: 120 },
+									webp: { url: "https://cdn/sm.webp", width: 160, height: 120 },
+								},
 							},
 						},
 					],
@@ -59,7 +62,7 @@ describe("createGifsClient", () => {
 			{
 				id: "happy-dance-abc",
 				url: "https://cdn/md.gif",
-				previewUrl: "https://cdn/sm.gif",
+				previewUrl: "https://cdn/sm.webp",
 				width: 320,
 				height: 240,
 				title: "happy dance",

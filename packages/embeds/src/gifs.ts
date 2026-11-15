@@ -60,8 +60,8 @@ function normalizeItem(item: Json): GifView | undefined {
 	if (media?.width === undefined || media?.height === undefined) return undefined;
 
 	const preview =
-		pickVariant(file, PREVIEW_SIZES, "gif") ??
 		pickVariant(file, PREVIEW_SIZES, "webp") ??
+		pickVariant(file, PREVIEW_SIZES, "gif") ??
 		pickVariant(file, PREVIEW_SIZES, "jpg");
 	const previewUrl = preview?.url ?? mediaUrl;
 
