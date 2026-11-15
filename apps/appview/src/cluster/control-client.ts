@@ -48,6 +48,7 @@ export class ControlClient {
 	private idleTimer: ReturnType<typeof setTimeout> | null = null;
 	private mainCheck: ReturnType<typeof setInterval> | null = null;
 	private stopped = false;
+	private waitingForMain = false;
 
 	constructor(private readonly deps: ControlClientDeps) {}
 
@@ -104,6 +105,7 @@ export class ControlClient {
 
 		socket.on("open", () => {
 			this.retryMs = RETRY_MIN_MS;
+			this.waitingForMain = false;
 			this.deps.log.info({ main: base }, "cluster.linkOpen");
 			this.watch(socket, base);
 		});
@@ -208,7 +210,12 @@ export class ControlClient {
 		const delay = this.retryMs;
 
 		this.retryMs = Math.min(this.retryMs * 2, RETRY_MAX_MS);
-		this.deps.log.info({ main, reason, delayMs: delay }, "cluster.linkRetry");
+
+		if (reason === "closed" || !this.waitingForMain) {
+			this.deps.log.info({ main, reason, delayMs: delay }, "cluster.linkRetry");
+		}
+
+		this.waitingForMain = reason === "noMain";
 		this.timer = setTimeout(() => void this.connect(), delay);
 		this.timer.unref?.();
 	}

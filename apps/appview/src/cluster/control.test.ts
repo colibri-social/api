@@ -196,6 +196,28 @@ describe("control link", () => {
 		);
 	});
 
+	it("logs waiting for a main node once while it keeps checking", async () => {
+		vi.useFakeTimers();
+
+		const mainUrlOf = vi.fn(async (): Promise<string | null> => null);
+
+		try {
+			link("secret", { mainUrl: mainUrlOf });
+
+			for (const delay of [0, 1_000, 2_000, 4_000, 8_000]) {
+				await vi.advanceTimersByTimeAsync(delay);
+			}
+
+			expect(mainUrlOf.mock.calls.length).toBeGreaterThanOrEqual(5);
+			expect(log.info.mock.calls.filter(([, message]) => message === "cluster.linkRetry")).toEqual([
+				[{ main: null, reason: "noMain", delayMs: 1_000 }, "cluster.linkRetry"],
+			]);
+		} finally {
+			for (const client of clients.splice(0)) client.stop();
+			vi.useRealTimers();
+		}
+	});
+
 	it("moves the link when the main node changes under an open socket", async () => {
 		const { secret } = await join2();
 		let current = mainUrl;
