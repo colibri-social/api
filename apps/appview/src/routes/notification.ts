@@ -22,7 +22,6 @@ import {
 	verifyReadToken,
 } from "@colibri-social/notifications";
 import { isChannelSpace, isThreadSpace, spaceContextFor } from "@colibri-social/projections";
-import { and, eq } from "drizzle-orm";
 import { seenEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { mayReadStates, notificationDeps } from "../notification-deps.js";
@@ -47,31 +46,6 @@ const requireChannel = async (
 
 	const space = { spaceType: context.spaceType, community: context.community };
 	if (!(await mayReadStates(ctx, space, states, callerDid))) throw channelNotFound(channel);
-};
-
-const requireMessage = async (
-	ctx: AppContext,
-	channel: string,
-	author: string,
-	rkey: string,
-): Promise<void> => {
-	const [row] = await ctx.database.db
-		.select({ rkey: ctx.database.tables.messages.rkey })
-		.from(ctx.database.tables.messages)
-		.where(
-			and(
-				eq(ctx.database.tables.messages.space, channel),
-				eq(ctx.database.tables.messages.author, author),
-				eq(ctx.database.tables.messages.rkey, rkey),
-			),
-		)
-		.limit(1);
-	if (!row) {
-		throw new InvalidRequestError(
-			`no message ${rkey} by ${author} in ${channel}`,
-			"MessageNotFound",
-		);
-	}
 };
 
 export const handleListNotifications = async (
@@ -128,7 +102,6 @@ export const handleUpdateSeenForMessage = async (
 	messageRkey: string,
 ) => {
 	await requireChannel(ctx, channel, callerDid);
-	await requireMessage(ctx, channel, messageAuthor, messageRkey);
 	const seenAt = new Date().toISOString();
 	const unread = await markSeenForMessage(
 		notificationDeps(ctx),

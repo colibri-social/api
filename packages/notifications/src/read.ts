@@ -302,6 +302,24 @@ export const notificationsForMessage = async (
 			),
 		);
 
+export const removeNotificationsForMessage = async (
+	deps: NotificationDeps,
+	space: string,
+	messageAuthor: string,
+	messageRkey: string,
+): Promise<NotificationRow[]> => {
+	return deps.db
+		.delete(deps.tables.notifications)
+		.where(
+			and(
+				eq(deps.tables.notifications.space, space),
+				eq(deps.tables.notifications.messageAuthor, messageAuthor),
+				eq(deps.tables.notifications.messageRkey, messageRkey),
+			),
+		)
+		.returning();
+};
+
 export const unseenForChannelPage = async (
 	deps: NotificationDeps,
 	recipient: string,

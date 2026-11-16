@@ -19,6 +19,7 @@ import {
 	type PushSender,
 	webPushBody,
 } from "./push.js";
+import { removeNotificationsForMessage } from "./read.js";
 import { verifyReadToken } from "./read-token.js";
 import {
 	listSubscriptionsForActor,
@@ -532,11 +533,19 @@ describe("delivery with place, badge and read action", () => {
 		await insertNotification({ recipient: other, kind: "message" });
 		await insertNotification({ messageRkey: "3lkunrelated" });
 
-		const count = await deliverMessageDeleted(deps, senders(), {
-			space: CHANNEL,
-			author: notification.author,
-			rkey: "3lkmsg1",
-		});
+		const removed = await removeNotificationsForMessage(
+			deps,
+			CHANNEL,
+			notification.author,
+			"3lkmsg1",
+		);
+
+		const count = await deliverMessageDeleted(
+			deps,
+			senders(),
+			{ space: CHANNEL, author: notification.author, rkey: "3lkmsg1" },
+			removed.map((row) => row.recipient),
+		);
 
 		expect(count).toBe(2);
 		expect(sent).toHaveLength(3);
@@ -545,6 +554,27 @@ describe("delivery with place, badge and read action", () => {
 			expect(payload.tag).toBe(`${notification.author}/3lkmsg1`);
 			expect(payload.data.channelUri).toBe(CHANNEL);
 		}
+	});
+
+	it("leaves the removed notifications out of the badge on a delete", async () => {
+		await insertNotification();
+		await insertNotification({ messageRkey: "3lkmsg2" });
+
+		const removed = await removeNotificationsForMessage(
+			deps,
+			CHANNEL,
+			notification.author,
+			"3lkmsg1",
+		);
+
+		await deliverMessageDeleted(
+			deps,
+			senders(),
+			{ space: CHANNEL, author: notification.author, rkey: "3lkmsg1" },
+			removed.map((row) => row.recipient),
+		);
+
+		expect(sent[0]?.payload.data.badge).toBe("1");
 	});
 
 	it("keeps read, delete and edit pushes away from web push", async () => {
@@ -565,11 +595,12 @@ describe("delivery with place, badge and read action", () => {
 			{ space: CHANNEL, author: notification.author, rkey: "3lkmsg1", text: "edited" },
 			undefined,
 		);
-		await deliverMessageDeleted(deps, withWeb, {
-			space: CHANNEL,
-			author: notification.author,
-			rkey: "3lkmsg1",
-		});
+		await deliverMessageDeleted(
+			deps,
+			withWeb,
+			{ space: CHANNEL, author: notification.author, rkey: "3lkmsg1" },
+			[ACTOR],
+		);
 		await deliverRead(deps, withWeb, ACTOR, { channel: CHANNEL, through: "3lkmsg1" });
 
 		const web = sent.filter((entry) => entry.provider === "webpush");
@@ -579,11 +610,12 @@ describe("delivery with place, badge and read action", () => {
 
 	it("sends nothing for a deleted message nobody was notified about", async () => {
 		expect(
-			await deliverMessageDeleted(deps, senders(), {
-				space: CHANNEL,
-				author: notification.author,
-				rkey: "3lknobody",
-			}),
+			await deliverMessageDeleted(
+				deps,
+				senders(),
+				{ space: CHANNEL, author: notification.author, rkey: "3lknobody" },
+				[],
+			),
 		).toBe(0);
 		expect(sent).toEqual([]);
 	});

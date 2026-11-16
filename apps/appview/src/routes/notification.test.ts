@@ -340,6 +340,15 @@ describe("updateSeenForMessage", () => {
 		expect(await seenAtFor("n1")).not.toBeNull();
 	});
 
+	it("marks a deleted message seen", async () => {
+		await insertNotification("n1", CHANNEL, "3lkmessagex1");
+
+		const result = await handleUpdateSeenForMessage(ctx, MEMBER, CHANNEL, AUTHOR, "3lkmessagex1");
+
+		expect(result.unread).toBe(0);
+		expect(await seenAtFor("n1")).not.toBeNull();
+	});
+
 	it("tells the caller's other sessions which message was seen", async () => {
 		const announced: { did: string; frame: Record<string, unknown> }[] = [];
 		ctx = {

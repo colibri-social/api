@@ -19,6 +19,7 @@ import type { ChannelFrame, EventServer, ServerFrame } from "./ws/events.js";
 const stalledIndexing = { enabled: false };
 const pushed = vi.hoisted(() => ({
 	deleted: [] as unknown[],
+	deletedFor: [] as unknown[][],
 	edited: [] as unknown[],
 	readMoved: [] as unknown[][],
 	notified: [] as string[],
@@ -31,8 +32,14 @@ vi.mock("@colibri-social/notifications", async (importOriginal) => {
 		...actual,
 		indexMessage: (...args: Parameters<typeof actual.indexMessage>) =>
 			stalledIndexing.enabled ? new Promise<never>(() => {}) : actual.indexMessage(...args),
-		deliverMessageDeleted: async (_deps: unknown, _senders: unknown, message: unknown) => {
+		deliverMessageDeleted: async (
+			_deps: unknown,
+			_senders: unknown,
+			message: unknown,
+			recipients: unknown[],
+		) => {
 			pushed.deleted.push(message);
+			pushed.deletedFor.push(recipients);
 			return 0;
 		},
 		deliverNotification: async (
@@ -225,6 +232,7 @@ beforeEach(async () => {
 	database = await openTestDatabase();
 	published = [];
 	pushed.deleted = [];
+	pushed.deletedFor = [];
 	pushed.edited = [];
 	pushed.readMoved = [];
 	communityDeletes = [];
@@ -1038,6 +1046,44 @@ describe("push updates for deleted and edited messages", () => {
 		await vi.waitFor(() =>
 			expect(pushed.deleted).toEqual([{ space: SPACE, author: AUTHOR, rkey: "3lkmsgdeleted" }]),
 		);
+	});
+
+	it("removes the notifications of a deleted message and tells their recipients", async () => {
+		const rkey = nextTid();
+		await database.db.insert(database.tables.notifications).values({
+			id: nextTid(),
+			recipient: VIEWER,
+			kind: "reply",
+			community: COMMUNITY,
+			space: SPACE,
+			author: AUTHOR,
+			messageAuthor: AUTHOR,
+			messageRkey: rkey,
+			mentionRole: null,
+			indexedAt: NOW,
+			seenAt: null,
+		});
+
+		emit({
+			space: SPACE,
+			author: AUTHOR,
+			puts: [],
+			deletes: [{ collection: COLLECTIONS.message, rkey }],
+		});
+
+		await vi.waitFor(() => expect(pushed.deletedFor).toEqual([[VIEWER]]));
+
+		expect(await database.db.select().from(database.tables.notifications)).toEqual([]);
+		expect(framesOfType("seenEvent")).toEqual([
+			{
+				space: VIEWER,
+				frame: expect.objectContaining({
+					unread: 0,
+					channel: SPACE,
+					message: { did: AUTHOR, rkey },
+				}),
+			},
+		]);
 	});
 
 	it("pushes an edit with the new text for an updated message, and nothing for a new one", async () => {

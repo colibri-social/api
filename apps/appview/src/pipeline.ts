@@ -11,6 +11,8 @@ import {
 	type PushRouting,
 	type PushSenderProfile,
 	pushSuppressedFor,
+	removeNotificationsForMessage,
+	unreadCount,
 } from "@colibri-social/notifications";
 import {
 	emojiSubjectOwner,
@@ -36,6 +38,7 @@ import {
 	preferencesEvent,
 	readCursorEvent,
 	roleEvent,
+	seenEvent,
 	threadEvent,
 } from "./announce.js";
 import type { AppContext } from "./context.js";
@@ -382,11 +385,43 @@ export const connectPipeline = ({ ctx }: Deps): (() => void) => {
 		);
 	};
 
-	const pushMessageDeleted = (space: string, author: string, rkey: string): void => {
+	const pushMessageDeleted = (
+		space: string,
+		author: string,
+		rkey: string,
+		recipients: readonly string[],
+	): void => {
 		if (!push.enabled) return;
-		void deliverMessageDeleted(notifications, push.senders, { space, author, rkey }).catch(
-			(error) => ctx.log.warn({ error }, "push.deleteFailed"),
+
+		void deliverMessageDeleted(
+			notifications,
+			push.senders,
+			{ space, author, rkey },
+			recipients,
+		).catch((error) => ctx.log.warn({ error }, "push.deleteFailed"));
+	};
+
+	const retractMessageNotifications = async (
+		space: string,
+		author: string,
+		rkey: string,
+	): Promise<void> => {
+		const removed = await removeNotificationsForMessage(notifications, space, author, rkey);
+		const recipients = [...new Set(removed.map((row) => row.recipient))];
+		const seenAt = new Date().toISOString();
+
+		await Promise.all(
+			recipients.map(async (recipient) => {
+				const unread = await unreadCount(notifications, recipient);
+
+				ctx.announce.toUser(
+					recipient,
+					seenEvent(unread, { seenAt, channel: space, message: { did: author, rkey } }),
+				);
+			}),
 		);
+
+		pushMessageDeleted(space, author, rkey, recipients);
 	};
 
 	const publishMember = async (community: string, did: string): Promise<void> => {
@@ -645,7 +680,10 @@ export const connectPipeline = ({ ctx }: Deps): (() => void) => {
 		for (const entry of change.deletes) {
 			if (entry.collection === COLLECTIONS.message) {
 				ctx.announce.toChannel(change.space, messageDeleted(change, entry.rkey));
-				pushMessageDeleted(change.space, change.author, entry.rkey);
+
+				void retractMessageNotifications(change.space, change.author, entry.rkey).catch((error) =>
+					ctx.log.warn({ error }, "notifications.retractFailed"),
+				);
 			}
 			if (entry.collection === COLLECTIONS.reaction && entry.previous) {
 				ctx.announce.toChannel(

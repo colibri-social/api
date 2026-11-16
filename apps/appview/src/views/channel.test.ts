@@ -1178,6 +1178,27 @@ describe("ChannelViews.unreadStatus", () => {
 		const after = await views.unreadStatus(AUTHOR_B, { community: COMMUNITY });
 		expect(after[0]).toMatchObject({ hasUnread: false, unreadMentions: 0 });
 	});
+
+	it("does not count a mention whose message was deleted", async () => {
+		const kept = nextTid();
+		await putMessage(kept);
+		for (const rkey of [kept, nextTid()]) {
+			await database.db.insert(database.tables.notifications).values({
+				id: nextTid(),
+				recipient: AUTHOR_B,
+				kind: "reply",
+				community: COMMUNITY,
+				space: SPACE,
+				author: AUTHOR_A,
+				messageAuthor: AUTHOR_A,
+				messageRkey: rkey,
+				indexedAt: NOW,
+			});
+		}
+
+		const status = await views.unreadStatus(AUTHOR_B, { community: COMMUNITY });
+		expect(status[0]).toMatchObject({ unreadMentions: 1 });
+	});
 });
 
 describe("ChannelViews.messages with moved messages", () => {

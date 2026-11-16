@@ -959,7 +959,18 @@ export class ChannelViews {
 			);
 		if (rows.length === 0) return 0;
 
-		const subjects = rows.map((row) => ({ author: row.messageAuthor, rkey: row.messageRkey }));
+		const messages = this.ctx.database.tables.messages;
+		const surviving = await this.ctx.database.db
+			.select({ author: messages.author, rkey: messages.rkey })
+			.from(messages)
+			.where(inArray(messages.rkey, [...new Set(rows.map((row) => row.messageRkey))]));
+		const present = new Set(surviving.map((row) => messageRefKey(row.author, row.rkey)));
+
+		const subjects = rows
+			.map((row) => ({ author: row.messageAuthor, rkey: row.messageRkey }))
+			.filter((subject) => present.has(messageRefKey(subject.author, subject.rkey)));
+		if (subjects.length === 0) return 0;
+
 		const hidden = hiddenFrom(await messageLabels(this.ctx.database, space, sources, subjects));
 		return subjects.filter((subject) => !hidden.has(messageRefKey(subject.author, subject.rkey)))
 			.length;

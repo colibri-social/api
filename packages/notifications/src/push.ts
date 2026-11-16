@@ -397,11 +397,13 @@ export const deliverMessageDeleted = async (
 	deps: NotificationDeps,
 	senders: Senders,
 	message: MessageRef,
+	notified: readonly string[],
 ): Promise<number> => {
-	const rows = await notificationsForMessage(deps, message.space, message.author, message.rkey);
-	if (rows.length === 0) return 0;
+	const recipients = [...new Set(notified)];
+	if (recipients.length === 0) return 0;
+
 	const place = await resolvePlace(deps, message.space);
-	const recipients = [...new Set(rows.map((row) => row.recipient))];
+
 	await Promise.all(
 		recipients.map((recipient) =>
 			sendToActor(deps, senders, recipient, async () =>
