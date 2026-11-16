@@ -1,5 +1,15 @@
 # @colibri-social/appview
 
+## 2.41.6
+
+### Patch Changes
+
+- e324217: Forward polyfill blob uploads of up to 75 MB from replica nodes to the main node. Other forwarded writes keep the 21 MB limit and are turned away before their body is read. Forwarded requests get one extra second per MiB of body before they time out, and a replica holds at most 128 MiB of writes while the main node is away.
+- 1154ca5: Keep blobs over 16 MB on disk after the first request, so video seeks and repeat plays no longer fetch them from the author's server again. Concurrent requests for the same blob share one download. `BLOB_DISK_ORIGINAL_MAX_BYTES` sets the budget (4 GiB by default, 0 turns it off). QuickTime movies are now served as `video/quicktime` so they play inline.
+- bd08d53: Read synced records back from the Postgres primary when publishing live events. A new message now reaches other clients, and its notification keeps the attachments, while the main node runs on a host with a lagging read replica
+- Updated dependencies [1154ca5]
+  - @colibri-social/blobs@0.4.2
+
 ## 2.41.5
 
 ### Patch Changes
