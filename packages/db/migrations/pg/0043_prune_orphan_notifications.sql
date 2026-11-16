@@ -1,0 +1,1 @@
+DELETE FROM "notifications" WHERE NOT EXISTS (SELECT 1 FROM "messages" WHERE "messages"."space" = "notifications"."space" AND "messages"."author" = "notifications"."message_author" AND "messages"."rkey" = "notifications"."message_rkey");

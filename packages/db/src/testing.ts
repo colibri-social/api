@@ -8,6 +8,10 @@ import { runMigrations } from "./migrate.js";
 
 export type TestDatabase = Database & { url: string; destroy: () => Promise<void> };
 
+export type TestDatabaseOptions = {
+	migrate?: (database: Database) => Promise<void>;
+};
+
 const withAdmin = async (url: string, statement: string): Promise<void> => {
 	const admin = new pg.Client({ connectionString: url });
 
@@ -20,7 +24,10 @@ const withAdmin = async (url: string, statement: string): Promise<void> => {
 	}
 };
 
-const openPostgresTestDatabase = async (adminUrl: string): Promise<TestDatabase> => {
+const openPostgresTestDatabase = async (
+	adminUrl: string,
+	migrate: (database: Database) => Promise<void>,
+): Promise<TestDatabase> => {
 	const name = `colibri_test_${randomBytes(6).toString("hex")}`;
 	const url = new URL(adminUrl);
 
@@ -30,7 +37,7 @@ const openPostgresTestDatabase = async (adminUrl: string): Promise<TestDatabase>
 
 	const database = openDatabase({ url: url.toString(), maxConnections: 4 });
 
-	await runMigrations(database);
+	await migrate(database);
 
 	return {
 		...database,
@@ -42,12 +49,14 @@ const openPostgresTestDatabase = async (adminUrl: string): Promise<TestDatabase>
 	};
 };
 
-const openSqliteTestDatabase = async (): Promise<TestDatabase> => {
+const openSqliteTestDatabase = async (
+	migrate: (database: Database) => Promise<void>,
+): Promise<TestDatabase> => {
 	const directory = mkdtempSync(join(tmpdir(), "colibri-test-"));
 	const url = `file:${join(directory, "test.db")}`;
 	const database = openDatabase({ url });
 
-	await runMigrations(database);
+	await migrate(database);
 
 	return {
 		...database,
@@ -59,12 +68,14 @@ const openSqliteTestDatabase = async (): Promise<TestDatabase> => {
 	};
 };
 
-export const openTestDatabase = async (): Promise<TestDatabase> => {
+export const openTestDatabase = async ({
+	migrate = runMigrations,
+}: TestDatabaseOptions = {}): Promise<TestDatabase> => {
 	const adminUrl = process.env.TEST_DATABASE_URL;
 
 	if (adminUrl) {
-		return openPostgresTestDatabase(adminUrl);
+		return openPostgresTestDatabase(adminUrl, migrate);
 	}
 
-	return openSqliteTestDatabase();
+	return openSqliteTestDatabase(migrate);
 };

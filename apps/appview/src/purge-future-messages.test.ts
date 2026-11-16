@@ -6,6 +6,7 @@ import { purgeFutureMessages } from "./purge-future-messages.js";
 
 const COMMUNITY = "did:plc:communityxxxxxxxxxxxxxxxxxxx";
 const MEMBER = "did:plc:memberxxxxxxxxxxxxxxxxxxxxx";
+const RECIPIENT = "did:plc:recipientxxxxxxxxxxxxxxxxxx";
 const CHANNEL = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkchannel001");
 const THREAD = threadSpace(COMMUNITY, "3lkthread001");
 const NOW = new Date("2026-10-23T12:00:00.000Z");
@@ -38,6 +39,22 @@ const insertThread = (lastActivityAt: string) =>
 		lastActivityAt,
 		indexedAt: NOW.toISOString(),
 	});
+
+const insertNotification = (id: string, space: string, rkey: string) =>
+	database.db.insert(database.tables.notifications).values({
+		id,
+		recipient: RECIPIENT,
+		kind: "mention",
+		community: COMMUNITY,
+		space,
+		author: MEMBER,
+		messageAuthor: MEMBER,
+		messageRkey: rkey,
+		indexedAt: NOW.toISOString(),
+	});
+
+const notificationIds = async () =>
+	(await database.db.select().from(database.tables.notifications)).map((row) => row.id).sort();
 
 const rkeys = async () =>
 	(await database.db.select().from(database.tables.messages)).map((row) => row.rkey).sort();
@@ -75,6 +92,20 @@ describe("purgeFutureMessages", () => {
 
 		expect(await rkeys()).toEqual([tidAt(EARLIER, "kept"), tidAt(EARLIER, "thread kept")].sort());
 		expect(await threadActivity()).toBe(EARLIER);
+	});
+
+	it("deletes the notifications for purged messages when applied", async () => {
+		await insertNotification("kept", CHANNEL, tidAt(EARLIER, "kept"));
+		await insertNotification("channel", CHANNEL, tidAt(FUTURE, "channel"));
+		await insertNotification("thread", THREAD, tidAt(FUTURE, "thread"));
+
+		await purgeFutureMessages(database, { apply: false, now: NOW, log: silent });
+
+		expect(await notificationIds()).toEqual(["channel", "kept", "thread"]);
+
+		await purgeFutureMessages(database, { apply: true, now: NOW, log: silent });
+
+		expect(await notificationIds()).toEqual(["kept"]);
 	});
 
 	it("keeps a message a few minutes ahead of the clock", async () => {

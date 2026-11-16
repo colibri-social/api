@@ -118,6 +118,16 @@ export const purgeFutureMessages = async (
 							eq(tables.messages.rkey, row.rkey),
 						),
 					);
+
+				await tx
+					.delete(tables.notifications)
+					.where(
+						and(
+							eq(tables.notifications.space, row.space),
+							eq(tables.notifications.messageAuthor, row.author),
+							eq(tables.notifications.messageRkey, row.rkey),
+						),
+					);
 			}
 			for (const thread of threads) {
 				await tx
