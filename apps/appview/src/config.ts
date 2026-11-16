@@ -226,6 +226,11 @@ export const configSchema = z.object({
 		.int()
 		.nonnegative()
 		.default(10 * 1024 * 1024 * 1024),
+	BLOB_DISK_ORIGINAL_MAX_BYTES: z.coerce
+		.number()
+		.int()
+		.nonnegative()
+		.default(4 * 1024 * 1024 * 1024),
 	BLOB_RENDER_CONCURRENCY: z.coerce.number().int().positive().optional(),
 	POLYFILL_S3_ENDPOINT: z
 		.url()

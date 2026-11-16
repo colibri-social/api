@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cidForRawBytes } from "@atproto/lex-data";
@@ -8,6 +8,7 @@ import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BlobCache } from "./cache.js";
 import { DiskVariantCache } from "./disk-cache.js";
+import { DiskOriginalCache } from "./disk-originals.js";
 import { BlobNotFoundError, BlobUpstreamError } from "./errors.js";
 import { BlobService, type PolyfillBlobSource } from "./service.js";
 
@@ -706,5 +707,198 @@ describe("BlobService polyfill source", () => {
 		await expect(service.fetch({ did: DID, cid, space: SPACE })).rejects.toBeInstanceOf(
 			BlobUpstreamError,
 		);
+	});
+});
+
+describe("BlobService disk originals", () => {
+	let bytes: Uint8Array;
+	let cid: string;
+	let directory: string;
+
+	const service = (
+		respond: () => Response | Promise<Response>,
+		originals = new DiskOriginalCache({ directory }),
+	) => {
+		const upstream = fakeSpaceClient(respond);
+
+		return {
+			originals,
+			callCount: upstream.callCount,
+			blobs: new BlobService({
+				spaceClient: upstream.client,
+				hosts: staticHosts(),
+				cache: new BlobCache({ maxEntryBytes: 32 }),
+				originals,
+			}),
+		};
+	};
+
+	const files = async (): Promise<string[]> => {
+		const prefixes = await readdir(directory).catch(() => []);
+		const nested = await Promise.all(
+			prefixes.map((prefix) => readdir(join(directory, prefix)).catch(() => [])),
+		);
+
+		return nested.flat();
+	};
+
+	beforeEach(async () => {
+		bytes = new Uint8Array(await pngBytes());
+		cid = (await cidForRawBytes(bytes)).toString();
+		directory = await mkdtemp(join(tmpdir(), "colibri-originals-"));
+	});
+
+	afterEach(async () => {
+		await rm(directory, { recursive: true, force: true });
+	});
+
+	it("fills the disk on a cold fetch and serves ranges from it afterwards", async () => {
+		const first = service(() => chunkedResponse(bytes));
+		const cold = await first.blobs.fetch({ did: DID, cid, space: SPACE });
+
+		expect(cold.status).toBe("stream");
+		if (cold.status !== "stream") return;
+		expect(joined(await drain(cold.stream))).toEqual(bytes);
+		expect(first.originals.stats.files).toBe(1);
+
+		const ranged = await first.blobs.fetch({ did: DID, cid, space: SPACE, range: "bytes=5-40" });
+
+		expect(first.callCount()).toBe(1);
+		expect(ranged).toMatchObject({
+			status: "stream",
+			mimeType: "image/png",
+			totalSize: bytes.byteLength,
+			length: 36,
+			range: { start: 5, end: 40 },
+		});
+		if (ranged.status === "stream") {
+			expect(joined(await drain(ranged.stream))).toEqual(bytes.subarray(5, 41));
+		}
+
+		const restarted = service(() => chunkedResponse(bytes));
+		const warm = await restarted.blobs.fetch({ did: DID, cid, space: SPACE });
+
+		expect(restarted.callCount()).toBe(0);
+		if (warm.status === "stream") expect(joined(await drain(warm.stream))).toEqual(bytes);
+
+		const unsatisfiable = await restarted.blobs.fetch({
+			did: DID,
+			cid,
+			space: SPACE,
+			range: `bytes=${bytes.byteLength}-`,
+		});
+
+		expect(unsatisfiable).toEqual({ status: "rangeNotSatisfiable", totalSize: bytes.byteLength });
+	});
+
+	it("keeps disk entries apart per space", async () => {
+		const upstream = service(() => chunkedResponse(bytes));
+		const first = await upstream.blobs.fetch({ did: DID, cid, space: SPACE });
+
+		if (first.status === "stream") await drain(first.stream);
+
+		const other = await upstream.blobs.fetch({ did: DID, cid, space: SPACE_B });
+
+		if (other.status === "stream") await drain(other.stream);
+		expect(upstream.callCount()).toBe(2);
+	});
+
+	it("leaves no file behind when the bytes do not match the CID", async () => {
+		const tampered = new Uint8Array(bytes);
+		const last = tampered.byteLength - 1;
+
+		tampered[last] = (tampered[last] ?? 0) ^ 0xff;
+
+		const upstream = service(() => chunkedResponse(tampered));
+		const result = await upstream.blobs.fetch({ did: DID, cid, space: SPACE });
+
+		expect(result.status).toBe("stream");
+		if (result.status !== "stream") return;
+
+		const received: Uint8Array[] = [];
+
+		await expect(
+			(async () => {
+				for await (const chunk of result.stream) received.push(chunk);
+			})(),
+		).rejects.toMatchObject({ name: "BlobRejectedError", reason: "cidMismatch" });
+		expect(joined(received).byteLength).toBeLessThan(tampered.byteLength);
+
+		await vi.waitFor(() => expect(upstream.originals.stats.filling).toBe(0));
+		expect(await files()).toEqual([]);
+		expect(upstream.originals.stats.files).toBe(0);
+	});
+
+	it("shares one fill between concurrent cold requests", async () => {
+		let release: () => void = () => undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const upstream = service(async () => {
+			await gate;
+
+			return chunkedResponse(bytes);
+		});
+		const pending = [
+			upstream.blobs.fetch({ did: DID, cid, space: SPACE }),
+			upstream.blobs.fetch({ did: DID, cid, space: SPACE, range: "bytes=10-19" }),
+			upstream.blobs.fetch({ did: DID, cid, space: SPACE }),
+		];
+
+		release();
+
+		const [full, ranged, again] = await Promise.all(pending);
+
+		expect(upstream.callCount()).toBe(1);
+		if (full?.status === "stream") expect(joined(await drain(full.stream))).toEqual(bytes);
+		if (ranged?.status === "stream") {
+			expect(joined(await drain(ranged.stream))).toEqual(bytes.subarray(10, 20));
+		}
+		if (again?.status === "stream") expect(joined(await drain(again.stream))).toEqual(bytes);
+	});
+
+	it("finishes the fill after the first client goes away", async () => {
+		const upstream = service(() => chunkedResponse(bytes));
+		const result = await upstream.blobs.fetch({ did: DID, cid, space: SPACE });
+
+		expect(result.status).toBe("stream");
+		if (result.status !== "stream") return;
+
+		const iterator = result.stream[Symbol.asyncIterator]();
+
+		await iterator.next();
+		await iterator.return?.();
+		await vi.waitFor(() => expect(upstream.originals.stats.files).toBe(1));
+
+		const seek = await upstream.blobs.fetch({ did: DID, cid, space: SPACE, range: "bytes=50-" });
+
+		expect(upstream.callCount()).toBe(1);
+		if (seek.status === "stream") {
+			expect(joined(await drain(seek.stream))).toEqual(bytes.subarray(50));
+		}
+	});
+
+	it("waits for the fill to learn the size of a ranged blob without a declared length", async () => {
+		const upstream = service(() => {
+			const response = chunkedResponse(bytes);
+
+			return new Response(response.body);
+		});
+		const result = await upstream.blobs.fetch({
+			did: DID,
+			cid,
+			space: SPACE,
+			range: "bytes=0-9",
+		});
+
+		expect(result).toMatchObject({
+			status: "stream",
+			totalSize: bytes.byteLength,
+			length: 10,
+			range: { start: 0, end: 9 },
+		});
+		if (result.status === "stream") {
+			expect(joined(await drain(result.stream))).toEqual(bytes.subarray(0, 10));
+		}
 	});
 });

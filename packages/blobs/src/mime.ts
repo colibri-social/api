@@ -9,6 +9,7 @@ export const ALLOWED_MIME_TYPES = [
 	"image/avif",
 	"video/mp4",
 	"video/webm",
+	"video/quicktime",
 	"audio/mpeg",
 	"audio/ogg",
 	"audio/wav",

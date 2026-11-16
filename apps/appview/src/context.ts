@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import { Secp256k1Keypair } from "@atproto/crypto";
 import { type Database, openDatabase } from "@colibri-social/appview-db";
-import { BlobCache, BlobService, DiskVariantCache } from "@colibri-social/blobs";
+import { BlobCache, BlobService, DiskOriginalCache, DiskVariantCache } from "@colibri-social/blobs";
 import {
 	admitCommunityWrites,
 	Bridges,
@@ -297,6 +298,14 @@ export const createContext = async (config: Config) => {
 					disk: new DiskVariantCache({
 						directory: config.BLOB_DISK_CACHE_DIR,
 						maxBytes: config.BLOB_DISK_CACHE_MAX_BYTES,
+					}),
+				}
+			: {}),
+		...(config.BLOB_DISK_ORIGINAL_MAX_BYTES > 0
+			? {
+					originals: new DiskOriginalCache({
+						directory: join(config.BLOB_DISK_CACHE_DIR, "originals"),
+						maxBytes: config.BLOB_DISK_ORIGINAL_MAX_BYTES,
 					}),
 				}
 			: {}),

@@ -42,6 +42,20 @@ describe("sniffMimeType", () => {
 		expect(sniffed).toBe("application/pdf");
 	});
 
+	it("accepts a QuickTime movie", async () => {
+		const mov = new Uint8Array(32);
+		const ascii = new TextEncoder();
+
+		mov.set([0, 0, 0, 0x14], 0);
+		mov.set(ascii.encode("ftypqt  "), 4);
+		mov.set(ascii.encode("qt  "), 16);
+		mov.set([0, 0, 0, 0x08], 20);
+		mov.set(ascii.encode("wide"), 24);
+
+		expect(await sniffMimeType(mov)).toBe("video/quicktime");
+		expect(await sniffServedType(mov)).toBe("video/quicktime");
+	});
+
 	it("exposes the allowlist for callers", () => {
 		expect(ALLOWED_MIME_TYPES).toContain("image/jpeg");
 		expect(ALLOWED_MIME_TYPES).toContain("application/pdf");

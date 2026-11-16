@@ -4,6 +4,7 @@ import { XrpcError } from "@colibri-social/space";
 import type { BlobCacheEntry } from "./cache.js";
 import { BlobCache, blobCacheKey } from "./cache.js";
 import type { DiskVariantCache } from "./disk-cache.js";
+import type { DiskOriginal, DiskOriginalCache } from "./disk-originals.js";
 import { BlobNotFoundError, BlobRejectedError, BlobUpstreamError } from "./errors.js";
 import { isDownloadMimeType, sniffServedType } from "./mime.js";
 import { applyRange, parseRange } from "./range.js";
@@ -63,6 +64,7 @@ export type BlobServiceOptions = {
 	hosts: SpaceHostResolver;
 	cache?: BlobCache;
 	disk?: DiskVariantCache;
+	originals?: DiskOriginalCache;
 	renderConcurrency?: number;
 	fetch?: typeof globalThis.fetch;
 	maxBlobBytes?: number;
@@ -78,7 +80,10 @@ type StreamedOriginal = {
 	declaredSize: number | null;
 };
 
-type Original = { kind: "bytes"; entry: BlobCacheEntry } | StreamedOriginal;
+type Original =
+	| { kind: "bytes"; entry: BlobCacheEntry }
+	| { kind: "disk"; original: DiskOriginal }
+	| StreamedOriginal;
 
 type Upstream = {
 	stream: AsyncIterable<Uint8Array>;
@@ -224,11 +229,13 @@ export class BlobService {
 	private readonly rendering = new Map<string, Promise<BlobCacheEntry>>();
 	private readonly renderWaiters: (() => void)[] = [];
 	private readonly disk: DiskVariantCache | undefined;
+	private readonly originals: DiskOriginalCache | undefined;
 	private readonly renderConcurrency: number;
 	private renders = 0;
 
 	constructor(options: BlobServiceOptions) {
 		this.disk = options.disk;
+		this.originals = options.originals;
 		this.renderConcurrency =
 			options.renderConcurrency ?? Math.max(1, Math.floor(availableParallelism() / 2));
 		this.spaceClient = options.spaceClient;
@@ -257,6 +264,7 @@ export class BlobService {
 
 		const original = await this.original(key, variant !== "full", params.range ?? null);
 		if (original.kind === "stream") return toStreamResult(original, params.range ?? null);
+		if (original.kind === "disk") return toDiskResult(original.original, params.range ?? null);
 		if (variant === "full") return toBlobResult(original.entry, params.range);
 		if (isDownloadMimeType(original.entry.mimeType)) {
 			throw new BlobRejectedError("mimeNotAllowed", "this blob has no previews");
@@ -325,11 +333,16 @@ export class BlobService {
 		const cachedOriginal = this.cache.get({ ...key, variant: "full" });
 		if (cachedOriginal) return { kind: "bytes", entry: cachedOriginal };
 
+		const stored = needsBytes ? null : await this.storedOriginal(key);
+		if (stored) return { kind: "disk", original: stored };
+
 		const id = blobCacheKey(key);
 		const pending = this.inflight.get(id);
 		if (pending) {
 			const shared = await pending;
 			if (shared) return { kind: "bytes", entry: shared };
+			const filled = needsBytes ? null : await this.storedOriginal(key);
+			if (filled) return { kind: "disk", original: filled };
 			return this.load(key, needsBytes, range);
 		}
 
@@ -347,6 +360,20 @@ export class BlobService {
 		}
 	}
 
+	private async storedOriginal(key: OriginalKey): Promise<DiskOriginal | null> {
+		if (!this.originals) {
+			return null;
+		}
+
+		const filling = this.originals.filling(key);
+
+		if (filling) {
+			return filling;
+		}
+
+		return (await this.originals.open(key).catch(() => undefined)) ?? null;
+	}
+
 	private async load(
 		key: OriginalKey,
 		needsBytes: boolean,
@@ -359,7 +386,8 @@ export class BlobService {
 			throw new BlobRejectedError("tooLarge");
 		}
 
-		const buffers = needsBytes || (range !== null && declaredSize === null);
+		const buffers =
+			needsBytes || (range !== null && declaredSize === null && this.originals === undefined);
 		const limit = buffers ? this.maxBlobBytes : this.cache.maxEntryBytes;
 		const iterator = verifyingStream(capped(upstream.stream, this.maxBlobBytes), key.cid)[
 			Symbol.asyncIterator
@@ -381,13 +409,17 @@ export class BlobService {
 			}
 
 			const head = concatBytes(chunks, total);
-			return {
-				kind: "stream",
-				head,
-				rest: iterator,
-				mimeType: await sniffServedType(head),
-				declaredSize,
-			};
+			const mimeType = await sniffServedType(head);
+			const filled = needsBytes
+				? null
+				: (this.originals?.fill(key, mimeType, declaredSize, () => resumed(head, iterator)) ??
+					null);
+
+			if (filled) {
+				return { kind: "disk", original: filled };
+			}
+
+			return { kind: "stream", head, rest: iterator, mimeType, declaredSize };
 		} catch (error) {
 			await iterator.return?.();
 			throw error;
@@ -484,6 +516,37 @@ const toStreamResult = (original: StreamedOriginal, rangeHeader: string | null):
 	return {
 		status: "stream",
 		stream,
+		mimeType: original.mimeType,
+		totalSize: total,
+		length: total,
+	};
+};
+
+const toDiskResult = async (
+	original: DiskOriginal,
+	rangeHeader: string | null,
+): Promise<BlobResult> => {
+	const total = original.size ?? (rangeHeader ? await original.settled() : null);
+	const parsed = rangeHeader && total !== null ? parseRange(rangeHeader, total) : null;
+
+	if (parsed?.kind === "unsatisfiable" && total !== null) {
+		return { status: "rangeNotSatisfiable", totalSize: total };
+	}
+
+	if (parsed?.kind === "partial") {
+		return {
+			status: "stream",
+			stream: original.read(parsed.start, parsed.end),
+			mimeType: original.mimeType,
+			totalSize: total,
+			length: parsed.end - parsed.start + 1,
+			range: { start: parsed.start, end: parsed.end },
+		};
+	}
+
+	return {
+		status: "stream",
+		stream: original.read(0, null),
 		mimeType: original.mimeType,
 		totalSize: total,
 		length: total,
