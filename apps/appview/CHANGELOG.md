@@ -1,5 +1,11 @@
 # @colibri-social/appview
 
+## 2.41.7
+
+### Patch Changes
+
+- d45150f: Remove notifications whose message was deleted, so they no longer show a deleted message banner
+
 ## 2.41.6
 
 ### Patch Changes
