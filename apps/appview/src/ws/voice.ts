@@ -136,6 +136,7 @@ export class VoiceServer {
 	private readonly connections = new Set<Connection>();
 	private readonly migrations = new Map<string, Migration>();
 	private readonly persisting = new Map<string, Promise<void>>();
+	private readonly moderationSaves = new Map<string, Promise<void>>();
 	private heartbeat: NodeJS.Timeout | null = null;
 	private readonly stopWatchingAuthz: () => void;
 	private readonly communities: CommunityViews;
@@ -1198,15 +1199,31 @@ export class VoiceServer {
 			this.persist(voice, channel, did);
 			if (server.origin === "server") {
 				const state = voice.moderationOf(channel, did);
+				const community = parseSpaceRef(channel).authority;
 
-				fireAndForget(
-					this.ctx.log,
-					"voice.moderationSaveFailed",
-					async () =>
-						this.ctx.voiceCalls.saveModeration(parseSpaceRef(channel).authority, did, state),
-					{ channel, did },
+				this.queueModerationSave(`${community} ${did}`, channel, did, () =>
+					this.ctx.voiceCalls.saveModeration(community, did, state),
 				);
 			}
+		});
+	}
+
+	private queueModerationSave(
+		key: string,
+		channel: string,
+		did: string,
+		write: () => Promise<void>,
+	): void {
+		const previous = this.moderationSaves.get(key) ?? Promise.resolve();
+		const next = previous
+			.then(write)
+			.catch((error: unknown) =>
+				this.ctx.log.error({ channel, did, err: error }, "voice.moderationSaveFailed"),
+			);
+
+		this.moderationSaves.set(key, next);
+		void next.then(() => {
+			if (this.moderationSaves.get(key) === next) this.moderationSaves.delete(key);
 		});
 	}
 
