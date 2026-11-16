@@ -1,5 +1,11 @@
 # @colibri-social/notifications
 
+## 1.12.0
+
+### Minor Changes
+
+- 5c167dc: Remove a message's notifications when it is deleted, stop counting pings for deleted messages, and let clients mark a deleted message's ping as seen
+
 ## 1.11.1
 
 ### Patch Changes
