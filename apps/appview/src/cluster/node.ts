@@ -10,9 +10,11 @@ import {
 	parsePostgresUrl,
 	type WriteMode,
 } from "@colibri-social/appview-db";
+import { social } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import pg from "pg";
 import type { AppContext } from "../context.js";
+import { POLYFILL_BLOB_MAX_BYTES } from "../polyfill/blobs.js";
 import { resolveVersion } from "../routes/server.js";
 import { createAnsibleRunner } from "./ansible.js";
 import { type Cloudflare, createCloudflare, parseGeoRegions } from "./cloudflare.js";
@@ -44,6 +46,10 @@ import {
 import type { NodeAddress, NodeIdentity, NodeRow } from "./registry.js";
 import { createRollout, type Rollout } from "./rollout.js";
 import { WriteProxy } from "./write-proxy.js";
+
+const FORWARDED_BODY_LIMITS: Readonly<Record<string, number>> = {
+	[social.colibri.beta.polyfill.uploadBlob.$nsid]: POLYFILL_BLOB_MAX_BYTES,
+};
 
 export const HEARTBEAT_MS = 15_000;
 
@@ -234,6 +240,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 			log,
 			onMode: deps.onWriteMode,
 			forwarding: () => !deps.isMain(),
+			bodyLimits: FORWARDED_BODY_LIMITS,
 		});
 	}
 

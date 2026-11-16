@@ -7,6 +7,10 @@ export const MAX_WRITE_BYTES = 21 * 1024 * 1024;
 
 export const RESPONSE_TIMEOUT_MS = 60_000;
 
+export const FORWARD_BYTES_PER_SECOND = 1024 * 1024;
+
+export const QUEUE_MAX_BYTES = 128 * 1024 * 1024;
+
 export const RETRY_MS = 1_000;
 
 export const PROBE_MS = 5_000;
@@ -44,6 +48,8 @@ export type WriteProxyDeps = {
 	log: Pick<Logger, "info" | "warn">;
 	onMode: (mode: WriteMode) => void;
 	forwarding?: () => boolean;
+	bodyLimits?: Readonly<Record<string, number>>;
+	queueMaxBytes?: number;
 	fetch?: typeof fetch;
 	now?: () => number;
 	retryMs?: number;
@@ -102,14 +108,37 @@ export const readOnlyAnswer = (): Answer => {
 	);
 };
 
-const readBody = async (request: IncomingMessage): Promise<Buffer> => {
+const nsidOf = (path: string): string => {
+	const rest = path.startsWith("/xrpc/") ? path.slice("/xrpc/".length) : path;
+	const query = rest.indexOf("?");
+
+	return query === -1 ? rest : rest.slice(0, query);
+};
+
+export const responseTimeoutFor = (bytes: number): number => {
+	return RESPONSE_TIMEOUT_MS + Math.ceil(bytes / FORWARD_BYTES_PER_SECOND) * 1_000;
+};
+
+const declaredLength = (request: IncomingMessage): number | null => {
+	const value = Number(request.headers["content-length"]);
+
+	return Number.isFinite(value) && value >= 0 ? value : null;
+};
+
+const readBody = async (request: IncomingMessage, limit: number): Promise<Buffer> => {
+	const declared = declaredLength(request);
+
+	if (declared !== null && declared > limit) {
+		throw new Error("request body too large");
+	}
+
 	const chunks: Buffer[] = [];
 	let size = 0;
 
 	for await (const chunk of request) {
 		size += (chunk as Buffer).length;
 
-		if (size > MAX_WRITE_BYTES) {
+		if (size > limit) {
 			throw new Error("request body too large");
 		}
 
@@ -163,7 +192,7 @@ export class WriteProxy {
 
 	async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
 		const arrived = this.now();
-		const answer = await readBody(request).then(
+		const answer = await readBody(request, this.limitFor(request.url ?? "/")).then(
 			(body) =>
 				this.submit(
 					{ method: "POST", path: request.url ?? "/", headers: forwardedHeaders(request), body },
@@ -189,6 +218,14 @@ export class WriteProxy {
 		}
 	}
 
+	private limitFor(path: string): number {
+		return this.deps.bodyLimits?.[nsidOf(path)] ?? MAX_WRITE_BYTES;
+	}
+
+	private queuedBytes(): number {
+		return this.queue.reduce((total, held) => total + held.forward.body.length, 0);
+	}
+
 	private submit(forward: Forward, arrived: number): Promise<Answer> {
 		if (this.current === "readOnly") {
 			return Promise.resolve(readOnlyAnswer());
@@ -211,6 +248,12 @@ export class WriteProxy {
 	}
 
 	private hold(forward: Forward, arrived: number): Promise<Answer> {
+		const cap = this.deps.queueMaxBytes ?? QUEUE_MAX_BYTES;
+
+		if (this.queuedBytes() + forward.body.length > cap) {
+			return Promise.resolve(readOnlyAnswer());
+		}
+
 		return new Promise((settle) => {
 			this.queue.push({ forward, deadline: arrived + this.deps.windowMs, settle });
 			void this.drain();
@@ -339,7 +382,7 @@ export class WriteProxy {
 					[NODE_SECRET_HEADER]: this.deps.secret,
 				},
 				body: new Uint8Array(forward.body),
-				signal: AbortSignal.timeout(RESPONSE_TIMEOUT_MS),
+				signal: AbortSignal.timeout(responseTimeoutFor(forward.body.length)),
 			});
 		} catch (error) {
 			const code = errorCode(error);
