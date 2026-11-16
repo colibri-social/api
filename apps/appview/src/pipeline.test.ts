@@ -17,6 +17,7 @@ import { connectPipeline } from "./pipeline.js";
 import type { ChannelFrame, EventServer, ServerFrame } from "./ws/events.js";
 
 const stalledIndexing = { enabled: false };
+const indexing = { onStart: () => {} };
 const pushed = vi.hoisted(() => ({
 	deleted: [] as unknown[],
 	deletedFor: [] as unknown[][],
@@ -30,8 +31,11 @@ vi.mock("@colibri-social/notifications", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@colibri-social/notifications")>();
 	return {
 		...actual,
-		indexMessage: (...args: Parameters<typeof actual.indexMessage>) =>
-			stalledIndexing.enabled ? new Promise<never>(() => {}) : actual.indexMessage(...args),
+		indexMessage: (...args: Parameters<typeof actual.indexMessage>) => {
+			indexing.onStart();
+
+			return stalledIndexing.enabled ? new Promise<never>(() => {}) : actual.indexMessage(...args);
+		},
 		deliverMessageDeleted: async (
 			_deps: unknown,
 			_senders: unknown,
@@ -99,6 +103,21 @@ let threadWrites: { community: string; space: string; record: Record<string, unk
 let bus: EventBus<EventMessage>;
 const busErrors: unknown[] = [];
 let voicePresence: Map<string, string>;
+let ctx: AppContext;
+
+const laggingReplica = (replica: TestDatabase, caughtUp: () => boolean) => {
+	const reads = (target: TestDatabase["db"]) =>
+		new Proxy(target, {
+			get: (inner, key) => {
+				const source = key === "select" && !caughtUp() ? replica.db : inner;
+				const value = Reflect.get(source, key);
+
+				return typeof value === "function" ? value.bind(source) : value;
+			},
+		});
+
+	return { ...database, db: reads(database.db) };
+};
 
 const framesOfType = (suffix: string) =>
 	published.filter((entry) => entry.frame.$type === `social.colibri.beta.sync.defs#${suffix}`);
@@ -243,7 +262,7 @@ beforeEach(async () => {
 	pushed.notifiedMessages = [];
 	voicePresence = new Map();
 
-	const ctx = {
+	ctx = {
 		database,
 		config: {
 			PUBLIC_URL: "https://appview.test",
@@ -385,6 +404,68 @@ describe("connectPipeline", () => {
 		const message = frame?.message as { rkey: string; text: string; labels: unknown[] };
 		expect(message).toMatchObject({ rkey, text: "hello" });
 		expect(message.labels).toEqual([expect.objectContaining({ src: LABELER, val: "spoiler" })]);
+	});
+
+	it("publishes a message the read replica hasn't replayed yet", async () => {
+		const replica = await openTestDatabase();
+
+		try {
+			disconnect();
+			disconnect = connectPipeline({
+				ctx: { ...ctx, database: laggingReplica(replica, () => false) },
+			});
+
+			const rkey = nextTid();
+			await putAttachedMessageRow(rkey);
+
+			emit(messageChange(rkey));
+			await vi.waitFor(() => expect(framesOfType("messageEvent")).toHaveLength(1));
+
+			expect(framesOfType("messageEvent")[0]?.frame.message).toMatchObject({
+				rkey,
+				attachments: [expect.objectContaining({ mimeType: "image/png" })],
+			});
+		} finally {
+			await replica.destroy();
+		}
+	});
+
+	it("keeps the attachments in a notification once a lagging replica catches up", async () => {
+		const replica = await openTestDatabase();
+		let caughtUp = false;
+		indexing.onStart = () => {
+			caughtUp = true;
+		};
+
+		try {
+			disconnect();
+			disconnect = connectPipeline({
+				ctx: { ...ctx, database: laggingReplica(replica, () => caughtUp) },
+			});
+
+			const mentioned = "did:plc:mentionedmentionedment";
+			await database.db.insert(database.tables.members).values([
+				{ community: COMMUNITY, did: AUTHOR, roles: [], joinedAt: NOW },
+				{ community: COMMUNITY, did: mentioned, roles: [], joinedAt: NOW },
+			]);
+			const rkey = nextTid();
+			await putAttachedMessageRow(rkey);
+			const change = messageChange(rkey);
+			const put = change.puts[0] as { value: Record<string, unknown> };
+			put.value.facets = [mentionFacet(mentioned)];
+
+			emit(change);
+			await vi.waitFor(() => expect(framesOfType("notificationEvent")).toHaveLength(1));
+
+			const notification = framesOfType("notificationEvent")[0]?.frame.notification as {
+				message: { rkey: string; text: string; attachments: unknown[] };
+			};
+			expect(notification.message).toMatchObject({ rkey, text: "look at this" });
+			expect(notification.message.attachments).toHaveLength(1);
+		} finally {
+			indexing.onStart = () => {};
+			await replica.destroy();
+		}
 	});
 
 	it("publishes the message before notification indexing settles", async () => {

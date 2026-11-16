@@ -172,7 +172,12 @@ const readCursorsOf = (value: Record<string, unknown>): { channel: string; curso
 	});
 };
 
-export const connectPipeline = ({ ctx }: Deps): (() => void) => {
+const readingOwnWrites = (ctx: AppContext): AppContext => {
+	return { ...ctx, database: { ...ctx.database, db: ctx.database.primary } };
+};
+
+export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
+	const ctx = readingOwnWrites(shared);
 	const actors = new ActorViews(ctx);
 	const channels = new ChannelViews(ctx, actors);
 	const communities = new CommunityViews(ctx, actors);
