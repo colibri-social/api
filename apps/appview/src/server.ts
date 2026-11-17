@@ -6,6 +6,7 @@ import type { AppContext } from "./context.js";
 import { corsMiddleware, nodeHeaderMiddleware } from "./cors.js";
 import { record, xrpcMethod } from "./metrics.js";
 import { registerPolyfillRoutes } from "./polyfill/routes.js";
+import { logRejectedUploads } from "./polyfill/upload-log.js";
 import { registerActorRoutes } from "./routes/actor.js";
 import { registerActorWriteRoutes } from "./routes/actor-write.js";
 import { asyncHandler } from "./routes/async-handler.js";
@@ -81,6 +82,7 @@ export const createAppServer = (
 		});
 		next();
 	});
+	app.use(logRejectedUploads(ctx.log, ctx.config.NODE_ID ?? null));
 	app.use(nodeHeaderMiddleware(ctx.config.NODE_ID, ctx.config.NODE_REGION));
 	app.use(corsMiddleware(ctx.config.corsOrigins));
 	app.use((req: Request, res: Response, next: (error?: unknown) => void) => {
