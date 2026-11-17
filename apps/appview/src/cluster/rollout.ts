@@ -21,6 +21,7 @@ export type RolloutOutcome =
 	| "paused"
 	| "unreachable"
 	| "unversioned"
+	| "migrationsUnknown"
 	| "current"
 	| "waiting"
 	| "updated"
@@ -326,7 +327,16 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 			return "current";
 		}
 
-		const applied = await deps.appliedMigrations();
+		const applied = await deps.appliedMigrations().catch((error: unknown) => {
+			deps.log.error({ err: error, version: target.version }, "rollout.migrationCountFailed");
+
+			return null;
+		});
+
+		if (applied === null) {
+			return "migrationsUnknown";
+		}
+
 		const migrates = target.migrations !== null && target.migrations > applied;
 		const mainFirst = target.migrations === null || migrates;
 		const selfBehind = behind.some((node) => node.id === deps.self);

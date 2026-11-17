@@ -82,6 +82,7 @@ export type ClusterNode = {
 	order: (order: ClusterOrder) => Promise<void>;
 	becameMain: () => Promise<void>;
 	releasedMain: () => void;
+	checkForUpdate: () => void;
 	mayTakeMain: () => Promise<boolean>;
 	inviteToMain: (target: string) => void;
 	stop: () => Promise<void>;
@@ -808,6 +809,11 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 		},
 		releasedMain: () => {
 			control?.dropLinks();
+		},
+		checkForUpdate: () => {
+			void rollout
+				?.tick()
+				.catch((error: unknown) => log.error({ err: error }, "rollout.tickFailed"));
 		},
 		mayTakeMain,
 		inviteToMain: (target) => {

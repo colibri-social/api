@@ -47,7 +47,7 @@ describe("waitForMigrations", () => {
 	});
 
 	it("returns at once on a migrated database", async () => {
-		const log = { info: vi.fn() };
+		const log = { info: vi.fn(), warn: vi.fn() };
 		const sleep = vi.fn(async () => {});
 
 		await waitForMigrations(database, log, { sleep });
@@ -59,7 +59,7 @@ describe("waitForMigrations", () => {
 	it("waits until the main node applied every known migration", async () => {
 		const known = knownMigrations(database.dialect);
 		const counts = [known - 1, known - 1, known];
-		const log = { info: vi.fn() };
+		const log = { info: vi.fn(), warn: vi.fn() };
 		const sleep = vi.fn(async () => {});
 
 		await waitForMigrations(database, log, {
@@ -74,13 +74,35 @@ describe("waitForMigrations", () => {
 		);
 	});
 
+	it("keeps waiting when counting the migrations fails", async () => {
+		const known = knownMigrations(database.dialect);
+		const failure = new Error("connection refused");
+		const counts: (() => Promise<number>)[] = [
+			async () => {
+				throw failure;
+			},
+			async () => known,
+		];
+		const log = { info: vi.fn(), warn: vi.fn() };
+		const sleep = vi.fn(async () => {});
+
+		await waitForMigrations(database, log, {
+			applied: () => counts.shift()?.() ?? Promise.resolve(known),
+			sleep,
+		});
+
+		expect(sleep).toHaveBeenCalledTimes(1);
+		expect(log.warn).toHaveBeenCalledWith({ err: failure }, "migrations.countFailed");
+		expect(log.info).not.toHaveBeenCalled();
+	});
+
 	it("starts an older node against a newer schema", async () => {
 		const known = knownMigrations(database.dialect);
 		const sleep = vi.fn(async () => {});
 
 		await waitForMigrations(
 			database,
-			{ info: vi.fn() },
+			{ info: vi.fn(), warn: vi.fn() },
 			{
 				applied: async () => known + 1,
 				sleep,

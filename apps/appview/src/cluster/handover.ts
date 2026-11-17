@@ -33,13 +33,91 @@ export type Handover = {
 	tick: () => Promise<HandoverOutcome>;
 };
 
-export const ready = (node: NodeRow, version: string, now: number): boolean => {
+type ParsedVersion = { core: number[]; prerelease: string[] };
+
+const VERSION_PATTERN = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
+
+const parseVersion = (version: string): ParsedVersion | null => {
+	const match = VERSION_PATTERN.exec(version);
+
+	if (!match) {
+		return null;
+	}
+
+	return {
+		core: [Number(match[1]), Number(match[2]), Number(match[3])],
+		prerelease: match[4]?.split(".") ?? [],
+	};
+};
+
+const compareIdentifiers = (a: string, b: string): number => {
+	const numericA = /^\d+$/.test(a);
+	const numericB = /^\d+$/.test(b);
+
+	if (numericA && numericB) {
+		return Number(a) - Number(b);
+	}
+
+	if (numericA !== numericB) {
+		return numericA ? -1 : 1;
+	}
+
+	return a < b ? -1 : a > b ? 1 : 0;
+};
+
+const comparePrerelease = (a: string[], b: string[]): number => {
+	if (a.length === 0 || b.length === 0) {
+		return b.length - a.length;
+	}
+
+	for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+		const order = compareIdentifiers(a[index] ?? "", b[index] ?? "");
+
+		if (order !== 0) {
+			return order;
+		}
+	}
+
+	return a.length - b.length;
+};
+
+export const compareVersions = (a: string, b: string): number | null => {
+	const left = parseVersion(a);
+	const right = parseVersion(b);
+
+	if (!left || !right) {
+		return null;
+	}
+
+	for (let index = 0; index < 3; index += 1) {
+		const order = (left.core[index] ?? 0) - (right.core[index] ?? 0);
+
+		if (order !== 0) {
+			return Math.sign(order);
+		}
+	}
+
+	return Math.sign(comparePrerelease(left.prerelease, right.prerelease));
+};
+
+export const sameOrNewer = (version: string, base: string): boolean => {
+	return version === base || (compareVersions(version, base) ?? -1) >= 0;
+};
+
+const live = (node: NodeRow, now: number): boolean => {
 	return (
 		node.state === "active" &&
-		node.version === version &&
 		node.heartbeatAt !== null &&
 		new Date(node.heartbeatAt).getTime() > now - PEER_HEARTBEAT_WINDOW_MS
 	);
+};
+
+export const ready = (node: NodeRow, version: string, now: number): boolean => {
+	return live(node, now) && node.version === version;
+};
+
+export const readyOnOrAfter = (node: NodeRow, version: string, now: number): boolean => {
+	return live(node, now) && sameOrNewer(node.version, version);
 };
 
 export const takeoverCandidate = (
@@ -97,7 +175,9 @@ export const createHandover = (deps: HandoverDeps): Handover => {
 			const at = now();
 			const preferred = (await deps.registry.list()).find(
 				(node) =>
-					node.id !== deps.self && node.roles.includes("main") && ready(node, deps.version, at),
+					node.id !== deps.self &&
+					node.roles.includes("main") &&
+					readyOnOrAfter(node, deps.version, at),
 			);
 
 			if (!preferred) {

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AnsibleRunner, PlaybookRun } from "./ansible.js";
+import { createHandover } from "./handover.js";
 import type { NodeRow } from "./registry.js";
 import { createRollout, type RolloutDeps, rolloutOrder } from "./rollout.js";
 
@@ -420,5 +421,108 @@ describe("createRollout", () => {
 
 		expect(await createRollout(deps).tick()).toBe("busy");
 		expect(runs).toEqual([]);
+	});
+
+	it("reports a failed migration count and leaves the nodes alone", async () => {
+		const failure = new Error("connection refused");
+		const { deps, runs, paused } = setup(
+			[row("hel-1", { roles: ["main", "api"], version: "2.0.0" }), row("eu-2")],
+			{
+				appliedMigrations: async () => {
+					throw failure;
+				},
+			},
+		);
+
+		expect(await createRollout(deps).tick()).toBe("migrationsUnknown");
+		expect(runs).toEqual([]);
+		expect(paused()).toBe(false);
+		expect(deps.log.error).toHaveBeenCalledWith(
+			{ err: failure, version: "2.0.0" },
+			"rollout.migrationCountFailed",
+		);
+	});
+});
+
+describe("a release with migrations while the failover node holds main", () => {
+	it("hands main back to the updated main node, which then updates the other nodes", async () => {
+		let applied = 41;
+		let holder = "hel-1";
+		const { deps, table, runs } = setup(
+			[
+				row("hel-1", { roles: ["main", "api"] }),
+				row("fsn-1", { roles: ["failover", "api"] }),
+				row("eu-2"),
+			],
+			{
+				appliedMigrations: async () => applied,
+				active: () => holder === "hel-1",
+				yieldMain: vi.fn(async () => true),
+			},
+		);
+		const now = deps.now ?? Date.now;
+
+		const heartbeat = () => {
+			for (const [id, node] of table) {
+				table.set(id, { ...node, heartbeatAt: new Date(now()).toISOString() });
+			}
+		};
+
+		const advance = async (ms: number) => {
+			await deps.sleep?.(ms);
+			heartbeat();
+		};
+
+		expect(await createRollout(deps).tick()).toBe("restarting");
+		expect(runs.map((run) => run.host)).toEqual(["hel-1.tail"]);
+		expect(deps.yieldMain).not.toHaveBeenCalled();
+
+		holder = "fsn-1";
+		table.set("hel-1", { ...row("hel-1", { roles: ["main", "api"] }), version: "2.0.0" });
+		applied = 42;
+		heartbeat();
+
+		const yieldMain = vi.fn(async (target: string) => {
+			holder = target;
+
+			return true;
+		});
+		const failoverHandover = createHandover({
+			registry: { list: async () => [...table.values()] },
+			self: "fsn-1",
+			version: "1.0.0",
+			yieldMain,
+			busy: () => false,
+			log: { info: vi.fn(), warn: vi.fn() },
+			now,
+			stableMs: 120_000,
+		});
+
+		expect(await failoverHandover.tick()).toBe("waiting");
+
+		await advance(60_000);
+
+		expect(await failoverHandover.tick()).toBe("waiting");
+
+		await advance(60_000);
+
+		expect(await failoverHandover.tick()).toBe("handedBack");
+		expect(yieldMain).toHaveBeenCalledWith("hel-1");
+		expect(holder).toBe("hel-1");
+
+		runs.length = 0;
+
+		expect(await createRollout(deps).tick()).toBe("updated");
+		expect(runs.map((run) => run.host)).toEqual([
+			"eu-2.tail",
+			"eu-2.tail",
+			"fsn-1.tail",
+			"fsn-1.tail",
+		]);
+		expect([...table.values()].map((node) => [node.id, node.version])).toEqual([
+			["hel-1", "2.0.0"],
+			["fsn-1", "2.0.0"],
+			["eu-2", "2.0.0"],
+		]);
 	});
 });

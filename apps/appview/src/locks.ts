@@ -45,7 +45,7 @@ export const migrateUnderLock = async (database: Database): Promise<boolean> => 
 
 export const waitForMigrations = async (
 	database: Database,
-	log: Pick<Logger, "info">,
+	log: Pick<Logger, "info" | "warn">,
 	options: WaitForMigrationsOptions = {},
 ): Promise<void> => {
 	const known = knownMigrations(database.dialect);
@@ -54,13 +54,20 @@ export const waitForMigrations = async (
 		options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 
 	for (;;) {
-		const count = await applied();
+		const count = await applied().catch((error: unknown) => {
+			log.warn({ err: error }, "migrations.countFailed");
 
-		if (count >= known) {
+			return null;
+		});
+
+		if (count !== null && count >= known) {
 			return;
 		}
 
-		log.info({ applied: count, known }, "migrations.waitingForMain");
+		if (count !== null) {
+			log.info({ applied: count, known }, "migrations.waitingForMain");
+		}
+
 		await sleep(MIGRATION_WAIT_MS);
 	}
 };

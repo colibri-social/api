@@ -478,6 +478,7 @@ const main = async (): Promise<void> => {
 				?.becameMain()
 				.catch((error: unknown) => ctx.log.warn({ err: error }, "cluster.claimMainFailed"));
 			mainJobs = await startMainJobs(ctx, events);
+			cluster?.checkForUpdate();
 		},
 		onReleasing: async () => {
 			holdsMain = false;

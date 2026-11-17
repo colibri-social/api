@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { createHandover, shouldDefer, takeoverCandidate } from "./handover.js";
+import {
+	compareVersions,
+	createHandover,
+	sameOrNewer,
+	shouldDefer,
+	takeoverCandidate,
+} from "./handover.js";
 import type { NodeRow } from "./registry.js";
 
 const NOW = Date.parse("2026-11-11T12:00:00Z");
@@ -114,7 +120,7 @@ describe("createHandover", () => {
 		expect(yieldMain).not.toHaveBeenCalled();
 	});
 
-	it("waits for a main node on the same version", async () => {
+	it("keeps main while the main node runs an older version", async () => {
 		const { handover, yieldMain, advance } = setup([
 			row("hel-1", { roles: ["main"], version: "1.9.0" }),
 		]);
@@ -124,6 +130,56 @@ describe("createHandover", () => {
 
 		expect(await handover.tick()).toBe("none");
 		expect(yieldMain).not.toHaveBeenCalled();
+	});
+
+	it("hands main back to a main node that already runs a newer version", async () => {
+		const { handover, yieldMain, advance } = setup([
+			row("fsn-1", { roles: ["failover"] }),
+			row("hel-1", { roles: ["main", "api"], version: "2.1.0" }),
+		]);
+
+		expect(await handover.tick()).toBe("waiting");
+
+		advance(120_000);
+
+		expect(await handover.tick()).toBe("handedBack");
+		expect(yieldMain).toHaveBeenCalledWith("hel-1");
+	});
+
+	it("never hands main to a node whose version doesn't parse", async () => {
+		const { handover, yieldMain, advance } = setup([
+			row("hel-1", { roles: ["main"], version: "nightly" }),
+		]);
+
+		await handover.tick();
+		advance(300_000);
+
+		expect(await handover.tick()).toBe("none");
+		expect(yieldMain).not.toHaveBeenCalled();
+	});
+});
+
+describe("compareVersions", () => {
+	it("orders versions by semver precedence", () => {
+		expect(compareVersions("2.0.0", "2.0.0")).toBe(0);
+		expect(compareVersions("2.0.1", "2.0.0")).toBe(1);
+		expect(compareVersions("2.10.0", "2.9.0")).toBe(1);
+		expect(compareVersions("1.9.9", "2.0.0")).toBe(-1);
+		expect(compareVersions("v2.0.0", "2.0.0")).toBe(0);
+		expect(compareVersions("2.0.0-beta.2", "2.0.0-beta.10")).toBe(-1);
+		expect(compareVersions("2.0.0-beta.1", "2.0.0")).toBe(-1);
+		expect(compareVersions("2.0.0-alpha", "2.0.0-alpha.1")).toBe(-1);
+		expect(compareVersions("2.0.0-1", "2.0.0-alpha")).toBe(-1);
+		expect(compareVersions("2.0.0+build.5", "2.0.0")).toBe(0);
+		expect(compareVersions("latest", "2.0.0")).toBeNull();
+	});
+
+	it("treats only equal or higher versions as the same or newer", () => {
+		expect(sameOrNewer("2.0.0", "2.0.0")).toBe(true);
+		expect(sameOrNewer("2.1.0", "2.0.0")).toBe(true);
+		expect(sameOrNewer("1.9.0", "2.0.0")).toBe(false);
+		expect(sameOrNewer("dev", "dev")).toBe(true);
+		expect(sameOrNewer("dev", "2.0.0")).toBe(false);
 	});
 });
 

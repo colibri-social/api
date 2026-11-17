@@ -49,18 +49,36 @@ export const acceptsWrites = async ({ primary, dialect }: Database): Promise<boo
 
 export const appliedMigrations = async ({ primary, dialect }: Database): Promise<number> => {
 	if (dialect === "postgres") {
-		const result = await (
-			primary as unknown as { execute: (query: SQL) => Promise<{ rows: { count: string }[] }> }
-		)
-			.execute(sql`select count(*) as count from drizzle.__drizzle_migrations`)
-			.catch(() => ({ rows: [{ count: "0" }] }));
+		const executor = primary as unknown as {
+			execute: (query: SQL) => Promise<{ rows: Record<string, unknown>[] }>;
+		};
+		const table = await executor.execute(
+			sql`select to_regclass('drizzle.__drizzle_migrations') is not null as present`,
+		);
+
+		if (table.rows[0]?.present !== true) {
+			return 0;
+		}
+
+		const result = await executor.execute(
+			sql`select count(*) as count from drizzle.__drizzle_migrations`,
+		);
 
 		return Number(result.rows[0]?.count ?? 0);
 	}
 
-	const row = await (primary as unknown as { get: (query: SQL) => Promise<{ count: number }> })
-		.get(sql`select count(*) as count from __drizzle_migrations`)
-		.catch(() => ({ count: 0 }));
+	const reader = primary as unknown as {
+		get: (query: SQL) => Promise<{ count: number } | undefined>;
+	};
+	const table = await reader.get(
+		sql`select count(*) as count from sqlite_master where type = 'table' and name = '__drizzle_migrations'`,
+	);
+
+	if (Number(table?.count ?? 0) === 0) {
+		return 0;
+	}
+
+	const row = await reader.get(sql`select count(*) as count from __drizzle_migrations`);
 
 	return Number(row?.count ?? 0);
 };
