@@ -1,5 +1,13 @@
 # @colibri-social/notifications
 
+## 1.12.1
+
+### Patch Changes
+
+- Updated dependencies [c35ee92]
+  - @colibri-social/appview-db@0.25.1
+  - @colibri-social/projections@1.16.1
+
 ## 1.12.0
 
 ### Minor Changes

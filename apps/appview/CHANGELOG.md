@@ -1,5 +1,17 @@
 # @colibri-social/appview
 
+## 2.41.8
+
+### Patch Changes
+
+- 33853e8: Log a `polyfill.uploadRejected` warning when `social.colibri.beta.polyfill.uploadBlob` answers with an error status. The warning records the response body, the request's content headers, the node that handled it, and the node that forwarded it
+- c35ee92: Hand the main role back from the failover node to a main node on the same or a newer version, and check for an update when a node takes the main role, so a release with migrations reaches every node
+- Updated dependencies [c35ee92]
+  - @colibri-social/appview-db@0.25.1
+  - @colibri-social/community@2.17.2
+  - @colibri-social/notifications@1.12.1
+  - @colibri-social/projections@1.16.1
+
 ## 2.41.7
 
 ### Patch Changes
