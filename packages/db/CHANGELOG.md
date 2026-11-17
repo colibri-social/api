@@ -1,5 +1,11 @@
 # @colibri-social/appview-db
 
+## 0.25.1
+
+### Patch Changes
+
+- c35ee92: Report a failed migration count to the caller, and count zero only when the migrations table doesn't exist yet
+
 ## 0.25.0
 
 ### Minor Changes
