@@ -1,0 +1,32 @@
+globe: colibri
+
+pds:
+  - name: alpha
+    image: ghcr.io/bluesky-social/atproto:pds-spaces-alpha
+    invites: required
+    bare_handles: true
+
+services:
+  jetstream: true
+  slingshot: true
+  pdsls: true
+
+lexicons:
+  authority: alpha
+  publish: packages/lexicons/lexicons/social
+
+accounts:
+  - alice@alpha
+  - bob@alpha
+
+apps:
+  - name: appview
+    local: { port: 3000 }
+    env:
+      APPVIEW_DID: did:web:${apps.appview.host}
+      PUBLIC_URL: ${apps.appview.url}
+      PDS_URL: ${pds.alpha.url}
+      PLC_URL: ${services.plc.url}
+      JETSTREAM_URL: wss://jetstream.${domain}
+      COMMUNITY_HANDLE_DOMAIN: ${domain}
+      CORS_ORIGINS: http://127.0.0.1:5173
