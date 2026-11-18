@@ -1,5 +1,16 @@
 # @colibri-social/appview
 
+## 2.41.9
+
+### Patch Changes
+
+- bb5fbb6: List every collection of the preferences space and the voice channel space in their lexicons, drop `voiceSelfState` from the client frames in the events socket description, remove the unused `MESSAGE_RETENTION_DAYS` and `ADMIN_PASSWORD` settings, require Node 24.22.3, and move the README's guides to the documentation site.
+- Updated dependencies [bb5fbb6]
+  - @colibri-social/lexicons@2.39.1
+  - @colibri-social/community@2.17.3
+  - @colibri-social/notifications@1.12.2
+  - @colibri-social/projections@1.16.2
+
 ## 2.41.8
 
 ### Patch Changes

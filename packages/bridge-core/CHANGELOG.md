@@ -1,5 +1,12 @@
 # @colibri-social/bridge-core
 
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies [bb5fbb6]
+  - @colibri-social/lexicons@2.39.1
+
 ## 0.3.0
 
 ### Minor Changes
