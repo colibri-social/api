@@ -10,7 +10,7 @@ type $nsid = typeof $nsid;
 
 export { $nsid };
 
-/** A user's own Colibri settings, mutes, blocks and read state. */
-const main = /*#__PURE__*/ l.space("literal:self", $nsid, ["social.colibri.beta.actor.block","social.colibri.beta.actor.mute","social.colibri.beta.actor.settings","social.colibri.beta.channel.read"], {"title":"Colibri preferences"});
+/** A user's own Colibri settings, client preferences, composer state, mutes, blocks, per-Space notification and moderation preferences, emoji follows and read state. */
+const main = /*#__PURE__*/ l.space("literal:self", $nsid, ["social.colibri.beta.actor.block","social.colibri.beta.actor.clientPreferences","social.colibri.beta.actor.composerState","social.colibri.beta.actor.mute","social.colibri.beta.actor.settings","social.colibri.beta.actor.spaceModeration","social.colibri.beta.actor.spaceNotification","social.colibri.beta.channel.read","social.colibri.beta.emoji.follow"], {"title":"Colibri preferences"});
 
 export { main };

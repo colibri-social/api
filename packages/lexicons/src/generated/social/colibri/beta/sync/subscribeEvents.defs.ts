@@ -19,7 +19,7 @@ export const $message = /*#__PURE__*/ l.typedUnion([/*#__PURE__*/ l.typedRef<Syn
 
 export type $Message = l.InferOutput<typeof $message>;
 
-/** Live updates for one account over a WebSocket. Frames are JSON text, each an object tagged with $type. The client sends the social.colibri.beta.sync.defs frames subscribe, unsubscribe, heartbeat, typing, viewChannel, activity, wroteTo, setPresence and voiceSelfState. The connection is sent nothing for a community or channel it did not subscribe to. */
+/** Live updates for one account over a WebSocket. Frames are JSON text, each an object tagged with $type. The client sends the social.colibri.beta.sync.defs frames subscribe, unsubscribe, heartbeat, typing, viewChannel, activity, wroteTo and setPresence. The connection is sent nothing for a community or channel it did not subscribe to. */
 const main = /*#__PURE__*/ l.subscription($nsid, $params, $message, ["AuthRequired"]);
 
 export { main };

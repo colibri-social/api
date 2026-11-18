@@ -32,10 +32,10 @@ Then read the diff. A re-vendor is a protocol change and needs a changeset.
 
 ## Space types
 
-Seven, each a lexicon whose `main` is `"type": "space"`. The `name` field is
-what an OAuth consent screen shows a user, so it is written for people, not
-developers. Which space holds what is at
-[the docs](https://colibri.social/docs/architecture/communities#six-spaces).
+Eight, each a lexicon whose `main` is `"type": "space"`. The `name` field is
+what an OAuth consent screen shows a user, so it is written in plain language.
+[Colibri Spaces](https://colibri.social/docs/developers/architecture/communities#space-types)
+lists which space holds what.
 
 A channel is a space. The space key is the channel's identity and its
 configuration is the record at key `self` inside it, which is why the channel

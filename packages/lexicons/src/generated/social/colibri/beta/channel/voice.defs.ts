@@ -10,7 +10,7 @@ type $nsid = typeof $nsid;
 
 export { $nsid };
 
-/** A voice channel. Holds only its own configuration record, because call state is off-protocol. */
-const main = /*#__PURE__*/ l.space("tid", $nsid, ["social.colibri.beta.channel"], {"title":"Colibri voice channel"});
+/** A voice channel. Holds its configuration record and the messages, reactions and labels of its text chat. Call state is off-protocol. */
+const main = /*#__PURE__*/ l.space("tid", $nsid, ["social.colibri.beta.channel","social.colibri.beta.message","social.colibri.beta.reaction","social.colibri.beta.label"], {"title":"Colibri voice channel"});
 
 export { main };

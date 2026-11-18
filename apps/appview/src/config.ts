@@ -164,7 +164,6 @@ export const configSchema = z.object({
 	KUMA_IMAGE: z.string().trim().min(1).default("louislam/uptime-kuma:2.5.7-slim"),
 	DRAIN_GRACE_MINUTES: z.coerce.number().nonnegative().default(120),
 	WRITE_QUEUE_SECONDS: z.coerce.number().int().nonnegative().default(90),
-	MESSAGE_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(180),
 
 	PDS_URL: z.url(),
 	HOST_OAUTH_PRIVATE_KEY: optionalString,
@@ -284,7 +283,6 @@ export const configSchema = z.object({
 	METRICS_HOST: z.string().trim().min(1).default("127.0.0.1"),
 	METRICS_PORT: z.coerce.number().int().min(0).max(65535).default(9464),
 	COLIBRI_TELEMETRY_URL: z.url().default("https://telemetry.colibri.social/v1/heartbeat"),
-	ADMIN_PASSWORD: optionalString,
 
 	COLIBRI_TELEMETRY_DISABLED: optOut,
 	DO_NOT_TRACK: optOut,

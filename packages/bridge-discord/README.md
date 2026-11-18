@@ -21,5 +21,5 @@ Channel, Send Messages, Read Message History, Manage Webhooks, Add Reactions, Cr
 Threads, Send Messages in Threads and Manage Threads. Moderation mirroring also needs Manage
 Messages. Server admins pair it with `/colibri connect`.
 
-- [Pairing a Bridge](https://colibri.social/docs/bridges/pairing)
-- [Building a Bridge](https://colibri.social/docs/bridges/building-a-bridge)
+- [Pairing a Bridge](https://colibri.social/docs/users/bridges/pairing)
+- [Building a Bridge](https://colibri.social/docs/developers/bridges/building-a-bridge)

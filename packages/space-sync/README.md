@@ -36,4 +36,4 @@ unrecognised error is never allowed to mean "gone".
 ## Seeing it in context
 
 Colibri's own write-up of this algorithm is in
-[the docs](https://colibri.social/docs/architecture/sync).
+[the docs](https://colibri.social/docs/developers/architecture/sync).

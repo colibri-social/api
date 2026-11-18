@@ -75,4 +75,4 @@ read both forms and validate their parts.
 ## Seeing it in context
 
 Colibri's own write-up of the credential flow is in
-[the docs](https://colibri.social/docs/architecture/spaces#getting-a-credential).
+[the docs](https://colibri.social/docs/developers/architecture/spaces#getting-a-credential).
