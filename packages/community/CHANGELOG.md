@@ -1,5 +1,11 @@
 # @colibri-social/community
 
+## 2.17.4
+
+### Patch Changes
+
+- c1f957d: Fixes a server error when a bridge reports its room list twice at the same time
+
 ## 2.17.3
 
 ### Patch Changes
