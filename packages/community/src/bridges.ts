@@ -20,7 +20,7 @@ import {
 	tryParseSpaceRef,
 	trySpaceRecordUri,
 } from "@colibri-social/space";
-import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, notInArray } from "drizzle-orm";
 import type { CommunityLoader } from "./loader.js";
 import type { BlobRef, CommunityWriter } from "./writes.js";
 
@@ -563,19 +563,13 @@ export class Bridges {
 		const { db, tables } = this.deps;
 		const updatedAt = this.now().toISOString();
 		await db.transaction(async (tx) => {
-			await tx
-				.delete(tables.bridgeRemoteRooms)
-				.where(
-					and(
-						eq(tables.bridgeRemoteRooms.community, key.community),
-						eq(tables.bridgeRemoteRooms.registration, key.registration),
-					),
-				);
 			const seen = new Set<string>();
+
 			for (const [position, room] of rooms.entries()) {
 				if (seen.has(room.id)) continue;
 				seen.add(room.id);
-				await tx.insert(tables.bridgeRemoteRooms).values({
+
+				const row = {
 					community: key.community,
 					registration: key.registration,
 					remoteRoom: room.id,
@@ -584,8 +578,33 @@ export class Bridges {
 					parent: room.parent ?? null,
 					position,
 					updatedAt,
-				});
+				};
+
+				await tx
+					.insert(tables.bridgeRemoteRooms)
+					.values(row)
+					.onConflictDoUpdate({
+						target: [
+							tables.bridgeRemoteRooms.community,
+							tables.bridgeRemoteRooms.registration,
+							tables.bridgeRemoteRooms.remoteRoom,
+						],
+						set: row,
+					});
 			}
+
+			const registrationRows = and(
+				eq(tables.bridgeRemoteRooms.community, key.community),
+				eq(tables.bridgeRemoteRooms.registration, key.registration),
+			);
+
+			await tx
+				.delete(tables.bridgeRemoteRooms)
+				.where(
+					seen.size === 0
+						? registrationRows
+						: and(registrationRows, notInArray(tables.bridgeRemoteRooms.remoteRoom, [...seen])),
+				);
 		});
 	}
 

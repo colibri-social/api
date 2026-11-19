@@ -223,6 +223,35 @@ describe("links", () => {
 		const rooms = await bridges.remoteRooms(keyOf(registration));
 		expect(rooms.map((room) => room.remoteRoom)).toEqual(["room-2"]);
 	});
+
+	it("updates a remote room the bridge reports again", async () => {
+		const registration = await paired();
+
+		await bridges.putRemoteRooms(BRIDGE, keyOf(registration), [
+			{ id: "room-1", name: "general" },
+			{ id: "room-2", name: "random" },
+		]);
+		await bridges.putRemoteRooms(BRIDGE, keyOf(registration), [
+			{ id: "room-2", name: "off-topic", kind: "text" },
+			{ id: "room-1", name: "general" },
+		]);
+
+		const rooms = await bridges.remoteRooms(keyOf(registration));
+
+		expect(rooms).toMatchObject([
+			{ remoteRoom: "room-2", name: "off-topic", kind: "text", position: 0 },
+			{ remoteRoom: "room-1", name: "general", position: 1 },
+		]);
+	});
+
+	it("clears the remote rooms when a bridge reports none", async () => {
+		const registration = await paired();
+
+		await bridges.putRemoteRooms(BRIDGE, keyOf(registration), [{ id: "room-1", name: "general" }]);
+		await bridges.putRemoteRooms(BRIDGE, keyOf(registration), []);
+
+		expect(await bridges.remoteRooms(keyOf(registration))).toEqual([]);
+	});
 });
 
 describe("bridged messages", () => {
