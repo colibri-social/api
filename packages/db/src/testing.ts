@@ -24,6 +24,33 @@ const withAdmin = async (url: string, statement: string): Promise<void> => {
 	}
 };
 
+const BACKEND_EXIT_TIMEOUT_MS = 5_000;
+const BACKEND_EXIT_POLL_MS = 25;
+
+const waitForBackendsToExit = async (adminUrl: string, name: string): Promise<void> => {
+	const admin = new pg.Client({ connectionString: adminUrl });
+	const deadline = Date.now() + BACKEND_EXIT_TIMEOUT_MS;
+
+	await admin.connect();
+
+	try {
+		while (Date.now() < deadline) {
+			const { rows } = await admin.query<{ count: number }>(
+				"select count(*)::int as count from pg_stat_activity where datname = $1",
+				[name],
+			);
+
+			if (rows[0]?.count === 0) {
+				return;
+			}
+
+			await new Promise((resolve) => setTimeout(resolve, BACKEND_EXIT_POLL_MS));
+		}
+	} finally {
+		await admin.end();
+	}
+};
+
 const openPostgresTestDatabase = async (
 	adminUrl: string,
 	migrate: (database: Database) => Promise<void>,
@@ -44,6 +71,7 @@ const openPostgresTestDatabase = async (
 		url: url.toString(),
 		destroy: async () => {
 			await database.close();
+			await waitForBackendsToExit(adminUrl, name);
 			await withAdmin(adminUrl, `drop database if exists ${name} with (force)`);
 		},
 	};
