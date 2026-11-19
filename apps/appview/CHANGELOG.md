@@ -1,5 +1,13 @@
 # @colibri-social/appview
 
+## 2.41.10
+
+### Patch Changes
+
+- c1f957d: Fixes a server error when a bridge reports its room list twice at the same time
+- Updated dependencies [c1f957d]
+  - @colibri-social/community@2.17.4
+
 ## 2.41.9
 
 ### Patch Changes
