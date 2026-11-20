@@ -1,7 +1,17 @@
 import { COLLECTIONS, communitySpaces, SELF, SPACE_TYPES } from "@colibri-social/lexicons";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createHarness, type Harness, type UserFixture, unique, waitForPds } from "./harness.js";
+import {
+	createHarness,
+	type Harness,
+	pdsUrl,
+	type UserFixture,
+	unique,
+	waitForPds,
+} from "./harness.js";
+
+const ONE_PIXEL_PNG =
+	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
 let harness: Harness;
 let founder: UserFixture;
@@ -49,18 +59,13 @@ describe("provisioning a community", () => {
 		expect(uris).toContain(textChannel);
 	});
 
-	it("makes the profile space publicly readable and the rest managed by this AppView", async () => {
+	it("manages every community space through this AppView, the profile included", async () => {
 		const session = await harness.credentials.session(community);
-		const spaces = communitySpaces(community);
 
-		const profile = await harness.pds.getSpace(session, spaces.profile);
-		expect(profile.policy).toMatchObject({
-			$type: "com.atproto.memberspace.policy",
-			publicRead: true,
-		});
-
-		const members = await harness.pds.getSpace(session, spaces.members);
-		expect(members.policy.$type).toBe("com.atproto.managedspace.policy");
+		for (const space of Object.values(communitySpaces(community))) {
+			const { policy } = await harness.pds.getSpace(session, space);
+			expect(policy.$type).toBe("com.atproto.managedspace.policy");
+		}
 	});
 
 	it("seeds the community so it is usable immediately", async () => {
@@ -90,6 +95,41 @@ describe("provisioning a community", () => {
 		expect(channels.map((channel) => channel.spaceType).sort()).toEqual(
 			[SPACE_TYPES.channelText, SPACE_TYPES.channelVoice].sort(),
 		);
+	});
+
+	it("indexes and serves a picture from the members-only profile space", async () => {
+		const profile = communitySpaces(community).profile;
+		const bytes = Buffer.from(ONE_PIXEL_PNG, "base64");
+		const picture = await harness.writer.uploadBlob(community, bytes, "image/png");
+
+		await harness.writer.put(community, {
+			space: profile,
+			collection: COLLECTIONS.community,
+			rkey: SELF,
+			record: {
+				$type: COLLECTIONS.community,
+				name: "Integration community",
+				description: "created by the integration suite",
+				managingApp: harness.appviewDid,
+				picture,
+			},
+		});
+		await harness.syncSpace(profile);
+
+		const [row] = await harness.database.db
+			.select()
+			.from(harness.database.tables.communities)
+			.where(eq(harness.database.tables.communities.did, community));
+		expect(row?.pictureCid).toBe(picture.ref.$link);
+
+		const response = await harness.spaceClient.getBlob(
+			profile,
+			pdsUrl,
+			community,
+			picture.ref.$link,
+		);
+		expect(response.status).toBe(200);
+		expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
 	});
 
 	it("gives the founder an owner role that holds every permission", async () => {

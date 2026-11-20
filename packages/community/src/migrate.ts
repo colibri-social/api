@@ -10,7 +10,7 @@ import {
 	spaceUri,
 } from "@colibri-social/lexicons";
 import { messageFutureRefusal } from "@colibri-social/projections";
-import { managedspacePolicy, memberspacePolicy, type PdsClient } from "@colibri-social/space";
+import { managedspacePolicy, type PdsClient } from "@colibri-social/space";
 import type { CommunityCredentials } from "./credentials.js";
 import type { SpaceRegistry } from "./spaces.js";
 import type { CommunityWriter } from "./writes.js";
@@ -433,10 +433,7 @@ export const migrateCommunity = async (
 			.createSpace(host.session, {
 				spaceType: type,
 				skey,
-				policy:
-					type === SPACE_TYPES.communityProfile
-						? memberspacePolicy({ publicRead: true })
-						: managedspacePolicy(deps.appviewService),
+				policy: managedspacePolicy(deps.appviewService),
 			})
 			.catch((error: unknown) => {
 				const message = error instanceof Error ? error.message : String(error);

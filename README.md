@@ -28,7 +28,7 @@ The AT Protocol AppView behind [colibri.social](https://colibri.social). It serv
 
 ## Quick start
 
-Requires Node.js `>=24.22.3` and pnpm `10.33.3`. Run `corepack enable` to get the pinned pnpm version.
+Requires Node.js `>=24.22.3` and pnpm `12.21.0`. Run `corepack enable` to get the pinned pnpm version.
 
 ```sh
 git clone https://github.com/colibri-social/api.git

@@ -26,7 +26,6 @@ import { migrationJobs } from "./migrations.js";
 import { NotificationPruner } from "./notification-prune.js";
 import { connectPipeline } from "./pipeline.js";
 import { PolyfillBlobSweeper } from "./polyfill/blobs.js";
-import { healProfilePolicies } from "./profile-policies.js";
 import { resyncBrokenCids } from "./resync-broken-cids.js";
 import { resolveVersion } from "./routes/server.js";
 import { installFatalHandlers, startErrorReporting, stopErrorReporting } from "./sentry.js";
@@ -107,9 +106,6 @@ const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<Main
 	);
 	void healCategoryOrders(ctx).catch((error: unknown) =>
 		ctx.log.warn({ err: error }, "heal.categoryOrdersSweepFailed"),
-	);
-	void healProfilePolicies(ctx).catch((error: unknown) =>
-		ctx.log.warn({ err: error }, "heal.profilePoliciesSweepFailed"),
 	);
 	void resyncBrokenCids(ctx.database, ctx.sync, ctx.log).catch((error: unknown) =>
 		ctx.log.warn({ err: error }, "heal.brokenCidResyncFailed"),

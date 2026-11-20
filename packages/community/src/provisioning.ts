@@ -46,7 +46,7 @@ export type ProvisionRequest = {
 	name: string;
 	description?: string;
 	creator: string;
-	isPrivate?: boolean;
+	discoverable?: boolean;
 	requiresApprovalToJoin?: boolean;
 	overrideUserNameColors?: boolean;
 };
@@ -59,7 +59,7 @@ export type AdoptRequest = {
 	name: string;
 	description?: string;
 	creator: string;
-	isPrivate?: boolean;
+	discoverable?: boolean;
 	requiresApprovalToJoin?: boolean;
 };
 
@@ -121,8 +121,9 @@ export class CommunityProvisioner {
 		return this.deps.appviewService.split("#")[0] as string;
 	}
 
-	private policiesFor(spaceType: string, isPrivate: boolean): { policy: SpacePolicy } {
-		const profileIsPublic = spaceType === SPACE_TYPES.communityProfile && !isPrivate;
+	private policiesFor(spaceType: string, discoverable: boolean): { policy: SpacePolicy } {
+		const profileIsPublic = spaceType === SPACE_TYPES.communityProfile && discoverable;
+
 		return {
 			policy: profileIsPublic
 				? memberspacePolicy({ publicRead: true })
@@ -270,7 +271,7 @@ export class CommunityProvisioner {
 			name: string;
 			description?: string;
 			creator: string;
-			isPrivate?: boolean;
+			discoverable?: boolean;
 			requiresApprovalToJoin?: boolean;
 			overrideUserNameColors?: boolean;
 		},
@@ -278,14 +279,14 @@ export class CommunityProvisioner {
 		completed: number,
 	): Promise<Omit<ProvisionedCommunity, "did" | "handle">> {
 		const spaces = communitySpaces(community);
-		const isPrivate = request.isPrivate ?? false;
+		const discoverable = request.discoverable ?? false;
 
 		report("creatingSpaces", completed, community);
 		for (const spaceType of COMMUNITY_SPACE_TYPES) {
 			await host.pds.createSpace(host.session, {
 				spaceType,
 				skey: SELF,
-				...this.policiesFor(spaceType, isPrivate),
+				...this.policiesFor(spaceType, discoverable),
 			});
 			await this.deps.spaces.register({
 				uri: spaceUri(community, spaceType, SELF),

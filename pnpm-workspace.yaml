@@ -78,6 +78,8 @@ allowBuilds:
   "@libsql/client": true
   protobufjs: false
   "@sentry/cli": false
+  "@firebase/util": false
+  core-js: false
 
 # Semver ranks `0.0.0` above `0.0.0-spaces-alpha-*` because of course it does
 overrides:

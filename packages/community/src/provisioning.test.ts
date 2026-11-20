@@ -334,22 +334,37 @@ describe("adopting an existing account", () => {
 });
 
 describe("space policies", () => {
-	it("makes the profile readable by anyone and writable only by the community", async () => {
+	const managed = {
+		$type: "com.atproto.managedspace.policy",
+		managingApp: APPVIEW_SERVICE,
+	};
+
+	it("routes every space through this AppView, the profile included", async () => {
 		await adopt();
+
+		expect(createdSpaces.length).toBeGreaterThan(0);
+
+		for (const space of createdSpaces) {
+			expect(space.policy).toEqual(managed);
+		}
+	});
+
+	it("makes the profile readable by anyone when the community is discoverable", async () => {
+		await provisioner().adopt({
+			did: COMMUNITY,
+			pdsEndpoint: THEIRS,
+			identifier: "byo.example",
+			password: "hunter2",
+			name: "Brought My Own",
+			creator: CREATOR,
+			discoverable: true,
+		});
 		const profile = createdSpaces.find((space) => space.spaceType === SPACE_TYPES.communityProfile);
 
 		expect(profile?.policy).toEqual({
 			$type: "com.atproto.memberspace.policy",
 			publicRead: true,
 		});
-	});
-
-	it("routes every other space through this AppView", async () => {
-		await adopt();
-		const managed = {
-			$type: "com.atproto.managedspace.policy",
-			managingApp: APPVIEW_SERVICE,
-		};
 
 		for (const space of createdSpaces) {
 			if (space.spaceType === SPACE_TYPES.communityProfile) continue;

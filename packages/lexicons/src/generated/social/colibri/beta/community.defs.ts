@@ -10,7 +10,7 @@ type $nsid = typeof $nsid;
 
 export { $nsid };
 
-/** A community's public identity. Lives in the community's profile space, which is readable without membership unless the community is private. */
+/** A community's public identity. Lives in the community's profile space, which only members can read unless the community is discoverable. */
 type Main = { $type: "social.colibri.beta.community";
 
   /**
@@ -45,7 +45,7 @@ type Main = { $type: "social.colibri.beta.community";
 
 export type { Main };
 
-/** A community's public identity. Lives in the community's profile space, which is readable without membership unless the community is private. */
+/** A community's public identity. Lives in the community's profile space, which only members can read unless the community is discoverable. */
 const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"name":/*#__PURE__*/ l.string({"minLength":1,"maxLength":32}),"managingApp":/*#__PURE__*/ l.string({"format":"did"}),"description":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":256})),"picture":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.blob({"accept":["image/jpeg","image/png","image/gif","image/webp"],"maxSize":1048576})),"banner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.blob({"accept":["image/jpeg","image/png","image/gif","image/webp"],"maxSize":4194304})),"migratedFrom":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"at-uri"}))}));
 
 export { main };
