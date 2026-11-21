@@ -1,6 +1,6 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
 import { decideSpaceAccess } from "@colibri-social/community";
-import { com } from "@colibri-social/lexicons";
+import { COLLECTIONS, com } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import { publicRoute, route } from "../route.js";
 import type { RouteDeps } from "./types.js";
@@ -34,7 +34,7 @@ export const registerProtocolRoutes = ({ server, ctx, auth }: RouteDeps): void =
 			const authz = await ctx.loader.authz(space.authority, params.repo);
 			const { channel, thread } = await ctx.loader.spaceStates(space.uri, space.spaceType);
 
-			const decide = (access: "read" | "write") => {
+			const decide = (access: "read" | "write", collection?: string) => {
 				return decideSpaceAccess({
 					spaceType: space.spaceType,
 					authz,
@@ -42,11 +42,13 @@ export const registerProtocolRoutes = ({ server, ctx, auth }: RouteDeps): void =
 					channel,
 					thread,
 					access,
+					collection,
 				});
 			};
 
 			const read = decide("read");
-			const write = decide("write");
+			const posting = decide("write");
+			const write = posting.authorized ? posting : decide("write", COLLECTIONS.reaction);
 
 			ctx.log.debug(
 				{

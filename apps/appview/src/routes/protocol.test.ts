@@ -1,7 +1,8 @@
 import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createServer as createXrpcServer } from "@atproto/xrpc-server";
-import { communitySpaces } from "@colibri-social/lexicons";
+import type { ChannelState } from "@colibri-social/community";
+import { channelSpace, communitySpaces, SPACE_TYPES } from "@colibri-social/lexicons";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { authVerifiers } from "../auth.js";
 import type { AppContext } from "../context.js";
@@ -11,6 +12,7 @@ const COMMUNITY = "did:plc:communityxxxxxxxxxxxxxxxxxxx";
 const MEMBER = "did:plc:memberxxxxxxxxxxxxxxxxxxxxxx";
 const STRANGER = "did:plc:strangerxxxxxxxxxxxxxxxxxxxx";
 const MEMBERS_SPACE = communitySpaces(COMMUNITY).members;
+const CHANNEL_SPACE = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkchannel001");
 const TOKEN = "issued-token";
 const REV = "3mwcj3b6uak22";
 const NEXT_REV = "3mwcj3b6uak23";
@@ -26,6 +28,7 @@ type Calls = {
 let http: HttpServer;
 let base: string;
 let calls: Calls;
+let channelState: ChannelState | null;
 
 const contextFor = (): AppContext => {
 	return {
@@ -49,8 +52,9 @@ const contextFor = (): AppContext => {
 				isBanned: false,
 				member: actor === MEMBER ? {} : null,
 				roles: [],
+				baseline: ["channel.view", "message.send", "message.react"],
 			}),
-			spaceStates: async () => ({ channel: null, thread: null }),
+			spaceStates: async () => ({ channel: channelState, thread: null }),
 		},
 		sync: {
 			notifyWrite: (...args: unknown[]) => void calls.writes.push(args),
@@ -83,6 +87,7 @@ const notify = (update: unknown, token = TOKEN): Promise<Response> => {
 
 beforeEach(async () => {
 	calls = { writes: [], removals: [], deleteChecks: [], renewals: [], lxms: [] };
+	channelState = null;
 
 	const ctx = contextFor();
 	const server = createXrpcServer(undefined, {
@@ -217,5 +222,40 @@ describe("checkAccess", () => {
 		const response = await checkAccess(MEMBER, { repo: MEMBER });
 
 		expect(await response.json()).toEqual({ read: false, write: false });
+	});
+
+	const channelWith = (deny: string[]): ChannelState => ({
+		space: CHANNEL_SPACE,
+		skey: "3lkchannel001",
+		ownerOnly: false,
+		allowedRoles: [],
+		allowedMembers: [],
+		visibleToRoles: [],
+		visibleToMembers: [],
+		overrides: [{ member: MEMBER, allow: [], deny }],
+	});
+
+	it("grants write to a member who may only react", async () => {
+		channelState = channelWith(["message.send"]);
+
+		const response = await checkAccess(COMMUNITY, { repo: MEMBER, space: CHANNEL_SPACE });
+
+		expect(await response.json()).toEqual({ read: true, write: true });
+	});
+
+	it("grants write to a member who may only post", async () => {
+		channelState = channelWith(["message.react"]);
+
+		const response = await checkAccess(COMMUNITY, { repo: MEMBER, space: CHANNEL_SPACE });
+
+		expect(await response.json()).toEqual({ read: true, write: true });
+	});
+
+	it("refuses write to a member who may neither post nor react", async () => {
+		channelState = channelWith(["message.send", "message.react"]);
+
+		const response = await checkAccess(COMMUNITY, { repo: MEMBER, space: CHANNEL_SPACE });
+
+		expect(await response.json()).toEqual({ read: true, write: false });
 	});
 });

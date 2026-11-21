@@ -383,10 +383,23 @@ describe("updating a channel's permission overrides", () => {
 		const { channel } = await update({ name: "general" });
 
 		expect(channel.permissionOverrides).toEqual([
-			{ role: "members", allow: [], deny: ["message.send"] },
-			{ role: "admin", allow: ["message.send"], deny: [] },
+			{ role: "members", allow: [], deny: ["message.react", "message.send"] },
+			{ role: "admin", allow: ["message.react", "message.send"], deny: [] },
 		]);
 		expect(channelRecords().at(-1)).toMatchObject({ allowedRoles: ["admin"] });
+	});
+
+	it("keeps a message.react override apart from message.send", async () => {
+		const { channel } = await update({
+			permissionOverrides: [{ role: "members", allow: ["message.react"], deny: ["message.send"] }],
+		});
+
+		expect(channel.permissionOverrides).toEqual([
+			{ role: "members", allow: ["message.react"], deny: ["message.send"] },
+		]);
+		expect(channelRecords().at(-1)).toMatchObject({
+			permissionOverrides: [{ role: "members", allow: ["message.react"], deny: ["message.send"] }],
+		});
 	});
 
 	it("refuses overrides from a caller without role.manage", async () => {

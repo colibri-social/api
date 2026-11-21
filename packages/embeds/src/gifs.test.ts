@@ -95,6 +95,62 @@ describe("createGifsClient", () => {
 		expect(page.cursor).toBeUndefined();
 	});
 
+	it("looks up a single gif by its slug through the items endpoint", async () => {
+		const mockAgent = newMockAgent();
+		mockAgent
+			.get("https://api.klipy.com")
+			.intercept({
+				path: "/api/v1/secret/gifs/items",
+				method: "GET",
+				query: { slugs: "cat-the-voices-2" },
+			})
+			.reply(200, {
+				result: true,
+				data: {
+					data: [
+						{
+							id: 42,
+							slug: "cat-the-voices-2",
+							title: "Jolly Christmas Cat Voices",
+							file: {
+								md: { gif: { url: "https://cdn/md.gif", width: 457, height: 498 } },
+								sm: { webp: { url: "https://cdn/sm.webp", width: 160, height: 174 } },
+							},
+						},
+					],
+				},
+			});
+
+		const client = createGifsClient({ apiKey: "secret", dispatcher: mockAgent });
+		if (!client) throw new Error("client should be configured");
+
+		expect(await client.gifBySlug("cat-the-voices-2")).toEqual({
+			id: "cat-the-voices-2",
+			url: "https://cdn/md.gif",
+			previewUrl: "https://cdn/sm.webp",
+			width: 457,
+			height: 498,
+			title: "Jolly Christmas Cat Voices",
+		});
+	});
+
+	it("returns undefined when klipy knows no gif with the slug", async () => {
+		const mockAgent = newMockAgent();
+		mockAgent
+			.get("https://api.klipy.com")
+			.intercept({
+				path: "/api/v1/secret/gifs/items",
+				method: "GET",
+				query: { slugs: "missing" },
+			})
+			.reply(200, { result: true, data: { data: [] } });
+
+		const client = createGifsClient({ apiKey: "secret", dispatcher: mockAgent });
+		if (!client) throw new Error("client should be configured");
+
+		expect(await client.gifBySlug("missing")).toBeUndefined();
+	});
+
 	it("parses a cursor back into the requested page", async () => {
 		const mockAgent = newMockAgent();
 		mockAgent

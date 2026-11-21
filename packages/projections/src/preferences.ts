@@ -29,6 +29,8 @@ export const toGifFavorite = (gif: GifViewIn): GifFavorite => ({
 	width: gif.width,
 	height: gif.height,
 	...(gif.title === undefined ? {} : { title: gif.title }),
+	...(gif.videoUrl === undefined ? {} : { videoUrl: gif.videoUrl }),
+	...(gif.mimeType === undefined ? {} : { mimeType: gif.mimeType }),
 });
 
 export const toStoredClientPreferences = (value: ClientPreferencesIn): ClientPreferences =>

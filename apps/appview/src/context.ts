@@ -323,6 +323,7 @@ export const createContext = async (config: Config) => {
 		cache: previews,
 		log,
 		stored: drizzleStoredPreviews(database),
+		gifs,
 	});
 	const artwork = createTtlCache<ArtworkEntry>({
 		maxEntries: ARTWORK_CACHE_MAX_ENTRIES,

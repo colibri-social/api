@@ -118,6 +118,7 @@ const assertWriteAccess = async (
 	deps: PolyfillDeps,
 	space: ParsedSpaceRef,
 	caller: string,
+	collections: readonly string[],
 ): Promise<void> => {
 	if (space.spaceType === SPACE_TYPES.actorPreferences) {
 		if (space.authority !== caller) throw notAuthorized("You can only change your own settings.");
@@ -134,16 +135,26 @@ const assertWriteAccess = async (
 	const missing = space.spaceType === SPACE_TYPES.channelThread ? !thread : !channel;
 	if (missing) throw spaceNotFound();
 
-	const decision = decideSpaceAccess({
-		spaceType: space.spaceType,
-		authz: await deps.loader.authz(space.authority, caller),
-		visibility: { profileIsPublic: false },
-		channel,
-		thread,
-		access: "write",
-	});
+	const authz = await deps.loader.authz(space.authority, caller);
 
-	if (!decision.authorized) throw notAuthorized("You can't post here.");
+	for (const collection of new Set(collections)) {
+		const decision = decideSpaceAccess({
+			spaceType: space.spaceType,
+			authz,
+			visibility: { profileIsPublic: false },
+			channel,
+			thread,
+			access: "write",
+			collection,
+		});
+
+		if (decision.authorized) continue;
+		if (collection === COLLECTIONS.reaction) {
+			throw notAuthorized("You can't add reactions here.");
+		}
+
+		throw notAuthorized("You can't post here.");
+	}
 };
 
 const assertReadAccess = async (
@@ -417,7 +428,12 @@ export const applyPolyfillWrites = async (
 
 	const space = parseSpace(input.space);
 
-	await assertWriteAccess(deps, space, caller);
+	await assertWriteAccess(
+		deps,
+		space,
+		caller,
+		input.writes.map((write) => write.collection),
+	);
 
 	const mode = await hostedModeFor(deps, space.uri, caller);
 	const writes = input.writes.map((write) => validated(space, write));

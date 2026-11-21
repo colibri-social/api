@@ -170,6 +170,7 @@ export type GifsClient = {
 	searchGifs(query: string, params?: GifPageParams): Promise<GifPage>;
 	trendingGifs(params?: GifPageParams): Promise<GifPage>;
 	gifCategories(): Promise<GifCategory[]>;
+	gifBySlug(slug: string): Promise<GifView | undefined>;
 };
 
 export type GifsClientOptions = {
@@ -253,5 +254,14 @@ export function createGifsClient(options: GifsClientOptions = {}): GifsClient | 
 		return result;
 	};
 
-	return { searchGifs, trendingGifs, gifCategories };
+	const gifBySlug = async (slug: string): Promise<GifView | undefined> => {
+		const body = await getJson(apiKey, "gifs", "items", { slugs: slug }, { timeoutMs, dispatcher });
+		const items = itemsArray(body)
+			.map(normalizeItem)
+			.filter((item): item is GifView => item !== undefined);
+
+		return items.find((item) => item.id === slug) ?? items[0];
+	};
+
+	return { searchGifs, trendingGifs, gifCategories, gifBySlug };
 }

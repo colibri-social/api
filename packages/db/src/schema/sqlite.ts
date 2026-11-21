@@ -69,6 +69,8 @@ export type GifFavorite = {
 	width: number;
 	height: number;
 	title?: string;
+	videoUrl?: string;
+	mimeType?: string;
 };
 export type StoredControls = {
 	swipeLeftAction?: string;

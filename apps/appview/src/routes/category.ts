@@ -50,7 +50,7 @@ export type CategoryPermissionInput = {
 	permissionOverrides?: readonly PermissionOverrideShape[];
 };
 
-const CATEGORY_POSTING_KEYS = ["message.send", "voice.connect"];
+const CATEGORY_POSTING_KEYS = ["message.send", "message.react", "voice.connect"];
 
 const applyPermissions = async (
 	ctx: AppContext,

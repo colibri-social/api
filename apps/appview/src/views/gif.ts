@@ -10,6 +10,8 @@ export const toGifView = (gif: GifView): GifViewOut => ({
 	width: gif.width,
 	height: gif.height,
 	title: gif.title,
+	...(gif.videoUrl === undefined ? {} : { videoUrl: asUri(gif.videoUrl) }),
+	...(gif.mimeType === undefined ? {} : { mimeType: gif.mimeType }),
 });
 
 export const toGifFavorite = (gif: GifViewOut): GifView => ({
@@ -19,4 +21,6 @@ export const toGifFavorite = (gif: GifViewOut): GifView => ({
 	width: gif.width,
 	height: gif.height,
 	...(gif.title === undefined ? {} : { title: gif.title }),
+	...(gif.videoUrl === undefined ? {} : { videoUrl: gif.videoUrl }),
+	...(gif.mimeType === undefined ? {} : { mimeType: gif.mimeType }),
 });

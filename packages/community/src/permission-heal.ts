@@ -134,7 +134,7 @@ export const healPermissionOverrides = async (
 
 		const overrides = legacyToOverrides(toCategoryScope(row), {
 			defaultRole,
-			postingKeys: ["message.send", "voice.connect"],
+			postingKeys: ["message.send", "message.react", "voice.connect"],
 		});
 
 		await writer.put(community, {
@@ -173,7 +173,7 @@ export const healPermissionOverrides = async (
 			},
 			{
 				defaultRole,
-				postingKeys: [voice ? "voice.connect" : "message.send"],
+				postingKeys: [voice ? "voice.connect" : "message.send", "message.react"],
 				roleOverrides,
 			},
 		);

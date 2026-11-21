@@ -77,6 +77,7 @@ type Answer = "allow" | "deny" | null;
 export const BASELINE_PERMISSIONS: readonly Permission[] = [
 	"channel.view",
 	"message.send",
+	"message.react",
 	"voice.connect",
 ];
 
@@ -148,7 +149,7 @@ const legacyAudienceAnswer = (
 		return listed(authz, scope.visibleToRoles, scope.visibleToMembers) ? "allow" : "deny";
 	}
 
-	if (permission !== posting) return null;
+	if (permission !== posting && permission !== "message.react") return null;
 	if (scope.ownerOnly) return "deny";
 	if (scope.allowedRoles.length === 0 && scope.allowedMembers.length === 0) return null;
 
@@ -318,6 +319,13 @@ export const canRead = (authz: ActorAuthz, channel: ChannelState): boolean =>
 export const canPost = (authz: ActorAuthz, channel: ChannelState): boolean =>
 	has(authz, postingKey(channel), channel);
 
+export const canReact = (authz: ActorAuthz, channel: ChannelState): boolean => {
+	if (!has(authz, "message.react", channel)) return false;
+	if (!channel.voice) return true;
+
+	return has(authz, "voice.chat", channel);
+};
+
 export const isPrivateThread = (thread: ThreadState): boolean =>
 	thread.visibleToRoles.length > 0 || thread.visibleToMembers.length > 0;
 
@@ -344,6 +352,15 @@ export const canPostInThread = (
 ): boolean =>
 	canReadThread(authz, channel, thread) &&
 	canPost(authz, channel) &&
+	(!thread.locked || canManageThread(authz, channel));
+
+export const canReactInThread = (
+	authz: ActorAuthz,
+	channel: ChannelState,
+	thread: ThreadState,
+): boolean =>
+	canReadThread(authz, channel, thread) &&
+	canReact(authz, channel) &&
 	(!thread.locked || canManageThread(authz, channel));
 
 export const isThreadOpener = (

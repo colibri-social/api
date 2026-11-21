@@ -106,6 +106,8 @@ export type GifView = {
 	width: number;
 	height: number;
 	title?: string;
+	videoUrl?: string;
+	mimeType?: string;
 };
 
 export type GifCategory = {

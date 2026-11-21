@@ -141,6 +141,37 @@ describe("admitCommunityWrites", () => {
 		expect(await database.db.select().from(database.tables.reactions)).toEqual([]);
 	});
 
+	it("admits a react-only member's reaction and refuses their message in the same change", async () => {
+		await synced(
+			channelRecord({
+				permissionOverrides: [{ member: MEMBER, allow: [], deny: ["message.send"] }],
+			}),
+		);
+		await synced(memberRecord(MEMBER));
+
+		const change = message(MEMBER, "3mry5ybrkzc22");
+
+		change.puts.push(...reaction(MEMBER, "3lkreact001").puts);
+		await synced(change);
+
+		expect(await messageAuthors()).toEqual([]);
+		expect(await database.db.select().from(database.tables.reactions)).toHaveLength(1);
+	});
+
+	it("refuses a send-only member's reaction and admits their message", async () => {
+		await synced(
+			channelRecord({
+				permissionOverrides: [{ member: MEMBER, allow: [], deny: ["message.react"] }],
+			}),
+		);
+		await synced(memberRecord(MEMBER));
+		await synced(reaction(MEMBER, "3lkreact001"));
+		await synced(message(MEMBER, "3mry5ybrkzc22"));
+
+		expect(await messageAuthors()).toEqual([MEMBER]);
+		expect(await database.db.select().from(database.tables.reactions)).toEqual([]);
+	});
+
 	it("refuses a message from a member outside a channel's allowed roles", async () => {
 		await synced(channelRecord({ allowedRoles: ["3lkrole001"] }));
 		await synced(memberRecord(MEMBER));

@@ -1,9 +1,11 @@
-import { SPACE_TYPES } from "@colibri-social/lexicons";
+import { COLLECTIONS, SPACE_TYPES } from "@colibri-social/lexicons";
 import {
 	type ActorAuthz,
 	type ChannelState,
 	canPost,
 	canPostInThread,
+	canReact,
+	canReactInThread,
 	canRead,
 	canReadThread,
 	has,
@@ -29,19 +31,21 @@ export type SpaceAccessInput = {
 	channel: ChannelState | null;
 	thread?: ThreadState | null;
 	access?: SpaceAccess | (string & {});
+	collection?: string;
 };
 
 const allow = (reason: string): AccessDecision => ({ authorized: true, reason });
 const deny = (reason: string): AccessDecision => ({ authorized: false, reason });
 
 export const decideSpaceAccess = (input: SpaceAccessInput): AccessDecision => {
-	const { spaceType, authz, visibility, channel, thread, access = "read" } = input;
+	const { spaceType, authz, visibility, channel, thread, collection, access = "read" } = input;
 
 	if (authz.isOwner) return allow("the requester is the community itself");
 	if (authz.isBanned) return deny("the requester is banned from this community");
 	if (access !== "read" && access !== "write") return deny(`unrecognised access kind ${access}`);
 
 	const writing = access === "write";
+	const reacting = writing && collection === COLLECTIONS.reaction;
 
 	switch (spaceType) {
 		case SPACE_TYPES.communityProfile:
@@ -67,6 +71,10 @@ export const decideSpaceAccess = (input: SpaceAccessInput): AccessDecision => {
 
 		case SPACE_TYPES.channelVoice:
 			if (!channel) return deny("no such channel in this community");
+			if (reacting)
+				return canReact(authz, channel)
+					? allow("the requester may react in this voice channel's chat")
+					: deny("the requester may not react in this voice channel's chat");
 			if (writing)
 				return canPost(authz, channel) && has(authz, "voice.chat", channel)
 					? allow("the requester may post in this voice channel's chat")
@@ -77,6 +85,10 @@ export const decideSpaceAccess = (input: SpaceAccessInput): AccessDecision => {
 
 		case SPACE_TYPES.channelText:
 			if (!channel) return deny("no such channel in this community");
+			if (reacting)
+				return canReact(authz, channel)
+					? allow("the requester may react in this channel")
+					: deny("the requester may not react in this channel");
 			if (writing)
 				return canPost(authz, channel)
 					? allow("the requester may post in this channel")
@@ -88,6 +100,10 @@ export const decideSpaceAccess = (input: SpaceAccessInput): AccessDecision => {
 		case SPACE_TYPES.channelThread:
 			if (!thread) return deny("no such thread in this community");
 			if (!channel) return deny("this thread's channel no longer exists");
+			if (reacting)
+				return canReactInThread(authz, channel, thread)
+					? allow("the requester may react in this thread")
+					: deny("the requester may not react in this thread");
 			if (writing)
 				return canPostInThread(authz, channel, thread)
 					? allow("the requester may post in this thread")

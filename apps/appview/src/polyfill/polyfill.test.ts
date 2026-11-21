@@ -171,6 +171,31 @@ describe("applyWrites", () => {
 		expect(code).toBe("NotAuthorized");
 	});
 
+	it("lets a react-only member write a reaction and refuses their message", async () => {
+		await adoptMember();
+		await database.db
+			.delete(database.tables.records)
+			.where(eq(database.tables.records.collection, COLLECTIONS.channel));
+		await authorityPut(CHANNEL, COLLECTIONS.channel, SELF, {
+			name: "general",
+			permissionOverrides: [{ member: MEMBER, allow: [], deny: ["message.send"] }],
+		});
+
+		const reaction = {
+			kind: "create" as const,
+			collection: COLLECTIONS.reaction,
+			value: {
+				$type: COLLECTIONS.reaction,
+				emoji: "👍",
+				target: { did: SYNCED, rkey: nextTid() },
+			},
+		};
+
+		expect(await errorCode(write([reaction]))).toBe("resolved");
+		expect(await errorCode(write([message("hi")]))).toBe("NotAuthorized");
+		expect(await errorCode(write([reaction, message("hi")]))).toBe("NotAuthorized");
+	});
+
 	it("refuses writes to another user's preferences", async () => {
 		await adoptMember();
 

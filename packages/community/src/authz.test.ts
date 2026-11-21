@@ -5,6 +5,7 @@ import {
 	type CategoryScope,
 	type ChannelState,
 	canPost,
+	canReact,
 	canRead,
 	effectivePermissions,
 	has,
@@ -341,5 +342,68 @@ describe("permission overrides", () => {
 			),
 		).toBe(false);
 		expect(isPrivateScope(hiddenCategory, "everyone")).toBe(true);
+	});
+});
+
+describe("message.react", () => {
+	const everyone: RoleState = {
+		rkey: "everyone",
+		name: "everyone",
+		permissions: [...BASELINE_PERMISSIONS],
+		position: 0,
+		hoisted: false,
+		mentionable: false,
+		protected: false,
+		isDefault: true,
+		channelOverrides: [],
+	};
+
+	const holder = (did: string): ActorAuthz => ({
+		actor: did,
+		community: COMMUNITY,
+		isOwner: false,
+		isBanned: false,
+		member: { did, roles: ["everyone"], joinedAt: "2026-10-01T00:00:00.000Z", nickname: null },
+		roles: [everyone],
+	});
+
+	it("is part of the baseline every member holds", () => {
+		expect(BASELINE_PERMISSIONS).toContain("message.react");
+		expect(canReact(member("did:plc:a"), channel())).toBe(true);
+	});
+
+	it("lets a react-only member react in a channel where sending is denied", () => {
+		const readOnly = channel({
+			overrides: [{ role: "everyone", allow: [], deny: ["message.send"] }],
+		});
+
+		expect(canPost(holder("did:plc:a"), readOnly)).toBe(false);
+		expect(canReact(holder("did:plc:a"), readOnly)).toBe(true);
+	});
+
+	it("lets a send-only member post in a channel where reactions are denied", () => {
+		const quiet = channel({
+			category: category({
+				overrides: [{ role: "everyone", allow: [], deny: ["message.react"] }],
+			}),
+		});
+
+		expect(canPost(holder("did:plc:a"), quiet)).toBe(true);
+		expect(canReact(holder("did:plc:a"), quiet)).toBe(false);
+	});
+
+	it("needs voice.chat in a voice channel", () => {
+		const voice = channel({ voice: true, overrides: [] });
+		const chatting = { ...everyone, permissions: [...BASELINE_PERMISSIONS, "voice.chat"] };
+
+		expect(canReact(holder("did:plc:a"), voice)).toBe(false);
+		expect(canReact({ ...holder("did:plc:b"), roles: [chatting] }, voice)).toBe(true);
+	});
+
+	it("follows a legacy posting allow list", () => {
+		const announcements = channel({ allowedRoles: ["staff"] });
+
+		expect(canReact(member("did:plc:a"), announcements)).toBe(false);
+		expect(canReact(member("did:plc:b", ["staff"]), announcements)).toBe(true);
 	});
 });

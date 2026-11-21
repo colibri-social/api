@@ -7,7 +7,7 @@ import {
 	healOwnerPermissions,
 	lowestRolePosition,
 } from "./heal.js";
-import { CommunityLoader } from "./loader.js";
+import { CommunityLoader, offeredDefaultsKey } from "./loader.js";
 import type { CommunityWriter, RecordWrite } from "./writes.js";
 
 const COMMUNITY = "did:plc:communityxxxxxxxxxxxxxxxxxxx";
@@ -214,6 +214,7 @@ describe("ensureDefaultRole", () => {
 			granted: [
 				"channel.view",
 				"message.send",
+				"message.react",
 				"voice.connect",
 				"voice.speak",
 				"voice.listen",
@@ -232,6 +233,7 @@ describe("ensureDefaultRole", () => {
 				"mention.roles",
 				"channel.view",
 				"message.send",
+				"message.react",
 				"voice.connect",
 				"voice.speak",
 				"voice.listen",
@@ -252,6 +254,7 @@ describe("ensureDefaultRole", () => {
 		expect(backfill?.granted).toEqual([
 			"channel.view",
 			"message.send",
+			"message.react",
 			"voice.connect",
 			"voice.listen",
 			"voice.camera",
@@ -277,6 +280,26 @@ describe("ensureDefaultRole", () => {
 		expect(writes).toEqual([]);
 	});
 
+	it("grants message.react once to a default role offered the earlier defaults", async () => {
+		const earlier = DEFAULT_ROLE_PERMISSIONS.filter((key) => key !== "message.react");
+
+		await seedDefaultRole(earlier.filter((key) => key !== "voice.camera"));
+		await database.db.insert(database.tables.serviceState).values({
+			key: offeredDefaultsKey(COMMUNITY),
+			value: JSON.stringify(earlier),
+			updatedAt: "2026-11-01T00:00:00.000Z",
+		});
+
+		const writes: RecordWrite[] = [];
+		const backfill = await ensure(writes);
+
+		expect(backfill?.granted).toEqual(["message.react"]);
+		expect(writes[0]?.record.permissions).not.toContain("voice.camera");
+		const loader = new CommunityLoader({ db: database.db, tables: database.tables });
+
+		expect(await loader.offeredDefaults(COMMUNITY)).toEqual([...DEFAULT_ROLE_PERMISSIONS]);
+	});
+
 	it("never re-adds thread.create to a default role an admin took it from", async () => {
 		await seedDefaultRole(["voice.speak"]);
 
@@ -286,6 +309,7 @@ describe("ensureDefaultRole", () => {
 		expect(backfill?.granted).toEqual([
 			"channel.view",
 			"message.send",
+			"message.react",
 			"voice.connect",
 			"voice.listen",
 			"voice.camera",
@@ -305,7 +329,7 @@ describe("ensureDefaultRole", () => {
 		const writes: RecordWrite[] = [];
 		const backfill = await ensure(writes);
 
-		expect(backfill?.granted).toHaveLength(8);
+		expect(backfill?.granted).toHaveLength(9);
 	});
 
 	it("never backfills a default role it created itself", async () => {

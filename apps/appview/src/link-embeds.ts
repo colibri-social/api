@@ -2,10 +2,12 @@ import { dimensionsOf } from "@colibri-social/blobs";
 import {
 	createImageMeasurer,
 	fetchLinkPreview,
+	type GifsClient,
 	type ImageMeasurer,
 	isEmbedError,
 	type LinkEmbed,
 	normalizeUrlCacheKey,
+	notFetchable,
 	type TtlCache,
 	videoTypeFromExtension,
 } from "@colibri-social/embeds";
@@ -22,6 +24,10 @@ const MISS_TTL_MS = 5 * 60 * 1000;
 export const STORED_PREVIEW_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const DIRECT_IMAGE = /\.(gif|webp|png|jpe?g|avif)$/i;
+
+const KLIPY_HOSTS = new Set(["klipy.com", "www.klipy.com"]);
+
+const KLIPY_GIF_PATH = /^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?gifs\/([a-z0-9][a-z0-9-]*)\/?$/i;
 
 type RawFeature = { $type?: unknown; uri?: unknown };
 type RawFacet = { features?: RawFeature[] };
@@ -57,6 +63,7 @@ export type LinkEmbedResolverOptions = {
 	log: Logger;
 	stored?: StoredPreviews;
 	fetchPreview?: (uri: string, measureImage: ImageMeasurer) => Promise<LinkEmbed>;
+	gifs?: Pick<GifsClient, "gifBySlug"> | null;
 	now?: () => number;
 };
 
@@ -75,6 +82,35 @@ const directMediaEmbed = async (
 	if (!DIRECT_IMAGE.test(url.pathname)) return undefined;
 	const measured = await measureImage(uri).catch(() => undefined);
 	return { uri, image: { url: uri, ...(measured ?? {}) } };
+};
+
+export const klipySlugOf = (uri: string): string | undefined => {
+	let url: URL;
+	try {
+		url = new URL(uri);
+	} catch {
+		return undefined;
+	}
+	if (!KLIPY_HOSTS.has(url.hostname.toLowerCase())) return undefined;
+
+	return KLIPY_GIF_PATH.exec(url.pathname)?.[1]?.toLowerCase();
+};
+
+const klipyEmbed = async (
+	uri: string,
+	gifs: Pick<GifsClient, "gifBySlug"> | null | undefined,
+): Promise<LinkEmbed | undefined> => {
+	const slug = klipySlugOf(uri);
+	if (!slug || !gifs) return undefined;
+
+	const gif = await gifs.gifBySlug(slug);
+	if (!gif) throw notFetchable(`klipy has no gif with the slug '${slug}'`);
+
+	return {
+		uri,
+		image: { url: gif.url, width: gif.width, height: gif.height },
+		...(gif.title ? { title: gif.title } : {}),
+	};
 };
 
 const pause = (ms: number) =>
@@ -111,7 +147,9 @@ export const createLinkEmbedResolver = (options: LinkEmbedResolverOptions): Link
 		const loading = (async () => {
 			try {
 				const embed =
-					(await directMediaEmbed(uri, measureImage)) ?? (await fetchPreview(uri, measureImage));
+					(await directMediaEmbed(uri, measureImage)) ??
+					(await klipyEmbed(uri, options.gifs)) ??
+					(await fetchPreview(uri, measureImage));
 				cache.set(key, embed);
 				await options.stored
 					?.save(key, embed)

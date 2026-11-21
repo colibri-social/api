@@ -1,4 +1,4 @@
-import { SPACE_TYPES } from "@colibri-social/lexicons";
+import { COLLECTIONS, SPACE_TYPES } from "@colibri-social/lexicons";
 import { describe, expect, it } from "vitest";
 import { decideSpaceAccess, type SpaceAccess } from "./access.js";
 import {
@@ -550,6 +550,104 @@ describe("write access decisions", () => {
 				channel: channel(),
 				access: "append",
 			}).authorized,
+		).toBe(false);
+	});
+});
+
+describe("reaction write decisions", () => {
+	const decide = (
+		spaceType: string,
+		state: ActorAuthz,
+		options: Partial<{
+			channel: ChannelState | null;
+			thread: ThreadState | null;
+			collection: string;
+		}> = {},
+	) =>
+		decideSpaceAccess({
+			spaceType,
+			authz: state,
+			visibility: { profileIsPublic: true },
+			channel: options.channel ?? null,
+			thread: options.thread ?? null,
+			access: "write",
+			collection: options.collection ?? COLLECTIONS.reaction,
+		});
+
+	const thread = (overrides: Partial<ThreadState> = {}): ThreadState => ({
+		space: "at://did:plc:community/space/social.colibri.beta.channel.thread/3lkthread",
+		skey: "3lkthread",
+		channel: "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchan",
+		createdBy: ACTOR,
+		visibleToRoles: [],
+		visibleToMembers: [],
+		closedAt: null,
+		locked: false,
+		...overrides,
+	});
+
+	const readOnly = channel({
+		overrides: [{ role: "3lkmembers", allow: [], deny: ["message.send"] }],
+	});
+	const reactionsOff = channel({
+		overrides: [{ role: "3lkmembers", allow: [], deny: ["message.react"] }],
+	});
+	const regular = () => authz({ roles: [role({ rkey: "3lkmembers", isDefault: true })] });
+
+	it("lets a react-only member react but not post", () => {
+		expect(decide(SPACE_TYPES.channelText, regular(), { channel: readOnly }).authorized).toBe(true);
+		expect(
+			decide(SPACE_TYPES.channelText, regular(), {
+				channel: readOnly,
+				collection: COLLECTIONS.message,
+			}).authorized,
+		).toBe(false);
+	});
+
+	it("lets a send-only member post but not react", () => {
+		expect(decide(SPACE_TYPES.channelText, regular(), { channel: reactionsOff }).authorized).toBe(
+			false,
+		);
+		expect(
+			decide(SPACE_TYPES.channelText, regular(), {
+				channel: reactionsOff,
+				collection: COLLECTIONS.message,
+			}).authorized,
+		).toBe(true);
+	});
+
+	it("requires voice.chat to react in a voice channel's chat", () => {
+		const voice = channel({
+			skey: "3lkvoice",
+			voice: true,
+			overrides: [{ role: "3lkrole", allow: [], deny: ["voice.connect"] }],
+		});
+		const chatting = authz({ roles: [role({ permissions: ["voice.chat"] })] });
+
+		expect(decide(SPACE_TYPES.channelVoice, chatting, { channel: voice }).authorized).toBe(true);
+		expect(decide(SPACE_TYPES.channelVoice, authz(), { channel: voice }).authorized).toBe(false);
+		expect(
+			decide(SPACE_TYPES.channelVoice, chatting, {
+				channel: voice,
+				collection: COLLECTIONS.message,
+			}).authorized,
+		).toBe(false);
+	});
+
+	it("lets a react-only member react in a thread unless it is locked", () => {
+		expect(
+			decide(SPACE_TYPES.channelThread, regular(), { channel: readOnly, thread: thread() })
+				.authorized,
+		).toBe(true);
+		expect(
+			decide(SPACE_TYPES.channelThread, regular(), {
+				channel: readOnly,
+				thread: thread({ locked: true }),
+			}).authorized,
+		).toBe(false);
+		expect(
+			decide(SPACE_TYPES.channelThread, regular(), { channel: reactionsOff, thread: thread() })
+				.authorized,
 		).toBe(false);
 	});
 });

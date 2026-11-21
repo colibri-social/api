@@ -164,7 +164,7 @@ export class CommunityViews {
 			category: row.category ? asRecordKey(row.category) : undefined,
 			permissionOverrides: overrideViews(
 				currentOverrides(state.overrides ?? null, state, scope.roles, {
-					postingKeys: [state.voice ? "voice.connect" : "message.send"],
+					postingKeys: [state.voice ? "voice.connect" : "message.send", "message.react"],
 					roleOverrides,
 				}),
 			),
@@ -430,7 +430,7 @@ export class CommunityViews {
 		return {
 			permissionOverrides: overrideViews(
 				currentOverrides(scope.overrides ?? null, scope, roles, {
-					postingKeys: ["message.send", "voice.connect"],
+					postingKeys: ["message.send", "message.react", "voice.connect"],
 				}),
 			),
 			private: isPrivateScope(scope, defaultRoleOf(roles)),

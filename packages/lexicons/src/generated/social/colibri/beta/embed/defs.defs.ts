@@ -441,12 +441,22 @@ type GifView = { $type?: "social.colibri.beta.embed.defs#gifView";
   /**
    * Human-readable title.
    */
-  "title"?:string };
+  "title"?:string;
+
+  /**
+   * Silent looping video for a GIF that is served as a video. previewUrl is its poster.
+   */
+  "videoUrl"?:l.UriString;
+
+  /**
+   * Content type of videoUrl.
+   */
+  "mimeType"?:"video/mp4" | "video/webm" | l.UnknownString };
 
 export type { GifView };
 
 /** A GIF from the picker. */
-const gifView = /*#__PURE__*/ l.typedObject<GifView>($nsid, "gifView", /*#__PURE__*/ l.object({"id":/*#__PURE__*/ l.string(),"url":/*#__PURE__*/ l.string({"format":"uri"}),"previewUrl":/*#__PURE__*/ l.string({"format":"uri"}),"width":/*#__PURE__*/ l.integer(),"height":/*#__PURE__*/ l.integer(),"title":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())}));
+const gifView = /*#__PURE__*/ l.typedObject<GifView>($nsid, "gifView", /*#__PURE__*/ l.object({"id":/*#__PURE__*/ l.string(),"url":/*#__PURE__*/ l.string({"format":"uri"}),"previewUrl":/*#__PURE__*/ l.string({"format":"uri"}),"width":/*#__PURE__*/ l.integer(),"height":/*#__PURE__*/ l.integer(),"title":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"videoUrl":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"uri"})),"mimeType":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["video/mp4","video/webm"]}>())}));
 
 export { gifView };
 

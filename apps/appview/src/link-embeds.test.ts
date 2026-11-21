@@ -1,7 +1,12 @@
 import { openTestDatabase } from "@colibri-social/appview-db";
-import { createTtlCache, type LinkEmbed } from "@colibri-social/embeds";
+import { createTtlCache, type GifView, type LinkEmbed } from "@colibri-social/embeds";
 import { describe, expect, it } from "vitest";
-import { createLinkEmbedResolver, linkUrisOf, MAX_EMBEDS_PER_MESSAGE } from "./link-embeds.js";
+import {
+	createLinkEmbedResolver,
+	klipySlugOf,
+	linkUrisOf,
+	MAX_EMBEDS_PER_MESSAGE,
+} from "./link-embeds.js";
 import type { Logger } from "./logger.js";
 import { drizzleStoredPreviews } from "./stores.js";
 
@@ -175,5 +180,109 @@ describe("createLinkEmbedResolver", () => {
 
 		expect(found.get(clip)).toEqual({ uri: clip, video: { url: clip, mimeType: "video/mp4" } });
 		expect(calls).toBe(0);
+	});
+
+	it("resolves klipy gif pages through the gif lookup without fetching the page", async () => {
+		const page = "https://klipy.com/gifs/cat-the-voices-2";
+		const slugs: string[] = [];
+		let calls = 0;
+		const gif: GifView = {
+			id: "cat-the-voices-2",
+			url: "https://static.klipy.com/md.gif",
+			previewUrl: "https://static.klipy.com/sm.webp",
+			width: 457,
+			height: 498,
+			title: "Jolly Christmas Cat Voices",
+		};
+		const resolver = createLinkEmbedResolver({
+			cache: createTtlCache<LinkEmbed>(),
+			log,
+			gifs: {
+				gifBySlug: async (slug) => {
+					slugs.push(slug);
+					return gif;
+				},
+			},
+			fetchPreview: async (uri) => {
+				calls += 1;
+				return { uri };
+			},
+		});
+
+		const found = await resolver.resolve([page], 1_000);
+
+		expect(found.get(page)).toEqual({
+			uri: page,
+			image: { url: gif.url, width: 457, height: 498 },
+			title: "Jolly Christmas Cat Voices",
+		});
+		expect(slugs).toEqual(["cat-the-voices-2"]);
+		expect(calls).toBe(0);
+	});
+
+	it("records a miss for an unknown klipy slug", async () => {
+		let now = 0;
+		let lookups = 0;
+		let calls = 0;
+		const page = "https://www.klipy.com/gifs/gone";
+		const resolver = createLinkEmbedResolver({
+			cache: createTtlCache<LinkEmbed>(),
+			log,
+			now: () => now,
+			gifs: {
+				gifBySlug: async () => {
+					lookups += 1;
+					return undefined;
+				},
+			},
+			fetchPreview: async (uri) => {
+				calls += 1;
+				return { uri };
+			},
+		});
+
+		await resolver.resolve([page], 1_000);
+		await resolver.resolve([page], 1_000);
+		expect(resolver.peek(page)).toBeUndefined();
+		expect(lookups).toBe(1);
+		expect(calls).toBe(0);
+
+		now = 10 * 60 * 1000;
+		await resolver.resolve([page], 1_000);
+		expect(lookups).toBe(2);
+	});
+
+	it("falls back to the page fetch for klipy links when gifs are disabled", async () => {
+		let calls = 0;
+		const page = "https://klipy.com/gifs/cat-the-voices-2";
+		const resolver = createLinkEmbedResolver({
+			cache: createTtlCache<LinkEmbed>(),
+			log,
+			gifs: null,
+			fetchPreview: async (uri) => {
+				calls += 1;
+				return { uri };
+			},
+		});
+
+		await resolver.resolve([page], 1_000);
+
+		expect(calls).toBe(1);
+	});
+});
+
+describe("klipySlugOf", () => {
+	it("reads the slug from klipy gif page links", () => {
+		expect(klipySlugOf("https://klipy.com/gifs/cat-the-voices-2")).toBe("cat-the-voices-2");
+		expect(klipySlugOf("https://www.klipy.com/gifs/cat-the-voices-2/")).toBe("cat-the-voices-2");
+		expect(klipySlugOf("https://klipy.com/de/gifs/Hello-Hi-662?ref=x")).toBe("hello-hi-662");
+	});
+
+	it("ignores other klipy pages and other hosts", () => {
+		expect(klipySlugOf("https://klipy.com/stickers/cat")).toBeUndefined();
+		expect(klipySlugOf("https://klipy.com/gifs/")).toBeUndefined();
+		expect(klipySlugOf("https://notklipy.com/gifs/cat")).toBeUndefined();
+		expect(klipySlugOf("https://static.klipy.com/gifs/cat")).toBeUndefined();
+		expect(klipySlugOf("not a url")).toBeUndefined();
 	});
 });

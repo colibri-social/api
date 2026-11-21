@@ -19,6 +19,7 @@ export const admitCommunityWrites =
 			channel,
 			thread,
 			access: "write",
+			collection: ref.collection,
 		});
 		return decision.authorized ? null : decision.reason;
 	};

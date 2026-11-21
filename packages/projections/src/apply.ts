@@ -86,10 +86,17 @@ export const applyChange = async (deps: ProjectionDeps, change: SpaceChange): Pr
 		announceAuthzChange(deps, ref);
 	}
 
-	let admission: Promise<string | null> | undefined;
+	const admissions = new Map<string, Promise<string | null>>();
 	const admissionRefusal = (projector: ErasedProjector, ref: RecordRef) => {
 		if (!projector.admission || !deps.admit) return null;
-		admission ??= deps.admit(deps.db, ref);
+
+		const cached = admissions.get(ref.collection);
+		if (cached) return cached;
+
+		const admission = deps.admit(deps.db, ref);
+
+		admissions.set(ref.collection, admission);
+
 		return admission;
 	};
 

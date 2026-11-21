@@ -94,6 +94,28 @@ describe("putSettings", () => {
 		expect(row?.gifFavorites).toEqual([GIF]);
 	});
 
+	it("keeps the video of a favourited video GIF", async () => {
+		const video = {
+			id: "https://tenor.com/view/cat-gif-123",
+			url: "https://tenor.com/view/cat-gif-123",
+			previewUrl: "https://media.tenor.com/cat-poster.png",
+			width: 498,
+			height: 280,
+			videoUrl: "https://media.tenor.com/cat.mp4",
+			mimeType: "video/mp4",
+		} as const;
+
+		const result = await handlePutSettings(ctx, CALLER, { gifFavorites: [{ ...video }] });
+
+		expect(result.preferences.gifFavorites).toEqual([video]);
+
+		const [row] = await database.db
+			.select()
+			.from(database.tables.actorSettings)
+			.where(eq(database.tables.actorSettings.did, CALLER));
+		expect(row?.gifFavorites).toEqual([video]);
+	});
+
 	it("keeps the record's $type out of the stored favourite", async () => {
 		await handlePutSettings(ctx, CALLER, {
 			gifFavorites: [{ ...GIF, $type: "social.colibri.beta.embed.defs#gifView" as const }],
