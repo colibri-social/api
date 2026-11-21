@@ -171,8 +171,16 @@ describe("healPermissionOverrides", () => {
 			$type: COLLECTIONS.channel,
 			name: "Stage",
 			permissionOverrides: [
-				{ role: "everyone", allow: [], deny: ["message.react", "voice.connect"] },
-				{ role: "staff", allow: ["message.react", "voice.connect"], deny: ["voice.camera"] },
+				{
+					role: "everyone",
+					allow: [],
+					deny: ["message.react", "message.send", "voice.connect"],
+				},
+				{
+					role: "staff",
+					allow: ["message.react", "message.send", "voice.connect"],
+					deny: ["voice.camera"],
+				},
 			],
 		});
 		expect(roleWrite?.record).not.toHaveProperty("channelOverrides");

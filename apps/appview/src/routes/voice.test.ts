@@ -50,6 +50,7 @@ const authzOf = (did: string, roles: RoleState[]): ActorAuthz => ({
 const channel = (space: string, skey: string, allowedRoles: string[] = []): ChannelState => ({
 	space,
 	skey,
+	voice: true,
 	ownerOnly: false,
 	allowedRoles,
 	allowedMembers: [],

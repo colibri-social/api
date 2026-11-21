@@ -3,7 +3,7 @@ import {
 	type ActorAuthz,
 	type CategoryScope,
 	type ChannelState,
-	canPost,
+	canConnect,
 	canRead,
 	toChannelState,
 	type VoiceCapabilities,
@@ -345,14 +345,14 @@ export class VoiceServer {
 				rights.set(connection.did, await this.ctx.loader.authz(community, connection.did));
 			}
 			const authz = rights.get(connection.did);
-			const posts = !!channel && !!authz && canPost(authz, channel);
+			const connects = !!channel && !!authz && canConnect(authz, channel);
 			const throughGrant =
 				!!channel &&
 				!!authz &&
-				!posts &&
+				!connects &&
 				(await this.ctx.voiceCalls.hasMoveGrant(connection.did, space));
 
-			if (!channel || !authz || (!posts && !throughGrant)) {
+			if (!channel || !authz || (!connects && !throughGrant)) {
 				this.detach(connection, channel ? "forbidden" : "channelGone");
 				await this.ctx.voice?.leave(space, connection.did);
 				continue;
@@ -658,11 +658,11 @@ export class VoiceServer {
 		}
 
 		const authz = await this.ctx.loader.authz(parsed.authority, connection.did);
-		const posts = canPost(authz, state);
+		const connects = canConnect(authz, state);
 		const throughGrant =
-			!posts && (await this.ctx.voiceCalls.hasMoveGrant(connection.did, frame.channel));
+			!connects && (await this.ctx.voiceCalls.hasMoveGrant(connection.did, frame.channel));
 
-		if (!posts && !throughGrant) {
+		if (!connects && !throughGrant) {
 			this.error(connection, "Forbidden", "you cannot speak in this channel");
 			return;
 		}

@@ -492,14 +492,51 @@ describe("write access decisions", () => {
 	});
 
 	it("requires voice.chat to post in a voice channel's chat", () => {
-		const voice = channel({ skey: "3lkvoice" });
+		const voice = channel({ skey: "3lkvoice", voice: true });
 		const chatting = authz({ roles: [role({ permissions: ["voice.chat"] })] });
-		const readOnly = channel({ skey: "3lkvoice", ownerOnly: true });
+		const readOnly = channel({ skey: "3lkvoice", voice: true, ownerOnly: true });
 
 		expect(decide(SPACE_TYPES.channelVoice, chatting, { channel: voice }).authorized).toBe(true);
 		expect(decide(SPACE_TYPES.channelVoice, authz(), { channel: voice }).authorized).toBe(false);
 		expect(decide(SPACE_TYPES.channelVoice, chatting, { channel: readOnly }).authorized).toBe(
 			false,
+		);
+	});
+
+	it("requires message.send to post in a voice channel's chat", () => {
+		const readOnly = channel({
+			skey: "3lkvoice",
+			voice: true,
+			overrides: [{ role: "3lkrole", allow: [], deny: ["message.send"] }],
+		});
+		const chatting = authz({ roles: [role({ permissions: ["voice.chat"] })] });
+
+		const decideAs = (access: SpaceAccess, collection?: string) =>
+			decideSpaceAccess({
+				spaceType: SPACE_TYPES.channelVoice,
+				authz: chatting,
+				visibility: { profileIsPublic: true },
+				channel: readOnly,
+				thread: null,
+				access,
+				collection,
+			}).authorized;
+
+		expect(decideAs("write", COLLECTIONS.message)).toBe(false);
+		expect(decideAs("read")).toBe(true);
+		expect(decideAs("write", COLLECTIONS.reaction)).toBe(true);
+	});
+
+	it("lets a member post in a voice channel's chat without voice.connect", () => {
+		const listening = channel({
+			skey: "3lkvoice",
+			voice: true,
+			overrides: [{ role: "3lkrole", allow: [], deny: ["voice.connect"] }],
+		});
+		const chatting = authz({ roles: [role({ permissions: ["voice.chat"] })] });
+
+		expect(decide(SPACE_TYPES.channelVoice, chatting, { channel: listening }).authorized).toBe(
+			true,
 		);
 	});
 
@@ -631,7 +668,7 @@ describe("reaction write decisions", () => {
 				channel: voice,
 				collection: COLLECTIONS.message,
 			}).authorized,
-		).toBe(false);
+		).toBe(true);
 	});
 
 	it("lets a react-only member react in a thread unless it is locked", () => {

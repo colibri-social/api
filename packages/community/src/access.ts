@@ -76,7 +76,7 @@ export const decideSpaceAccess = (input: SpaceAccessInput): AccessDecision => {
 					? allow("the requester may react in this voice channel's chat")
 					: deny("the requester may not react in this voice channel's chat");
 			if (writing)
-				return canPost(authz, channel) && has(authz, "voice.chat", channel)
+				return canPost(authz, channel)
 					? allow("the requester may post in this voice channel's chat")
 					: deny("the requester may not post in this voice channel's chat");
 			return has(authz, "voice.chat", channel)

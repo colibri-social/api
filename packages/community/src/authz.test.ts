@@ -4,6 +4,7 @@ import {
 	BASELINE_PERMISSIONS,
 	type CategoryScope,
 	type ChannelState,
+	canConnect,
 	canPost,
 	canReact,
 	canRead,
@@ -307,9 +308,39 @@ describe("permission overrides", () => {
 		const bare = role("everyone", 0, [], true);
 
 		expect(canRead(holder("did:plc:a", bare), channel({ overrides: [] }))).toBe(false);
-		expect(canPost(holder("did:plc:a", everyone), channel({ overrides: [], voice: true }))).toBe(
-			true,
-		);
+		expect(canPost(holder("did:plc:a", everyone), channel({ overrides: [] }))).toBe(true);
+	});
+
+	it("needs voice.chat and message.send to post in a voice channel's chat", () => {
+		const chatting = role("everyone", 0, [...BASELINE_PERMISSIONS, "voice.chat"], true);
+		const voice = channel({ overrides: [], voice: true });
+		const readOnly = channel({
+			voice: true,
+			overrides: [{ role: "everyone", allow: [], deny: ["message.send"] }],
+		});
+		const listening = channel({
+			voice: true,
+			overrides: [{ role: "everyone", allow: [], deny: ["voice.connect"] }],
+		});
+
+		expect(canPost(holder("did:plc:a", everyone), voice)).toBe(false);
+		expect(canPost(holder("did:plc:a", chatting), voice)).toBe(true);
+		expect(canPost(holder("did:plc:a", chatting), readOnly)).toBe(false);
+		expect(canReact(holder("did:plc:a", chatting), readOnly)).toBe(true);
+		expect(has(holder("did:plc:a", chatting), "voice.chat", readOnly)).toBe(true);
+		expect(canPost(holder("did:plc:a", chatting), listening)).toBe(true);
+		expect(canConnect(holder("did:plc:a", chatting), listening)).toBe(false);
+	});
+
+	it("restricts joining and chat posting through a legacy voice allow list", () => {
+		const chatting = role("everyone", 0, [...BASELINE_PERMISSIONS, "voice.chat"], true);
+		const staff = role("staff", 2, []);
+		const stage = channel({ voice: true, allowedRoles: ["staff"] });
+
+		expect(canPost(holder("did:plc:a", chatting), stage)).toBe(false);
+		expect(canConnect(holder("did:plc:a", chatting), stage)).toBe(false);
+		expect(canPost(holder("did:plc:b", chatting, staff), stage)).toBe(true);
+		expect(canConnect(holder("did:plc:b", chatting, staff), stage)).toBe(true);
 	});
 
 	it("gives the owner and owner-role holders everything and banned members nothing", () => {

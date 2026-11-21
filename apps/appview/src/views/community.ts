@@ -164,7 +164,9 @@ export class CommunityViews {
 			category: row.category ? asRecordKey(row.category) : undefined,
 			permissionOverrides: overrideViews(
 				currentOverrides(state.overrides ?? null, state, scope.roles, {
-					postingKeys: [state.voice ? "voice.connect" : "message.send", "message.react"],
+					postingKeys: state.voice
+						? ["voice.connect", "message.send", "message.react"]
+						: ["message.send", "message.react"],
 					roleOverrides,
 				}),
 			),

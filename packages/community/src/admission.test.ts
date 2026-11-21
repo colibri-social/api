@@ -172,6 +172,34 @@ describe("admitCommunityWrites", () => {
 		expect(await database.db.select().from(database.tables.reactions)).toEqual([]);
 	});
 
+	it("admits a reaction and refuses a message in a voice chat that denies message.send", async () => {
+		const voice = channelSpace(COMMUNITY, SPACE_TYPES.channelVoice, "3lkvoice001");
+		await registerSpace(voice, SPACE_TYPES.channelVoice, "3lkvoice001");
+		await synced(
+			put(voice, COMMUNITY, "social.colibri.beta.channel", SELF, {
+				name: "lounge",
+				permissionOverrides: [{ member: MEMBER, allow: ["voice.chat"], deny: ["message.send"] }],
+			}),
+		);
+		await synced(memberRecord(MEMBER));
+
+		const change = put(voice, MEMBER, "social.colibri.beta.message", "3mry5ybrkzc22", {
+			text: "hello",
+			createdAt: NOW,
+		});
+
+		change.puts.push(
+			...put(voice, MEMBER, "social.colibri.beta.reaction", "3lkreact001", {
+				emoji: "👍",
+				target: { did: MEMBER, rkey: "3mry5ybrkzc22" },
+			}).puts,
+		);
+		await synced(change);
+
+		expect(await messageAuthors()).toEqual([]);
+		expect(await database.db.select().from(database.tables.reactions)).toHaveLength(1);
+	});
+
 	it("refuses a message from a member outside a channel's allowed roles", async () => {
 		await synced(channelRecord({ allowedRoles: ["3lkrole001"] }));
 		await synced(memberRecord(MEMBER));

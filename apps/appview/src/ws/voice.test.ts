@@ -66,9 +66,10 @@ const memberAuthz = (did: string, role: RoleState = membersRole()): ActorAuthz =
 	baseline: BASELINE_PERMISSIONS,
 });
 
-const openChannel = (space: string, skey: string): ChannelState => ({
+const openChannel = (space: string, skey: string, voice = true): ChannelState => ({
 	space,
 	skey,
+	voice,
 	ownerOnly: false,
 	allowedRoles: [],
 	allowedMembers: [],
@@ -98,7 +99,7 @@ const buildCtx = (voice: VoiceSfu | null, database?: TestDatabase): Harness => {
 	const channels = new Map<string, ChannelState>([
 		[VOICE_CHANNEL, openChannel(VOICE_CHANNEL, "general")],
 		[OTHER_VOICE_CHANNEL, openChannel(OTHER_VOICE_CHANNEL, "lounge")],
-		[TEXT_CHANNEL, openChannel(TEXT_CHANNEL, "chat")],
+		[TEXT_CHANNEL, openChannel(TEXT_CHANNEL, "chat", false)],
 	]);
 	const authz = new Map<string, ActorAuthz>([
 		[ALICE, memberAuthz(ALICE)],

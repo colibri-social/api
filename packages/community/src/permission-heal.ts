@@ -173,7 +173,9 @@ export const healPermissionOverrides = async (
 			},
 			{
 				defaultRole,
-				postingKeys: [voice ? "voice.connect" : "message.send", "message.react"],
+				postingKeys: voice
+					? ["voice.connect", "message.send", "message.react"]
+					: ["message.send", "message.react"],
 				roleOverrides,
 			},
 		);

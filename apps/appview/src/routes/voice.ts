@@ -1,5 +1,5 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
-import { canPost, has } from "@colibri-social/community";
+import { canConnect, has } from "@colibri-social/community";
 import { SPACE_TYPES, social } from "@colibri-social/lexicons";
 import { parseSpaceRef } from "@colibri-social/space";
 import type { AppContext } from "../context.js";
@@ -72,7 +72,7 @@ const moveDestination = async (
 
 	const subjectAuthz = await ctx.loader.authz(community, subject);
 
-	return { channel: moveTo, needsGrant: !canPost(subjectAuthz, destination) };
+	return { channel: moveTo, needsGrant: !canConnect(subjectAuthz, destination) };
 };
 
 export const handleModerateVoice = async (

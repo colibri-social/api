@@ -119,10 +119,10 @@ const existingOverrides = async (
 	);
 
 	return currentOverrides(row.permissionOverrides ?? null, row, roles, {
-		postingKeys: [
-			row.spaceType === SPACE_TYPES.channelVoice ? "voice.connect" : "message.send",
-			"message.react",
-		],
+		postingKeys:
+			row.spaceType === SPACE_TYPES.channelVoice
+				? ["voice.connect", "message.send", "message.react"]
+				: ["message.send", "message.react"],
 		roleOverrides,
 	});
 };

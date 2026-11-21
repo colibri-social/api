@@ -130,8 +130,11 @@ const overrideAnswer = (
 	return null;
 };
 
-const postingKey = (channel: Pick<ChannelState, "voice">): ChannelPermission => {
-	return channel.voice ? "voice.connect" : "message.send";
+const LEGACY_TEXT_POSTING: readonly ChannelPermission[] = ["message.send"];
+const LEGACY_VOICE_POSTING: readonly ChannelPermission[] = ["voice.connect", "message.send"];
+
+const legacyPostingKeys = (channel: Pick<ChannelState, "voice">): readonly ChannelPermission[] => {
+	return channel.voice ? LEGACY_VOICE_POSTING : LEGACY_TEXT_POSTING;
 };
 
 const listed = (authz: ActorAuthz, roles: string[], members: string[]) => {
@@ -142,14 +145,14 @@ const legacyAudienceAnswer = (
 	authz: ActorAuthz,
 	scope: ScopeState,
 	permission: string,
-	posting: ChannelPermission,
+	posting: readonly string[],
 ): Answer => {
 	if (permission === "channel.view") {
 		if (!restrictsReading(scope)) return null;
 		return listed(authz, scope.visibleToRoles, scope.visibleToMembers) ? "allow" : "deny";
 	}
 
-	if (permission !== posting && permission !== "message.react") return null;
+	if (!posting.includes(permission) && permission !== "message.react") return null;
 	if (scope.ownerOnly) return "deny";
 	if (scope.allowedRoles.length === 0 && scope.allowedMembers.length === 0) return null;
 
@@ -174,7 +177,7 @@ const scopeAnswer = (
 	authz: ActorAuthz,
 	scope: ScopeState,
 	permission: string,
-	posting: ChannelPermission,
+	posting: readonly string[],
 	skey?: string,
 ): Answer => {
 	if (scope.overrides) return overrideAnswer(authz, scope.overrides, permission);
@@ -185,7 +188,7 @@ const scopeAnswer = (
 };
 
 const resolveInChannel = (authz: ActorAuthz, permission: string, channel: ChannelState): Answer => {
-	const posting = postingKey(channel);
+	const posting = legacyPostingKeys(channel);
 	const own = scopeAnswer(authz, channel, permission, posting, channel.skey);
 	if (own) return own;
 	if (!channel.category) return null;
@@ -316,8 +319,15 @@ export const isPrivateChannel = (
 export const canRead = (authz: ActorAuthz, channel: ChannelState): boolean =>
 	has(authz, "channel.view", channel);
 
-export const canPost = (authz: ActorAuthz, channel: ChannelState): boolean =>
-	has(authz, postingKey(channel), channel);
+export const canPost = (authz: ActorAuthz, channel: ChannelState): boolean => {
+	if (!has(authz, "message.send", channel)) return false;
+	if (!channel.voice) return true;
+
+	return has(authz, "voice.chat", channel);
+};
+
+export const canConnect = (authz: ActorAuthz, channel: ChannelState): boolean =>
+	has(authz, "voice.connect", channel);
 
 export const canReact = (authz: ActorAuthz, channel: ChannelState): boolean => {
 	if (!has(authz, "message.react", channel)) return false;
