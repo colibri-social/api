@@ -1,5 +1,16 @@
 # @colibri-social/appview
 
+## 2.43.0
+
+### Minor Changes
+
+- 7c3c39c: Posting in a voice channel's chat needs `message.send` and `voice.chat`, so a channel override that denies `message.send` makes the chat read-only while members keep reacting. `voice.chat` controls reading the chat, and joining the call still needs `voice.connect`. A voice channel's legacy posting allow list restricts joining, chat posting and reactions. The new `canConnect` check replaces `canPost` for joining a call.
+
+### Patch Changes
+
+- Updated dependencies [7c3c39c]
+  - @colibri-social/community@2.19.0
+
 ## 2.42.0
 
 ### Minor Changes
