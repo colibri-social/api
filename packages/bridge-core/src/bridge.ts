@@ -13,9 +13,11 @@ import {
 	type BridgeConnection,
 	type BridgeContext,
 	type BridgeLogger,
+	type ChannelReply,
 	canDelete,
 	canEdit,
 	canImportHistory,
+	canListenToChannels,
 	canModerate,
 	canReact,
 	canThread,
@@ -56,6 +58,8 @@ export type BridgeOptions = {
 	backfillBatchSize?: number;
 	backfillReportIntervalMs?: number;
 };
+
+type OpenChannel = { community: string; registration: string };
 
 type Portal = LinkedRoom & {
 	key: string;
@@ -184,6 +188,7 @@ export class Bridge {
 	private byChannel = new Map<string, Portal[]>();
 	private byRemote = new Map<string, Portal[]>();
 	private threads = new Map<string, Portal[]>();
+	private openChannels = new Map<string, OpenChannel[]>();
 	private readonly backfills = new Map<string, Promise<void>>();
 	private refreshing: Promise<void> | null = null;
 	private streamOpened = false;
@@ -224,6 +229,7 @@ export class Bridge {
 			connections: (remoteSpace) => this.connections(remoteSpace),
 			channels: (community, registration) =>
 				this.options.client.listChannels({ community, registration }),
+			reply: (reply) => this.reply(reply),
 			disconnect: (remoteSpace, community) => this.leave(remoteSpace, community),
 		};
 	}
@@ -342,6 +348,7 @@ export class Bridge {
 		this.byChannel = byChannel;
 		this.byRemote = byRemote;
 		this.threads = threads;
+		this.openChannels = this.collectOpenChannels();
 		this.subscribe();
 		this.startBackfills();
 		for (const registration of this.registrations) {
@@ -419,7 +426,74 @@ export class Bridge {
 	}
 
 	private subscribe(): void {
-		this.stream.setChannels([...this.byChannel.keys(), ...this.threads.keys()]);
+		this.stream.setChannels([
+			...new Set([...this.byChannel.keys(), ...this.threads.keys(), ...this.openChannels.keys()]),
+		]);
+	}
+
+	private collectOpenChannels(): Map<string, OpenChannel[]> {
+		const open = new Map<string, OpenChannel[]>();
+		if (!canListenToChannels(this.options.connector)) return open;
+		for (const registration of this.registrations) {
+			if (!registration.enabled) continue;
+			for (const channel of registration.channels ?? []) {
+				const entry = { community: registration.community, registration: registration.id };
+				open.set(channel, [...(open.get(channel) ?? []), entry]);
+			}
+		}
+		return open;
+	}
+
+	private onOpenChannelMessage(channel: string, message: MessageView): void {
+		const connector = this.options.connector;
+		if (!canListenToChannels(connector)) return;
+		for (const open of this.openChannels.get(channel) ?? []) {
+			if (
+				message.author.did === open.community &&
+				message.author.bridge?.registration === open.registration
+			) {
+				continue;
+			}
+			const key = `open ${registrationKey(open.community, open.registration)} ${channel}`;
+			void this.queues.run(key, async () => {
+				try {
+					await connector.receiveChannelMessage({
+						...open,
+						channel,
+						rkey: message.rkey,
+						author: {
+							did: message.author.did,
+							name: message.author.displayName,
+							...(message.author.handle && message.author.handle !== INVALID_HANDLE
+								? { handle: message.author.handle }
+								: {}),
+							...(message.author.avatar ? { avatarUrl: message.author.avatar } : {}),
+						},
+						markdown: colibriToMarkdown(message.text, message.facets ?? []),
+					});
+				} catch (error) {
+					this.log.warn(
+						{ registration: open.registration, channel, error: String(error) },
+						"bridge.openChannel.failed",
+					);
+				}
+			});
+		}
+	}
+
+	private async reply(reply: ChannelReply): Promise<string> {
+		const { text, facets } = markdownToColibri(reply.markdown);
+		const { rkey } = await this.options.client.postMessage({
+			community: reply.community,
+			registration: reply.registration,
+			channel: reply.channel,
+			author: { id: reply.author.id, name: reply.author.name },
+			text,
+			...(facets.length > 0 ? { facets } : {}),
+			...(reply.replyTo ? { parent: reply.replyTo } : {}),
+		});
+
+		return rkey;
 	}
 
 	private threadPortal(parent: Portal, space: string, remoteThread: string): Portal {
@@ -544,6 +618,9 @@ export class Bridge {
 	private onMessageFrame(frame: ServerFrame): void {
 		if (frame.imported === true) return;
 		const channel = frame.channel as string;
+		if (frame.event === "create" && frame.message) {
+			this.onOpenChannelMessage(channel, frame.message as MessageView);
+		}
 		for (const portal of this.portalsFor(channel)) {
 			void this.queues.run(portal.key, () =>
 				this.guard(portal, `colibri.message.${String(frame.event)}`, async () => {

@@ -93,6 +93,24 @@ export type ColibriAuthor = {
 	avatarUrl?: string;
 };
 
+export type OpenChannelMessage = {
+	community: string;
+	registration: string;
+	channel: string;
+	rkey: string;
+	author: ColibriAuthor;
+	markdown: string;
+};
+
+export type ChannelReply = {
+	community: string;
+	registration: string;
+	channel: string;
+	author: Pick<RemoteAuthor, "id" | "name">;
+	markdown: string;
+	replyTo?: { did: string; rkey: string };
+};
+
 export type OutboundAttachment = {
 	url: string;
 	name?: string;
@@ -172,6 +190,7 @@ export interface BridgeContext {
 	linkedRooms(remoteSpace: string): LinkedRoom[];
 	connections(remoteSpace: string): BridgeConnection[];
 	channels(community: string, registration: string): Promise<ChannelView[]>;
+	reply(reply: ChannelReply): Promise<string>;
 	disconnect(remoteSpace: string, community?: string): Promise<number>;
 }
 
@@ -206,6 +225,10 @@ export interface ModeratingConnector extends NetworkConnector {
 	removeMessage(target: OutboundDelete): Promise<void>;
 }
 
+export interface ChannelListeningConnector extends NetworkConnector {
+	receiveChannelMessage(message: OpenChannelMessage): Promise<void>;
+}
+
 export interface HistoryConnector extends NetworkConnector {
 	fetchHistory(request: HistoryRequest): Promise<HistoryMessage[]>;
 	listThreads(room: RemoteLocation & { since?: string; until: string }): Promise<HistoryThread[]>;
@@ -214,6 +237,11 @@ export interface HistoryConnector extends NetworkConnector {
 
 export const canEdit = (connector: NetworkConnector): connector is EditingConnector =>
 	typeof (connector as Partial<EditingConnector>).editMessage === "function";
+
+export const canListenToChannels = (
+	connector: NetworkConnector,
+): connector is ChannelListeningConnector =>
+	typeof (connector as Partial<ChannelListeningConnector>).receiveChannelMessage === "function";
 
 export const canDelete = (connector: NetworkConnector): connector is DeletingConnector =>
 	typeof (connector as Partial<DeletingConnector>).deleteMessage === "function";

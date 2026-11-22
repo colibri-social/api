@@ -9,11 +9,13 @@ import {
 } from "./client.js";
 import type {
 	BridgeContext,
+	ChannelListeningConnector,
 	HistoryConnector,
 	HistoryMessage,
 	HistoryRequest,
 	HistoryThread,
 	ModeratingConnector,
+	OpenChannelMessage,
 	OutboundDelete,
 	OutboundMessage,
 	OutboundReaction,
@@ -598,6 +600,138 @@ describe("from Colibri to the other service", () => {
 		reaction("delete", "did:plc:secondmemberxxxxxxxxxxxxxx");
 		await bridge.idle();
 		expect(connector.reactions.map((entry) => entry.event)).toEqual(["add", "remove"]);
+	});
+});
+
+describe("open channels", () => {
+	const OPEN = `at://${COMMUNITY}/space/social.colibri.beta.channel.text/3lkchannel002`;
+
+	class ListeningConnector extends FakeConnector implements ChannelListeningConnector {
+		heard: OpenChannelMessage[] = [];
+
+		async receiveChannelMessage(message: OpenChannelMessage) {
+			this.heard.push(message);
+		}
+	}
+
+	let listening: ListeningConnector;
+	let listen: Bridge;
+	let hear: (frame: ServerFrame) => void;
+	let heardChannels: string[];
+
+	const openFrame = (message: MessageView, extra: Record<string, unknown> = {}, event = "create") =>
+		hear({
+			$type: "social.colibri.beta.sync.defs#messageEvent",
+			event,
+			channel: OPEN,
+			message,
+			...extra,
+		});
+
+	beforeEach(async () => {
+		listening = new ListeningConnector();
+		current = [registration({ channels: [OPEN] } as Partial<RegistrationView>)];
+		heardChannels = [];
+		listen = new Bridge({
+			client: client as unknown as ColibriClient,
+			connector: listening,
+			store: new MemoryBridgeStore(),
+			sleep: async () => {},
+			createEventStream: (options: EventStreamOptions) => {
+				hear = options.onFrame;
+				return {
+					start: () => {},
+					stop: () => {},
+					setChannels: (channels: Iterable<string>) => {
+						heardChannels = [...channels];
+					},
+				};
+			},
+		});
+		await listen.start();
+	});
+
+	it("subscribes to open channels and hands their new messages to the connector", async () => {
+		expect(heardChannels).toEqual(expect.arrayContaining([CHANNEL, OPEN]));
+
+		openFrame(messageView({ channel: OPEN }));
+		await listen.idle();
+
+		expect(listening.heard).toEqual([
+			{
+				community: COMMUNITY,
+				registration: REGISTRATION,
+				channel: OPEN,
+				rkey: "3lkmsg0000001",
+				author: { did: MEMBER, name: "Member", handle: "member.test" },
+				markdown: "hello **bold**",
+			},
+		]);
+		expect(listening.sent).toEqual([]);
+	});
+
+	it("skips edits, imported history and its own replies", async () => {
+		openFrame(messageView({ channel: OPEN }), {}, "update");
+		openFrame(messageView({ channel: OPEN }), { imported: true });
+		openFrame(
+			messageView({
+				channel: OPEN,
+				author: {
+					did: COMMUNITY,
+					handle: "community.test",
+					displayName: "Helper",
+					isBot: true,
+					bridge: { registration: REGISTRATION, platform: "test", remoteId: "bot" },
+				},
+			}),
+		);
+		await listen.idle();
+
+		expect(listening.heard).toEqual([]);
+	});
+
+	it("stops listening to the open channels of a paused registration", async () => {
+		current = [registration({ channels: [OPEN], enabled: false } as Partial<RegistrationView>)];
+		await listen.refresh();
+		openFrame(messageView({ channel: OPEN }));
+		await listen.idle();
+
+		expect(heardChannels).not.toContain(OPEN);
+		expect(listening.heard).toEqual([]);
+	});
+
+	it("leaves open channels alone for a connector that doesn't listen to them", async () => {
+		await bridge.refresh();
+
+		expect(subscribed).toEqual([CHANNEL]);
+	});
+
+	it("replies in an open channel with facets and a parent", async () => {
+		const rkey = await listening.context?.reply({
+			community: COMMUNITY,
+			registration: REGISTRATION,
+			channel: OPEN,
+			author: { id: "bot", name: "Helper" },
+			markdown: "done **now**",
+			replyTo: { did: MEMBER, rkey: "3lkmsg0000001" },
+		});
+
+		expect(rkey).toMatch(/^3lkposted/);
+		expect(client.postMessage).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				community: COMMUNITY,
+				registration: REGISTRATION,
+				channel: OPEN,
+				author: { id: "bot", name: "Helper" },
+				text: "done now",
+				facets: [
+					expect.objectContaining({
+						index: expect.objectContaining({ byteStart: 5, byteEnd: 8 }),
+					}),
+				],
+				parent: { did: MEMBER, rkey: "3lkmsg0000001" },
+			}),
+		);
 	});
 });
 
