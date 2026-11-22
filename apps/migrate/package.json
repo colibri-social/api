@@ -1,6 +1,6 @@
 {
 	"name": "@colibri-social/migrate",
-	"version": "1.0.62",
+	"version": "1.0.63",
 	"description": "One-shot migration of DID-repo communities onto spaces.",
 	"type": "module",
 	"private": true,
