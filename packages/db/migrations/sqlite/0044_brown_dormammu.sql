@@ -1,0 +1,1 @@
+ALTER TABLE `bridge_registrations` ADD `channels` text DEFAULT '[]' NOT NULL;

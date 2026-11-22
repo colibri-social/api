@@ -1,3 +1,5 @@
+import type { ChannelView } from "./client.js";
+
 export type RemoteRoomInfo = {
 	id: string;
 	name: string;
@@ -169,6 +171,7 @@ export interface BridgeContext {
 	pair(remote: { remoteSpace: string; remoteSpaceName: string }): Promise<PairingCode>;
 	linkedRooms(remoteSpace: string): LinkedRoom[];
 	connections(remoteSpace: string): BridgeConnection[];
+	channels(community: string, registration: string): Promise<ChannelView[]>;
 	disconnect(remoteSpace: string, community?: string): Promise<number>;
 }
 

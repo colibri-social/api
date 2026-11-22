@@ -1014,6 +1014,7 @@ export const bridgeRegistrations = sqliteTable(
 		remoteSpace: text("remote_space").notNull(),
 		remoteSpaceName: text("remote_space_name").notNull(),
 		links: json<BridgeLink[]>("links").notNull(),
+		channels: json<string[]>("channels").notNull().default([]),
 		enabled: flag("enabled").notNull().default(true),
 		mirrorModeration: flag("mirror_moderation").notNull().default(false),
 		createdBy: text("created_by").notNull(),

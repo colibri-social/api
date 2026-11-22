@@ -95,3 +95,25 @@ describe("ColibriClient writes", () => {
 		await outcome;
 	});
 });
+
+describe("ColibriClient channels", () => {
+	it("lists a registration's channels", async () => {
+		const channel = {
+			space: "at://did:plc:community/space/social.colibri.beta.channel.text/general",
+			type: "social.colibri.beta.channel.text",
+			name: "general",
+			viewer: { canRead: true, canPost: true },
+		};
+		const { client, fetcher } = clientWith([() => Response.json({ channels: [channel] })]);
+
+		await expect(
+			client.listChannels({ community: "did:plc:community", registration: "3lkbridgeaaaa" }),
+		).resolves.toEqual([channel]);
+
+		const [url] = fetcher.mock.calls[0] as unknown as [URL];
+
+		expect(url.pathname).toBe("/xrpc/social.colibri.beta.bridge.listChannels");
+		expect(url.searchParams.get("community")).toBe("did:plc:community");
+		expect(url.searchParams.get("registration")).toBe("3lkbridgeaaaa");
+	});
+});

@@ -29,6 +29,7 @@ export const registration: Projector<social.colibri.beta.bridge.registration.Mai
 						}
 					: {}),
 			})),
+			channels: [...(value.channels ?? [])],
 			enabled: value.enabled,
 			mirrorModeration: value.mirrorModeration ?? false,
 			createdBy: value.createdBy,

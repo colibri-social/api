@@ -1,7 +1,18 @@
 import { XRPCError } from "@atproto/xrpc-server";
-import { BridgeError, CommunityCredentialError } from "@colibri-social/community";
-import { describe, expect, it } from "vitest";
-import { bridgeFailureToXrpc, registrationView } from "./bridge.js";
+import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
+import {
+	admitCommunityWrites,
+	BridgeError,
+	Bridges,
+	CommunityCredentialError,
+	type CommunityCredentials,
+	CommunityLoader,
+	CommunityWriter,
+} from "@colibri-social/community";
+import { communitySpaces } from "@colibri-social/lexicons";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { AppContext } from "../context.js";
+import { bridgeFailureToXrpc, handleInstallBridge, registrationView } from "./bridge.js";
 
 describe("bridgeFailureToXrpc", () => {
 	it("names each failure after its lexicon error", () => {
@@ -55,6 +66,7 @@ describe("registrationView", () => {
 					remoteName: "general",
 				},
 			],
+			channels: [],
 			enabled: true,
 			mirrorModeration: false,
 			createdBy: "did:plc:adminxxxxxxxxxxxxxxxxxxxxxxx",
@@ -66,5 +78,132 @@ describe("registrationView", () => {
 		expect(view.updatedAt).toBeUndefined();
 		expect(view.bridgeHandle).toBeUndefined();
 		expect(view.communityName).toBeUndefined();
+	});
+});
+
+const COMMUNITY = "did:plc:communityxxxxxxxxxxxxxxxxxxx";
+const ADMIN = "did:plc:adminxxxxxxxxxxxxxxxxxxxxxxx";
+const MEMBER = "did:plc:memberxxxxxxxxxxxxxxxxxxxxxx";
+const BRIDGE = "did:plc:bridgexxxxxxxxxxxxxxxxxxxxxx";
+const BRIDGE_HANDLE = "bolt.example.com";
+const NOW = "2026-09-24T12:00:00.000Z";
+
+describe("handleInstallBridge", () => {
+	let database: TestDatabase;
+	let ctx: AppContext;
+
+	const fakeCredentials = (): CommunityCredentials => {
+		const pds = {
+			putRecord: async (_session: unknown, write: { collection: string; rkey: string }) => ({
+				uri: `at://${COMMUNITY}/${write.collection}/${write.rkey}`,
+				cid: `bafy${write.rkey}`,
+			}),
+			deleteRecord: async () => undefined,
+		};
+
+		return { connect: async () => ({ pds, session: {} }) } as unknown as CommunityCredentials;
+	};
+
+	const resolveAtIdentifier = async (identifier: string) => {
+		if (identifier !== BRIDGE && identifier !== BRIDGE_HANDLE) {
+			throw new Error(`could not resolve ${identifier}`);
+		}
+
+		return { did: BRIDGE, handle: BRIDGE_HANDLE, pds: null, signingKey: "key" };
+	};
+
+	beforeEach(async () => {
+		database = await openTestDatabase();
+
+		const spaces = communitySpaces(COMMUNITY);
+		const loader = new CommunityLoader({ db: database.db, tables: database.tables });
+		const writer = new CommunityWriter({
+			credentials: fakeCredentials(),
+			mirror: {
+				db: database.db,
+				tables: database.tables,
+				projections: {
+					db: database.db,
+					tables: database.tables,
+					now: () => NOW,
+					admit: admitCommunityWrites(database.tables),
+				},
+			},
+		});
+
+		ctx = {
+			database,
+			loader,
+			identity: { resolveAtIdentifier },
+			bridges: new Bridges({ db: database.db, tables: database.tables, loader, writer }),
+		} as unknown as AppContext;
+
+		await database.db.insert(database.tables.communities).values({
+			did: COMMUNITY,
+			name: "Bridged",
+			labelers: [],
+			profileSpace: spaces.profile,
+			configSpace: spaces.configuration,
+			membersSpace: spaces.members,
+			moderationSpace: spaces.moderation,
+			indexedAt: NOW,
+		});
+		await database.db.insert(database.tables.roles).values({
+			community: COMMUNITY,
+			rkey: "admin",
+			name: "admin",
+			color: null,
+			permissions: ["community.manage"],
+			position: 100,
+			hoisted: false,
+			mentionable: false,
+			protected: false,
+			channelOverrides: [],
+		});
+		await database.db.insert(database.tables.members).values([
+			{ community: COMMUNITY, did: ADMIN, roles: ["admin"], joinedAt: NOW, nickname: null },
+			{ community: COMMUNITY, did: MEMBER, roles: [], joinedAt: NOW, nickname: null },
+		]);
+	});
+
+	afterEach(async () => {
+		await database.destroy();
+	});
+
+	it("installs a bridge by handle and names it after the handle", async () => {
+		const registration = await handleInstallBridge(ctx, ADMIN, {
+			community: COMMUNITY,
+			bridge: BRIDGE_HANDLE,
+		});
+
+		expect(registration).toMatchObject({
+			bridge: BRIDGE,
+			platform: "external",
+			remoteSpace: COMMUNITY,
+			remoteSpaceName: BRIDGE_HANDLE,
+			links: [],
+			channels: [],
+			createdBy: ADMIN,
+		});
+	});
+
+	it("refuses a bridge that is already installed", async () => {
+		await handleInstallBridge(ctx, ADMIN, { community: COMMUNITY, bridge: BRIDGE });
+
+		await expect(
+			handleInstallBridge(ctx, ADMIN, { community: COMMUNITY, bridge: BRIDGE_HANDLE }),
+		).rejects.toMatchObject({ customErrorName: "AlreadyRegistered" });
+	});
+
+	it("refuses an address that does not resolve", async () => {
+		await expect(
+			handleInstallBridge(ctx, ADMIN, { community: COMMUNITY, bridge: "nobody.example.com" }),
+		).rejects.toMatchObject({ customErrorName: "BridgeNotFound" });
+	});
+
+	it("refuses a caller without community.manage", async () => {
+		await expect(
+			handleInstallBridge(ctx, MEMBER, { community: COMMUNITY, bridge: BRIDGE_HANDLE }),
+		).rejects.toMatchObject({ customErrorName: "Forbidden" });
 	});
 });

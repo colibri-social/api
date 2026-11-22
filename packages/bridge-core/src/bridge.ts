@@ -222,6 +222,8 @@ export class Bridge {
 						remoteName,
 					})),
 			connections: (remoteSpace) => this.connections(remoteSpace),
+			channels: (community, registration) =>
+				this.options.client.listChannels({ community, registration }),
 			disconnect: (remoteSpace, community) => this.leave(remoteSpace, community),
 		};
 	}

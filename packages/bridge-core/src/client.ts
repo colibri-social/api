@@ -3,6 +3,7 @@ import type { ServiceAuthSigner } from "./auth.js";
 
 export type RegistrationView = social.colibri.beta.bridge.defs.RegistrationView;
 export type RemoteRoom = social.colibri.beta.bridge.defs.RemoteRoom;
+export type ChannelView = social.colibri.beta.community.defs.ChannelView;
 export type MessageView = social.colibri.beta.channel.defs.MessageView;
 export type ThreadView = social.colibri.beta.thread.defs.ThreadView;
 export type Facet = social.colibri.beta.richtext.facet.Main;
@@ -287,6 +288,15 @@ export class ColibriClient {
 
 	async putRemoteRooms(ref: RegistrationRef, rooms: RemoteRoom[]): Promise<void> {
 		await this.procedure("social.colibri.beta.bridge.putRemoteRooms", { ...ref, rooms });
+	}
+
+	async listChannels(ref: RegistrationRef): Promise<ChannelView[]> {
+		const { channels } = await this.query<{ channels: ChannelView[] }>(
+			"social.colibri.beta.bridge.listChannels",
+			{ ...ref },
+		);
+
+		return channels;
 	}
 
 	async uploadBlob(ref: RegistrationRef, bytes: Uint8Array, mimeType: string): Promise<BlobRef> {

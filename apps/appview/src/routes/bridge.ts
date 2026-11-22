@@ -1,7 +1,9 @@
 import { InvalidRequestError, ResponseType, XRPCError } from "@atproto/xrpc-server";
 import { sniffMimeType } from "@colibri-social/blobs";
 import {
+	anonymousAuthz,
 	type BridgeBackfill,
+	type BridgeChannel,
 	BridgeError,
 	type BridgePairing,
 	type BridgeRegistration,
@@ -33,6 +35,7 @@ import type { AppContext } from "../context.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
 import { ChannelViews } from "../views/channel.js";
+import { type ChannelView, CommunityViews } from "../views/community.js";
 import { anchorOf, ThreadViews } from "../views/thread.js";
 import { credentialsUnavailable } from "./failures.js";
 import { announceThread, announceThreadDeleted, threadRecord } from "./thread-write.js";
@@ -161,6 +164,7 @@ export const registrationView = (
 				}
 			: {}),
 	})),
+	channels: row.channels.map(asSpaceRef),
 	backfills: backfills.map(backfillView),
 	enabled: row.enabled,
 	mirrorModeration: row.mirrorModeration,
@@ -246,6 +250,42 @@ const readCappedBlob = async (
 	return out;
 };
 
+export const handleInstallBridge = async (
+	ctx: AppContext,
+	caller: string,
+	body: { community: string; bridge: string },
+): Promise<BridgeRegistration> => {
+	await requireManager(ctx, body.community, caller);
+
+	const identity = await ctx.identity.resolveAtIdentifier(body.bridge).catch(() => null);
+
+	if (!identity) {
+		throw new InvalidRequestError("no bridge exists at that address", "BridgeNotFound");
+	}
+
+	return translated(() => {
+		return ctx.bridges.install(
+			body.community,
+			caller,
+			identity.did,
+			identity.handle ?? identity.did,
+		);
+	});
+};
+
+export const bridgeChannelView = (
+	communities: CommunityViews,
+	bridge: string,
+	channel: BridgeChannel,
+): ChannelView => {
+	const view = communities.channel(channel.row, anonymousAuthz(bridge, channel.row.community), {
+		category: channel.category,
+		roles: channel.roles,
+	});
+
+	return { ...view, viewer: { canRead: channel.open, canPost: channel.open } };
+};
+
 const key = (input: { community: string; registration: string }): RegistrationKey => ({
 	community: input.community,
 	registration: input.registration,
@@ -261,6 +301,7 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 	const actors = new ActorViews(ctx);
 	const channels = new ChannelViews(ctx, actors);
 	const threads = new ThreadViews(ctx, channels);
+	const communities = new CommunityViews(ctx, actors);
 	const moderation = new Moderation({
 		db: ctx.database.db,
 		tables: ctx.database.tables,
@@ -368,6 +409,27 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 		},
 	});
 
+	route(server, social.colibri.beta.bridge.install, {
+		auth: auth.required,
+		handler: async ({ input, auth: caller }) => {
+			const registration = await handleInstallBridge(ctx, caller.credentials.did, input.body);
+
+			announceToBridge(registration, "update");
+
+			return {
+				encoding: "application/json" as const,
+				body: {
+					registration: registrationView(
+						registration,
+						await handleOf(ctx, registration.bridge),
+						await ctx.bridges.backfills(registration),
+						await communityNameOf(ctx, registration.community),
+					),
+				},
+			};
+		},
+	});
+
 	route(server, social.colibri.beta.bridge.listRegistrations, {
 		auth: auth.required,
 		handler: async ({ params, auth: caller }) => {
@@ -391,6 +453,7 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 								links: input.body.links.map(linkBody),
 							}
 						: {}),
+					...(input.body.channels ? { channels: [...input.body.channels] } : {}),
 					...(input.body.enabled === undefined ? {} : { enabled: input.body.enabled }),
 					...(input.body.mirrorModeration === undefined
 						? {}
@@ -482,6 +545,21 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 			return {
 				encoding: "application/json" as const,
 				body: { registrations: await views(ctx, rows) },
+			};
+		},
+	});
+
+	route(server, social.colibri.beta.bridge.listChannels, {
+		auth: auth.service,
+		handler: async ({ params, auth: caller }) => {
+			const bridge = caller.credentials.did;
+			const rows = await translated(() => ctx.bridges.listChannels(bridge, key(params)));
+
+			return {
+				encoding: "application/json" as const,
+				body: {
+					channels: rows.map((row) => bridgeChannelView(communities, bridge, row)),
+				},
 			};
 		},
 	});

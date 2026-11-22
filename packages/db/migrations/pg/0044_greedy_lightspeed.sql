@@ -1,0 +1,1 @@
+ALTER TABLE "bridge_registrations" ADD COLUMN "channels" jsonb DEFAULT '[]'::jsonb NOT NULL;

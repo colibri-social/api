@@ -15,7 +15,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"community":/*#__PURE__*/ l.string({"format":"did"}),"registration":/*#__PURE__*/ l.string({"format":"tid"}),"links":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<BridgeDefs.Link>((() => BridgeDefs.link) as any), {"maxLength":500})),"enabled":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"mirrorModeration":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())});
+export const $input = /*#__PURE__*/ l.jsonPayload({"community":/*#__PURE__*/ l.string({"format":"did"}),"registration":/*#__PURE__*/ l.string({"format":"tid"}),"links":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<BridgeDefs.Link>((() => BridgeDefs.link) as any), {"maxLength":500})),"channels":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"space-ref"}), {"maxLength":500})),"enabled":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"mirrorModeration":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;

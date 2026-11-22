@@ -8,6 +8,7 @@ import {
 	threadSpace,
 } from "@colibri-social/lexicons";
 import { applyChange, type ProjectionDeps } from "@colibri-social/projections";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { admitCommunityWrites } from "./admission.js";
 import { type BridgeFailure, type BridgeRegistration, Bridges } from "./bridges.js";
@@ -251,6 +252,134 @@ describe("links", () => {
 		await bridges.putRemoteRooms(BRIDGE, keyOf(registration), []);
 
 		expect(await bridges.remoteRooms(keyOf(registration))).toEqual([]);
+	});
+});
+
+const installed = async (): Promise<BridgeRegistration> => {
+	return bridges.install(COMMUNITY, ADMIN, BRIDGE, "bolt.example.com");
+};
+
+describe("installing", () => {
+	it("registers a bridge by identity with no links or open channels", async () => {
+		const registration = await installed();
+
+		expect(registration).toMatchObject({
+			community: COMMUNITY,
+			bridge: BRIDGE,
+			platform: "external",
+			remoteSpace: COMMUNITY,
+			remoteSpaceName: "bolt.example.com",
+			links: [],
+			channels: [],
+			enabled: true,
+			createdBy: ADMIN,
+		});
+		expect(await bridges.registrationsHeldBy(BRIDGE)).toHaveLength(1);
+	});
+
+	it("refuses to install the same bridge twice", async () => {
+		await installed();
+
+		await expectFailure(installed(), "alreadyRegistered");
+	});
+
+	it("installs next to a pairing of the same bridge", async () => {
+		await paired();
+
+		await expect(installed()).resolves.toMatchObject({ remoteSpace: COMMUNITY });
+	});
+});
+
+describe("open channels", () => {
+	const open = async (channels: string[]): Promise<BridgeRegistration> => {
+		const registration = await installed();
+
+		return bridges.update(keyOf(registration), { channels });
+	};
+
+	it("lists the community's text channels every member can read", async () => {
+		const voice = channelSpace(COMMUNITY, SPACE_TYPES.channelVoice, "3lkchannel003");
+
+		await applyChange(
+			{ db: database.db, tables: database.tables, now: () => clock.toISOString() },
+			{
+				space: voice,
+				author: COMMUNITY,
+				puts: [
+					{
+						collection: "social.colibri.beta.channel",
+						rkey: SELF,
+						cid: "bafychannelvoice",
+						value: { $type: "social.colibri.beta.channel", name: "voice" },
+					},
+				],
+				deletes: [],
+			},
+		);
+		await database.db
+			.update(database.tables.channels)
+			.set({ visibleToRoles: ["mods"] })
+			.where(eq(database.tables.channels.space, RANDOM));
+
+		const registration = await open([GENERAL]);
+		const channels = await bridges.listChannels(BRIDGE, keyOf(registration));
+
+		expect(channels.map((channel) => [channel.row.space, channel.open])).toEqual([[GENERAL, true]]);
+	});
+
+	it("lists channels for a bridge with no links or open channels", async () => {
+		const registration = await installed();
+		const channels = await bridges.listChannels(BRIDGE, keyOf(registration));
+
+		expect(channels.map((channel) => [channel.row.space, channel.open])).toEqual([
+			[GENERAL, false],
+			[RANDOM, false],
+		]);
+	});
+
+	it("refuses to list channels for another bridge's registration", async () => {
+		const registration = await installed();
+
+		await expectFailure(bridges.listChannels(OTHER_BRIDGE, keyOf(registration)), "forbidden");
+	});
+
+	it("refuses an open channel the community does not have", async () => {
+		const missing = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkmissing001");
+
+		await expectFailure(open([missing]), "channelNotFound");
+	});
+
+	it("lets the bridge read and post in an open channel", async () => {
+		const registration = await open([GENERAL]);
+
+		expect(await bridges.mayRead(BRIDGE, GENERAL)).toBe(true);
+		expect(await bridges.mayRead(BRIDGE, RANDOM)).toBe(false);
+
+		await bridges.postMessage(BRIDGE, {
+			...keyOf(registration),
+			channel: GENERAL,
+			author: ALICE,
+			text: "bridge created",
+		});
+
+		expect(await messages()).toHaveLength(1);
+	});
+
+	it("revokes reading and posting when the channel is closed again", async () => {
+		const registration = await open([GENERAL]);
+
+		await bridges.update(keyOf(registration), { channels: [] });
+
+		expect(await bridges.mayRead(BRIDGE, GENERAL)).toBe(false);
+		await expectFailure(
+			bridges.postMessage(BRIDGE, {
+				...keyOf(registration),
+				channel: GENERAL,
+				author: ALICE,
+				text: "too late",
+			}),
+			"channelNotLinked",
+		);
 	});
 });
 

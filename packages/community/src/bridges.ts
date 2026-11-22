@@ -21,7 +21,8 @@ import {
 	trySpaceRecordUri,
 } from "@colibri-social/space";
 import { and, asc, desc, eq, gt, isNull, notInArray } from "drizzle-orm";
-import type { CommunityLoader } from "./loader.js";
+import { type CategoryScope, isPrivateChannel, type RoleState } from "./authz.js";
+import { type CommunityLoader, toChannelState } from "./loader.js";
 import type { BlobRef, CommunityWriter } from "./writes.js";
 
 export type BridgeFailure =
@@ -57,6 +58,13 @@ export type BridgeRegistration = Schema["bridgeRegistrations"]["$inferSelect"];
 export type BridgePairing = Schema["bridgePairings"]["$inferSelect"];
 export type BridgeRemoteRoom = Schema["bridgeRemoteRooms"]["$inferSelect"];
 export type BridgeBackfill = Schema["bridgeBackfills"]["$inferSelect"];
+
+export type BridgeChannel = {
+	row: Schema["channels"]["$inferSelect"];
+	category: CategoryScope | null;
+	roles: RoleState[];
+	open: boolean;
+};
 
 export type RemoteSpace = {
 	platform: string;
@@ -341,23 +349,7 @@ export class Bridges {
 		const pairing = await this.pairing(code);
 		const { db, tables } = this.deps;
 
-		const [existing] = await db
-			.select({ id: tables.bridgeRegistrations.id })
-			.from(tables.bridgeRegistrations)
-			.where(
-				and(
-					eq(tables.bridgeRegistrations.community, community),
-					eq(tables.bridgeRegistrations.bridge, pairing.bridge),
-					eq(tables.bridgeRegistrations.remoteSpace, pairing.remoteSpace),
-				),
-			)
-			.limit(1);
-		if (existing) {
-			throw new BridgeError(
-				"alreadyRegistered",
-				"this bridge is already connected to the same remote space in this community",
-			);
-		}
+		await this.requireUnregistered(community, pairing.bridge, pairing.remoteSpace);
 
 		const claimed = await db
 			.update(tables.bridgePairings)
@@ -385,6 +377,35 @@ export class Bridges {
 				createdAt: this.now().toISOString(),
 			},
 		});
+		return this.registration({ community, registration: rkey });
+	}
+
+	async install(
+		community: string,
+		admin: string,
+		bridge: string,
+		bridgeName: string,
+	): Promise<BridgeRegistration> {
+		await this.requireCommunity(community);
+		await this.requireUnregistered(community, bridge, community);
+
+		const { rkey } = await this.deps.writer.put(community, {
+			space: communitySpaces(community).configuration,
+			collection: COLLECTIONS.bridgeRegistration,
+			record: {
+				$type: COLLECTIONS.bridgeRegistration,
+				bridge,
+				platform: "external",
+				remoteSpace: community,
+				remoteSpaceName: bridgeName,
+				links: [],
+				channels: [],
+				enabled: true,
+				createdBy: admin,
+				createdAt: this.now().toISOString(),
+			},
+		});
+
 		return this.registration({ community, registration: rkey });
 	}
 
@@ -430,11 +451,22 @@ export class Bridges {
 
 	async update(
 		key: RegistrationKey,
-		changes: { links?: BridgeLink[]; enabled?: boolean; mirrorModeration?: boolean },
+		changes: {
+			links?: BridgeLink[];
+			channels?: string[];
+			enabled?: boolean;
+			mirrorModeration?: boolean;
+		},
 	): Promise<BridgeRegistration> {
 		await this.requireCommunity(key.community);
 		const current = await this.registration(key);
-		if (changes.links) await this.requireChannels(key.community, changes.links);
+		if (changes.links) {
+			await this.requireChannels(
+				key.community,
+				changes.links.map((link) => link.channel),
+			);
+		}
+		if (changes.channels) await this.requireChannels(key.community, changes.channels);
 
 		const record = await this.currentRegistrationRecord(key);
 		await this.deps.writer.put(key.community, {
@@ -445,6 +477,7 @@ export class Bridges {
 				...record,
 				$type: COLLECTIONS.bridgeRegistration,
 				links: (changes.links ?? current.links).map((link) => ({ ...link })),
+				channels: [...new Set(changes.channels ?? current.channels)],
 				enabled: changes.enabled ?? current.enabled,
 				mirrorModeration: changes.mirrorModeration ?? current.mirrorModeration,
 				updatedAt: this.now().toISOString(),
@@ -536,6 +569,36 @@ export class Bridges {
 			if (await rewrite(row.space, COLLECTIONS.thread, SELF)) threads.push(row.space);
 		}
 		return { messages, threads };
+	}
+
+	async listChannels(bridge: string, key: RegistrationKey): Promise<BridgeChannel[]> {
+		const registration = await this.held(bridge, key);
+		const { db, tables, loader } = this.deps;
+		const [rows, scopes, roles] = await Promise.all([
+			db
+				.select()
+				.from(tables.channels)
+				.where(eq(tables.channels.community, key.community))
+				.orderBy(asc(tables.channels.position)),
+			loader.categoryScopes(key.community),
+			loader.roles(key.community),
+		]);
+		const defaultRole = roles.find((role) => role.isDefault)?.rkey ?? null;
+		const channels: BridgeChannel[] = [];
+
+		for (const row of rows) {
+			if (row.spaceType !== SPACE_TYPES.channelText) continue;
+
+			const category = row.category ? (scopes.get(row.category) ?? null) : null;
+
+			if (isPrivateChannel(toChannelState(row, category), defaultRole)) continue;
+
+			const open = (await this.linkedChannelOf(registration, row.space)) !== null;
+
+			channels.push({ row, category, roles, open });
+		}
+
+		return channels;
 	}
 
 	async remoteRooms(key: RegistrationKey): Promise<BridgeRemoteRoom[]> {
@@ -897,7 +960,9 @@ export class Bridges {
 
 	async linkedChannelOf(registration: BridgeRegistration, space: string): Promise<string | null> {
 		if (!registration.enabled) return null;
-		const linked = (channel: string) => registration.links.some((link) => link.channel === channel);
+		const linked = (channel: string) =>
+			registration.links.some((link) => link.channel === channel) ||
+			registration.channels.includes(channel);
 		if (linked(space)) return space;
 		if (spaceTypeOf(space) !== SPACE_TYPES.channelThread) return null;
 		const thread = await this.deps.loader.threadRow(space);
@@ -1079,19 +1144,42 @@ export class Bridges {
 		return record;
 	}
 
-	private async requireChannels(community: string, links: BridgeLink[]): Promise<void> {
+	private async requireUnregistered(
+		community: string,
+		bridge: string,
+		remoteSpace: string,
+	): Promise<void> {
 		const { db, tables } = this.deps;
-		const channels = await db
+		const [existing] = await db
+			.select({ id: tables.bridgeRegistrations.id })
+			.from(tables.bridgeRegistrations)
+			.where(
+				and(
+					eq(tables.bridgeRegistrations.community, community),
+					eq(tables.bridgeRegistrations.bridge, bridge),
+					eq(tables.bridgeRegistrations.remoteSpace, remoteSpace),
+				),
+			)
+			.limit(1);
+
+		if (existing) {
+			throw new BridgeError(
+				"alreadyRegistered",
+				"this bridge is already connected to the same remote space in this community",
+			);
+		}
+	}
+
+	private async requireChannels(community: string, channels: string[]): Promise<void> {
+		const { db, tables } = this.deps;
+		const rows = await db
 			.select({ space: tables.channels.space })
 			.from(tables.channels)
 			.where(eq(tables.channels.community, community));
-		const known = new Set(channels.map((row) => row.space));
-		for (const link of links) {
-			if (!known.has(link.channel) || !isMessageSpace(link.channel)) {
-				throw new BridgeError(
-					"channelNotFound",
-					`the community has no text channel ${link.channel}`,
-				);
+		const known = new Set(rows.map((row) => row.space));
+		for (const channel of channels) {
+			if (!known.has(channel) || !isMessageSpace(channel)) {
+				throw new BridgeError("channelNotFound", `the community has no text channel ${channel}`);
 			}
 		}
 	}

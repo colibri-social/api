@@ -40,6 +40,11 @@ type Main = { $type: "social.colibri.beta.bridge.registration";
   "links":(BridgeDefs.Link)[];
 
   /**
+   * Channels the bridge may read and post in without a room on the other service. Threads under them follow the same rules as threads under linked channels.
+   */
+  "channels"?:(l.SpaceRefString)[];
+
+  /**
    * Whether the bridge may currently write. An admin can pause a bridge without unlinking its channels.
    */
   "enabled":boolean;
@@ -67,7 +72,7 @@ type Main = { $type: "social.colibri.beta.bridge.registration";
 export type { Main };
 
 /** A bridge the community has paired with. Lives in the community's configuration space, so every member can see which bridges are connected and which channels they relay. Written only by the community. */
-const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"bridge":/*#__PURE__*/ l.string({"format":"did"}),"platform":/*#__PURE__*/ l.string({"maxLength":64}),"remoteSpace":/*#__PURE__*/ l.string({"maxLength":256}),"remoteSpaceName":/*#__PURE__*/ l.string({"maxLength":128}),"links":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<BridgeDefs.Link>((() => BridgeDefs.link) as any), {"maxLength":500}),"enabled":/*#__PURE__*/ l.boolean(),"mirrorModeration":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"createdBy":/*#__PURE__*/ l.string({"format":"did"}),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"updatedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"}))}));
+const main = /*#__PURE__*/ l.record<"tid", Main>("tid", $nsid, /*#__PURE__*/ l.object({"bridge":/*#__PURE__*/ l.string({"format":"did"}),"platform":/*#__PURE__*/ l.string({"maxLength":64}),"remoteSpace":/*#__PURE__*/ l.string({"maxLength":256}),"remoteSpaceName":/*#__PURE__*/ l.string({"maxLength":128}),"links":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<BridgeDefs.Link>((() => BridgeDefs.link) as any), {"maxLength":500}),"channels":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"space-ref"}), {"maxLength":500})),"enabled":/*#__PURE__*/ l.boolean(),"mirrorModeration":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"createdBy":/*#__PURE__*/ l.string({"format":"did"}),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"}),"updatedAt":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"}))}));
 
 export { main };
 
