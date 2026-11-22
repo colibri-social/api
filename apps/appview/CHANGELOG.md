@@ -1,5 +1,28 @@
 # @colibri-social/appview
 
+## 2.43.0
+
+### Minor Changes
+
+- 0d28440: Bridges that set up rooms with commands, such as Lightning, can connect to a community without a pairing code. `social.colibri.beta.bridge.install` takes a community and the bridge's handle or DID and writes a registration with platform `external`, the community DID as its remote space, and no linked or open channels. It answers `BridgeNotFound` when the handle or DID doesn't resolve and `AlreadyRegistered` when the bridge is already installed.
+  
+  Registrations gain an optional `channels` list of open channels, set through `bridge.update`. A bridge may read, subscribe to and post in an open channel and in its unrestricted threads without a room on the other service. `links` keep working as before.
+  
+  `social.colibri.beta.bridge.listChannels` lists a community's text channels that every member can read to the bridge holding the registration, with `viewer.canRead` and `viewer.canPost` set for the channels open to it. `permissionBridge` includes it, and `permissionCommunity` includes `bridge.install`. In `@colibri-social/bridge-core`, `ColibriClient.listChannels` calls it and `BridgeContext` gains `channels(community, registration)`.
+  
+  A bridge-core connector that implements `receiveChannelMessage` hears every new message in the open channels of its enabled registrations, as `OpenChannelMessage` with the author and the text as markdown. It skips edits, imported history and the bridge's own posts. `BridgeContext.reply()` posts in an open channel under a remote author's name, optionally as a reply to a message, and returns the new record key.
+- 7c3c39c: Posting in a voice channel's chat needs `message.send` and `voice.chat`, so a channel override that denies `message.send` makes the chat read-only while members keep reacting. `voice.chat` controls reading the chat, and joining the call still needs `voice.connect`. A voice channel's legacy posting allow list restricts joining, chat posting and reactions. The new `canConnect` check replaces `canPost` for joining a call.
+
+### Patch Changes
+
+- Updated dependencies [0d28440]
+- Updated dependencies [7c3c39c]
+  - @colibri-social/lexicons@2.41.0
+  - @colibri-social/community@2.19.0
+  - @colibri-social/appview-db@0.26.0
+  - @colibri-social/projections@1.17.0
+  - @colibri-social/notifications@1.12.5
+
 ## 2.42.0
 
 ### Minor Changes
