@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { kindLabel, notificationSubtitle, placeLocation, placeName } from "./place.js";
+import {
+	conversationName,
+	kindLabel,
+	notificationSubtitle,
+	placeLocation,
+	placeName,
+} from "./place.js";
 
 const CHANNEL = "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchannel1";
 const THREAD = "at://did:plc:community/space/social.colibri.beta.channel.thread/3lkthread1";
@@ -47,5 +53,29 @@ describe("notificationSubtitle", () => {
 			"Mentioned you · #3lkchannel1",
 		);
 		expect(placeName({ channel: CHANNEL })).toBe("3lkchannel1");
+	});
+});
+
+describe("conversationName", () => {
+	const place = { channel: CHANNEL, spaceName: "Protocol Nerds", channelName: "general" };
+
+	it("names the channel and the Space without symbols", () => {
+		expect(conversationName(place)).toBe("general, Protocol Nerds");
+	});
+
+	it("names a thread by its own name", () => {
+		expect(conversationName({ ...place, thread: THREAD, threadName: "Launch plans" })).toBe(
+			"Launch plans, Protocol Nerds",
+		);
+	});
+
+	it("names an unnamed thread after its parent channel", () => {
+		expect(conversationName({ ...place, thread: THREAD })).toBe(
+			"thread in general, Protocol Nerds",
+		);
+	});
+
+	it("drops the Space when its name is unknown", () => {
+		expect(conversationName({ channel: CHANNEL })).toBe("3lkchannel1");
 	});
 });

@@ -1,3 +1,5 @@
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { XRPCError } from "@atproto/xrpc-server";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import {
@@ -9,6 +11,7 @@ import {
 	CommunityLoader,
 	CommunityWriter,
 } from "@colibri-social/community";
+import { IdentityResolver } from "@colibri-social/identity";
 import { communitySpaces } from "@colibri-social/lexicons";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AppContext } from "../context.js";
@@ -193,6 +196,50 @@ describe("handleInstallBridge", () => {
 		await expect(
 			handleInstallBridge(ctx, ADMIN, { community: COMMUNITY, bridge: BRIDGE_HANDLE }),
 		).rejects.toMatchObject({ customErrorName: "AlreadyRegistered" });
+	});
+
+	it("installs a bridge whose DID document has no handle and names it after the DID", async () => {
+		const key = "zQ3shhDZeUurHvL6sQJe9Nr4AdVTJ85SXVLSb3fACygaN7VFm";
+		const server: Server = createServer((_, res) => {
+			res.writeHead(200, { "content-type": "application/json" });
+			res.end(
+				JSON.stringify({
+					id: did,
+					alsoKnownAs: ["at://"],
+					verificationMethod: [
+						{ id: `${did}#atproto`, type: "Multikey", controller: did, publicKeyMultibase: key },
+					],
+					service: [
+						{
+							id: "#atproto_pds",
+							type: "AtprotoPersonalDataServer",
+							serviceEndpoint: "https://pds.test",
+						},
+					],
+				}),
+			);
+		});
+
+		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+
+		const did = `did:web:localhost%3A${(server.address() as AddressInfo).port}`;
+		const identity = new IdentityResolver({
+			plcUrl: "http://plc.invalid",
+			fetch: globalThis.fetch,
+			staleSeconds: 3600,
+			maxSeconds: 86_400,
+		});
+
+		try {
+			const registration = await handleInstallBridge({ ...ctx, identity } as AppContext, ADMIN, {
+				community: COMMUNITY,
+				bridge: did,
+			});
+
+			expect(registration).toMatchObject({ bridge: did, remoteSpaceName: did });
+		} finally {
+			await new Promise<void>((resolve) => server.close(() => resolve()));
+		}
 	});
 
 	it("refuses an address that does not resolve", async () => {

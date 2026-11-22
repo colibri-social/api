@@ -12,6 +12,7 @@ export type PushData = {
 	spaceName?: string;
 	placeName?: string;
 	subtitle?: string;
+	conversationName?: string;
 	body?: string;
 	imageUrl?: string;
 	badge: string;

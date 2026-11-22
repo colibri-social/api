@@ -35,6 +35,12 @@ export const placeLocation = (place: PlaceLabels & { thread?: string }): string 
 	return place.threadName ?? `Thread in ${channel}`;
 };
 
+export const conversationName = (place: PlaceLabels & { thread?: string }): string => {
+	const channel = channelNameOf(place);
+	const location = place.thread ? (place.threadName ?? `thread in ${channel}`) : channel;
+	return place.spaceName ? `${location}, ${place.spaceName}` : location;
+};
+
 export const notificationSubtitle = (
 	notification: KindLabelInput,
 	place: PlaceLabels & { thread?: string },

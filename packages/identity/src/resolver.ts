@@ -1,4 +1,10 @@
-import { getDidKeyFromMultibase, getPds, IdResolver, MemoryCache } from "@atproto/identity";
+import {
+	getDidKeyFromMultibase,
+	getPds,
+	IdResolver,
+	MemoryCache,
+	parseToAtprotoDocument,
+} from "@atproto/identity";
 import { mapWithConcurrency } from "./concurrency.js";
 import { IdentityResolutionError, MissingKemKeyError, MissingPdsError } from "./errors.js";
 
@@ -76,17 +82,31 @@ export class IdentityResolver {
 	}
 
 	async resolveDid(did: string, forceRefresh = false): Promise<AtprotoIdentity> {
-		const data = await this.resolver.did
-			.resolveAtprotoData(did, forceRefresh)
-			.catch(async (cause) => {
-				throw await this.resolutionFailure(did, cause);
-			});
+		const document = await this.resolver.did.resolve(did, forceRefresh).catch(async (cause) => {
+			throw await this.resolutionFailure(did, cause);
+		});
+
+		if (!document) {
+			throw new IdentityResolutionError(did, `could not resolve ${did}`);
+		}
+
+		const data = parseToAtprotoDocument(document);
+
+		if (!data.pds) {
+			throw new MissingPdsError(did);
+		}
+
+		if (!data.did || !data.signingKey) {
+			throw new IdentityResolutionError(did, `could not resolve ${did}`);
+		}
+
 		const identity: AtprotoIdentity = {
 			did: data.did,
-			handle: data.handle ?? null,
-			pds: data.pds ?? null,
+			handle: data.handle || null,
+			pds: data.pds,
 			signingKey: data.signingKey,
 		};
+
 		for (const observe of this.observers) observe(identity);
 		return identity;
 	}

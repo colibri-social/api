@@ -187,6 +187,7 @@ describe("buildPayload", () => {
 			spaceName: "Protocol Nerds",
 			placeName: "general",
 			subtitle: "Mentioned you · Protocol Nerds › #general",
+			conversationName: "general, Protocol Nerds",
 			body: "hi",
 			badge: "4",
 			readUrl: "https://appview.example/xrpc/mark",
@@ -214,6 +215,7 @@ describe("buildPayload", () => {
 			threadUri: thread,
 			placeName: "Plans",
 			subtitle: "Replied to you · Protocol Nerds › Plans",
+			conversationName: "Plans, Protocol Nerds",
 			messageUri: `${thread}/${notification.author}/social.colibri.beta.message/${notification.messageRkey}`,
 			deepLink:
 				"social.colibri:/channel/did:plc:community/social.colibri.beta.channel.text/3lkchannel1",
@@ -228,6 +230,7 @@ describe("buildPayload", () => {
 			spaceName: "",
 			placeName: "3lkchannel1",
 			subtitle: "#3lkchannel1",
+			conversationName: "3lkchannel1",
 			badge: "0",
 		});
 		expect(payload.data.readUrl).toBeUndefined();

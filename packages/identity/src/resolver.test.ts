@@ -178,6 +178,32 @@ describe("signingKeyFor", () => {
 		await expect(resolver(store([]).store).resolveDid(did)).rejects.toBeInstanceOf(MissingPdsError);
 	});
 
+	it("resolves a document without a handle", async () => {
+		const did = await serveDocument((id) => ({
+			id,
+			alsoKnownAs: ["at://"],
+			verificationMethod: [
+				{
+					id: `${id}#atproto`,
+					type: "Multikey",
+					controller: id,
+					publicKeyMultibase: "zQ3shhDZeUurHvL6sQJe9Nr4AdVTJ85SXVLSb3fACygaN7VFm",
+				},
+			],
+			service: [
+				{
+					id: "#atproto_pds",
+					type: "AtprotoPersonalDataServer",
+					serviceEndpoint: "https://pds.test",
+				},
+			],
+		}));
+
+		const identity = await resolver(store([]).store).resolveAtIdentifier(did);
+
+		expect(identity).toMatchObject({ did, handle: null, pds: "https://pds.test" });
+	});
+
 	it("keeps a document that fails for other reasons a plain resolution error", async () => {
 		const did = await serveDocument((id) => ({
 			id,

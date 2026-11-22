@@ -6,7 +6,13 @@ import webpush from "web-push";
 import { apnsSender } from "./apns.js";
 import type { FcmConfig, NotificationsConfig, VapidConfig } from "./config.js";
 import type { NotificationDeps } from "./deps.js";
-import { notificationSubtitle, type PushPlace, placeName, resolvePlace } from "./place.js";
+import {
+	conversationName,
+	notificationSubtitle,
+	type PushPlace,
+	placeName,
+	resolvePlace,
+} from "./place.js";
 import { isAlertPush, type PushPayload, pushDataStrings } from "./push-data.js";
 import { badgeCount, hasNotificationsThrough, notificationsForMessage } from "./read.js";
 import { issueReadToken } from "./read-token.js";
@@ -215,6 +221,7 @@ export const buildPayload = (
 			spaceName: routing.spaceName ?? "",
 			placeName: placeName(routing),
 			subtitle: notificationSubtitle(notification, routing),
+			conversationName: conversationName(routing),
 			body,
 			...(imageUrl ? { imageUrl } : {}),
 			badge: String(extras.badge ?? 0),
