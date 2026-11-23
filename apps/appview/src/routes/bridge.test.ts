@@ -15,7 +15,13 @@ import { IdentityResolver } from "@colibri-social/identity";
 import { communitySpaces } from "@colibri-social/lexicons";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AppContext } from "../context.js";
-import { bridgeFailureToXrpc, handleInstallBridge, registrationView } from "./bridge.js";
+import {
+	bridgeFailureToXrpc,
+	handleInstallBridge,
+	handlePutRemoteRooms,
+	handleReportBackfill,
+	registrationView,
+} from "./bridge.js";
 
 describe("bridgeFailureToXrpc", () => {
 	it("names each failure after its lexicon error", () => {
@@ -252,5 +258,93 @@ describe("handleInstallBridge", () => {
 		await expect(
 			handleInstallBridge(ctx, MEMBER, { community: COMMUNITY, bridge: BRIDGE_HANDLE }),
 		).rejects.toMatchObject({ customErrorName: "Forbidden" });
+	});
+});
+
+describe("bridge update announcements", () => {
+	const REGISTRATION = "3lkbridgeaaaa";
+	const CHANNEL = `at://${COMMUNITY}/space/social.colibri.beta.channel.text/3lkchannel001`;
+	const REPORT = {
+		community: COMMUNITY,
+		registration: REGISTRATION,
+		channel: CHANNEL,
+		requestedAt: NOW,
+		state: "running" as const,
+		imported: 12,
+		from: NOW,
+		until: NOW,
+	};
+
+	let announced: Array<{ community: string; permission: string; frame: unknown }>;
+
+	const contextWith = (bridges: Record<string, () => Promise<void>>) => {
+		return {
+			bridges,
+			announce: {
+				toCommunityPermission: async (community: string, permission: string, frame: unknown) => {
+					announced.push({ community, permission, frame });
+				},
+			},
+			log: { warn: () => {} },
+		} as unknown as AppContext;
+	};
+
+	const refusing = async () => {
+		throw new BridgeError("forbidden", "not held");
+	};
+
+	beforeEach(() => {
+		announced = [];
+	});
+
+	it("tells community managers about new remote rooms", async () => {
+		const ctx = contextWith({ putRemoteRooms: async () => {} });
+
+		await handlePutRemoteRooms(ctx, BRIDGE, { community: COMMUNITY, registration: REGISTRATION }, [
+			{ id: "room-1", name: "general" },
+		]);
+
+		expect(announced).toEqual([
+			{
+				community: COMMUNITY,
+				permission: "community.manage",
+				frame: {
+					$type: "social.colibri.beta.sync.defs#bridgeUpdateEvent",
+					event: "rooms",
+					community: COMMUNITY,
+					registration: REGISTRATION,
+				},
+			},
+		]);
+	});
+
+	it("tells community managers about backfill progress with the channel", async () => {
+		const ctx = contextWith({ reportBackfill: async () => {} });
+
+		await handleReportBackfill(ctx, BRIDGE, REPORT);
+
+		expect(announced).toEqual([
+			{
+				community: COMMUNITY,
+				permission: "community.manage",
+				frame: {
+					$type: "social.colibri.beta.sync.defs#bridgeUpdateEvent",
+					event: "backfill",
+					community: COMMUNITY,
+					registration: REGISTRATION,
+					channel: CHANNEL,
+				},
+			},
+		]);
+	});
+
+	it("announces nothing when the bridge's write is refused", async () => {
+		const ctx = contextWith({ putRemoteRooms: refusing, reportBackfill: refusing });
+
+		await expect(
+			handlePutRemoteRooms(ctx, BRIDGE, { community: COMMUNITY, registration: REGISTRATION }, []),
+		).rejects.toBeInstanceOf(XRPCError);
+		await expect(handleReportBackfill(ctx, BRIDGE, REPORT)).rejects.toBeInstanceOf(XRPCError);
+		expect(announced).toEqual([]);
 	});
 });

@@ -289,6 +289,19 @@ export const invitationEvent = (
 	code,
 });
 
+export const bridgeUpdateEvent = (
+	event: "rooms" | "backfill",
+	community: string,
+	registration: string,
+	channel?: string,
+): ServerFrame => ({
+	$type: "social.colibri.beta.sync.defs#bridgeUpdateEvent",
+	event,
+	community,
+	registration,
+	...(channel ? { channel } : {}),
+});
+
 export const moderationEvent = (
 	community: string,
 	entry: social.colibri.beta.community.defs.ModerationView,
@@ -356,6 +369,27 @@ export const announceApplication = (
 			ctx.log.warn(
 				{ community, reason: error instanceof Error ? error.message : error },
 				"application.announce.failed",
+			);
+		});
+};
+
+export const announceBridgeUpdate = (
+	ctx: AppContext,
+	event: "rooms" | "backfill",
+	community: string,
+	registration: string,
+	channel?: string,
+): void => {
+	void ctx.announce
+		.toCommunityPermission(
+			community,
+			"community.manage",
+			bridgeUpdateEvent(event, community, registration, channel),
+		)
+		.catch((error: unknown) => {
+			ctx.log.warn(
+				{ community, reason: error instanceof Error ? error.message : error },
+				"bridge.announce.failed",
 			);
 		});
 };

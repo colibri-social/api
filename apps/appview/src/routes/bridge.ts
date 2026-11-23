@@ -2,6 +2,7 @@ import { InvalidRequestError, ResponseType, XRPCError } from "@atproto/xrpc-serv
 import { sniffMimeType } from "@colibri-social/blobs";
 import {
 	anonymousAuthz,
+	type BackfillReportInput,
 	type BridgeBackfill,
 	type BridgeChannel,
 	BridgeError,
@@ -14,6 +15,7 @@ import {
 	Moderation,
 	type RegistrationKey,
 	type RemoteAuthor,
+	type RemoteRoomInput,
 } from "@colibri-social/community";
 import {
 	asDatetime,
@@ -30,7 +32,7 @@ import {
 	toLexForm,
 } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
-import { labelEvent, messageGone } from "../announce.js";
+import { announceBridgeUpdate, labelEvent, messageGone } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
 import { ActorViews } from "../views/actor.js";
@@ -271,6 +273,27 @@ export const handleInstallBridge = async (
 			identity.handle ?? identity.did,
 		);
 	});
+};
+
+export const handlePutRemoteRooms = async (
+	ctx: AppContext,
+	bridge: string,
+	registration: RegistrationKey,
+	rooms: RemoteRoomInput[],
+): Promise<void> => {
+	await translated(() => ctx.bridges.putRemoteRooms(bridge, registration, rooms));
+
+	announceBridgeUpdate(ctx, "rooms", registration.community, registration.registration);
+};
+
+export const handleReportBackfill = async (
+	ctx: AppContext,
+	bridge: string,
+	report: BackfillReportInput,
+): Promise<void> => {
+	await translated(() => ctx.bridges.reportBackfill(bridge, report));
+
+	announceBridgeUpdate(ctx, "backfill", report.community, report.registration, report.channel);
 };
 
 export const bridgeChannelView = (
@@ -567,9 +590,8 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 	route(server, social.colibri.beta.bridge.putRemoteRooms, {
 		auth: auth.service,
 		handler: async ({ input, auth: caller }) => {
-			await translated(() =>
-				ctx.bridges.putRemoteRooms(caller.credentials.did, key(input.body), input.body.rooms),
-			);
+			await handlePutRemoteRooms(ctx, caller.credentials.did, key(input.body), input.body.rooms);
+
 			return { encoding: "application/json" as const, body: {} };
 		},
 	});
@@ -646,18 +668,18 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 		auth: auth.service,
 		handler: async ({ input, auth: caller }) => {
 			const body = input.body;
-			await translated(() =>
-				ctx.bridges.reportBackfill(caller.credentials.did, {
-					...key(body),
-					channel: body.channel,
-					requestedAt: body.requestedAt,
-					state: body.state === "done" ? "done" : body.state === "failed" ? "failed" : "running",
-					imported: body.imported,
-					from: body.from,
-					until: body.until,
-					...(body.reached ? { reached: body.reached } : {}),
-				}),
-			);
+
+			await handleReportBackfill(ctx, caller.credentials.did, {
+				...key(body),
+				channel: body.channel,
+				requestedAt: body.requestedAt,
+				state: body.state === "done" ? "done" : body.state === "failed" ? "failed" : "running",
+				imported: body.imported,
+				from: body.from,
+				until: body.until,
+				...(body.reached ? { reached: body.reached } : {}),
+			});
+
 			return { encoding: "application/json" as const, body: {} };
 		},
 	});

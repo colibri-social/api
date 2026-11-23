@@ -871,6 +871,36 @@ const bridgeEvent = /*#__PURE__*/ l.typedObject<BridgeEvent>($nsid, "bridgeEvent
 
 export { bridgeEvent };
 
+/** A bridge reported new remote rooms or history import progress for a registration. Only sent to members who can manage the community, who should fetch the registration again. */
+type BridgeUpdateEvent = { $type?: "social.colibri.beta.sync.defs#bridgeUpdateEvent";
+
+  /**
+   * What the bridge reported.
+   */
+  "event":"rooms" | "backfill" | l.UnknownString;
+
+  /**
+   * The community the registration belongs to.
+   */
+  "community":l.DidString;
+
+  /**
+   * Record key of the registration.
+   */
+  "registration":l.TidString;
+
+  /**
+   * The linked channel being filled, on backfill events.
+   */
+  "channel"?:l.SpaceRefString };
+
+export type { BridgeUpdateEvent };
+
+/** A bridge reported new remote rooms or history import progress for a registration. Only sent to members who can manage the community, who should fetch the registration again. */
+const bridgeUpdateEvent = /*#__PURE__*/ l.typedObject<BridgeUpdateEvent>($nsid, "bridgeUpdateEvent", /*#__PURE__*/ l.object({"event":/*#__PURE__*/ l.string<{"knownValues":["rooms","backfill"]}>(),"community":/*#__PURE__*/ l.string({"format":"did"}),"registration":/*#__PURE__*/ l.string({"format":"tid"}),"channel":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"}))}));
+
+export { bridgeUpdateEvent };
+
 /** This node is going offline. Clients move their event socket to another node from listNodes. When no other node exists, clients warn the user that the connection may drop at the deadline. */
 type DrainNotice = { $type?: "social.colibri.beta.sync.defs#drainNotice";
 
