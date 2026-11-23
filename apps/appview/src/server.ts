@@ -21,10 +21,7 @@ import { registerCommunityWriteRoutes } from "./routes/community-write.js";
 import { registerEmbedRoutes } from "./routes/embed.js";
 import { mountEmbedMediaRoutes } from "./routes/embed-media.js";
 import { registerEmojiRoutes } from "./routes/emoji.js";
-import {
-	mountHostOAuthRoutes,
-	registerHostingRoutes,
-} from "./routes/hosting.js";
+import { mountHostOAuthRoutes, registerHostingRoutes } from "./routes/hosting.js";
 import { mountIdentityRoutes } from "./routes/identity.js";
 import { registerModerationRoutes } from "./routes/moderation.js";
 import { registerNotificationRoutes } from "./routes/notification.js";
@@ -142,13 +139,11 @@ export const createAppServer = (
 				await ctx.database.ping();
 			} catch (error) {
 				ctx.log.error({ err: error }, "health.databaseUnreachable");
-				res
-					.status(503)
-					.json({
-						status: "degraded",
-						did: ctx.config.APPVIEW_DID,
-						database: "down",
-					});
+				res.status(503).json({
+					status: "degraded",
+					did: ctx.config.APPVIEW_DID,
+					database: "down",
+				});
 				return;
 			}
 			res.json({ status: "ok", did: ctx.config.APPVIEW_DID, database: "up" });
@@ -171,9 +166,7 @@ export const createAppServer = (
 	return server;
 };
 
-const registerXrpcRoutes = (
-	deps: Parameters<typeof registerProtocolRoutes>[0],
-): void => {
+const registerXrpcRoutes = (deps: Parameters<typeof registerProtocolRoutes>[0]): void => {
 	registerProtocolRoutes(deps);
 	registerActorRoutes(deps);
 	registerActorWriteRoutes(deps);
