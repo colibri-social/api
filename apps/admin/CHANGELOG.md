@@ -1,5 +1,14 @@
 # @colibri-social/admin
 
+## 0.3.15
+
+### Patch Changes
+
+- Updated dependencies [6cd05d3]
+- Updated dependencies [1a985c7]
+  - @colibri-social/community@2.20.0
+  - @colibri-social/appview@2.44.0
+
 ## 0.3.14
 
 ### Patch Changes
