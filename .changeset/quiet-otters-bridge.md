@@ -4,6 +4,7 @@
 "@colibri-social/lexicons": minor
 "@colibri-social/community": minor
 "@colibri-social/appview": minor
+"@colibri-social/identity": minor
 ---
 
 Open-channel bridges get the same events and actions as linked rooms.
@@ -33,3 +34,5 @@ Open-channel bridges get the same events and actions as linked rooms.
 - Bridges can call `social.colibri.beta.thread.listThreads` with a `channel` and `getThread` for threads they may read. `listMessages` includes thread views for those threads. `permissionBridge` covers `getMember`, `listThreads` and `getThread`.
 - A bridge's message posts, edits, deletes and reaction adds stream one frame each. The pipeline no longer repeats the frame the bridge route already announced. Bridge message delete frames include `subjectUri`.
 - Bridge lexicon descriptions and `ChannelNotLinked` errors name linked or open channels.
+- `social.colibri.beta.bridge.install` accepts a bridge whose DID document has no `#atproto_pds` service, such as one from `bridgeDidDocument()`. It resolves the bridge with the new `IdentityResolver.resolveServiceIdentity`, which needs only a signing key.
+- `snowglobe.yml` has a `bridge` app with the DID `did:web:bridge.app.colibri.local.snowglobe.at`, and `pnpm dev:bridge:snowglobe` runs the bridge on the local network.

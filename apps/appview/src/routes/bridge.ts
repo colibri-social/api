@@ -260,7 +260,7 @@ export const handleInstallBridge = async (
 ): Promise<BridgeRegistration> => {
 	await requireManager(ctx, body.community, caller);
 
-	const identity = await ctx.identity.resolveAtIdentifier(body.bridge).catch(() => null);
+	const identity = await ctx.identity.resolveServiceIdentity(body.bridge).catch(() => null);
 
 	if (!identity) {
 		throw new InvalidRequestError("no bridge exists at that address", "BridgeNotFound");

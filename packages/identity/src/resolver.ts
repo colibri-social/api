@@ -15,6 +15,8 @@ export type AtprotoIdentity = {
 	signingKey: string;
 };
 
+export type ServiceIdentity = Omit<AtprotoIdentity, "pds">;
+
 export type CachedIdentity = {
 	did: string;
 	handle: string | null;
@@ -82,15 +84,7 @@ export class IdentityResolver {
 	}
 
 	async resolveDid(did: string, forceRefresh = false): Promise<AtprotoIdentity> {
-		const document = await this.resolver.did.resolve(did, forceRefresh).catch(async (cause) => {
-			throw await this.resolutionFailure(did, cause);
-		});
-
-		if (!document) {
-			throw new IdentityResolutionError(did, `could not resolve ${did}`);
-		}
-
-		const data = parseToAtprotoDocument(document);
+		const data = await this.atprotoDocument(did, forceRefresh);
 
 		if (!data.pds) {
 			throw new MissingPdsError(did);
@@ -161,6 +155,21 @@ export class IdentityResolver {
 		return this.resolveDid(did);
 	}
 
+	async resolveServiceIdentity(identifier: string): Promise<ServiceIdentity> {
+		const did = identifier.startsWith("did:") ? identifier : await this.resolveHandle(identifier);
+		const data = await this.atprotoDocument(did, false);
+
+		if (!data.did || !data.signingKey) {
+			throw new IdentityResolutionError(did, `could not resolve ${did}`);
+		}
+
+		return {
+			did: data.did,
+			handle: data.handle || null,
+			signingKey: data.signingKey,
+		};
+	}
+
 	signingKeyFor = async (issuer: string, forceRefresh: boolean): Promise<string> => {
 		const did = issuer.split("#")[0] as string;
 		if (!did.startsWith("did:plc:") && !did.startsWith("did:web:")) {
@@ -187,6 +196,18 @@ export class IdentityResolver {
 		if (!key) throw new MissingKemKeyError(did);
 		return key;
 	};
+
+	private async atprotoDocument(did: string, forceRefresh: boolean) {
+		const document = await this.resolver.did.resolve(did, forceRefresh).catch(async (cause) => {
+			throw await this.resolutionFailure(did, cause);
+		});
+
+		if (!document) {
+			throw new IdentityResolutionError(did, `could not resolve ${did}`);
+		}
+
+		return parseToAtprotoDocument(document);
+	}
 
 	private async resolutionFailure(did: string, cause: unknown): Promise<IdentityResolutionError> {
 		const document = await this.resolver.did.resolve(did).catch(() => null);

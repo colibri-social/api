@@ -11,6 +11,7 @@
 		"clean": "tsc --build --clean && rm -rf packages/*/dist apps/*/dist",
 		"dev": "pnpm --filter @colibri-social/appview dev",
 		"dev:snowglobe": "snowglobe run --app appview -- pnpm dev",
+		"dev:bridge:snowglobe": "snowglobe run --app bridge -- pnpm --filter @colibri-social/bridge dev",
 		"snowglobe:up": "DOCKER_DEFAULT_PLATFORM=linux/amd64 snowglobe up",
 		"snowglobe:down": "snowglobe down",
 		"typecheck": "tsc --build && tsc -p tsconfig.tests.json",

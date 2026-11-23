@@ -204,6 +204,32 @@ describe("signingKeyFor", () => {
 		expect(identity).toMatchObject({ did, handle: null, pds: "https://pds.test" });
 	});
 
+	it("resolves a service identity whose document has no PDS", async () => {
+		const did = await serveDocument((id) => ({
+			id,
+			verificationMethod: [
+				{
+					id: `${id}#atproto`,
+					type: "Multikey",
+					controller: id,
+					publicKeyMultibase: KEY.replace("did:key:", ""),
+				},
+			],
+		}));
+
+		const identity = await resolver(store([]).store).resolveServiceIdentity(did);
+
+		expect(identity).toEqual({ did, handle: null, signingKey: KEY });
+	});
+
+	it("refuses a service identity without a signing key", async () => {
+		const did = await serveDocument((id) => ({ id, verificationMethod: [] }));
+
+		await expect(resolver(store([]).store).resolveServiceIdentity(did)).rejects.toBeInstanceOf(
+			IdentityResolutionError,
+		);
+	});
+
 	it("keeps a document that fails for other reasons a plain resolution error", async () => {
 		const did = await serveDocument((id) => ({
 			id,

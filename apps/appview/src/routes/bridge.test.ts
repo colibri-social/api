@@ -113,12 +113,12 @@ describe("handleInstallBridge", () => {
 		return { connect: async () => ({ pds, session: {} }) } as unknown as CommunityCredentials;
 	};
 
-	const resolveAtIdentifier = async (identifier: string) => {
+	const resolveServiceIdentity = async (identifier: string) => {
 		if (identifier !== BRIDGE && identifier !== BRIDGE_HANDLE) {
 			throw new Error(`could not resolve ${identifier}`);
 		}
 
-		return { did: BRIDGE, handle: BRIDGE_HANDLE, pds: null, signingKey: "key" };
+		return { did: BRIDGE, handle: BRIDGE_HANDLE, signingKey: "key" };
 	};
 
 	beforeEach(async () => {
@@ -143,7 +143,7 @@ describe("handleInstallBridge", () => {
 		ctx = {
 			database,
 			loader,
-			identity: { resolveAtIdentifier },
+			identity: { resolveServiceIdentity },
 			bridges: new Bridges({ db: database.db, tables: database.tables, loader, writer }),
 		} as unknown as AppContext;
 
@@ -204,7 +204,7 @@ describe("handleInstallBridge", () => {
 		).rejects.toMatchObject({ customErrorName: "AlreadyRegistered" });
 	});
 
-	it("installs a bridge whose DID document has no handle and names it after the DID", async () => {
+	it("installs a bridge whose DID document has no handle and no PDS, named after the DID", async () => {
 		const key = "zQ3shhDZeUurHvL6sQJe9Nr4AdVTJ85SXVLSb3fACygaN7VFm";
 		const server: Server = createServer((_, res) => {
 			res.writeHead(200, { "content-type": "application/json" });
@@ -214,13 +214,6 @@ describe("handleInstallBridge", () => {
 					alsoKnownAs: ["at://"],
 					verificationMethod: [
 						{ id: `${did}#atproto`, type: "Multikey", controller: did, publicKeyMultibase: key },
-					],
-					service: [
-						{
-							id: "#atproto_pds",
-							type: "AtprotoPersonalDataServer",
-							serviceEndpoint: "https://pds.test",
-						},
 					],
 				}),
 			);
