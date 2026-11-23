@@ -4,6 +4,7 @@ import { authVerifiers } from "./auth.js";
 import { isWrite } from "./cluster/write-proxy.js";
 import type { AppContext } from "./context.js";
 import { corsMiddleware, nodeHeaderMiddleware } from "./cors.js";
+import { didDocumentForHost } from "./did-web.js";
 import { record, xrpcMethod } from "./metrics.js";
 import { registerPolyfillRoutes } from "./polyfill/routes.js";
 import { logRejectedUploads } from "./polyfill/upload-log.js";
@@ -20,7 +21,10 @@ import { registerCommunityWriteRoutes } from "./routes/community-write.js";
 import { registerEmbedRoutes } from "./routes/embed.js";
 import { mountEmbedMediaRoutes } from "./routes/embed-media.js";
 import { registerEmojiRoutes } from "./routes/emoji.js";
-import { mountHostOAuthRoutes, registerHostingRoutes } from "./routes/hosting.js";
+import {
+	mountHostOAuthRoutes,
+	registerHostingRoutes,
+} from "./routes/hosting.js";
 import { mountIdentityRoutes } from "./routes/identity.js";
 import { registerModerationRoutes } from "./routes/moderation.js";
 import { registerNotificationRoutes } from "./routes/notification.js";
@@ -45,7 +49,7 @@ This is an AT Protocol Application View (AppView) for the "colibri.social" appli
 Most API routes are under /xrpc/
 
 Docs: https://colibri.social/docs
-Code: https://github.com/colibri-social/appview
+Code: https://github.com/colibri-social/api
 Protocol: https://atproto.com
 `;
 
@@ -138,15 +142,21 @@ export const createAppServer = (
 				await ctx.database.ping();
 			} catch (error) {
 				ctx.log.error({ err: error }, "health.databaseUnreachable");
-				res.status(503).json({ status: "degraded", did: ctx.config.APPVIEW_DID, database: "down" });
+				res
+					.status(503)
+					.json({
+						status: "degraded",
+						did: ctx.config.APPVIEW_DID,
+						database: "down",
+					});
 				return;
 			}
 			res.json({ status: "ok", did: ctx.config.APPVIEW_DID, database: "up" });
 		}),
 	);
 
-	app.get("/.well-known/did.json", (_req: Request, res: Response) => {
-		res.json(ctx.didDocument);
+	app.get("/.well-known/did.json", (req: Request, res: Response) => {
+		res.json(didDocumentForHost(ctx.didDocuments, req.headers.host));
 	});
 
 	if (api) {
@@ -161,7 +171,9 @@ export const createAppServer = (
 	return server;
 };
 
-const registerXrpcRoutes = (deps: Parameters<typeof registerProtocolRoutes>[0]): void => {
+const registerXrpcRoutes = (
+	deps: Parameters<typeof registerProtocolRoutes>[0],
+): void => {
 	registerProtocolRoutes(deps);
 	registerActorRoutes(deps);
 	registerActorWriteRoutes(deps);

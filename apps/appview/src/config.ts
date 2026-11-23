@@ -21,6 +21,29 @@ const optionalString = z
 	.optional()
 	.or(z.literal("").transform(() => undefined));
 
+const appviewDid = z
+	.string()
+	.startsWith("did:web:")
+	.refine((value) => !BARE_IP_DID_WEB.test(value), {
+		message:
+			"a did:web host must be a name, not an IP address. A PDS refuses a bare IP as a service-auth audience. Use a hostname such as did:web:appview.example.com and keep listening on 127.0.0.1",
+	});
+
+const appviewDidAliases = z
+	.string()
+	.optional()
+	.transform((value) => {
+		return [
+			...new Set(
+				(value ?? "")
+					.split(",")
+					.map((did) => did.trim())
+					.filter(Boolean),
+			),
+		];
+	})
+	.pipe(z.array(appviewDid));
+
 export const NODE_ROLES = [
 	"main",
 	"failover",
@@ -78,13 +101,8 @@ export const configSchema = z.object({
 	HOST: z.string().default("0.0.0.0"),
 	LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 
-	APPVIEW_DID: z
-		.string()
-		.startsWith("did:web:")
-		.refine((value) => !BARE_IP_DID_WEB.test(value), {
-			message:
-				"a did:web host must be a name, not an IP address. A PDS refuses a bare IP as a service-auth audience. Use a hostname such as did:web:appview.example.com and keep listening on 127.0.0.1",
-		}),
+	APPVIEW_DID: appviewDid,
+	APPVIEW_DID_ALIASES: appviewDidAliases,
 	PUBLIC_URL: z.url(),
 	CORS_ORIGINS: optionalString,
 	SIGNING_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, "expected 64 hex characters"),
@@ -296,6 +314,7 @@ export type Config = RawConfig & {
 	notifications: NotificationsConfig;
 	gifsEnabled: boolean;
 	corsOrigins: string[];
+	appviewDids: string[];
 	telemetryEnabled: boolean;
 	polyfillBucket: BlobBucketConfig | null;
 };
@@ -384,6 +403,10 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): Config => {
 		notifications,
 		gifsEnabled: Boolean(raw.KLIPY_API_KEY),
 		corsOrigins,
+		appviewDids: [
+			raw.APPVIEW_DID,
+			...raw.APPVIEW_DID_ALIASES.filter((did) => did !== raw.APPVIEW_DID),
+		],
 		telemetryEnabled: !raw.COLIBRI_TELEMETRY_DISABLED && !raw.DO_NOT_TRACK,
 		polyfillBucket: polyfillBucketOf(raw),
 	};
@@ -391,6 +414,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): Config => {
 
 export const describeConfig = (config: Config): Record<string, string> => ({
 	identity: config.APPVIEW_DID,
+	identityAliases: config.appviewDids.length > 1 ? config.appviewDids.slice(1).join(" ") : "none",
 	flavor: config.APPVIEW_FLAVOR,
 	database: config.DATABASE_URL.startsWith("postgres") ? "postgres" : "libsql",
 	pds: config.PDS_URL,

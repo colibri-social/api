@@ -20,7 +20,6 @@ import {
 	type LinkEmbed,
 } from "@colibri-social/embeds";
 import {
-	buildDidDocument,
 	IdentityResolver,
 	MissingPdsError,
 	SERVICE_FRAGMENTS,
@@ -51,6 +50,7 @@ import { createRegistry } from "./cluster/registry.js";
 import { remoteBlobBucket } from "./cluster/remote-bucket.js";
 import type { WriteProxy } from "./cluster/write-proxy.js";
 import type { Config } from "./config.js";
+import { buildDidDocuments, serviceAuthAudience } from "./did-web.js";
 import { createDrainState } from "./drain.js";
 import { HostOAuth } from "./host-oauth.js";
 import {
@@ -126,12 +126,7 @@ export const createContext = async (config: Config) => {
 	});
 
 	const serviceAuth = new ServiceAuth({
-		audience: [
-			config.APPVIEW_DID,
-			serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.appview),
-			serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.syncer),
-			serviceId(config.APPVIEW_DID, SERVICE_FRAGMENTS.notifs),
-		],
+		audience: serviceAuthAudience(config.appviewDids),
 		maxLifetimeSeconds: config.SERVICE_AUTH_MAX_LIFETIME_SECONDS,
 		resolver: identity,
 	});
@@ -352,8 +347,8 @@ export const createContext = async (config: Config) => {
 	);
 	voice?.on("worker-died", ({ pid, error }) => log.error({ pid, err: error }, "voice.workerDied"));
 
-	const didDocument = buildDidDocument(
-		{ did: config.APPVIEW_DID, publicUrl: config.PUBLIC_URL },
+	const didDocuments = buildDidDocuments(
+		{ dids: config.appviewDids, publicUrl: config.PUBLIC_URL },
 		keypair,
 	);
 
@@ -409,7 +404,7 @@ export const createContext = async (config: Config) => {
 		games,
 		videoArtwork,
 		voice,
-		didDocument,
+		didDocuments,
 		close: async () => {
 			await sync.stop();
 			await voice?.close();

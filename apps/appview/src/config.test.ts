@@ -32,6 +32,34 @@ describe("APPVIEW_DID", () => {
 	});
 });
 
+describe("APPVIEW_DID_ALIASES", () => {
+	const withAliases = (aliases: string | undefined) => {
+		return loadConfig({
+			...REQUIRED,
+			APPVIEW_DID: "did:web:api.example.com",
+			APPVIEW_DID_ALIASES: aliases,
+		});
+	};
+
+	it("answers as the primary DID alone when no alias is set", () => {
+		expect(withAliases(undefined).appviewDids).toEqual(["did:web:api.example.com"]);
+		expect(withAliases("").appviewDids).toEqual(["did:web:api.example.com"]);
+	});
+
+	it("lists the primary DID first, then each alias once", () => {
+		const config = withAliases(
+			" did:web:old-api.example.com, did:web:api.example.com,did:web:old-api.example.com",
+		);
+
+		expect(config.appviewDids).toEqual(["did:web:api.example.com", "did:web:old-api.example.com"]);
+	});
+
+	it("validates each alias like APPVIEW_DID", () => {
+		expect(() => withAliases("did:web:10.0.0.7")).toThrow(ConfigError);
+		expect(() => withAliases("did:plc:mprdjqjluoswa7awzggaggj3")).toThrow(ConfigError);
+	});
+});
+
 describe("DEFAULT_COMMUNITY_DID", () => {
 	const withDefault = (value: string | undefined) =>
 		loadConfig({

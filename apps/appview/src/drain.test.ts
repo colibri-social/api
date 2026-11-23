@@ -178,7 +178,7 @@ describe("the health route", () => {
 			log: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
 			database: { ping: vi.fn(async () => {}) },
 			drain: createDrainState(),
-			didDocument: { id: "did:web:appview.example.com" },
+			didDocuments: { primary: { id: "did:web:appview.example.com" }, byHost: new Map() },
 		} as unknown as Partial<AppContext> & { drain: ReturnType<typeof createDrainState> };
 	};
 
