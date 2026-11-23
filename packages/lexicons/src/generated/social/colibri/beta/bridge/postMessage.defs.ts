@@ -28,7 +28,7 @@ export const $output = /*#__PURE__*/ l.jsonPayload({"rkey":/*#__PURE__*/ l.strin
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Posts a message from someone on another service into a linked channel. The community writes the message, attributed to that person. */
+/** Posts a message from someone on another service into a linked or open channel. The community writes the message, attributed to that person. */
 const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","CommunityNotFound","RegistrationNotFound","Forbidden","RegistrationDisabled","ChannelNotLinked","RateLimited","CredentialsUnavailable"]);
 
 export { main };

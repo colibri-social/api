@@ -117,3 +117,65 @@ describe("ColibriClient channels", () => {
 		expect(url.searchParams.get("registration")).toBe("3lkbridgeaaaa");
 	});
 });
+
+describe("ColibriClient reads", () => {
+	it("lists messages with paging options and returns the cursor", async () => {
+		const { client, fetcher } = clientWith([
+			() => Response.json({ messages: [], cursor: "older" }),
+		]);
+
+		await expect(
+			client.listMessages("at://did:plc:community/space/x/general", {
+				around: "3lkmsg0000001",
+				limit: 9,
+			}),
+		).resolves.toEqual({ messages: [], cursor: "older" });
+
+		const [url] = fetcher.mock.calls[0] as unknown as [URL];
+
+		expect(url.pathname).toBe("/xrpc/social.colibri.beta.channel.listMessages");
+		expect(url.searchParams.get("around")).toBe("3lkmsg0000001");
+		expect(url.searchParams.get("limit")).toBe("9");
+		expect(url.searchParams.has("reverse")).toBe(false);
+		expect(url.searchParams.has("cursor")).toBe(false);
+	});
+
+	it("lists a channel's threads", async () => {
+		const { client, fetcher } = clientWith([() => Response.json({ threads: [] })]);
+
+		await expect(
+			client.listThreads({ community: "did:plc:community", channel: "at://general" }),
+		).resolves.toEqual({ threads: [] });
+
+		const [url] = fetcher.mock.calls[0] as unknown as [URL];
+
+		expect(url.pathname).toBe("/xrpc/social.colibri.beta.thread.listThreads");
+		expect(url.searchParams.get("channel")).toBe("at://general");
+	});
+
+	it("gets a member's standing", async () => {
+		const standing = {
+			did: "did:plc:member",
+			member: true,
+			owner: false,
+			roles: [{ rkey: "3lkrole000001", name: "Mod", position: 2 }],
+			permissions: ["moderation.hide"],
+		};
+		const { client, fetcher } = clientWith([() => Response.json(standing)]);
+
+		await expect(
+			client.getMember({
+				community: "did:plc:community",
+				registration: "3lkbridgeaaaa",
+				did: "did:plc:member",
+				channel: "at://general",
+			}),
+		).resolves.toEqual(standing);
+
+		const [url] = fetcher.mock.calls[0] as unknown as [URL];
+
+		expect(url.pathname).toBe("/xrpc/social.colibri.beta.bridge.getMember");
+		expect(url.searchParams.get("did")).toBe("did:plc:member");
+		expect(url.searchParams.get("channel")).toBe("at://general");
+	});
+});

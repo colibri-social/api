@@ -62,10 +62,13 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 			channel: states.channel,
 			thread: states.thread,
 		});
-		if (!decision.authorized && !(await ctx.bridges.mayRead(viewer, parsed.uri))) {
+		const bridged = !decision.authorized && (await ctx.bridges.mayRead(viewer, parsed.uri));
+
+		if (!decision.authorized && !bridged) {
 			throw new InvalidRequestError(decision.reason, "Forbidden");
 		}
-		return { channel: states.channel, community, authz };
+
+		return { channel: states.channel, community, authz, bridged };
 	};
 
 	route(server, social.colibri.beta.channel.getChannel, {
@@ -95,7 +98,7 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 		handler: async ({ params, auth: caller }) => {
 			const startedAt = Date.now();
 			const viewer = caller.credentials.did;
-			const { authz } = await requireReadableChannel(params.channel, viewer);
+			const { authz, bridged } = await requireReadableChannel(params.channel, viewer);
 			const result = await channels.messages(
 				params.channel,
 				viewer,
@@ -112,7 +115,8 @@ export const registerChannelRoutes = ({ server, ctx, auth }: RouteDeps): void =>
 				params.channel,
 				result.messages.map((message) => ({ author: message.author.did, rkey: message.rkey })),
 			);
-			const views = await threads.views(anchored, authz, viewer);
+			const granted = bridged ? await threads.bridgeReadable(anchored, viewer) : undefined;
+			const views = await threads.views(anchored, authz, viewer, { granted });
 			const timing = { ms: Date.now() - startedAt, messages: result.messages.length };
 			if (timing.ms > SLOW_PAGE_MS) ctx.log.warn(timing, "channel.listMessagesSlow");
 			else ctx.log.debug(timing, "channel.listMessages");

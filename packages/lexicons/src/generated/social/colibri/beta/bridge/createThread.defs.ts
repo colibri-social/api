@@ -26,7 +26,7 @@ export const $output = /*#__PURE__*/ l.jsonPayload({"thread":/*#__PURE__*/ l.str
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Opens a thread beside a linked channel for someone on another service. The community writes the thread, attributed to that person. */
+/** Opens a thread beside a linked or open channel for someone on another service. The community writes the thread, attributed to that person. */
 const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","CommunityNotFound","RegistrationNotFound","Forbidden","RegistrationDisabled","ChannelNotLinked","RateLimited","CredentialsUnavailable","MessageNotFound"]);
 
 export { main };

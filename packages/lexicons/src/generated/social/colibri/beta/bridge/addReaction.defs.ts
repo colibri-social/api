@@ -26,7 +26,7 @@ export const $output = /*#__PURE__*/ l.jsonPayload({"rkey":/*#__PURE__*/ l.strin
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Adds a reaction from someone on another service to a message in a linked channel. The community writes the reaction, attributed to that person. */
+/** Adds a reaction from someone on another service to a message in a linked or open channel. The community writes the reaction, attributed to that person. */
 const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","CommunityNotFound","RegistrationNotFound","Forbidden","RegistrationDisabled","ChannelNotLinked","RateLimited","CredentialsUnavailable","AlreadyReacted"]);
 
 export { main };

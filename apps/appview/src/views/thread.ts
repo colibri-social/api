@@ -34,6 +34,11 @@ export type ThreadView = social.colibri.beta.thread.defs.ThreadView;
 
 export type ThreadRow = Schema["threads"]["$inferSelect"];
 
+export type ThreadViewOptions = {
+	anchorMessages?: boolean;
+	granted?: ReadonlySet<string>;
+};
+
 const PARTICIPANT_LIMIT = 5;
 const PARTICIPANT_SCAN = 200;
 
@@ -179,14 +184,17 @@ export class ThreadViews {
 		rows: ThreadRow[],
 		authz: ActorAuthz,
 		viewer: string,
-		options: { anchorMessages?: boolean } = {},
+		options: ThreadViewOptions = {},
 	): Promise<ThreadView[]> {
 		if (rows.length === 0) return [];
 
 		const channels = await this.channelStates(rows.map((row) => row.channel));
 		const readable = rows.filter((row) => {
 			const channel = channels.get(row.channel);
-			return channel ? canReadThread(authz, channel, toThreadState(row)) : false;
+			if (!channel) return false;
+			if (options.granted?.has(row.space)) return true;
+
+			return canReadThread(authz, channel, toThreadState(row));
 		});
 		if (readable.length === 0) return [];
 
@@ -364,11 +372,21 @@ export class ThreadViews {
 		return out;
 	}
 
+	async bridgeReadable(rows: ThreadRow[], bridge: string): Promise<Set<string>> {
+		const granted = await Promise.all(
+			rows.map(async (row) => {
+				return (await this.ctx.bridges.mayRead(bridge, row.space)) ? row.space : null;
+			}),
+		);
+
+		return new Set(granted.filter((space): space is string => space !== null));
+	}
+
 	async view(
 		row: ThreadRow,
 		authz: ActorAuthz,
 		viewer: string,
-		options: { anchorMessages?: boolean } = {},
+		options: ThreadViewOptions = {},
 	): Promise<ThreadView | null> {
 		const [view] = await this.views([row], authz, viewer, options);
 		return view ?? null;

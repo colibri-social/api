@@ -1,5 +1,6 @@
-import type { Permission, social } from "@colibri-social/lexicons";
+import { COLLECTIONS, type Permission, type social } from "@colibri-social/lexicons";
 import type { AuthzChange } from "@colibri-social/projections";
+import { trySpaceRecordUri } from "@colibri-social/space";
 import { eq } from "drizzle-orm";
 import type { EventBus } from "./bus.js";
 import type { ClusterOrder, OrderResult } from "./cluster/orders.js";
@@ -173,12 +174,17 @@ export const messageEvent = (
 export const messageGone = (
 	channel: string,
 	subject: { did: string; rkey: string },
-): ServerFrame => ({
-	$type: "social.colibri.beta.sync.defs#messageEvent",
-	event: "delete",
-	channel,
-	subject: { did: subject.did, rkey: subject.rkey },
-});
+): ServerFrame => {
+	const subjectUri = trySpaceRecordUri(channel, subject.did, COLLECTIONS.message, subject.rkey);
+
+	return {
+		$type: "social.colibri.beta.sync.defs#messageEvent",
+		event: "delete",
+		channel,
+		subject: { did: subject.did, rkey: subject.rkey },
+		...(subjectUri ? { subjectUri } : {}),
+	};
+};
 
 export const categoryEvent = (event: Lifecycle, community: string, rkey: string): ServerFrame => ({
 	$type: "social.colibri.beta.sync.defs#categoryEvent",

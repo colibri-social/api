@@ -892,6 +892,120 @@ describe("connectPipeline", () => {
 	});
 });
 
+describe("bridge route echoes", () => {
+	const BRIDGED = {
+		registration: "3lkregistration",
+		platform: "test",
+		remoteId: "1",
+		name: "Nelly",
+	};
+
+	const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
+	it("leaves a live bridged message to the route that announced it and still notifies", async () => {
+		const mentioned = "did:plc:mentionedmentionedment";
+		const rkey = nextTid();
+
+		await database.db
+			.insert(database.tables.members)
+			.values([{ community: COMMUNITY, did: mentioned, roles: [], joinedAt: NOW }]);
+		await database.db.insert(database.tables.messages).values({
+			space: SPACE,
+			author: COMMUNITY,
+			rkey,
+			community: COMMUNITY,
+			text: "@",
+			createdAt: NOW,
+			fromLegacyRepo: false,
+			indexedAt: NOW,
+		});
+
+		emit({
+			space: SPACE,
+			author: COMMUNITY,
+			puts: [
+				{
+					collection: COLLECTIONS.message,
+					rkey,
+					cid: "bafyreicbridged",
+					value: {
+						$type: COLLECTIONS.message,
+						text: "@",
+						facets: [mentionFacet(mentioned)],
+						createdAt: NOW,
+						bridged: BRIDGED,
+					},
+				},
+			],
+			deletes: [],
+		});
+
+		await vi.waitFor(async () => expect(await notificationsFor(mentioned)).not.toHaveLength(0));
+		expect(framesOfType("messageEvent")).toHaveLength(0);
+	});
+
+	it("leaves a live bridged reaction and its removal to the route", async () => {
+		const rkey = nextTid();
+		const reaction = {
+			$type: COLLECTIONS.reaction,
+			emoji: "👍",
+			target: { did: AUTHOR, rkey: nextTid() },
+			bridged: BRIDGED,
+		};
+
+		emit({
+			space: SPACE,
+			author: COMMUNITY,
+			puts: [{ collection: COLLECTIONS.reaction, rkey, cid: "bafyreicreaction", value: reaction }],
+			deletes: [],
+		});
+		emit({
+			space: SPACE,
+			author: COMMUNITY,
+			puts: [],
+			deletes: [{ collection: COLLECTIONS.reaction, rkey, previous: reaction }],
+		});
+		await settle();
+
+		expect(framesOfType("reactionEvent")).toHaveLength(0);
+	});
+
+	it("leaves a community message delete the route already announced", async () => {
+		emit({
+			space: SPACE,
+			author: COMMUNITY,
+			puts: [],
+			deletes: [{ collection: COLLECTIONS.message, rkey: nextTid() }],
+		});
+		await settle();
+
+		expect(framesOfType("messageEvent")).toHaveLength(0);
+	});
+
+	it("still streams a community message delete that was never bridged", async () => {
+		const rkey = nextTid();
+
+		emit({
+			space: SPACE,
+			author: COMMUNITY,
+			puts: [],
+			deletes: [
+				{
+					collection: COLLECTIONS.message,
+					rkey,
+					previous: { $type: COLLECTIONS.message, text: "hi", createdAt: NOW },
+				},
+			],
+		});
+		await vi.waitFor(() => expect(framesOfType("messageEvent")).toHaveLength(1));
+
+		expect(framesOfType("messageEvent")[0]?.frame).toMatchObject({
+			event: "delete",
+			subject: { did: COMMUNITY, rkey },
+		});
+	});
+});
+
 describe("configuration events", () => {
 	const CONFIG_SPACE = `at://${COMMUNITY}/space/${SPACE_TYPES.communityConfiguration}/self`;
 

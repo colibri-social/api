@@ -22,6 +22,7 @@ import {
 	asDatetimeOrUndefined,
 	asDid,
 	asHandleOrUndefined,
+	asRecordKey,
 	asSpaceRef,
 	asTid,
 	COLLECTIONS,
@@ -582,6 +583,30 @@ export const registerBridgeRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 				encoding: "application/json" as const,
 				body: {
 					channels: rows.map((row) => bridgeChannelView(communities, bridge, row)),
+				},
+			};
+		},
+	});
+
+	route(server, social.colibri.beta.bridge.getMember, {
+		auth: auth.service,
+		handler: async ({ params, auth: caller }) => {
+			const standing = await translated(() =>
+				ctx.bridges.member(caller.credentials.did, key(params), params.did, params.channel),
+			);
+
+			return {
+				encoding: "application/json" as const,
+				body: {
+					did: asDid(standing.did),
+					member: standing.member,
+					owner: standing.owner,
+					roles: standing.roles.map((role) => ({
+						rkey: asRecordKey(role.rkey),
+						name: role.name,
+						position: role.position,
+					})),
+					permissions: standing.permissions,
 				},
 			};
 		},

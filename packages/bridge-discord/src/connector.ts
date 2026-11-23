@@ -9,6 +9,7 @@ import type {
 	ModeratingConnector,
 	OutboundDelete,
 	OutboundEdit,
+	OutboundEmbed,
 	OutboundMessage,
 	OutboundReaction,
 	OutboundThread,
@@ -55,6 +56,7 @@ import {
 	replyPrefix,
 	webhookUsername,
 } from "./markdown.js";
+import { attachmentPayload, MAX_DISCORD_EMBEDS, previewEmbeds, remoteAttachment } from "./media.js";
 
 export type DiscordConnectorOptions = {
 	token: string;
@@ -397,11 +399,7 @@ export class DiscordConnector
 		return {
 			...(message.reference.messageId ? { remoteMessage: message.reference.messageId } : {}),
 			markdown: discordToColibriMarkdown(snapshot.content ?? "", this.lookups(message)),
-			attachments: [...(snapshot.attachments?.values() ?? [])].map((attachment) => ({
-				url: attachment.url,
-				name: attachment.name,
-				size: attachment.size,
-			})),
+			attachments: [...(snapshot.attachments?.values() ?? [])].map(remoteAttachment),
 			...(snapshot.createdTimestamp
 				? { createdAt: new Date(snapshot.createdTimestamp).toISOString() }
 				: {}),
@@ -443,11 +441,7 @@ export class DiscordConnector
 			},
 			markdown: discordToColibriMarkdown(this.contentOf(message), this.lookups(message)),
 			...(replyTo ? { replyTo } : {}),
-			attachments: [...message.attachments.values()].map((attachment) => ({
-				url: attachment.url,
-				name: attachment.name,
-				size: attachment.size,
-			})),
+			attachments: [...message.attachments.values()].map(remoteAttachment),
 			...(forward ? { forward } : {}),
 			createdAt: message.createdAt.toISOString(),
 		};
@@ -675,18 +669,26 @@ export class DiscordConnector
 		const markdown = gif
 			? prefix.trimEnd()
 			: [`${prefix}${message.markdown}`, forward].filter(Boolean).join("\n");
+
+		const gifEmbeds = gif ? [{ image: { url: gif } }] : [];
+		const embeds = [
+			...gifEmbeds,
+			...previewEmbeds(
+				message.embeds,
+				[message.markdown, message.forward?.markdown ?? ""],
+				MAX_DISCORD_EMBEDS - gifEmbeds.length,
+			),
+		];
+
 		const sent = await this.withWebhook(channel, (webhook) =>
 			webhook.send({
 				content: colibriToDiscordMarkdown(markdown) || undefined,
-				...(gif ? { embeds: [{ image: { url: gif } }] } : {}),
+				...(embeds.length > 0 ? { embeds } : {}),
 				username: webhookUsername(message.author.name, message.author.handle),
 				...(message.author.avatarUrl ? { avatarURL: message.author.avatarUrl } : {}),
 				...(message.remoteThread ? { threadId: message.remoteThread } : {}),
 				files: [...message.attachments, ...(message.forward?.attachments ?? [])].map(
-					(attachment) => ({
-						attachment: attachment.url,
-						name: attachment.name ?? "attachment",
-					}),
+					attachmentPayload,
 				),
 				allowedMentions: { parse: [], users: mentionedUsers(markdown) },
 			}),
@@ -697,18 +699,25 @@ export class DiscordConnector
 	async editMessage(edit: OutboundEdit): Promise<void> {
 		await this.withWebhook(await this.relayChannel(edit.remoteRoom), (webhook) =>
 			webhook.editMessage(edit.id, {
-				...this.editedContent(edit.markdown),
+				...this.editedContent(edit.markdown, edit.embeds),
 				allowedMentions: { parse: [], users: mentionedUsers(edit.markdown) },
 				...(edit.remoteThread ? { threadId: edit.remoteThread } : {}),
 			}),
 		);
 	}
 
-	private editedContent(markdown: string) {
+	private editedContent(markdown: string, previews: OutboundEmbed[]) {
 		const gif = loneGifUrl(markdown);
-		return gif
-			? { content: "", embeds: [{ image: { url: gif } }] }
-			: { content: colibriToDiscordMarkdown(markdown), embeds: [] };
+		const gifEmbeds = gif ? [{ image: { url: gif } }] : [];
+		const embeds = [
+			...gifEmbeds,
+			...previewEmbeds(previews, [markdown], MAX_DISCORD_EMBEDS - gifEmbeds.length),
+		];
+
+		return {
+			content: gif ? "" : colibriToDiscordMarkdown(markdown),
+			embeds,
+		};
 	}
 
 	async deleteMessage(target: OutboundDelete): Promise<void> {

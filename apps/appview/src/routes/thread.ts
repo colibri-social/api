@@ -25,6 +25,94 @@ const followedSpaces = async (ctx: AppContext, did: string): Promise<string[]> =
 	return rows.map((row) => row.space);
 };
 
+type ListThreadsParams = {
+	community: string;
+	channel?: string;
+	filter?: string;
+	limit: number;
+	cursor?: string;
+};
+
+export const handleGetThread = async (
+	ctx: AppContext,
+	threads: ThreadViews,
+	thread: string,
+	viewer: string,
+) => {
+	const row = await threads.row(thread);
+	if (!row) throw threadNotFound(thread);
+
+	const authz = await ctx.loader.authz(row.community, viewer);
+	const own = await threads.view(row, authz, viewer, { anchorMessages: true });
+	const view =
+		own ??
+		(await threads.view(row, authz, viewer, {
+			anchorMessages: true,
+			granted: await threads.bridgeReadable([row], viewer),
+		}));
+
+	if (!view) throw forbidden("the requester may not read this thread");
+
+	return { thread: view };
+};
+
+export const handleListThreads = async (
+	ctx: AppContext,
+	threads: ThreadViews,
+	params: ListThreadsParams,
+	viewer: string,
+) => {
+	const community = await ctx.loader.community(params.community);
+	if (!community) {
+		throw new InvalidRequestError(`no community matches ${params.community}`, "CommunityNotFound");
+	}
+
+	const authz = await ctx.loader.authz(params.community, viewer);
+	const bridged =
+		!authz.member &&
+		!authz.isOwner &&
+		params.channel !== undefined &&
+		(await ctx.bridges.mayRead(viewer, params.channel));
+
+	if (!authz.member && !authz.isOwner && !bridged) {
+		throw forbidden("the requester is not a member of this community");
+	}
+
+	if (params.channel) {
+		const channel = await ctx.loader.channel(params.channel);
+		if (!channel) {
+			throw new InvalidRequestError(`no channel matches ${params.channel}`, "ChannelNotFound");
+		}
+	}
+
+	const table = ctx.database.tables.threads;
+	const filters = [eq(table.community, params.community)];
+	if (params.channel) filters.push(eq(table.channel, params.channel));
+	if (params.cursor) filters.push(lt(table.lastActivityAt, params.cursor.split(" ")[0] ?? ""));
+	if (params.filter === "following") {
+		const followed = await followedSpaces(ctx, viewer);
+		if (followed.length === 0) return { threads: [] };
+		filters.push(inArray(table.space, followed));
+	}
+
+	const rows = await ctx.database.db
+		.select()
+		.from(table)
+		.where(and(...filters))
+		.orderBy(desc(table.lastActivityAt))
+		.limit(params.limit + 1);
+
+	const page = rows.slice(0, params.limit);
+	const cursor = rows.length > params.limit ? page.at(-1) : undefined;
+	const granted = bridged ? await threads.bridgeReadable(page, viewer) : undefined;
+	const views = await threads.views(page, authz, viewer, { granted });
+
+	return {
+		threads: params.filter === "unread" ? views.filter((v) => v.viewer.hasUnread) : views,
+		...(cursor ? { cursor: pageCursor(cursor) } : {}),
+	};
+};
+
 export const registerThreadRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 	const actors = new ActorViews(ctx);
 	const channels = new ChannelViews(ctx, actors);
@@ -32,17 +120,10 @@ export const registerThreadRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 
 	route(server, social.colibri.beta.thread.getThread, {
 		auth: auth.required,
-		handler: async ({ params, auth: caller }) => {
-			const row = await threads.row(params.thread);
-			if (!row) throw threadNotFound(params.thread);
-
-			const viewer = caller.credentials.did;
-			const authz = await ctx.loader.authz(row.community, viewer);
-			const view = await threads.view(row, authz, viewer, { anchorMessages: true });
-			if (!view) throw forbidden("the requester may not read this thread");
-
-			return { encoding: "application/json" as const, body: { thread: view } };
-		},
+		handler: async ({ params, auth: caller }) => ({
+			encoding: "application/json" as const,
+			body: await handleGetThread(ctx, threads, params.thread, caller.credentials.did),
+		}),
 	});
 
 	route(server, social.colibri.beta.thread.listMembers, {
@@ -70,58 +151,9 @@ export const registerThreadRoutes = ({ server, ctx, auth }: RouteDeps): void => 
 
 	route(server, social.colibri.beta.thread.listThreads, {
 		auth: auth.required,
-		handler: async ({ params, auth: caller }) => {
-			const community = await ctx.loader.community(params.community);
-			if (!community) {
-				throw new InvalidRequestError(
-					`no community matches ${params.community}`,
-					"CommunityNotFound",
-				);
-			}
-
-			const viewer = caller.credentials.did;
-			const authz = await ctx.loader.authz(params.community, viewer);
-			if (!authz.member && !authz.isOwner) {
-				throw forbidden("the requester is not a member of this community");
-			}
-
-			if (params.channel) {
-				const channel = await ctx.loader.channel(params.channel);
-				if (!channel) {
-					throw new InvalidRequestError(`no channel matches ${params.channel}`, "ChannelNotFound");
-				}
-			}
-
-			const table = ctx.database.tables.threads;
-			const filters = [eq(table.community, params.community)];
-			if (params.channel) filters.push(eq(table.channel, params.channel));
-			if (params.cursor) filters.push(lt(table.lastActivityAt, params.cursor.split(" ")[0] ?? ""));
-			if (params.filter === "following") {
-				const followed = await followedSpaces(ctx, viewer);
-				if (followed.length === 0) {
-					return { encoding: "application/json" as const, body: { threads: [] } };
-				}
-				filters.push(inArray(table.space, followed));
-			}
-
-			const rows = await ctx.database.db
-				.select()
-				.from(table)
-				.where(and(...filters))
-				.orderBy(desc(table.lastActivityAt))
-				.limit(params.limit + 1);
-
-			const page = rows.slice(0, params.limit);
-			const cursor = rows.length > params.limit ? page.at(-1) : undefined;
-			const views = await threads.views(page, authz, viewer);
-
-			return {
-				encoding: "application/json" as const,
-				body: {
-					threads: params.filter === "unread" ? views.filter((v) => v.viewer.hasUnread) : views,
-					...(cursor ? { cursor: pageCursor(cursor) } : {}),
-				},
-			};
-		},
+		handler: async ({ params, auth: caller }) => ({
+			encoding: "application/json" as const,
+			body: await handleListThreads(ctx, threads, params, caller.credentials.did),
+		}),
 	});
 };

@@ -1,5 +1,6 @@
 import type { social } from "@colibri-social/lexicons";
 import type { ServiceAuthSigner } from "./auth.js";
+import type { MemberStanding } from "./connector.js";
 
 export type RegistrationView = social.colibri.beta.bridge.defs.RegistrationView;
 export type RemoteRoom = social.colibri.beta.bridge.defs.RemoteRoom;
@@ -24,6 +25,8 @@ export type RemoteAuthorInput = {
 export type AttachmentInput = {
 	blob: BlobRef;
 	name?: string;
+	alt?: string;
+	spoiler?: boolean;
 };
 
 export type RegistrationRef = {
@@ -113,6 +116,35 @@ export type AddReactionInput = RegistrationRef & {
 	author: RemoteAuthorInput;
 	target: { did: string; rkey: string };
 	emoji: string;
+};
+
+export type ListMessagesOptions = {
+	cursor?: string;
+	around?: string;
+	reverse?: boolean;
+	limit?: number;
+};
+
+export type MessagePage = {
+	messages: MessageView[];
+	cursor?: string;
+};
+
+export type ListThreadsInput = {
+	community: string;
+	channel: string;
+	cursor?: string;
+	limit?: number;
+};
+
+export type ThreadPage = {
+	threads: ThreadView[];
+	cursor?: string;
+};
+
+export type GetMemberInput = RegistrationRef & {
+	did: string;
+	channel?: string;
 };
 
 export class ColibriRequestError extends Error {
@@ -371,12 +403,42 @@ export class ColibriClient {
 		return updated;
 	}
 
-	async listMessages(channel: string, limit = 50): Promise<MessageView[]> {
-		const { messages } = await this.query<{ messages: MessageView[] }>(
+	async listMessages(channel: string, options: ListMessagesOptions = {}): Promise<MessagePage> {
+		const { messages, cursor } = await this.query<MessagePage>(
 			"social.colibri.beta.channel.listMessages",
-			{ channel, limit, reverse: true },
+			{
+				channel,
+				limit: options.limit ?? 50,
+				cursor: options.cursor,
+				around: options.around,
+				reverse: options.reverse,
+			},
 		);
-		return messages;
+
+		return { messages, ...(cursor ? { cursor } : {}) };
+	}
+
+	async listThreads(input: ListThreadsInput): Promise<ThreadPage> {
+		const { threads, cursor } = await this.query<ThreadPage>(
+			"social.colibri.beta.thread.listThreads",
+			{ ...input },
+		);
+
+		return { threads, ...(cursor ? { cursor } : {}) };
+	}
+
+	async getMember(input: GetMemberInput): Promise<MemberStanding> {
+		const standing = await this.query<MemberStanding>("social.colibri.beta.bridge.getMember", {
+			...input,
+		});
+
+		return {
+			did: standing.did,
+			member: standing.member,
+			owner: standing.owner,
+			roles: standing.roles.map(({ rkey, name, position }) => ({ rkey, name, position })),
+			permissions: standing.permissions,
+		};
 	}
 
 	async fetchBytes(url: string): Promise<{ bytes: Uint8Array; mimeType: string }> {

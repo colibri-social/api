@@ -24,6 +24,7 @@ const SPACES = communitySpaces(COMMUNITY);
 const GENERAL = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkchannel001");
 const RANDOM = channelSpace(COMMUNITY, SPACE_TYPES.channelText, "3lkchannel002");
 const MEMBER = "did:plc:memberxxxxxxxxxxxxxxxxxxxxxx";
+const ALICE_DID = "did:plc:alicexxxxxxxxxxxxxxxxxxxxxxx";
 const REMOTE = { platform: "chat", remoteSpace: "server-1", remoteSpaceName: "Server One" };
 const ALICE = { id: "alice-1", name: "Alice" };
 const BOB = { id: "bob-1", name: "Bob" };
@@ -763,6 +764,23 @@ describe("bridged threads", () => {
 		);
 	});
 
+	it("opens threads beside an open channel", async () => {
+		const registration = await bridges.update(keyOf(await installed()), { channels: [GENERAL] });
+		const thread = await openThread("3lkthread0007", GENERAL);
+
+		expect((await bridges.threadOpener(BRIDGE, keyOf(registration), GENERAL)).id).toBe(
+			registration.id,
+		);
+		await expectFailure(
+			bridges.threadOpener(BRIDGE, keyOf(registration), RANDOM),
+			"channelNotLinked",
+		);
+		await expectFailure(
+			bridges.threadOpener(BRIDGE, keyOf(registration), thread),
+			"channelNotLinked",
+		);
+	});
+
 	it("changes only threads opened for the calling registration", async () => {
 		const registration = await linked();
 		const own = await openThread("3lkthread0005", GENERAL, {
@@ -776,6 +794,122 @@ describe("bridged threads", () => {
 		await expectFailure(bridges.ownThread(BRIDGE, keyOf(registration), members), "notBridged");
 		await expectFailure(bridges.ownThread(BRIDGE, keyOf(registration), GENERAL), "threadNotFound");
 		await expectFailure(bridges.ownThread(OTHER_BRIDGE, keyOf(registration), own), "forbidden");
+	});
+});
+
+describe("member lookup", () => {
+	const MOD = "3lkrolemod001";
+	const HELPER = "3lkrolehelp01";
+
+	const seedMember = async (did: string, roles: string[]) => {
+		await database.db.insert(database.tables.members).values({
+			community: COMMUNITY,
+			did,
+			roles,
+			joinedAt: clock.toISOString(),
+		});
+	};
+
+	beforeEach(async () => {
+		await database.db.insert(database.tables.roles).values([
+			{
+				community: COMMUNITY,
+				rkey: HELPER,
+				name: "Helper",
+				permissions: ["label.apply"],
+				position: 1,
+			},
+			{
+				community: COMMUNITY,
+				rkey: MOD,
+				name: "Mod",
+				permissions: ["member.kick"],
+				position: 5,
+			},
+		]);
+	});
+
+	it("reports a member's roles highest first and their permissions", async () => {
+		const registration = await linked();
+
+		await seedMember(MEMBER, [HELPER, MOD]);
+
+		const standing = await bridges.member(BRIDGE, keyOf(registration), MEMBER);
+
+		expect(standing).toMatchObject({ did: MEMBER, member: true, owner: false });
+		expect(standing.roles.map((role) => role.rkey)).toEqual([MOD, HELPER]);
+		expect(standing.permissions).toEqual(
+			expect.arrayContaining(["member.kick", "label.apply", "message.send"]),
+		);
+	});
+
+	it("applies the channel's overrides when a channel is given", async () => {
+		const registration = await linked();
+
+		await seedMember(MEMBER, [HELPER]);
+		await database.db
+			.update(database.tables.channels)
+			.set({ permissionOverrides: [{ role: HELPER, allow: [], deny: ["message.send"] }] })
+			.where(eq(database.tables.channels.space, GENERAL));
+
+		const everywhere = await bridges.member(BRIDGE, keyOf(registration), MEMBER);
+		const inGeneral = await bridges.member(BRIDGE, keyOf(registration), MEMBER, GENERAL);
+
+		expect(everywhere.permissions).toContain("message.send");
+		expect(inGeneral.permissions).not.toContain("message.send");
+		expect(inGeneral.permissions).toContain("channel.view");
+	});
+
+	it("reports outsiders and banned members as non-members with nothing held", async () => {
+		const registration = await linked();
+		const banned = "did:plc:bannedxxxxxxxxxxxxxxxxxxxxxx";
+
+		await seedMember(banned, [MOD]);
+		await database.db.insert(database.tables.moderationLog).values({
+			community: COMMUNITY,
+			rkey: "3lkban0000001",
+			action: "ban",
+			subject: banned,
+			createdBy: ADMIN,
+			createdAt: clock.toISOString(),
+		});
+
+		for (const did of [ALICE_DID, banned]) {
+			expect(await bridges.member(BRIDGE, keyOf(registration), did)).toEqual({
+				did,
+				member: false,
+				owner: false,
+				roles: [],
+				permissions: [],
+			});
+		}
+	});
+
+	it("accepts open channels and threads beside them, and refuses other channels", async () => {
+		const registration = await bridges.update(keyOf(await installed()), { channels: [GENERAL] });
+		const thread = await openThread("3lkthread0008", GENERAL);
+
+		await seedMember(MEMBER, []);
+
+		for (const channel of [GENERAL, thread]) {
+			await expect(
+				bridges.member(BRIDGE, keyOf(registration), MEMBER, channel),
+			).resolves.toMatchObject({ member: true });
+		}
+		await expectFailure(
+			bridges.member(BRIDGE, keyOf(registration), MEMBER, RANDOM),
+			"channelNotLinked",
+		);
+	});
+
+	it("refuses another bridge and a paused registration", async () => {
+		const registration = await linked();
+
+		await expectFailure(bridges.member(OTHER_BRIDGE, keyOf(registration), MEMBER), "forbidden");
+
+		await bridges.update(keyOf(registration), { enabled: false });
+
+		await expectFailure(bridges.member(BRIDGE, keyOf(registration), MEMBER), "disabled");
 	});
 });
 

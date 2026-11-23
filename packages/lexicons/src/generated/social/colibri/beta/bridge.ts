@@ -10,6 +10,7 @@ export * as deleteMessage from "./bridge/deleteMessage.js";
 export * as deleteThread from "./bridge/deleteThread.js";
 export * as editMessage from "./bridge/editMessage.js";
 export * as getConfiguration from "./bridge/getConfiguration.js";
+export * as getMember from "./bridge/getMember.js";
 export * as getPairing from "./bridge/getPairing.js";
 export * as hideMessage from "./bridge/hideMessage.js";
 export * as importMessages from "./bridge/importMessages.js";

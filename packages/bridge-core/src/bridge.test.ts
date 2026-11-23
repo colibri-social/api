@@ -3,20 +3,34 @@ import { Bridge } from "./bridge.js";
 import {
 	type ColibriClient,
 	ColibriRequestError,
+	type ListMessagesOptions,
 	type MessageView,
 	type PostMessageInput,
 	type RegistrationView,
 } from "./client.js";
 import type {
 	BridgeContext,
-	ChannelListeningConnector,
+	Connector,
 	HistoryConnector,
 	HistoryMessage,
 	HistoryRequest,
 	HistoryThread,
 	ModeratingConnector,
+	OpenChannelDelete,
+	OpenChannelEdit,
 	OpenChannelMessage,
+	OpenChannelReaction,
+	OpenChannelsChange,
+	OpenChannelThread,
+	OpenDeletingConnector,
+	OpenEditingConnector,
+	OpenLifecycleConnector,
+	OpenModeratingConnector,
+	OpenReactingConnector,
+	OpenThreadingConnector,
 	OutboundDelete,
+	OutboundEdit,
+	OutboundEmbed,
 	OutboundMessage,
 	OutboundReaction,
 	OutboundThread,
@@ -77,6 +91,7 @@ class FakeConnector implements ReactingConnector, ThreadingConnector, Moderating
 	context: BridgeContext | null = null;
 	sent: OutboundMessage[] = [];
 	edits: Array<{ id: string; markdown: string }> = [];
+	editEmbeds: OutboundEmbed[][] = [];
 	deletes: string[] = [];
 	reactions: Array<{ event: "add" | "remove"; reaction: OutboundReaction }> = [];
 	threads: OutboundThread[] = [];
@@ -96,8 +111,9 @@ class FakeConnector implements ReactingConnector, ThreadingConnector, Moderating
 		this.sent.push(message);
 		return `remote-${this.nextId++}`;
 	}
-	async editMessage(edit: { id: string; markdown: string }) {
+	async editMessage(edit: OutboundEdit) {
 		this.edits.push({ id: edit.id, markdown: edit.markdown });
+		this.editEmbeds.push(edit.embeds);
 	}
 	async deleteMessage(target: { id: string }) {
 		this.deletes.push(target.id);
@@ -144,12 +160,33 @@ const fakeClient = (registrations: () => RegistrationView[]) => {
 			mimeType: "image/png",
 			size: 1,
 		})),
-		fetchBytes: vi.fn(async () => ({ bytes: new Uint8Array([1]), mimeType: "image/png" })),
+		fetchBytes: vi.fn(async (_url: string) => ({
+			bytes: new Uint8Array([1]),
+			mimeType: "image/png",
+		})),
 		createThread: vi.fn(async () => ({ thread: THREAD })),
 		updateThread: vi.fn(async () => {}),
 		deleteThread: vi.fn(async () => {}),
 		hideMessage: vi.fn(async () => {}),
-		listMessages: vi.fn(async (): Promise<MessageView[]> => []),
+		listMessages: vi.fn(
+			async (
+				_channel: string,
+				_options?: ListMessagesOptions,
+			): Promise<{ messages: MessageView[]; cursor?: string }> => ({ messages: [] }),
+		),
+		listThreads: vi.fn(
+			async (_input: {
+				community: string;
+				channel: string;
+			}): Promise<{ threads: unknown[]; cursor?: string }> => ({ threads: [] }),
+		),
+		getMember: vi.fn(async (input: { did: string }) => ({
+			did: input.did,
+			member: true,
+			owner: false,
+			roles: [{ rkey: "3lkrole000001", name: "Helper", position: 1 }],
+			permissions: ["messaging.send"],
+		})),
 		leave: vi.fn(async () => {}),
 		replaceAvatar: vi.fn(async () => 0),
 	};
@@ -396,6 +433,25 @@ describe("from the other service into Colibri", () => {
 		expect(client.postMessage).not.toHaveBeenCalled();
 	});
 
+	it("uploads attachments with their description and spoiler flag", async () => {
+		inboundMessage("m1", "look", {
+			attachments: [
+				{ url: "https://cdn.test/a.png", name: "a.png", alt: "a cat", spoiler: true },
+				{ url: "https://cdn.test/huge.png", size: 999_999_999 },
+			],
+		});
+		await bridge.idle();
+
+		expect(client.postMessage.mock.calls[0]?.[0].attachments).toEqual([
+			{
+				blob: expect.objectContaining({ $type: "blob" }),
+				name: "a.png",
+				alt: "a cat",
+				spoiler: true,
+			},
+		]);
+	});
+
 	it("retries a request the AppView rate limited", async () => {
 		client.postMessage.mockRejectedValueOnce(
 			new ColibriRequestError(429, "RateLimited", "slow down", 1),
@@ -578,6 +634,76 @@ describe("from Colibri to the other service", () => {
 		expect(connector.deletes).toEqual(["remote-1"]);
 	});
 
+	it("sends attachment details and link previews, minus the ones the author suppressed", async () => {
+		messageFrame(
+			"create",
+			messageView({
+				attachments: [
+					{
+						url: "https://appview.test/blob/a",
+						mimeType: "image/png",
+						name: "a.png",
+						size: 10,
+						alt: "a cat",
+						spoiler: true,
+						width: 4,
+						height: 3,
+					},
+				],
+				embeds: [
+					{ uri: "https://example.com", title: "Example", image: { url: "https://img.test/1" } },
+					{ uri: "https://hidden.test", title: "Hidden" },
+				],
+				suppressedEmbeds: ["https://hidden.test"],
+			}),
+		);
+		await bridge.idle();
+
+		expect(connector.sent[0]?.attachments).toEqual([
+			{
+				url: "https://appview.test/blob/a",
+				mimeType: "image/png",
+				name: "a.png",
+				size: 10,
+				alt: "a cat",
+				spoiler: true,
+				width: 4,
+				height: 3,
+			},
+		]);
+		expect(connector.sent[0]?.embeds).toEqual([
+			{ url: "https://example.com", title: "Example", imageUrl: "https://img.test/1" },
+		]);
+	});
+
+	it("sends no link previews when the author suppressed them all", async () => {
+		messageFrame(
+			"create",
+			messageView({
+				embeds: [{ uri: "https://example.com", title: "Example" }],
+				suppressedEmbeds: ["https://example.com"],
+			}),
+		);
+		await bridge.idle();
+
+		expect(connector.sent[0]?.embeds).toEqual([]);
+	});
+
+	it("sends link previews with an edit", async () => {
+		messageFrame("create", messageView());
+		await bridge.idle();
+		messageFrame(
+			"update",
+			messageView({
+				updatedAt: "2026-09-24T00:01:00.000Z",
+				embeds: [{ uri: "https://example.com", siteName: "Example" }],
+			}),
+		);
+		await bridge.idle();
+
+		expect(connector.editEmbeds).toEqual([[{ url: "https://example.com", siteName: "Example" }]]);
+	});
+
 	it("reacts once per emoji and takes the reaction back when the last person does", async () => {
 		messageFrame("create", messageView());
 		await bridge.idle();
@@ -603,23 +729,79 @@ describe("from Colibri to the other service", () => {
 	});
 });
 
-describe("open channels", () => {
-	const OPEN = `at://${COMMUNITY}/space/social.colibri.beta.channel.text/3lkchannel002`;
+const OPEN = `at://${COMMUNITY}/space/social.colibri.beta.channel.text/3lkchannel002`;
+const OPEN_THREAD = `at://${COMMUNITY}/space/social.colibri.beta.channel.thread/3lkthread0002`;
 
-	class ListeningConnector extends FakeConnector implements ChannelListeningConnector {
-		heard: OpenChannelMessage[] = [];
+class FakeOpenConnector
+	implements
+		OpenEditingConnector,
+		OpenDeletingConnector,
+		OpenModeratingConnector,
+		OpenReactingConnector,
+		OpenThreadingConnector,
+		OpenLifecycleConnector
+{
+	readonly platform = "test";
+	context: BridgeContext | null = null;
+	heard: OpenChannelMessage[] = [];
+	edits: OpenChannelEdit[] = [];
+	deletes: OpenChannelDelete[] = [];
+	removed: OpenChannelDelete[] = [];
+	reactions: Array<{ event: "add" | "remove"; reaction: OpenChannelReaction }> = [];
+	threads: Array<{ event: "create" | "update" | "delete"; thread: Partial<OpenChannelThread> }> =
+		[];
+	changes: OpenChannelsChange[] = [];
 
-		async receiveChannelMessage(message: OpenChannelMessage) {
-			this.heard.push(message);
-		}
+	async start(context: BridgeContext) {
+		this.context = context;
 	}
+	async stop() {}
+	async openMessage(message: OpenChannelMessage) {
+		this.heard.push(message);
+	}
+	async openEditMessage(edit: OpenChannelEdit) {
+		this.edits.push(edit);
+	}
+	async openDeleteMessage(target: OpenChannelDelete) {
+		this.deletes.push(target);
+	}
+	async openRemoveMessage(target: OpenChannelDelete) {
+		this.removed.push(target);
+	}
+	async openAddReaction(reaction: OpenChannelReaction) {
+		this.reactions.push({ event: "add", reaction });
+	}
+	async openRemoveReaction(reaction: OpenChannelReaction) {
+		this.reactions.push({ event: "remove", reaction });
+	}
+	async openCreateThread(thread: OpenChannelThread) {
+		this.threads.push({ event: "create", thread });
+	}
+	async openUpdateThread(thread: OpenChannelThread) {
+		this.threads.push({ event: "update", thread });
+	}
+	async openDeleteThread(thread: Omit<OpenChannelThread, "name" | "anchor">) {
+		this.threads.push({ event: "delete", thread });
+	}
+	async openChannelsChanged(change: OpenChannelsChange) {
+		this.changes.push(change);
+	}
+}
 
-	let listening: ListeningConnector;
-	let listen: Bridge;
+describe("open channels", () => {
+	let open: FakeOpenConnector;
+	let openBridge: Bridge;
 	let hear: (frame: ServerFrame) => void;
 	let heardChannels: string[];
 
-	const openFrame = (message: MessageView, extra: Record<string, unknown> = {}, event = "create") =>
+	const openRegistration = (overrides: Partial<RegistrationView> = {}) =>
+		registration({ links: [], channels: [OPEN], ...overrides } as Partial<RegistrationView>);
+
+	const openFrame = (
+		event: "create" | "update",
+		message: MessageView,
+		extra: Record<string, unknown> = {},
+	) =>
 		hear({
 			$type: "social.colibri.beta.sync.defs#messageEvent",
 			event,
@@ -628,13 +810,36 @@ describe("open channels", () => {
 			...extra,
 		});
 
-	beforeEach(async () => {
-		listening = new ListeningConnector();
-		current = [registration({ channels: [OPEN] } as Partial<RegistrationView>)];
-		heardChannels = [];
-		listen = new Bridge({
+	const deleteFrame = (did: string, rkey: string, channel = OPEN) =>
+		hear({
+			$type: "social.colibri.beta.sync.defs#messageEvent",
+			event: "delete",
+			channel,
+			subject: { did, rkey },
+		});
+
+	const hiddenFrame = (did: string, rkey: string) =>
+		hear({
+			$type: "social.colibri.beta.sync.defs#labelEvent",
+			event: "create",
+			space: OPEN,
+			subject: { did, collection: "social.colibri.beta.message", rkey },
+			val: "hidden",
+			src: COMMUNITY,
+		});
+
+	const bridgeOwnAuthor = {
+		did: COMMUNITY,
+		handle: "community.test",
+		displayName: "Helper",
+		isBot: true,
+		bridge: { registration: REGISTRATION, platform: "test", remoteId: "bot" },
+	};
+
+	const startOpen = async (connector: Connector = open) => {
+		const started = new Bridge({
 			client: client as unknown as ColibriClient,
-			connector: listening,
+			connector,
 			store: new MemoryBridgeStore(),
 			sleep: async () => {},
 			createEventStream: (options: EventStreamOptions) => {
@@ -648,81 +853,431 @@ describe("open channels", () => {
 				};
 			},
 		});
-		await listen.start();
+
+		await started.start();
+
+		return started;
+	};
+
+	beforeEach(async () => {
+		vi.clearAllMocks();
+		open = new FakeOpenConnector();
+		current = [openRegistration()];
+		heardChannels = [];
+		openBridge = await startOpen();
 	});
 
-	it("subscribes to open channels and hands their new messages to the connector", async () => {
-		expect(heardChannels).toEqual(expect.arrayContaining([CHANNEL, OPEN]));
+	it("constructs and runs with a connector that only handles open channels", () => {
+		expect(heardChannels).toEqual([OPEN]);
+		expect(client.putRemoteRooms).not.toHaveBeenCalled();
+		expect(open.context?.openChannels(COMMUNITY, REGISTRATION)).toEqual([OPEN]);
+	});
 
-		openFrame(messageView({ channel: OPEN }));
-		await listen.idle();
+	it("refuses a connector that neither relays nor handles open channels", () => {
+		const neither = { platform: "test", start: async () => {}, stop: async () => {} };
 
-		expect(listening.heard).toEqual([
+		expect(
+			() =>
+				new Bridge({
+					client: client as unknown as ColibriClient,
+					connector: neither,
+					store: new MemoryBridgeStore(),
+				}),
+		).toThrow(/neither relays rooms nor handles open channels/);
+	});
+
+	it("ignores remote room events for an open-only connector", async () => {
+		open.context?.emit({
+			type: "message",
+			remoteSpace: GUILD,
+			remoteRoom: ROOM,
+			id: "m1",
+			author: { id: "alice-1", name: "Alice" },
+			markdown: "hi",
+		});
+		await openBridge.idle();
+
+		expect(client.postMessage).not.toHaveBeenCalled();
+	});
+
+	it("hands new messages to the connector with the author's standing and content", async () => {
+		openFrame(
+			"create",
+			messageView({
+				channel: OPEN,
+				author: {
+					did: MEMBER,
+					handle: "member.test",
+					displayName: "Member",
+					isBot: false,
+					avatar: "https://cdn.test/member.png",
+				},
+				parent: {
+					uri: "at://x",
+					rkey: "3lkmsg0000000",
+					author: { did: "did:plc:parentxxxxxxxxxxxxxxxxxxxxx" },
+				},
+				attachments: [
+					{
+						url: "https://appview.test/blob/a",
+						mimeType: "image/png",
+						name: "a.png",
+						size: 10,
+						alt: "a cat",
+						spoiler: true,
+						width: 4,
+						height: 3,
+					},
+				],
+				embeds: [
+					{
+						uri: "https://example.com",
+						title: "Example",
+						image: { url: "https://appview.test/img/1" },
+						themeColor: "#ff0000",
+					},
+				],
+				forward: {
+					source: { space: CHANNEL, did: MEMBER, rkey: "3lkmsg0000009" },
+					createdAt: "2026-09-23T00:00:00.000Z",
+					text: "old",
+					attachments: [],
+				},
+				updatedAt: "2026-09-24T00:02:00.000Z",
+			}),
+		);
+		await openBridge.idle();
+
+		expect(open.heard).toEqual([
 			{
 				community: COMMUNITY,
 				registration: REGISTRATION,
 				channel: OPEN,
+				did: MEMBER,
 				rkey: "3lkmsg0000001",
-				author: { did: MEMBER, name: "Member", handle: "member.test" },
+				author: {
+					did: MEMBER,
+					name: "Member",
+					handle: "member.test",
+					avatarUrl: "https://cdn.test/member.png",
+					standing: {
+						did: MEMBER,
+						member: true,
+						owner: false,
+						roles: [{ rkey: "3lkrole000001", name: "Helper", position: 1 }],
+						permissions: ["messaging.send"],
+					},
+				},
 				markdown: "hello **bold**",
+				replyTo: { did: "did:plc:parentxxxxxxxxxxxxxxxxxxxxx", rkey: "3lkmsg0000000" },
+				attachments: [
+					{
+						url: "https://appview.test/blob/a",
+						mimeType: "image/png",
+						name: "a.png",
+						size: 10,
+						alt: "a cat",
+						spoiler: true,
+						width: 4,
+						height: 3,
+					},
+				],
+				embeds: [
+					{
+						url: "https://example.com",
+						title: "Example",
+						imageUrl: "https://appview.test/img/1",
+						themeColor: "#ff0000",
+					},
+				],
+				forward: {
+					markdown: "old",
+					attachments: [],
+					source: { channel: CHANNEL, did: MEMBER, rkey: "3lkmsg0000009" },
+				},
+				createdAt: "2026-09-24T00:00:00.000Z",
+				updatedAt: "2026-09-24T00:02:00.000Z",
 			},
 		]);
-		expect(listening.sent).toEqual([]);
+		expect(client.getMember).toHaveBeenCalledWith({
+			community: COMMUNITY,
+			registration: REGISTRATION,
+			did: MEMBER,
+			channel: OPEN,
+		});
 	});
 
-	it("skips edits, imported history and its own replies", async () => {
-		openFrame(messageView({ channel: OPEN }), {}, "update");
-		openFrame(messageView({ channel: OPEN }), { imported: true });
-		openFrame(
-			messageView({
-				channel: OPEN,
-				author: {
-					did: COMMUNITY,
-					handle: "community.test",
-					displayName: "Helper",
-					isBot: true,
-					bridge: { registration: REGISTRATION, platform: "test", remoteId: "bot" },
-				},
-			}),
-		);
-		await listen.idle();
+	it("routes edits and deletes", async () => {
+		openFrame("update", messageView({ channel: OPEN, text: "changed", facets: [] }));
+		deleteFrame(MEMBER, "3lkmsg0000001");
+		await openBridge.idle();
 
-		expect(listening.heard).toEqual([]);
+		expect(open.edits).toEqual([
+			expect.objectContaining({ rkey: "3lkmsg0000001", markdown: "changed" }),
+		]);
+		expect(open.deletes).toEqual([
+			{
+				community: COMMUNITY,
+				registration: REGISTRATION,
+				channel: OPEN,
+				did: MEMBER,
+				rkey: "3lkmsg0000001",
+			},
+		]);
+	});
+
+	it("skips imported history and the messages it posted itself", async () => {
+		openFrame("create", messageView({ channel: OPEN }), { imported: true });
+		openFrame("create", messageView({ channel: OPEN, author: bridgeOwnAuthor }));
+		openFrame("update", messageView({ channel: OPEN, author: bridgeOwnAuthor }));
+		await openBridge.idle();
+
+		expect(open.heard).toEqual([]);
+		expect(open.edits).toEqual([]);
+	});
+
+	it("caches the author's standing", async () => {
+		openFrame("create", messageView({ channel: OPEN }));
+		openFrame("create", messageView({ channel: OPEN, rkey: "3lkmsg0000002" }));
+		await openBridge.idle();
+
+		expect(open.heard).toHaveLength(2);
+		expect(client.getMember).toHaveBeenCalledTimes(1);
+	});
+
+	it("falls back to no standing when the AppView can't say", async () => {
+		client.getMember.mockRejectedValueOnce(new Error("boom"));
+		openFrame("create", messageView({ channel: OPEN }));
+		await openBridge.idle();
+
+		expect(open.heard[0]?.author.standing).toEqual({
+			did: MEMBER,
+			member: false,
+			owner: false,
+			roles: [],
+			permissions: [],
+		});
+	});
+
+	it("routes reactions with their custom emoji and skips the ones it added", async () => {
+		const reaction = (event: "create" | "delete", extra: Record<string, unknown> = {}) =>
+			hear({
+				$type: "social.colibri.beta.sync.defs#reactionEvent",
+				event,
+				channel: OPEN,
+				target: { did: MEMBER, rkey: "3lkmsg0000001" },
+				emoji: ":party:",
+				actor: MEMBER,
+				customEmoji: { uri: `at://${MEMBER}/social.colibri.beta.emoji/party`, cid: "bafy" },
+				...extra,
+			});
+
+		reaction("create");
+		reaction("delete");
+		reaction("create", {
+			actor: COMMUNITY,
+			bridged: { registration: REGISTRATION, platform: "test", remoteId: "bob", name: "Bob" },
+		});
+		await openBridge.idle();
+
+		const expected = {
+			community: COMMUNITY,
+			registration: REGISTRATION,
+			channel: OPEN,
+			did: MEMBER,
+			rkey: "3lkmsg0000001",
+			emoji: ":party:",
+			actor: MEMBER,
+			customEmoji: { uri: `at://${MEMBER}/social.colibri.beta.emoji/party` },
+		};
+		expect(open.reactions).toEqual([
+			{ event: "add", reaction: expected },
+			{ event: "remove", reaction: expected },
+		]);
+	});
+
+	it("tells the connector when a moderator hides a message", async () => {
+		hiddenFrame(MEMBER, "3lkmsg0000001");
+		await openBridge.idle();
+
+		expect(open.removed).toEqual([
+			{
+				community: COMMUNITY,
+				registration: REGISTRATION,
+				channel: OPEN,
+				did: MEMBER,
+				rkey: "3lkmsg0000001",
+			},
+		]);
+	});
+
+	it("subscribes to threads under open channels and routes their events", async () => {
+		const openThread = threadView({ space: OPEN_THREAD, channel: OPEN, name: "Help" });
+
+		hear(threadFrame("create", { channel: OPEN, thread: openThread }));
+		await openBridge.idle();
+		expect(heardChannels).toEqual([OPEN, OPEN_THREAD]);
+
+		hear({
+			$type: "social.colibri.beta.sync.defs#messageEvent",
+			event: "create",
+			channel: OPEN_THREAD,
+			message: messageView({ channel: OPEN_THREAD }),
+		});
+		hear(threadFrame("update", { channel: OPEN, thread: { ...openThread, name: "Solved" } }));
+		hear(threadFrame("delete", { channel: OPEN, space: OPEN_THREAD }));
+		await openBridge.idle();
+
+		expect(open.heard).toEqual([
+			expect.objectContaining({ channel: OPEN, thread: OPEN_THREAD, rkey: "3lkmsg0000001" }),
+		]);
+		const ref = { community: COMMUNITY, registration: REGISTRATION, channel: OPEN };
+		expect(open.threads).toEqual([
+			{ event: "create", thread: { ...ref, thread: OPEN_THREAD, name: "Help" } },
+			{ event: "update", thread: { ...ref, thread: OPEN_THREAD, name: "Solved" } },
+			{ event: "delete", thread: { ...ref, thread: OPEN_THREAD } },
+		]);
+		expect(heardChannels).toEqual([OPEN]);
+	});
+
+	it("subscribes to the existing threads of open channels when it loads", async () => {
+		client.listThreads.mockResolvedValueOnce({
+			threads: [threadView({ space: OPEN_THREAD, channel: OPEN })],
+		});
+		await openBridge.refresh();
+
+		expect(client.listThreads).toHaveBeenLastCalledWith(
+			expect.objectContaining({ community: COMMUNITY, channel: OPEN }),
+		);
+		expect(heardChannels).toEqual([OPEN, OPEN_THREAD]);
+	});
+
+	it("keeps going when the existing threads can't be listed", async () => {
+		client.listThreads.mockRejectedValueOnce(new Error("Forbidden"));
+		await openBridge.refresh();
+
+		expect(heardChannels).toEqual([OPEN]);
+	});
+
+	it("reports installed, updated and removed registrations after the first load", async () => {
+		const SECOND = `at://${COMMUNITY}/space/social.colibri.beta.channel.text/3lkchannel003`;
+		const other = "3lkbridgebbbb";
+
+		expect(open.changes).toEqual([]);
+
+		current = [
+			openRegistration({ channels: [OPEN, SECOND] } as Partial<RegistrationView>),
+			openRegistration({ id: other }),
+		];
+		await openBridge.refresh();
+		await openBridge.idle();
+
+		expect(open.changes).toEqual([
+			{
+				community: COMMUNITY,
+				registration: REGISTRATION,
+				kind: "updated",
+				channels: [OPEN, SECOND],
+				added: [SECOND],
+				removed: [],
+			},
+			{
+				community: COMMUNITY,
+				registration: other,
+				kind: "installed",
+				channels: [OPEN],
+				added: [OPEN],
+				removed: [],
+			},
+		]);
+
+		current = [openRegistration({ channels: [OPEN, SECOND] } as Partial<RegistrationView>)];
+		await openBridge.refresh();
+		current = [];
+		await openBridge.refresh();
+		await openBridge.idle();
+
+		expect(open.changes.slice(2)).toEqual([
+			{
+				community: COMMUNITY,
+				registration: other,
+				kind: "removed",
+				channels: [],
+				added: [],
+				removed: [OPEN],
+			},
+			{
+				community: COMMUNITY,
+				registration: REGISTRATION,
+				kind: "removed",
+				channels: [],
+				added: [],
+				removed: [OPEN, SECOND],
+			},
+		]);
 	});
 
 	it("stops listening to the open channels of a paused registration", async () => {
-		current = [registration({ channels: [OPEN], enabled: false } as Partial<RegistrationView>)];
-		await listen.refresh();
-		openFrame(messageView({ channel: OPEN }));
-		await listen.idle();
+		current = [openRegistration({ enabled: false })];
+		await openBridge.refresh();
+		openFrame("create", messageView({ channel: OPEN }));
+		await openBridge.idle();
 
 		expect(heardChannels).not.toContain(OPEN);
-		expect(listening.heard).toEqual([]);
+		expect(open.heard).toEqual([]);
+		expect(open.changes).toEqual([expect.objectContaining({ kind: "removed" })]);
 	});
 
-	it("leaves open channels alone for a connector that doesn't listen to them", async () => {
+	it("leaves open channels alone for a connector that doesn't handle them", async () => {
+		current = [registration({ channels: [OPEN] } as Partial<RegistrationView>)];
 		await bridge.refresh();
 
 		expect(subscribed).toEqual([CHANNEL]);
 	});
 
-	it("replies in an open channel with facets and a parent", async () => {
-		const rkey = await listening.context?.reply({
-			community: COMMUNITY,
-			registration: REGISTRATION,
-			channel: OPEN,
-			author: { id: "bot", name: "Helper" },
-			markdown: "done **now**",
-			replyTo: { did: MEMBER, rkey: "3lkmsg0000001" },
-		});
+	describe("openEmit", () => {
+		const ref = { community: COMMUNITY, registration: REGISTRATION, channel: OPEN };
 
-		expect(rkey).toMatch(/^3lkposted/);
-		expect(client.postMessage).toHaveBeenLastCalledWith(
-			expect.objectContaining({
+		it("posts a message with avatar, attachments, a reply and a forward", async () => {
+			client.fetchBytes.mockImplementation(async (url: string) => {
+				if (url.includes("broken")) throw new Error("404");
+				return { bytes: new Uint8Array([1]), mimeType: "image/png" };
+			});
+
+			const result = await open.context?.openEmit({
+				...ref,
+				type: "message",
+				author: { id: "bot", name: "Helper", avatarUrl: "https://cdn.test/bot.png" },
+				markdown: "done **now**",
+				replyTo: { did: MEMBER, rkey: "3lkmsg0000001" },
+				attachments: [
+					{ url: "https://cdn.test/a.png", name: "a.png", alt: "a cat", spoiler: true },
+					{ url: "https://cdn.test/broken.png" },
+					{ url: "https://cdn.test/huge.png", size: 999_999_999 },
+				],
+				forward: {
+					markdown: "old",
+					source: { channel: CHANNEL, did: MEMBER, rkey: "3lkmsg0000009" },
+					createdAt: "2026-09-23T00:00:00.000Z",
+				},
+			});
+
+			expect(result).toEqual({
+				rkey: expect.stringMatching(/^3lkposted/),
+				dropped: [
+					{ url: "https://cdn.test/broken.png", reason: "fetchFailed" },
+					{ url: "https://cdn.test/huge.png", size: 999_999_999, reason: "tooLarge" },
+				],
+			});
+			expect(client.postMessage).toHaveBeenLastCalledWith({
 				community: COMMUNITY,
 				registration: REGISTRATION,
 				channel: OPEN,
-				author: { id: "bot", name: "Helper" },
+				author: {
+					id: "bot",
+					name: "Helper",
+					avatar: expect.objectContaining({ $type: "blob" }),
+				},
 				text: "done now",
 				facets: [
 					expect.objectContaining({
@@ -730,8 +1285,283 @@ describe("open channels", () => {
 					}),
 				],
 				parent: { did: MEMBER, rkey: "3lkmsg0000001" },
-			}),
-		);
+				attachments: [
+					{
+						blob: expect.objectContaining({ $type: "blob" }),
+						name: "a.png",
+						alt: "a cat",
+						spoiler: true,
+					},
+				],
+				forward: {
+					source: { space: CHANNEL, did: MEMBER, rkey: "3lkmsg0000009" },
+					createdAt: "2026-09-23T00:00:00.000Z",
+					text: "old",
+				},
+			});
+			expect(client.fetchBytes).toHaveBeenCalledWith("https://cdn.test/bot.png");
+		});
+
+		it("uploads an author's avatar once", async () => {
+			const post = () =>
+				open.context?.openEmit({
+					...ref,
+					type: "message",
+					author: { id: "bot", name: "Helper", avatarUrl: "https://cdn.test/bot.png" },
+					markdown: "hi",
+				});
+
+			await post();
+			await post();
+
+			expect(client.uploadBlob).toHaveBeenCalledTimes(1);
+		});
+
+		it("posts into a thread of an open channel", async () => {
+			hear(
+				threadFrame("create", {
+					channel: OPEN,
+					thread: threadView({ space: OPEN_THREAD, channel: OPEN }),
+				}),
+			);
+			await openBridge.idle();
+
+			await open.context?.openEmit({
+				...ref,
+				thread: OPEN_THREAD,
+				type: "message",
+				author: { id: "bot", name: "Helper" },
+				markdown: "in thread",
+			});
+
+			expect(client.postMessage).toHaveBeenLastCalledWith(
+				expect.objectContaining({ channel: OPEN_THREAD, text: "in thread" }),
+			);
+		});
+
+		it("edits, deletes and reacts, and skips the echoes", async () => {
+			await open.context?.openEmit({
+				...ref,
+				type: "messageEdit",
+				rkey: "3lkmine000001",
+				markdown: "*new*",
+			});
+			const deleted = await open.context?.openEmit({
+				...ref,
+				type: "messageDelete",
+				rkey: "3lkmine000001",
+			});
+			const reacted = await open.context?.openEmit({
+				...ref,
+				type: "reactionAdd",
+				did: MEMBER,
+				rkey: "3lkmsg0000001",
+				author: { id: "bot", name: "Helper" },
+				emoji: "👍",
+			});
+			await open.context?.openEmit({ ...ref, type: "reactionRemove", rkey: reacted?.rkey ?? "" });
+
+			expect(client.editMessage).toHaveBeenCalledWith({
+				...ref,
+				rkey: "3lkmine000001",
+				text: "new",
+				facets: [expect.anything()],
+			});
+			expect(deleted).toEqual({ rkey: "3lkmine000001", dropped: [] });
+			expect(client.deleteMessage).toHaveBeenCalledWith({ ...ref, rkey: "3lkmine000001" });
+			expect(client.addReaction).toHaveBeenCalledWith({
+				...ref,
+				author: { id: "bot", name: "Helper" },
+				target: { did: MEMBER, rkey: "3lkmsg0000001" },
+				emoji: "👍",
+			});
+			expect(reacted?.rkey).toMatch(/^3lkreact/);
+			expect(client.removeReaction).toHaveBeenCalledWith({ ...ref, rkey: reacted?.rkey });
+
+			deleteFrame(COMMUNITY, "3lkmine000001");
+			deleteFrame(MEMBER, "3lkmsg0000001");
+			await openBridge.idle();
+
+			expect(open.deletes).toEqual([
+				expect.objectContaining({ did: MEMBER, rkey: "3lkmsg0000001" }),
+			]);
+		});
+
+		it("removes a message only when mirroring is on, and skips the echo", async () => {
+			await expect(
+				open.context?.openEmit({
+					...ref,
+					type: "messageRemove",
+					did: MEMBER,
+					rkey: "3lkmsg0000001",
+				}),
+			).rejects.toThrow(/mirrorModeration/);
+			expect(client.hideMessage).not.toHaveBeenCalled();
+
+			current = [openRegistration({ mirrorModeration: true })];
+			await openBridge.refresh();
+			await open.context?.openEmit({
+				...ref,
+				type: "messageRemove",
+				did: MEMBER,
+				rkey: "3lkmsg0000001",
+				reason: "spam",
+			});
+
+			expect(client.hideMessage).toHaveBeenCalledWith({
+				...ref,
+				subject: { did: MEMBER, rkey: "3lkmsg0000001" },
+				reason: "spam",
+			});
+
+			hiddenFrame(MEMBER, "3lkmsg0000001");
+			await openBridge.idle();
+
+			expect(open.removed).toEqual([]);
+		});
+
+		it("creates, renames and deletes threads, and subscribes to new ones", async () => {
+			client.createThread.mockResolvedValueOnce({ thread: OPEN_THREAD });
+
+			const created = await open.context?.openEmit({
+				...ref,
+				type: "threadCreate",
+				name: "Ticket",
+				author: { id: "bot", name: "Helper" },
+				anchor: { did: MEMBER, rkey: "3lkmsg0000001" },
+			});
+
+			expect(created).toEqual({ thread: OPEN_THREAD, dropped: [] });
+			expect(client.createThread).toHaveBeenCalledWith({
+				...ref,
+				name: "Ticket",
+				author: { id: "bot", name: "Helper" },
+				anchor: { did: MEMBER, rkey: "3lkmsg0000001" },
+			});
+			expect(heardChannels).toEqual([OPEN, OPEN_THREAD]);
+
+			hear(
+				threadFrame("create", {
+					channel: OPEN,
+					thread: threadView({
+						space: OPEN_THREAD,
+						channel: OPEN,
+						name: "Ticket",
+						createdBy: COMMUNITY,
+					}),
+				}),
+			);
+			await openBridge.idle();
+			expect(open.threads).toEqual([]);
+
+			await open.context?.openEmit({
+				...ref,
+				type: "threadUpdate",
+				thread: OPEN_THREAD,
+				name: "Closed",
+			});
+			await open.context?.openEmit({ ...ref, type: "threadDelete", thread: OPEN_THREAD });
+
+			expect(client.updateThread).toHaveBeenCalledWith({
+				community: COMMUNITY,
+				registration: REGISTRATION,
+				thread: OPEN_THREAD,
+				name: "Closed",
+			});
+			expect(client.deleteThread).toHaveBeenCalledWith({
+				community: COMMUNITY,
+				registration: REGISTRATION,
+				thread: OPEN_THREAD,
+			});
+			expect(heardChannels).toEqual([OPEN]);
+		});
+
+		it("refuses a channel or thread that is not open", async () => {
+			await expect(
+				open.context?.openEmit({
+					...ref,
+					channel: CHANNEL,
+					type: "message",
+					author: { id: "bot", name: "Helper" },
+					markdown: "hi",
+				}),
+			).rejects.toThrow(/is not an open channel/);
+			await expect(
+				open.context?.openEmit({
+					...ref,
+					thread: OPEN_THREAD,
+					type: "messageDelete",
+					rkey: "3lkmine000001",
+				}),
+			).rejects.toThrow(/is not a thread of the open channel/);
+			expect(client.postMessage).not.toHaveBeenCalled();
+		});
+
+		it("throws what the AppView refuses after retrying rate limits", async () => {
+			client.deleteMessage
+				.mockRejectedValueOnce(new ColibriRequestError(429, "RateLimited", "slow down", 1))
+				.mockRejectedValueOnce(new ColibriRequestError(403, "Forbidden", "not yours", null));
+
+			await expect(
+				open.context?.openEmit({ ...ref, type: "messageDelete", rkey: "3lkmsg0000001" }),
+			).rejects.toThrow("not yours");
+			expect(client.deleteMessage).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	describe("reading", () => {
+		const ref = { community: COMMUNITY, registration: REGISTRATION, channel: OPEN };
+
+		it("looks up one message by its author and record key", async () => {
+			client.listMessages.mockResolvedValueOnce({
+				messages: [
+					messageView({ channel: OPEN, rkey: "3lkmsg0000002" }),
+					messageView({ channel: OPEN }),
+				],
+			});
+
+			const found = await open.context?.message({ ...ref, did: MEMBER, rkey: "3lkmsg0000001" });
+
+			expect(client.listMessages).toHaveBeenCalledWith(OPEN, {
+				around: "3lkmsg0000001",
+				limit: expect.any(Number),
+			});
+			expect(found).toMatchObject({ rkey: "3lkmsg0000001", markdown: "hello **bold**" });
+		});
+
+		it("answers null for a message it can't find", async () => {
+			expect(
+				await open.context?.message({ ...ref, did: MEMBER, rkey: "3lkmsg0000001" }),
+			).toBeNull();
+		});
+
+		it("pages history newest first from before a message", async () => {
+			client.listMessages
+				.mockResolvedValueOnce({
+					messages: [
+						messageView({ channel: OPEN, rkey: "3lkmsg0000005" }),
+						messageView({ channel: OPEN, rkey: "3lkmsg0000004" }),
+						messageView({ channel: OPEN, rkey: "3lkmsg0000003" }),
+					],
+					cursor: "next",
+				})
+				.mockResolvedValueOnce({
+					messages: [messageView({ channel: OPEN, rkey: "3lkmsg0000002" })],
+				});
+
+			const history = await open.context?.history({ ...ref, before: "3lkmsg0000004", limit: 3 });
+
+			expect(history?.map((message) => message.rkey)).toEqual(["3lkmsg0000003", "3lkmsg0000002"]);
+			expect(client.listMessages).toHaveBeenNthCalledWith(1, OPEN, {
+				around: "3lkmsg0000004",
+				limit: 3,
+			});
+			expect(client.listMessages).toHaveBeenNthCalledWith(2, OPEN, { cursor: "next", limit: 2 });
+		});
+
+		it("answers a member's standing", async () => {
+			expect(await open.context?.member({ ...ref, did: MEMBER })).toMatchObject({ member: true });
+		});
 	});
 });
 
@@ -845,9 +1675,11 @@ describe("threads", () => {
 			message: messageView(),
 		});
 		await bridge.idle();
-		client.listMessages.mockResolvedValueOnce([
-			messageView({ rkey: "3lkmsg0000002", channel: THREAD, text: "early", facets: [] }),
-		]);
+		client.listMessages.mockResolvedValueOnce({
+			messages: [
+				messageView({ rkey: "3lkmsg0000002", channel: THREAD, text: "early", facets: [] }),
+			],
+		});
 
 		deliver(
 			threadFrame("create", {

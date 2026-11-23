@@ -87,6 +87,18 @@ const messagePointerOf = (space: string, uri: unknown, ref: unknown): SpaceRecor
 	);
 };
 
+const announcedByBridgeRoute = (
+	change: RepoChange,
+	value: Record<string, unknown> | undefined,
+): boolean => {
+	if (spaceContextFor(change.space)?.authority !== change.author) return false;
+	if (!value) return true;
+
+	const bridged = value.bridged as { imported?: unknown } | undefined;
+
+	return bridged !== undefined && bridged.imported !== true;
+};
+
 const messageDeleted = (change: RepoChange, rkey: string) => {
 	const subject = { did: change.author, rkey };
 	const subjectUri = messageUriOf(change.space, subject);
@@ -462,12 +474,17 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 		space: string,
 		author: string,
 		rkey: string,
-		imported = false,
+		options: { imported?: boolean; announced?: boolean } = {},
 	): Promise<MessageView | undefined> => {
 		const key = { author, rkey };
 		const message = await channels.message(space, null, key, space, { embedWaitMs: 0 });
 		if (!message) return undefined;
-		ctx.announce.message(space, message.updatedAt ? "update" : "create", message, { imported });
+
+		if (!options.announced) {
+			ctx.announce.message(space, message.updatedAt ? "update" : "create", message, {
+				imported: options.imported ?? false,
+			});
+		}
 
 		republishWhenPreviewsSettle(
 			ctx,
@@ -594,7 +611,10 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 				if (refusal) continue;
 				const imported =
 					(put.value.bridged as { imported?: unknown } | undefined)?.imported === true;
-				const published = await publishMessage(change.space, change.author, put.rkey, imported);
+				const published = await publishMessage(change.space, change.author, put.rkey, {
+					imported,
+					announced: announcedByBridgeRoute(change, put.value),
+				});
 				publishedMessages += 1;
 				if (imported) continue;
 				const wasEdited = published ? Boolean(published.updatedAt) : Boolean(put.value.updatedAt);
@@ -629,7 +649,7 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 					.catch((error) => ctx.log.warn({ error }, "notifications.indexFailed"));
 			}
 
-			if (put.collection === COLLECTIONS.reaction) {
+			if (put.collection === COLLECTIONS.reaction && !announcedByBridgeRoute(change, put.value)) {
 				ctx.announce.toChannel(change.space, reactionFrame("create", change, put.value, put.rkey));
 			}
 
@@ -684,13 +704,19 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 
 		for (const entry of change.deletes) {
 			if (entry.collection === COLLECTIONS.message) {
-				ctx.announce.toChannel(change.space, messageDeleted(change, entry.rkey));
+				if (!announcedByBridgeRoute(change, entry.previous)) {
+					ctx.announce.toChannel(change.space, messageDeleted(change, entry.rkey));
+				}
 
 				void retractMessageNotifications(change.space, change.author, entry.rkey).catch((error) =>
 					ctx.log.warn({ error }, "notifications.retractFailed"),
 				);
 			}
-			if (entry.collection === COLLECTIONS.reaction && entry.previous) {
+			if (
+				entry.collection === COLLECTIONS.reaction &&
+				entry.previous &&
+				!announcedByBridgeRoute(change, entry.previous)
+			) {
 				ctx.announce.toChannel(
 					change.space,
 					reactionFrame("delete", change, entry.previous, entry.rkey),

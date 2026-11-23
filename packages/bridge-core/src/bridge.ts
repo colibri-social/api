@@ -5,7 +5,9 @@ import {
 	ColibriRequestError,
 	type ForwardInput,
 	type ImportedMessageInput,
+	type ListMessagesOptions,
 	type MessageView,
+	type RegistrationRef,
 	type RegistrationView,
 	type ThreadView,
 } from "./client.js";
@@ -13,26 +15,46 @@ import {
 	type BridgeConnection,
 	type BridgeContext,
 	type BridgeLogger,
-	type ChannelReply,
+	type Connector,
 	canDelete,
 	canEdit,
 	canImportHistory,
-	canListenToChannels,
 	canModerate,
+	canOpen,
+	canOpenDelete,
+	canOpenEdit,
+	canOpenLifecycle,
+	canOpenModerate,
+	canOpenReact,
+	canOpenThread,
 	canReact,
+	canRelay,
 	canThread,
+	type DroppedAttachment,
 	type HistoryConnector,
 	type HistoryMessage,
 	type HistoryThread,
 	type InboundEvent,
 	type LinkedRoom,
-	type NetworkConnector,
+	type MemberStanding,
+	type MessageRef,
+	type OpenChannelContent,
+	type OpenChannelForwardInput,
+	type OpenChannelInfo,
+	type OpenChannelMessage,
+	type OpenChannelRef,
+	type OpenChannelsChange,
+	type OpenEmitResult,
+	type OpenHistoryRequest,
+	type OpenInboundEvent,
 	type OutboundForward,
+	type RemoteAttachment,
 	type RemoteAuthor,
 	type RemoteLocation,
 	type RemoteThread,
 } from "./connector.js";
 import { EventStream, type EventStreamOptions, frameKind, type ServerFrame } from "./events.js";
+import { BoundedSet, ExpiringCache, outboundAttachments, outboundEmbeds } from "./open.js";
 import type { BackfillProgress, BridgeStore } from "./store.js";
 import {
 	colibriToMarkdown,
@@ -46,7 +68,7 @@ import {
 
 export type BridgeOptions = {
 	client: ColibriClient;
-	connector: NetworkConnector;
+	connector: Connector;
 	store: BridgeStore;
 	log?: BridgeLogger;
 	maxAttachmentBytes?: number;
@@ -59,7 +81,15 @@ export type BridgeOptions = {
 	backfillReportIntervalMs?: number;
 };
 
-type OpenChannel = { community: string; registration: string };
+type OpenChannel = RegistrationRef & { mirrorModeration: boolean };
+
+type OpenTarget = OpenChannel & { channel: string; thread?: string };
+
+type OpenSnapshot = Map<string, RegistrationRef & { channels: string[] }>;
+
+type AttachmentResult = { attachments: AttachmentInput[]; dropped: DroppedAttachment[] };
+
+type MemberRef = RegistrationRef & { did: string; channel: string };
 
 type Portal = LinkedRoom & {
 	key: string;
@@ -97,6 +127,12 @@ const DEFAULT_BACKFILL_REPORT_INTERVAL_MS = 5000;
 const BACKFILL_RETRIES = 8;
 const INVALID_HANDLE = "handle.invalid";
 const MAX_THREAD_NAME = 128;
+const ECHO_CAPACITY = 1000;
+const MEMBER_CACHE_CAPACITY = 1000;
+const MEMBER_CACHE_TTL_MS = 60_000;
+const OPEN_HISTORY_LIMIT = 50;
+const MAX_OPEN_HISTORY_LIMIT = 100;
+const OPEN_MESSAGE_WINDOW = 9;
 const FALLBACK_THREAD_NAME = "Thread";
 const CHANNEL_FEATURE = "social.colibri.beta.richtext.facet#channel";
 const BRIDGED_MENTION_FEATURE = "social.colibri.beta.richtext.facet#bridgedMention";
@@ -189,12 +225,27 @@ export class Bridge {
 	private byRemote = new Map<string, Portal[]>();
 	private threads = new Map<string, Portal[]>();
 	private openChannels = new Map<string, OpenChannel[]>();
+	private openThreads = new Map<string, OpenTarget[]>();
+	private openSnapshot: OpenSnapshot | null = null;
+	private readonly openDeleted = new BoundedSet(ECHO_CAPACITY);
+	private readonly openHidden = new BoundedSet(ECHO_CAPACITY);
+	private readonly openThreadEchoes = new BoundedSet(ECHO_CAPACITY);
+	private readonly members = new ExpiringCache<MemberStanding>(
+		MEMBER_CACHE_CAPACITY,
+		MEMBER_CACHE_TTL_MS,
+	);
 	private readonly backfills = new Map<string, Promise<void>>();
 	private refreshing: Promise<void> | null = null;
 	private streamOpened = false;
 	private stopped = false;
 
 	constructor(private readonly options: BridgeOptions) {
+		if (!canRelay(options.connector) && !canOpen(options.connector)) {
+			throw new Error(
+				`The ${options.connector.platform} connector neither relays rooms nor handles open channels`,
+			);
+		}
+
 		this.log = options.log ?? silentLogger;
 		this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
 		const streamOptions: EventStreamOptions = {
@@ -214,6 +265,7 @@ export class Bridge {
 			did: this.options.client.did,
 			log: this.log,
 			emit: (event) => this.emit(event),
+			openEmit: (event) => this.openEmit(event),
 			pair: (remote) => this.options.client.createPairing({ platform: this.platform, ...remote }),
 			linkedRooms: (remoteSpace) =>
 				[...this.byRemote.values()]
@@ -229,7 +281,10 @@ export class Bridge {
 			connections: (remoteSpace) => this.connections(remoteSpace),
 			channels: (community, registration) =>
 				this.options.client.listChannels({ community, registration }),
-			reply: (reply) => this.reply(reply),
+			openChannels: (community, registration) => this.openChannelsOf(community, registration),
+			message: (ref) => this.openLookup(ref),
+			history: (request) => this.openHistory(request),
+			member: (ref) => this.member(ref),
 			disconnect: (remoteSpace, community) => this.leave(remoteSpace, community),
 		};
 	}
@@ -296,10 +351,11 @@ export class Bridge {
 		const all = await this.options.client.getConfiguration();
 		this.registrations = all.filter((registration) => registration.platform === this.platform);
 		await this.purgeRevoked(all);
+		const relaying = canRelay(this.options.connector);
 		const byChannel = new Map<string, Portal[]>();
 		const byRemote = new Map<string, Portal[]>();
 		for (const registration of this.registrations) {
-			if (!registration.enabled) continue;
+			if (!registration.enabled || !relaying) continue;
 			for (const link of registration.links) {
 				const portal: Portal = {
 					key: `${registrationKey(registration.community, registration.id)} ${link.channel}`,
@@ -329,7 +385,7 @@ export class Bridge {
 		}
 		const threads = new Map<string, Portal[]>();
 		for (const registration of this.registrations) {
-			if (!registration.enabled) continue;
+			if (!registration.enabled || !relaying) continue;
 			const mappings = await this.options.store.list({
 				registration: registrationKey(registration.community, registration.id),
 				kind: "thread",
@@ -349,9 +405,12 @@ export class Bridge {
 		this.byRemote = byRemote;
 		this.threads = threads;
 		this.openChannels = this.collectOpenChannels();
+		this.openThreads = await this.collectOpenThreads();
 		this.subscribe();
+		this.announceOpenChannels();
 		this.startBackfills();
 		for (const registration of this.registrations) {
+			if (!relaying) break;
 			await this.pushRooms(registration).catch((error) =>
 				this.log.warn(
 					{ registration: registration.id, error: String(error) },
@@ -413,7 +472,11 @@ export class Bridge {
 	}
 
 	private async pushRooms(registration: RegistrationView): Promise<void> {
-		const rooms = await this.options.connector.listRooms(registration.remoteSpace);
+		const connector = this.options.connector;
+
+		if (!canRelay(connector)) return;
+
+		const rooms = await connector.listRooms(registration.remoteSpace);
 		await this.options.client.putRemoteRooms(
 			{ community: registration.community, registration: registration.id },
 			rooms.map((room) => ({
@@ -427,73 +490,697 @@ export class Bridge {
 
 	private subscribe(): void {
 		this.stream.setChannels([
-			...new Set([...this.byChannel.keys(), ...this.threads.keys(), ...this.openChannels.keys()]),
+			...new Set([
+				...this.byChannel.keys(),
+				...this.threads.keys(),
+				...this.openChannels.keys(),
+				...this.openThreads.keys(),
+			]),
 		]);
 	}
 
 	private collectOpenChannels(): Map<string, OpenChannel[]> {
 		const open = new Map<string, OpenChannel[]>();
-		if (!canListenToChannels(this.options.connector)) return open;
+
+		if (!canOpen(this.options.connector)) return open;
+
 		for (const registration of this.registrations) {
 			if (!registration.enabled) continue;
-			for (const channel of registration.channels ?? []) {
-				const entry = { community: registration.community, registration: registration.id };
+			for (const channel of new Set(registration.channels ?? [])) {
+				const entry = {
+					community: registration.community,
+					registration: registration.id,
+					mirrorModeration: registration.mirrorModeration ?? false,
+				};
+
 				open.set(channel, [...(open.get(channel) ?? []), entry]);
 			}
 		}
+
 		return open;
 	}
 
-	private onOpenChannelMessage(channel: string, message: MessageView): void {
-		const connector = this.options.connector;
-		if (!canListenToChannels(connector)) return;
-		for (const open of this.openChannels.get(channel) ?? []) {
-			if (
-				message.author.did === open.community &&
-				message.author.bridge?.registration === open.registration
-			) {
-				continue;
+	private async collectOpenThreads(): Promise<Map<string, OpenTarget[]>> {
+		const threads = new Map<string, OpenTarget[]>();
+
+		for (const [channel, entries] of this.openChannels) {
+			const community = entries[0]?.community;
+
+			if (!community) continue;
+
+			for (const space of await this.listOpenThreads(community, channel)) {
+				const targets = entries.map((open) => ({ ...open, channel, thread: space }));
+
+				threads.set(space, [...(threads.get(space) ?? []), ...targets]);
 			}
-			const key = `open ${registrationKey(open.community, open.registration)} ${channel}`;
-			void this.queues.run(key, async () => {
-				try {
-					await connector.receiveChannelMessage({
-						...open,
-						channel,
-						rkey: message.rkey,
-						author: {
-							did: message.author.did,
-							name: message.author.displayName,
-							...(message.author.handle && message.author.handle !== INVALID_HANDLE
-								? { handle: message.author.handle }
-								: {}),
-							...(message.author.avatar ? { avatarUrl: message.author.avatar } : {}),
-						},
-						markdown: colibriToMarkdown(message.text, message.facets ?? []),
-					});
-				} catch (error) {
-					this.log.warn(
-						{ registration: open.registration, channel, error: String(error) },
-						"bridge.openChannel.failed",
-					);
+		}
+
+		return threads;
+	}
+
+	private async listOpenThreads(community: string, channel: string): Promise<string[]> {
+		const spaces: string[] = [];
+		const seen = new Set<string>();
+		let cursor: string | undefined;
+
+		try {
+			do {
+				const page = await this.options.client.listThreads({
+					community,
+					channel,
+					limit: 100,
+					...(cursor ? { cursor } : {}),
+				});
+
+				for (const thread of page.threads) {
+					if (thread.channel === channel) spaces.push(thread.space);
 				}
+
+				cursor = page.threads.length > 0 ? page.cursor : undefined;
+				if (cursor && seen.has(cursor)) break;
+				if (cursor) seen.add(cursor);
+			} while (cursor);
+		} catch (error) {
+			this.log.warn(
+				{ channel, error: error instanceof Error ? error.message : String(error) },
+				"bridge.openThreads.listFailed",
+			);
+		}
+
+		return spaces;
+	}
+
+	private announceOpenChannels(): void {
+		const next: OpenSnapshot = new Map();
+
+		for (const registration of this.registrations) {
+			if (!registration.enabled) continue;
+			next.set(registrationKey(registration.community, registration.id), {
+				community: registration.community,
+				registration: registration.id,
+				channels: [...new Set(registration.channels ?? [])],
 			});
+		}
+
+		const previous = this.openSnapshot;
+		const connector = this.options.connector;
+
+		this.openSnapshot = next;
+
+		if (!previous || !canOpenLifecycle(connector)) return;
+
+		const changes: OpenChannelsChange[] = [];
+
+		for (const [key, current] of next) {
+			const before = previous.get(key);
+			const added = current.channels.filter((channel) => !before?.channels.includes(channel));
+			const removed = (before?.channels ?? []).filter(
+				(channel) => !current.channels.includes(channel),
+			);
+
+			if (before && added.length === 0 && removed.length === 0) continue;
+
+			changes.push({
+				community: current.community,
+				registration: current.registration,
+				kind: before ? "updated" : "installed",
+				channels: current.channels,
+				added,
+				removed,
+			});
+		}
+
+		for (const [key, before] of previous) {
+			if (next.has(key)) continue;
+			changes.push({
+				community: before.community,
+				registration: before.registration,
+				kind: "removed",
+				channels: [],
+				added: [],
+				removed: before.channels,
+			});
+		}
+
+		for (const change of changes) {
+			this.openTask(change, `lifecycle.${change.kind}`, () =>
+				connector.openChannelsChanged(change),
+			);
 		}
 	}
 
-	private async reply(reply: ChannelReply): Promise<string> {
-		const { text, facets } = markdownToColibri(reply.markdown);
-		const { rkey } = await this.options.client.postMessage({
-			community: reply.community,
-			registration: reply.registration,
-			channel: reply.channel,
-			author: { id: reply.author.id, name: reply.author.name },
-			text,
-			...(facets.length > 0 ? { facets } : {}),
-			...(reply.replyTo ? { parent: reply.replyTo } : {}),
-		});
+	private openChannelsOf(community: string, registration: string): string[] {
+		return [...this.openChannels]
+			.filter(([, entries]) =>
+				entries.some((open) => open.community === community && open.registration === registration),
+			)
+			.map(([channel]) => channel);
+	}
 
-		return rkey;
+	private openTargets(space: string): OpenTarget[] {
+		return [
+			...(this.openChannels.get(space) ?? []).map((open) => ({ ...open, channel: space })),
+			...(this.openThreads.get(space) ?? []),
+		];
+	}
+
+	private openTargetFor(ref: OpenChannelRef): OpenTarget {
+		const open = this.openChannels
+			.get(ref.channel)
+			?.find((held) => held.community === ref.community && held.registration === ref.registration);
+
+		if (!open) {
+			throw new Error(
+				`${ref.channel} is not an open channel of registration ${ref.registration} in ${ref.community}`,
+			);
+		}
+
+		if (
+			ref.thread &&
+			!this.openThreads
+				.get(ref.thread)
+				?.some(
+					(held) =>
+						held.community === ref.community &&
+						held.registration === ref.registration &&
+						held.channel === ref.channel,
+				)
+		) {
+			throw new Error(`${ref.thread} is not a thread of the open channel ${ref.channel}`);
+		}
+
+		return { ...open, channel: ref.channel, ...(ref.thread ? { thread: ref.thread } : {}) };
+	}
+
+	private openRef(target: OpenTarget): OpenChannelRef {
+		return {
+			community: target.community,
+			registration: target.registration,
+			channel: target.channel,
+			...(target.thread ? { thread: target.thread } : {}),
+		};
+	}
+
+	private echoKey(target: RegistrationRef, ...parts: string[]): string {
+		return [registrationKey(target.community, target.registration), ...parts].join(" ");
+	}
+
+	private openTask(
+		target: RegistrationRef & { channel?: string },
+		action: string,
+		work: () => Promise<void>,
+	): void {
+		const key = [
+			"open",
+			registrationKey(target.community, target.registration),
+			...(target.channel ? [target.channel] : []),
+		].join(" ");
+
+		void this.queues.run(key, async () => {
+			try {
+				await work();
+			} catch (error) {
+				this.log.warn(
+					{
+						registration: target.registration,
+						channel: target.channel,
+						action,
+						error: error instanceof Error ? error.message : String(error),
+					},
+					"bridge.openChannel.failed",
+				);
+			}
+		});
+	}
+
+	private isOpenEcho(target: OpenTarget, message: MessageView): boolean {
+		return (
+			message.author.did === target.community &&
+			message.author.bridge?.registration === target.registration
+		);
+	}
+
+	private onOpenMessageFrame(frame: ServerFrame): void {
+		const connector = this.options.connector;
+
+		if (!canOpen(connector)) return;
+
+		for (const target of this.openTargets(frame.channel as string)) {
+			if (frame.event === "delete") {
+				const subject = frame.subject as MessageRef | undefined;
+
+				if (!subject || !canOpenDelete(connector)) continue;
+				if (this.openDeleted.has(this.echoKey(target, subject.did, subject.rkey))) continue;
+				this.openTask(target, "message.delete", () =>
+					connector.openDeleteMessage({ ...this.openRef(target), ...subject }),
+				);
+				continue;
+			}
+
+			const message = frame.message as MessageView | undefined;
+
+			if (!message || this.isOpenEcho(target, message)) continue;
+
+			if (frame.event === "create") {
+				this.openTask(target, "message.create", async () =>
+					connector.openMessage(await this.openMessage(target, message)),
+				);
+			} else if (frame.event === "update" && canOpenEdit(connector)) {
+				this.openTask(target, "message.update", async () =>
+					connector.openEditMessage(await this.openMessage(target, message)),
+				);
+			}
+		}
+	}
+
+	private onOpenReactionFrame(frame: ServerFrame): void {
+		const connector = this.options.connector;
+
+		if (!canOpenReact(connector)) return;
+
+		const message = frame.target as MessageRef | undefined;
+		const bridged = frame.bridged as { registration?: string } | undefined;
+		const customEmoji = frame.customEmoji as { uri?: string } | undefined;
+
+		if (!message) return;
+
+		for (const target of this.openTargets(frame.channel as string)) {
+			if (bridged?.registration === target.registration) continue;
+
+			const reaction = {
+				...this.openRef(target),
+				did: message.did,
+				rkey: message.rkey,
+				emoji: frame.emoji as string,
+				actor: frame.actor as string,
+				...(customEmoji?.uri ? { customEmoji: { uri: customEmoji.uri } } : {}),
+			};
+
+			if (frame.event === "delete") {
+				this.openTask(target, "reaction.delete", () => connector.openRemoveReaction(reaction));
+			} else {
+				this.openTask(target, "reaction.create", () => connector.openAddReaction(reaction));
+			}
+		}
+	}
+
+	private onOpenLabelFrame(space: string, subject: MessageRef): void {
+		const connector = this.options.connector;
+
+		if (!canOpenModerate(connector)) return;
+
+		for (const target of this.openTargets(space)) {
+			if (this.openHidden.has(this.echoKey(target, subject.did, subject.rkey))) continue;
+			this.openTask(target, "label.hidden", () =>
+				connector.openRemoveMessage({ ...this.openRef(target), ...subject }),
+			);
+		}
+	}
+
+	private trackOpenThread(target: OpenTarget, space: string): boolean {
+		const held = this.openThreads.get(space) ?? [];
+
+		if (held.some((entry) => this.sameRegistration(entry, target))) return false;
+
+		this.openThreads.set(space, [...held, { ...target, thread: space }]);
+		this.subscribe();
+
+		return true;
+	}
+
+	private untrackOpenThread(target: RegistrationRef, space: string): void {
+		const rest = (this.openThreads.get(space) ?? []).filter(
+			(entry) => !this.sameRegistration(entry, target),
+		);
+
+		if (rest.length > 0) this.openThreads.set(space, rest);
+		else this.openThreads.delete(space);
+		this.subscribe();
+	}
+
+	private sameRegistration(a: RegistrationRef, b: RegistrationRef): boolean {
+		return a.community === b.community && a.registration === b.registration;
+	}
+
+	private onOpenThreadFrame(frame: ServerFrame): void {
+		const connector = this.options.connector;
+
+		if (!canOpen(connector)) return;
+
+		if (frame.event === "delete") {
+			if (typeof frame.space !== "string") return;
+
+			const space = frame.space;
+
+			for (const target of this.openThreads.get(space) ?? []) {
+				this.untrackOpenThread(target, space);
+				if (this.openThreadEchoes.has(this.echoKey(target, "delete", space))) continue;
+				if (!canOpenThread(connector)) continue;
+				this.openTask(target, "thread.delete", () =>
+					connector.openDeleteThread({ ...this.openRef(target), thread: space }),
+				);
+			}
+
+			return;
+		}
+
+		if (frame.event !== "create" && frame.event !== "update") return;
+
+		const thread = frame.thread as ThreadView | undefined;
+
+		if (!thread) return;
+
+		for (const open of this.openChannels.get(thread.channel) ?? []) {
+			const target: OpenTarget = { ...open, channel: thread.channel };
+			const tracked = this.trackOpenThread(target, thread.space);
+			const create = frame.event === "create" || tracked;
+			const echo = create
+				? this.openThreadEchoes.has(this.echoKey(target, "create", thread.space)) ||
+					(thread.createdBy === target.community &&
+						this.openThreadEchoes.take(
+							this.echoKey(target, "pending", thread.channel, thread.name),
+						))
+				: this.openThreadEchoes.has(this.echoKey(target, "update", thread.space, thread.name));
+
+			if (echo || !canOpenThread(connector)) continue;
+
+			const change = {
+				...this.openRef(target),
+				thread: thread.space,
+				name: thread.name,
+				...(thread.anchor ? { anchor: { did: thread.anchor.did, rkey: thread.anchor.rkey } } : {}),
+			};
+
+			this.openTask(target, `thread.${create ? "create" : "update"}`, () =>
+				create ? connector.openCreateThread(change) : connector.openUpdateThread(change),
+			);
+		}
+	}
+
+	private async member(ref: MemberRef): Promise<MemberStanding> {
+		const key = `${ref.community} ${ref.did} ${ref.channel}`;
+		const cached = this.members.get(key);
+
+		if (cached) return cached;
+
+		try {
+			const standing = await this.options.client.getMember({
+				community: ref.community,
+				registration: ref.registration,
+				did: ref.did,
+				channel: ref.channel,
+			});
+
+			this.members.set(key, standing);
+
+			return standing;
+		} catch (error) {
+			this.log.warn(
+				{
+					registration: ref.registration,
+					channel: ref.channel,
+					did: ref.did,
+					error: error instanceof Error ? error.message : String(error),
+				},
+				"bridge.member.failed",
+			);
+
+			return { did: ref.did, member: false, owner: false, roles: [], permissions: [] };
+		}
+	}
+
+	private async openContent(target: OpenTarget, message: MessageView): Promise<OpenChannelContent> {
+		const standing = await this.member({
+			community: target.community,
+			registration: target.registration,
+			channel: target.channel,
+			did: message.author.did,
+		});
+		const parent = message.parent as { author?: { did?: string }; rkey?: string } | undefined;
+		const forward = message.forward;
+
+		return {
+			author: { ...colibriAuthor(message.author), standing },
+			markdown: colibriToMarkdown(message.text, message.facets ?? []),
+			...(parent?.author?.did && parent.rkey
+				? { replyTo: { did: parent.author.did, rkey: parent.rkey } }
+				: {}),
+			attachments: outboundAttachments(message.attachments),
+			embeds: outboundEmbeds(message),
+			...(forward
+				? {
+						forward: {
+							markdown: colibriToMarkdown(forward.text, forward.facets ?? []),
+							attachments: outboundAttachments(forward.attachments),
+							source: {
+								channel: forward.source.space,
+								did: forward.source.did,
+								rkey: forward.source.rkey,
+							},
+						},
+					}
+				: {}),
+			createdAt: message.createdAt,
+			...(message.updatedAt ? { updatedAt: message.updatedAt } : {}),
+		};
+	}
+
+	private async openMessage(target: OpenTarget, message: MessageView): Promise<OpenChannelMessage> {
+		return {
+			...this.openRef(target),
+			did: message.author.did,
+			rkey: message.rkey,
+			...(await this.openContent(target, message)),
+		};
+	}
+
+	private async openLookup(ref: OpenChannelInfo): Promise<OpenChannelMessage | null> {
+		const target = this.openTargetFor(ref);
+		const { messages } = await this.retrying(
+			() =>
+				this.options.client.listMessages(target.thread ?? target.channel, {
+					around: ref.rkey,
+					limit: OPEN_MESSAGE_WINDOW,
+				}),
+			this.emitRetries,
+		);
+		const found = messages.find(
+			(message) => message.rkey === ref.rkey && message.author.did === ref.did,
+		);
+
+		return found ? this.openMessage(target, found) : null;
+	}
+
+	private async openHistory(request: OpenHistoryRequest): Promise<OpenChannelMessage[]> {
+		const target = this.openTargetFor(request);
+		const space = target.thread ?? target.channel;
+		const limit = Math.min(
+			Math.max(request.limit ?? OPEN_HISTORY_LIMIT, 1),
+			MAX_OPEN_HISTORY_LIMIT,
+		);
+		const list = (options: ListMessagesOptions) =>
+			this.retrying(() => this.options.client.listMessages(space, options), this.emitRetries);
+		const before = request.before;
+		let page = await list(before ? { around: before, limit } : { limit });
+		const collected = before ? olderThan(page.messages, before) : [...page.messages];
+
+		while (collected.length < limit && page.cursor && page.messages.length > 0) {
+			const cursor = page.cursor;
+
+			page = await list({ cursor, limit: limit - collected.length });
+			collected.push(...page.messages);
+		}
+
+		const built: OpenChannelMessage[] = [];
+
+		for (const message of collected.slice(0, limit)) {
+			built.push(await this.openMessage(target, message));
+		}
+
+		return built;
+	}
+
+	private get emitRetries(): number {
+		return this.options.maxRetries ?? 3;
+	}
+
+	private async openEmit(event: OpenInboundEvent): Promise<OpenEmitResult> {
+		const target = this.openTargetFor(event);
+		const ref = { community: target.community, registration: target.registration };
+		const space = target.thread ?? target.channel;
+		const client = this.options.client;
+		const call = <T>(work: () => Promise<T>) => this.retrying(work, this.emitRetries);
+
+		switch (event.type) {
+			case "message":
+				return this.openPost(target, event);
+			case "messageEdit": {
+				const { text, facets } = markdownToColibri(event.markdown);
+
+				await call(() =>
+					client.editMessage({
+						...ref,
+						channel: space,
+						rkey: event.rkey,
+						text,
+						...(facets.length > 0 ? { facets } : {}),
+					}),
+				);
+
+				return { rkey: event.rkey, dropped: [] };
+			}
+			case "messageDelete":
+				this.openDeleted.add(this.echoKey(target, target.community, event.rkey));
+				await call(() => client.deleteMessage({ ...ref, channel: space, rkey: event.rkey }));
+
+				return { rkey: event.rkey, dropped: [] };
+			case "messageRemove":
+				if (!target.mirrorModeration) {
+					throw new Error(
+						`Registration ${target.registration} may not remove messages because mirrorModeration is off`,
+					);
+				}
+
+				this.openHidden.add(this.echoKey(target, event.did, event.rkey));
+				await call(() =>
+					client.hideMessage({
+						...ref,
+						channel: space,
+						subject: { did: event.did, rkey: event.rkey },
+						...(event.reason ? { reason: event.reason } : {}),
+					}),
+				);
+
+				return { dropped: [] };
+			case "reactionAdd": {
+				const { rkey } = await call(() =>
+					client.addReaction({
+						...ref,
+						channel: space,
+						author: { id: event.author.id, name: event.author.name },
+						target: { did: event.did, rkey: event.rkey },
+						emoji: event.emoji,
+					}),
+				);
+
+				return { rkey, dropped: [] };
+			}
+			case "reactionRemove":
+				await call(() => client.removeReaction({ ...ref, channel: space, rkey: event.rkey }));
+
+				return { rkey: event.rkey, dropped: [] };
+			case "threadCreate": {
+				const name = threadName(event.name);
+				const avatar = await this.avatarFor(ref, event.author);
+
+				this.openThreadEchoes.add(this.echoKey(target, "pending", target.channel, name));
+
+				const { thread } = await call(() =>
+					client.createThread({
+						...ref,
+						channel: target.channel,
+						name,
+						author: { id: event.author.id, name: event.author.name, ...(avatar ? { avatar } : {}) },
+						...(event.anchor ? { anchor: event.anchor } : {}),
+					}),
+				);
+
+				this.openThreadEchoes.add(this.echoKey(target, "create", thread));
+				this.trackOpenThread({ ...target, thread }, thread);
+
+				return { thread, dropped: [] };
+			}
+			case "threadUpdate": {
+				const name = threadName(event.name);
+
+				this.openThreadEchoes.add(this.echoKey(target, "update", event.thread, name));
+				await call(() => client.updateThread({ ...ref, thread: event.thread, name }));
+
+				return { thread: event.thread, dropped: [] };
+			}
+			case "threadDelete":
+				this.openThreadEchoes.add(this.echoKey(target, "delete", event.thread));
+				await call(() => client.deleteThread({ ...ref, thread: event.thread }));
+				this.untrackOpenThread(target, event.thread);
+
+				return { thread: event.thread, dropped: [] };
+			default:
+				throw new Error(`Unknown open channel event ${(event as { type: string }).type}`);
+		}
+	}
+
+	private async openPost(
+		target: OpenTarget,
+		event: Extract<OpenInboundEvent, { type: "message" }>,
+	): Promise<OpenEmitResult> {
+		const ref = { community: target.community, registration: target.registration };
+		const forwarded = event.forward ? await this.openForward(ref, event.forward) : null;
+		const markdown = [event.markdown, forwarded?.quote]
+			.filter((part): part is string => Boolean(part?.trim()))
+			.join("\n\n");
+		const { text, facets } = markdownToColibri(markdown);
+		const own = await this.attachmentsFor(ref, event.attachments);
+		const attachments = [...own.attachments, ...(forwarded?.attachments ?? [])];
+		const dropped = [...own.dropped, ...(forwarded?.dropped ?? [])];
+		const forward = forwarded?.forward;
+
+		if (text.trim().length === 0 && attachments.length === 0 && !forward) return { dropped };
+
+		const avatar = await this.avatarFor(ref, event.author);
+		const { rkey } = await this.retrying(
+			() =>
+				this.options.client.postMessage({
+					...ref,
+					channel: target.thread ?? target.channel,
+					author: {
+						id: event.author.id,
+						name: event.author.name,
+						...(avatar ? { avatar } : {}),
+					},
+					text,
+					...(facets.length > 0 ? { facets } : {}),
+					...(event.replyTo
+						? { parent: { did: event.replyTo.did, rkey: event.replyTo.rkey } }
+						: {}),
+					...(attachments.length > 0 ? { attachments } : {}),
+					...(forward ? { forward } : {}),
+				}),
+			this.emitRetries,
+		);
+
+		return { rkey, dropped };
+	}
+
+	private async openForward(
+		ref: RegistrationRef,
+		forward: OpenChannelForwardInput,
+	): Promise<AttachmentResult & { forward?: ForwardInput; quote?: string }> {
+		const uploaded = await this.attachmentsFor(ref, forward.attachments);
+
+		if (!forward.source) {
+			return {
+				...(forward.markdown.trim() ? { quote: quoted(forward.markdown) } : {}),
+				...uploaded,
+			};
+		}
+
+		const { text, facets } = markdownToColibri(forward.markdown);
+
+		return {
+			forward: {
+				source: {
+					space: forward.source.channel,
+					did: forward.source.did,
+					rkey: forward.source.rkey,
+				},
+				createdAt: forward.createdAt ?? new Date().toISOString(),
+				text,
+				...(facets.length > 0 ? { facets } : {}),
+				...(uploaded.attachments.length > 0 ? { attachments: uploaded.attachments } : {}),
+			},
+			attachments: [],
+			dropped: uploaded.dropped,
+		};
 	}
 
 	private threadPortal(parent: Portal, space: string, remoteThread: string): Portal {
@@ -561,6 +1248,7 @@ export class Bridge {
 	}
 
 	emit(event: InboundEvent): void {
+		if (!canRelay(this.options.connector)) return;
 		if (event.type === "roomsChanged") {
 			for (const registration of this.registrations) {
 				if (registration.remoteSpace !== event.remoteSpace) continue;
@@ -618,9 +1306,7 @@ export class Bridge {
 	private onMessageFrame(frame: ServerFrame): void {
 		if (frame.imported === true) return;
 		const channel = frame.channel as string;
-		if (frame.event === "create" && frame.message) {
-			this.onOpenChannelMessage(channel, frame.message as MessageView);
-		}
+		this.onOpenMessageFrame(frame);
 		for (const portal of this.portalsFor(channel)) {
 			void this.queues.run(portal.key, () =>
 				this.guard(portal, `colibri.message.${String(frame.event)}`, async () => {
@@ -637,6 +1323,7 @@ export class Bridge {
 
 	private onReactionFrame(frame: ServerFrame): void {
 		const channel = frame.channel as string;
+		this.onOpenReactionFrame(frame);
 		for (const portal of this.portalsFor(channel)) {
 			void this.queues.run(portal.key, () =>
 				this.guard(portal, `colibri.reaction.${String(frame.event)}`, () =>
@@ -647,6 +1334,7 @@ export class Bridge {
 	}
 
 	private onThreadFrame(frame: ServerFrame): void {
+		this.onOpenThreadFrame(frame);
 		const action = `colibri.thread.${String(frame.event)}`;
 		if (frame.event === "create" || frame.event === "update") {
 			const thread = frame.thread as ThreadView | undefined;
@@ -674,6 +1362,7 @@ export class Bridge {
 			return;
 		}
 		const target = { did: subject.did, rkey: subject.rkey };
+		this.onOpenLabelFrame(frame.space as string, target);
 		for (const portal of this.portalsFor(frame.space as string)) {
 			void this.queues.run(portal.key, () =>
 				this.guard(portal, "colibri.label.hidden", () => this.outboundHide(portal, target)),
@@ -709,12 +1398,12 @@ export class Bridge {
 		}
 	}
 
-	private ref(portal: Portal) {
-		return { community: portal.community, registration: portal.registration };
+	private ref(owner: RegistrationRef): RegistrationRef {
+		return { community: owner.community, registration: owner.registration };
 	}
 
-	private mappingRegistration(portal: Portal): string {
-		return registrationKey(portal.community, portal.registration);
+	private mappingRegistration(owner: RegistrationRef): string {
+		return registrationKey(owner.community, owner.registration);
 	}
 
 	private async inbound(parent: Portal, event: InboundEvent): Promise<void> {
@@ -763,23 +1452,26 @@ export class Bridge {
 		}
 	}
 
-	private async avatarFor(portal: Portal, author: RemoteAuthor): Promise<BlobRef | undefined> {
+	private async avatarFor(
+		owner: RegistrationRef,
+		author: RemoteAuthor,
+	): Promise<BlobRef | undefined> {
 		const { store } = this.options;
-		const registration = this.mappingRegistration(portal);
+		const registration = this.mappingRegistration(owner);
 		const cached = await store.avatar(registration, author.id);
 		if (cached && cached.url === author.avatarUrl) return cached.blob;
 		if (!author.avatarUrl) {
 			if (cached) {
 				await store.removeAvatar(registration, author.id);
-				this.replaceAvatar(portal, author.id);
+				this.replaceAvatar(owner, author.id);
 			}
 			return undefined;
 		}
 		try {
 			const { bytes, mimeType } = await this.options.client.fetchBytes(author.avatarUrl);
-			const blob = await this.options.client.uploadBlob(this.ref(portal), bytes, mimeType);
+			const blob = await this.options.client.uploadBlob(this.ref(owner), bytes, mimeType);
 			await store.putAvatar(registration, author.id, { url: author.avatarUrl, blob });
-			if (cached) this.replaceAvatar(portal, author.id, blob);
+			if (cached) this.replaceAvatar(owner, author.id, blob);
 			return blob;
 		} catch (error) {
 			this.log.debug({ error: String(error) }, "bridge.avatar.failed");
@@ -787,12 +1479,12 @@ export class Bridge {
 		}
 	}
 
-	private replaceAvatar(portal: Portal, remoteId: string, avatar?: BlobRef): void {
-		const registration = this.mappingRegistration(portal);
+	private replaceAvatar(owner: RegistrationRef, remoteId: string, avatar?: BlobRef): void {
+		const registration = this.mappingRegistration(owner);
 		void this.queues.run(`${registration} avatars`, async () => {
 			try {
 				const updated = await this.options.client.replaceAvatar({
-					...this.ref(portal),
+					...this.ref(owner),
 					remoteId,
 					...(avatar ? { avatar } : {}),
 				});
@@ -807,23 +1499,59 @@ export class Bridge {
 	}
 
 	private async attachmentsFor(
-		portal: Portal,
-		attachments: Extract<InboundEvent, { type: "message" }>["attachments"],
-	): Promise<AttachmentInput[]> {
+		owner: RegistrationRef,
+		attachments: ReadonlyArray<RemoteAttachment> = [],
+	): Promise<AttachmentResult> {
 		const out: AttachmentInput[] = [];
+		const dropped: DroppedAttachment[] = [];
 		const limit = this.options.maxAttachmentBytes ?? DEFAULT_MAX_ATTACHMENT_BYTES;
-		for (const attachment of attachments ?? []) {
-			if (attachment.size !== undefined && attachment.size > limit) continue;
+		const drop = (attachment: RemoteAttachment, reason: DroppedAttachment["reason"]) => {
+			dropped.push({ ...attachment, reason });
+			this.log.warn(
+				{ registration: owner.registration, url: attachment.url, reason },
+				"bridge.attachment.dropped",
+			);
+		};
+
+		for (const attachment of attachments) {
+			if (attachment.size !== undefined && attachment.size > limit) {
+				drop(attachment, "tooLarge");
+				continue;
+			}
+
+			let fetched: { bytes: Uint8Array; mimeType: string };
+
 			try {
-				const { bytes, mimeType } = await this.options.client.fetchBytes(attachment.url);
-				if (bytes.byteLength > limit) continue;
-				const blob = await this.options.client.uploadBlob(this.ref(portal), bytes, mimeType);
-				out.push({ blob, ...(attachment.name ? { name: attachment.name } : {}) });
-			} catch (error) {
-				this.log.debug({ error: String(error) }, "bridge.attachment.failed");
+				fetched = await this.options.client.fetchBytes(attachment.url);
+			} catch {
+				drop(attachment, "fetchFailed");
+				continue;
+			}
+
+			if (fetched.bytes.byteLength > limit) {
+				drop(attachment, "tooLarge");
+				continue;
+			}
+
+			try {
+				const blob = await this.options.client.uploadBlob(
+					this.ref(owner),
+					fetched.bytes,
+					fetched.mimeType,
+				);
+
+				out.push({
+					blob,
+					...(attachment.name ? { name: attachment.name } : {}),
+					...(attachment.alt ? { alt: attachment.alt } : {}),
+					...(attachment.spoiler ? { spoiler: true } : {}),
+				});
+			} catch {
+				drop(attachment, "uploadFailed");
 			}
 		}
-		return out;
+
+		return { attachments: out, dropped };
 	}
 
 	private async ensureThread(
@@ -913,7 +1641,7 @@ export class Bridge {
 		portal: Portal,
 		forward: NonNullable<Extract<InboundEvent, { type: "message" }>["forward"]>,
 	): Promise<{ forward?: ForwardInput; quote?: string; attachments: AttachmentInput[] }> {
-		const attachments = await this.attachmentsFor(portal, forward.attachments);
+		const { attachments } = await this.attachmentsFor(portal, forward.attachments);
 		const source = forward.remoteMessage
 			? await this.options.store.byRemote({
 					registration: this.mappingRegistration(portal),
@@ -949,7 +1677,7 @@ export class Bridge {
 			.join("\n\n");
 		const { text, facets } = markdownToColibri(markdown, this.resolver(portal));
 		const attachments = [
-			...(await this.attachmentsFor(portal, message.attachments)),
+			...(await this.attachmentsFor(portal, message.attachments)).attachments,
 			...(forwarded?.attachments ?? []),
 		];
 		const forward = forwarded?.forward;
@@ -1243,14 +1971,14 @@ export class Bridge {
 		});
 	}
 
-	private async retrying<T>(work: () => Promise<T>): Promise<T> {
+	private async retrying<T>(work: () => Promise<T>, retries = BACKFILL_RETRIES): Promise<T> {
 		for (let attempt = 1; ; attempt++) {
 			try {
 				return await work();
 			} catch (error) {
 				const retryable =
 					error instanceof ColibriRequestError && (error.status === 429 || error.status >= 500);
-				if (!retryable || attempt > BACKFILL_RETRIES || this.stopped) throw error;
+				if (!retryable || attempt > retries || this.stopped) throw error;
 				await this.sleep((error.retryAfterSeconds ?? Math.min(2 ** attempt, 60)) * 1000);
 			}
 		}
@@ -1368,6 +2096,9 @@ export class Bridge {
 	}
 
 	private async outboundMessage(portal: Portal, message: MessageView): Promise<void> {
+		const connector = this.options.connector;
+
+		if (!canRelay(connector)) return;
 		if (
 			this.isOwnEcho(portal, {
 				did: message.author.did,
@@ -1388,24 +2119,19 @@ export class Bridge {
 			kind: "message",
 			rkey: key,
 		});
-		const author = {
-			did: message.author.did,
-			name: message.author.displayName,
-			...(message.author.handle && message.author.handle !== INVALID_HANDLE
-				? { handle: message.author.handle }
-				: {}),
-			...(message.author.avatar ? { avatarUrl: message.author.avatar } : {}),
-		};
+		const author = colibriAuthor(message.author);
 		const markdown = colibriToMarkdown(message.text, message.facets ?? [], this.referrer(portal));
+		const embeds = outboundEmbeds(message);
 
 		if (existing) {
 			if (!message.updatedAt || existing.origin !== "colibri") return;
-			if (!canEdit(this.options.connector)) return;
-			await this.options.connector.editMessage({
+			if (!canEdit(connector)) return;
+			await connector.editMessage({
 				...this.location(portal),
 				id: existing.remoteId,
 				author,
 				markdown,
+				embeds,
 			});
 			return;
 		}
@@ -1425,12 +2151,13 @@ export class Bridge {
 				: null;
 
 		const forward = message.forward ? await this.outboundForward(portal, message.forward) : null;
-		const remoteId = await this.options.connector.sendMessage({
+		const remoteId = await connector.sendMessage({
 			...this.location(portal),
 			author,
 			markdown,
 			...(replyMapping ? { replyTo: replyMapping.remoteId } : {}),
 			attachments: outboundAttachments(message.attachments),
+			embeds,
 			...(forward ? { forward } : {}),
 		});
 		await this.options.store.put({
@@ -1550,10 +2277,16 @@ export class Bridge {
 			origin: "colibri",
 		});
 		const portal = this.addThread(parent, thread.space, id);
-		const earlier = await this.options.client.listMessages(thread.space).catch((error) => {
-			this.log.warn({ thread: thread.space, error: String(error) }, "bridge.thread.backlogFailed");
-			return [];
-		});
+		const earlier = await this.options.client
+			.listMessages(thread.space, { reverse: true })
+			.then((page) => page.messages)
+			.catch((error) => {
+				this.log.warn(
+					{ thread: thread.space, error: String(error) },
+					"bridge.thread.backlogFailed",
+				);
+				return [];
+			});
 		for (const message of earlier) await this.outboundMessage(portal, message);
 	}
 
@@ -1611,11 +2344,17 @@ export class Bridge {
 	}
 }
 
-const outboundAttachments = (
-	attachments: ReadonlyArray<{ url: string; mimeType: string; name?: string }>,
-) =>
-	attachments.map((attachment) => ({
-		url: attachment.url,
-		mimeType: attachment.mimeType,
-		...(attachment.name ? { name: attachment.name } : {}),
-	}));
+const colibriAuthor = (profile: MessageView["author"]) => {
+	return {
+		did: profile.did,
+		name: profile.displayName,
+		...(profile.handle && profile.handle !== INVALID_HANDLE ? { handle: profile.handle } : {}),
+		...(profile.avatar ? { avatarUrl: profile.avatar } : {}),
+	};
+};
+
+const olderThan = (messages: ReadonlyArray<MessageView>, rkey: string): MessageView[] => {
+	const index = messages.findIndex((message) => message.rkey === rkey);
+
+	return index >= 0 ? messages.slice(index + 1) : messages.filter((message) => message.rkey < rkey);
+};

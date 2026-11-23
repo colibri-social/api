@@ -9,6 +9,7 @@ import type {
 import {
 	COLLECTIONS,
 	communitySpaces,
+	type Permission,
 	SELF,
 	SPACE_TYPES,
 	spaceTypeOf,
@@ -21,7 +22,14 @@ import {
 	trySpaceRecordUri,
 } from "@colibri-social/space";
 import { and, asc, desc, eq, gt, isNull, notInArray } from "drizzle-orm";
-import { type CategoryScope, isPrivateChannel, type RoleState } from "./authz.js";
+import {
+	type CategoryScope,
+	effectivePermissions,
+	isAdmin,
+	isMember,
+	isPrivateChannel,
+	type RoleState,
+} from "./authz.js";
 import { type CommunityLoader, toChannelState } from "./loader.js";
 import type { BlobRef, CommunityWriter } from "./writes.js";
 
@@ -66,6 +74,14 @@ export type BridgeChannel = {
 	open: boolean;
 };
 
+export type BridgeMember = {
+	did: string;
+	member: boolean;
+	owner: boolean;
+	roles: RoleState[];
+	permissions: Permission[];
+};
+
 export type RemoteSpace = {
 	platform: string;
 	remoteSpace: string;
@@ -88,6 +104,13 @@ export type RemoteRoomInput = {
 export type RegistrationKey = {
 	community: string;
 	registration: string;
+};
+
+const notLinked = (): BridgeError => {
+	return new BridgeError(
+		"channelNotLinked",
+		"that channel is neither linked nor open to this registration",
+	);
 };
 
 const messagePointer = (
@@ -601,6 +624,35 @@ export class Bridges {
 		return channels;
 	}
 
+	async member(
+		bridge: string,
+		key: RegistrationKey,
+		did: string,
+		channel?: string,
+	): Promise<BridgeMember> {
+		const registration = await this.writable(bridge, key);
+		const parent = channel ? await this.linkedChannelOf(registration, channel) : null;
+
+		if (channel && !parent) throw notLinked();
+
+		const { loader } = this.deps;
+		const [authz, state] = await Promise.all([
+			loader.authz(key.community, did),
+			parent ? loader.channel(parent) : null,
+		]);
+
+		if (parent && !state) throw notLinked();
+
+		const member = isMember(authz) && !authz.isBanned;
+		const owner = !authz.isBanned && isAdmin(authz);
+
+		if (!member) return { did, member, owner, roles: [], permissions: [] };
+
+		const roles = [...authz.roles].sort((left, right) => right.position - left.position);
+
+		return { did, member, owner, roles, permissions: effectivePermissions(authz, state) };
+	}
+
 	async remoteRooms(key: RegistrationKey): Promise<BridgeRemoteRoom[]> {
 		await this.requireCommunity(key.community);
 		await this.registration(key);
@@ -715,9 +767,7 @@ export class Bridges {
 			throw new BridgeError("disabled", "an admin has paused this registration");
 		}
 		const channel = await this.linkedChannelOf(registration, input.channel);
-		if (!channel) {
-			throw new BridgeError("channelNotLinked", "that channel is not linked to this registration");
-		}
+		if (!channel) throw notLinked();
 		const request = registration.links.find((link) => link.channel === channel)?.backfill;
 		if (!request) {
 			throw new BridgeError(
@@ -982,8 +1032,8 @@ export class Bridges {
 		anchor?: { did: string; rkey: string },
 	): Promise<BridgeRegistration> {
 		const registration = await this.writable(bridge, key);
-		if (!registration.links.some((link) => link.channel === channel)) {
-			throw new BridgeError("channelNotLinked", "that channel is not linked to this registration");
+		if ((await this.linkedChannelOf(registration, channel)) !== channel) {
+			throw notLinked();
 		}
 		if (anchor && !(await this.messageExists(channel, anchor.did, anchor.rkey))) {
 			throw new BridgeError("messageNotFound", "the anchor message is not in that channel");
@@ -1104,9 +1154,7 @@ export class Bridges {
 		channel: string,
 	): Promise<BridgeRegistration> {
 		const registration = await this.writable(bridge, key);
-		if (!(await this.linkedChannelOf(registration, channel))) {
-			throw new BridgeError("channelNotLinked", "that channel is not linked to this registration");
-		}
+		if (!(await this.linkedChannelOf(registration, channel))) throw notLinked();
 		return registration;
 	}
 

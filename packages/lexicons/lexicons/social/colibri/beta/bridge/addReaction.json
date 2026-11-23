@@ -4,7 +4,7 @@
 	"defs": {
 		"main": {
 			"type": "procedure",
-			"description": "Adds a reaction from someone on another service to a message in a linked channel. The community writes the reaction, attributed to that person.",
+			"description": "Adds a reaction from someone on another service to a message in a linked or open channel. The community writes the reaction, attributed to that person.",
 			"input": {
 				"encoding": "application/json",
 				"schema": {
@@ -24,7 +24,7 @@
 						"channel": {
 							"type": "string",
 							"format": "space-ref",
-							"description": "The linked channel or thread the record lives in."
+							"description": "The linked or open channel or thread the record lives in."
 						},
 						"author": {
 							"type": "ref",
@@ -86,7 +86,7 @@
 				},
 				{
 					"name": "ChannelNotLinked",
-					"description": "The channel is not linked to this registration."
+					"description": "The channel is neither linked nor open to this registration."
 				},
 				{
 					"name": "RateLimited",

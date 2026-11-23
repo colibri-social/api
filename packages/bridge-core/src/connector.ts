@@ -17,6 +17,8 @@ export type RemoteAttachment = {
 	url: string;
 	name?: string;
 	size?: number;
+	alt?: string;
+	spoiler?: boolean;
 };
 
 export type RemoteLocation = {
@@ -93,28 +95,145 @@ export type ColibriAuthor = {
 	avatarUrl?: string;
 };
 
-export type OpenChannelMessage = {
-	community: string;
-	registration: string;
-	channel: string;
+export type MessageRef = {
+	did: string;
 	rkey: string;
-	author: ColibriAuthor;
-	markdown: string;
 };
 
-export type ChannelReply = {
+export type OpenChannelRef = {
 	community: string;
 	registration: string;
 	channel: string;
-	author: Pick<RemoteAuthor, "id" | "name">;
+	thread?: string;
+};
+
+export type OpenChannelInfo = OpenChannelRef & MessageRef;
+
+export type MemberRole = {
+	rkey: string;
+	name: string;
+	position: number;
+};
+
+export type MemberStanding = {
+	did: string;
+	member: boolean;
+	owner: boolean;
+	roles: MemberRole[];
+	permissions: string[];
+};
+
+export type OpenChannelAuthor = ColibriAuthor & {
+	standing: MemberStanding;
+};
+
+export type OpenChannelForward = {
 	markdown: string;
-	replyTo?: { did: string; rkey: string };
+	attachments: OutboundAttachment[];
+	source?: { channel: string } & MessageRef;
+};
+
+export type OpenChannelContent = {
+	author: OpenChannelAuthor;
+	markdown: string;
+	replyTo?: MessageRef;
+	attachments: OutboundAttachment[];
+	embeds: OutboundEmbed[];
+	forward?: OpenChannelForward;
+	createdAt: string;
+	updatedAt?: string;
+};
+
+export type OpenChannelMessage = OpenChannelContent & OpenChannelInfo;
+
+export type OpenChannelEdit = OpenChannelContent & OpenChannelInfo;
+
+export type OpenChannelDelete = OpenChannelInfo;
+
+export type OpenChannelReaction = OpenChannelInfo & {
+	emoji: string;
+	actor: string;
+	customEmoji?: { uri: string };
+};
+
+export type OpenChannelThread = OpenChannelRef & {
+	thread: string;
+	name: string;
+	anchor?: MessageRef;
+};
+
+export type OpenChannelsChange = {
+	community: string;
+	registration: string;
+	kind: "installed" | "updated" | "removed";
+	channels: string[];
+	added: string[];
+	removed: string[];
+};
+
+export type OpenInboundEvent =
+	| (OpenChannelRef & {
+			type: "message";
+			author: RemoteAuthor;
+			markdown: string;
+			replyTo?: MessageRef;
+			attachments?: RemoteAttachment[];
+			forward?: OpenChannelForwardInput;
+	  })
+	| (OpenChannelRef & { type: "messageEdit"; rkey: string; markdown: string })
+	| (OpenChannelRef & { type: "messageDelete"; rkey: string })
+	| (OpenChannelRef & MessageRef & { type: "messageRemove"; reason?: string })
+	| (OpenChannelRef & MessageRef & { type: "reactionAdd"; author: RemoteAuthor; emoji: string })
+	| (OpenChannelRef & { type: "reactionRemove"; rkey: string })
+	| (OpenChannelRef & {
+			type: "threadCreate";
+			name: string;
+			author: RemoteAuthor;
+			anchor?: MessageRef;
+	  })
+	| (OpenChannelRef & { type: "threadUpdate"; thread: string; name: string })
+	| (OpenChannelRef & { type: "threadDelete"; thread: string });
+
+export type OpenChannelForwardInput = {
+	markdown: string;
+	attachments?: RemoteAttachment[];
+	createdAt?: string;
+	source?: { channel: string } & MessageRef;
+};
+
+export type OpenEmitResult = {
+	rkey?: string;
+	thread?: string;
+	dropped: DroppedAttachment[];
+};
+
+export type DroppedAttachment = RemoteAttachment & {
+	reason: "tooLarge" | "fetchFailed" | "uploadFailed";
+};
+
+export type OpenHistoryRequest = OpenChannelRef & {
+	before?: string;
+	limit?: number;
 };
 
 export type OutboundAttachment = {
 	url: string;
 	name?: string;
 	mimeType: string;
+	size?: number;
+	alt?: string;
+	spoiler?: boolean;
+	width?: number;
+	height?: number;
+};
+
+export type OutboundEmbed = {
+	url: string;
+	title?: string;
+	description?: string;
+	siteName?: string;
+	imageUrl?: string;
+	themeColor?: string;
 };
 
 export type OutboundForward = {
@@ -128,6 +247,7 @@ export type OutboundMessage = RemoteLocation & {
 	markdown: string;
 	replyTo?: string;
 	attachments: OutboundAttachment[];
+	embeds: OutboundEmbed[];
 	forward?: OutboundForward;
 };
 
@@ -135,6 +255,7 @@ export type OutboundEdit = RemoteLocation & {
 	id: string;
 	author: ColibriAuthor;
 	markdown: string;
+	embeds: OutboundEmbed[];
 };
 
 export type OutboundDelete = RemoteLocation & { id: string };
@@ -186,79 +307,134 @@ export interface BridgeContext {
 	readonly did: string;
 	readonly log: BridgeLogger;
 	emit(event: InboundEvent): void;
+	openEmit(event: OpenInboundEvent): Promise<OpenEmitResult>;
 	pair(remote: { remoteSpace: string; remoteSpaceName: string }): Promise<PairingCode>;
 	linkedRooms(remoteSpace: string): LinkedRoom[];
 	connections(remoteSpace: string): BridgeConnection[];
 	channels(community: string, registration: string): Promise<ChannelView[]>;
-	reply(reply: ChannelReply): Promise<string>;
+	openChannels(community: string, registration: string): string[];
+	message(ref: OpenChannelInfo): Promise<OpenChannelMessage | null>;
+	history(request: OpenHistoryRequest): Promise<OpenChannelMessage[]>;
+	member(ref: Omit<OpenChannelRef, "thread"> & { did: string }): Promise<MemberStanding>;
 	disconnect(remoteSpace: string, community?: string): Promise<number>;
 }
 
-export interface NetworkConnector {
+export interface Connector {
 	readonly platform: string;
 	start(context: BridgeContext): Promise<void>;
 	stop(): Promise<void>;
+}
+
+export interface RelayConnector extends Connector {
 	listRooms(remoteSpace: string): Promise<RemoteRoomInfo[]>;
 	sendMessage(message: OutboundMessage): Promise<string>;
 }
 
-export interface EditingConnector extends NetworkConnector {
+export interface EditingConnector extends RelayConnector {
 	editMessage(edit: OutboundEdit): Promise<void>;
 }
 
-export interface DeletingConnector extends NetworkConnector {
+export interface DeletingConnector extends RelayConnector {
 	deleteMessage(target: OutboundDelete): Promise<void>;
 }
 
-export interface ReactingConnector extends NetworkConnector {
+export interface ReactingConnector extends RelayConnector {
 	addReaction(reaction: OutboundReaction): Promise<void>;
 	removeReaction(reaction: OutboundReaction): Promise<void>;
 }
 
-export interface ThreadingConnector extends NetworkConnector {
+export interface ThreadingConnector extends RelayConnector {
 	createThread(thread: OutboundThread): Promise<string>;
 	renameThread(thread: OutboundThreadChange): Promise<void>;
 	archiveThread(thread: OutboundThreadRef): Promise<void>;
 }
 
-export interface ModeratingConnector extends NetworkConnector {
+export interface ModeratingConnector extends RelayConnector {
 	removeMessage(target: OutboundDelete): Promise<void>;
 }
 
-export interface ChannelListeningConnector extends NetworkConnector {
-	receiveChannelMessage(message: OpenChannelMessage): Promise<void>;
+export interface OpenChannelConnector extends Connector {
+	openMessage(message: OpenChannelMessage): Promise<void>;
 }
 
-export interface HistoryConnector extends NetworkConnector {
+export interface OpenEditingConnector extends OpenChannelConnector {
+	openEditMessage(edit: OpenChannelEdit): Promise<void>;
+}
+
+export interface OpenDeletingConnector extends OpenChannelConnector {
+	openDeleteMessage(target: OpenChannelDelete): Promise<void>;
+}
+
+export interface OpenModeratingConnector extends OpenChannelConnector {
+	openRemoveMessage(target: OpenChannelDelete): Promise<void>;
+}
+
+export interface OpenReactingConnector extends OpenChannelConnector {
+	openAddReaction(reaction: OpenChannelReaction): Promise<void>;
+	openRemoveReaction(reaction: OpenChannelReaction): Promise<void>;
+}
+
+export interface OpenThreadingConnector extends OpenChannelConnector {
+	openCreateThread(thread: OpenChannelThread): Promise<void>;
+	openUpdateThread(thread: OpenChannelThread): Promise<void>;
+	openDeleteThread(thread: Omit<OpenChannelThread, "name" | "anchor">): Promise<void>;
+}
+
+export interface OpenLifecycleConnector extends OpenChannelConnector {
+	openChannelsChanged(change: OpenChannelsChange): Promise<void>;
+}
+
+export interface HistoryConnector extends RelayConnector {
 	fetchHistory(request: HistoryRequest): Promise<HistoryMessage[]>;
 	listThreads(room: RemoteLocation & { since?: string; until: string }): Promise<HistoryThread[]>;
 	roomCreatedAt(room: RemoteLocation): Promise<string>;
 }
 
-export const canEdit = (connector: NetworkConnector): connector is EditingConnector =>
-	typeof (connector as Partial<EditingConnector>).editMessage === "function";
+const hasMethods = (connector: Connector, ...names: string[]) => {
+	return names.every(
+		(name) => typeof (connector as unknown as Record<string, unknown>)[name] === "function",
+	);
+};
 
-export const canListenToChannels = (
-	connector: NetworkConnector,
-): connector is ChannelListeningConnector =>
-	typeof (connector as Partial<ChannelListeningConnector>).receiveChannelMessage === "function";
+export const canRelay = (connector: Connector): connector is RelayConnector =>
+	hasMethods(connector, "listRooms", "sendMessage");
 
-export const canDelete = (connector: NetworkConnector): connector is DeletingConnector =>
-	typeof (connector as Partial<DeletingConnector>).deleteMessage === "function";
+export const canEdit = (connector: Connector): connector is EditingConnector =>
+	canRelay(connector) && hasMethods(connector, "editMessage");
 
-export const canReact = (connector: NetworkConnector): connector is ReactingConnector =>
-	typeof (connector as Partial<ReactingConnector>).addReaction === "function" &&
-	typeof (connector as Partial<ReactingConnector>).removeReaction === "function";
+export const canOpen = (connector: Connector): connector is OpenChannelConnector =>
+	hasMethods(connector, "openMessage");
 
-export const canThread = (connector: NetworkConnector): connector is ThreadingConnector =>
-	typeof (connector as Partial<ThreadingConnector>).createThread === "function" &&
-	typeof (connector as Partial<ThreadingConnector>).renameThread === "function" &&
-	typeof (connector as Partial<ThreadingConnector>).archiveThread === "function";
+export const canOpenEdit = (connector: Connector): connector is OpenEditingConnector =>
+	canOpen(connector) && hasMethods(connector, "openEditMessage");
 
-export const canModerate = (connector: NetworkConnector): connector is ModeratingConnector =>
-	typeof (connector as Partial<ModeratingConnector>).removeMessage === "function";
+export const canOpenDelete = (connector: Connector): connector is OpenDeletingConnector =>
+	canOpen(connector) && hasMethods(connector, "openDeleteMessage");
 
-export const canImportHistory = (connector: NetworkConnector): connector is HistoryConnector =>
-	typeof (connector as Partial<HistoryConnector>).fetchHistory === "function" &&
-	typeof (connector as Partial<HistoryConnector>).listThreads === "function" &&
-	typeof (connector as Partial<HistoryConnector>).roomCreatedAt === "function";
+export const canOpenModerate = (connector: Connector): connector is OpenModeratingConnector =>
+	canOpen(connector) && hasMethods(connector, "openRemoveMessage");
+
+export const canOpenReact = (connector: Connector): connector is OpenReactingConnector =>
+	canOpen(connector) && hasMethods(connector, "openAddReaction", "openRemoveReaction");
+
+export const canOpenThread = (connector: Connector): connector is OpenThreadingConnector =>
+	canOpen(connector) &&
+	hasMethods(connector, "openCreateThread", "openUpdateThread", "openDeleteThread");
+
+export const canOpenLifecycle = (connector: Connector): connector is OpenLifecycleConnector =>
+	canOpen(connector) && hasMethods(connector, "openChannelsChanged");
+
+export const canDelete = (connector: Connector): connector is DeletingConnector =>
+	canRelay(connector) && hasMethods(connector, "deleteMessage");
+
+export const canReact = (connector: Connector): connector is ReactingConnector =>
+	canRelay(connector) && hasMethods(connector, "addReaction", "removeReaction");
+
+export const canThread = (connector: Connector): connector is ThreadingConnector =>
+	canRelay(connector) && hasMethods(connector, "createThread", "renameThread", "archiveThread");
+
+export const canModerate = (connector: Connector): connector is ModeratingConnector =>
+	canRelay(connector) && hasMethods(connector, "removeMessage");
+
+export const canImportHistory = (connector: Connector): connector is HistoryConnector =>
+	canRelay(connector) && hasMethods(connector, "fetchHistory", "listThreads", "roomCreatedAt");
