@@ -2,6 +2,7 @@ node_modules/
 dist/
 *.tsbuildinfo
 .env
+.env.alpha
 .env.local
 .env.production
 .env.bridge
