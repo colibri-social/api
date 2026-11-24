@@ -18,6 +18,7 @@ lexicons:
 accounts:
   - alice@alpha
   - bob@alpha
+  - charlie@alpha
 
 apps:
   - name: appview
