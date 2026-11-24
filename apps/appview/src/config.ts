@@ -277,6 +277,7 @@ export const configSchema = z.object({
 	VIDEO_ARTWORK_ENABLED: boolish(false),
 
 	VOICE_ENABLED: boolish(true),
+	LEGACY_SPACE_URIS: boolish(true),
 	SFU_WORKER_COUNT: z.coerce.number().int().positive().optional(),
 	SFU_LISTEN_IP: z.string().default("0.0.0.0"),
 	SFU_ANNOUNCED_IP: optionalString,

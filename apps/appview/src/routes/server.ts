@@ -29,6 +29,7 @@ export const describeServer = (ctx: AppContext): ServerDescription => {
 	features.push("embeds");
 	features.push("emoji");
 	if (ctx.clustered) features.push("nodes");
+	if (ctx.config.LEGACY_SPACE_URIS) features.push("legacySpaceUris");
 
 	return {
 		did: asDid(ctx.config.APPVIEW_DID),
