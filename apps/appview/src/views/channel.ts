@@ -47,6 +47,7 @@ export type DeletedMessageView = social.colibri.beta.channel.defs.DeletedMessage
 export type ForwardView = social.colibri.beta.channel.defs.ForwardView;
 export type ChannelSummary = social.colibri.beta.channel.defs.ChannelSummary;
 type LabelView = social.colibri.beta.community.defs.LabelView;
+type ProfileView = social.colibri.beta.actor.defs.ProfileView;
 
 type ChannelRow = Schema["channels"]["$inferSelect"];
 type CommunityRow = Schema["communities"]["$inferSelect"];
@@ -108,10 +109,14 @@ const hasBlob = (item: RawAttachment): boolean =>
 const isForward = (raw: RawForward | null): boolean =>
 	Boolean(raw?.source?.space && raw.source.did && raw.source.rkey);
 
+const isBridged = (row: MessageRow): boolean =>
+	Boolean(row.bridged) && row.author === row.community;
+
 const toSummary = (
 	channel: string,
 	row: MessageRow,
 	facets: social.colibri.beta.richtext.facet.Main[] | undefined,
+	authorProfile: ProfileView | undefined,
 ): ChannelSummary => {
 	const attachments = ((row.attachments as RawAttachment[] | null) ?? []).filter(hasBlob);
 	const firstMime = attachments[0]?.blob?.mimeType;
@@ -119,6 +124,7 @@ const toSummary = (
 		channel: asSpaceRef(channel),
 		rkey: asRecordKey(row.rkey),
 		author: asDid(row.author),
+		...(authorProfile ? { authorProfile } : {}),
 		text: row.text,
 		...(facets?.length ? { facets } : {}),
 		...(firstMime
@@ -552,19 +558,32 @@ export class ChannelViews {
 		if (spaces.length === 0) return new Map();
 		const communityRow = await this.ctx.loader.community(community);
 		const emojiPolicy = customEmojiPolicy(communityRow?.customEmoji);
-		const latest = await Promise.all(
+		const found = await Promise.all(
 			spaces.map(async (space) => {
 				const message = await this.latestVisible(space, viewer);
-				if (!message) return undefined;
+
+				return message ? ([space, message] as const) : undefined;
+			}),
+		);
+		const latest = found.filter((entry) => entry !== undefined);
+		const profiles = await this.actors.hydrate(
+			latest.flatMap(([, message]) => (isBridged(message) ? [message.author] : [])),
+		);
+
+		return new Map(
+			latest.map(([space, message]) => {
 				const facets = filterCustomEmojiFacets(
 					(message.facets as social.colibri.beta.richtext.facet.Main[] | null) ?? undefined,
 					emojiPolicy,
 					community,
 				);
-				return [space, toSummary(space, message, facets)] as const;
+				const authorProfile = isBridged(message)
+					? this.actors.resolveMessageAuthor(message, profiles.get(message.author), space, viewer)
+					: undefined;
+
+				return [space, toSummary(space, message, facets, authorProfile)] as const;
 			}),
 		);
-		return new Map(latest.filter((entry) => entry !== undefined));
 	}
 
 	private async latestVisible(space: string, viewer: string): Promise<MessageRow | undefined> {

@@ -1483,6 +1483,50 @@ describe("ChannelViews.summaries", () => {
 		expect(summary).not.toHaveProperty("facets");
 	});
 
+	it("carries the remote author's profile for a bridged latest message", async () => {
+		(ctx.config as unknown as Record<string, unknown>).SIGNING_KEY = "11".repeat(32);
+
+		await putMessage(nextTid(), {
+			author: COMMUNITY,
+			bridged: {
+				registration: "3lkbridgeaaaa",
+				platform: "chat",
+				remoteId: "alice-1",
+				name: "Alice Elsewhere",
+				avatar: { $type: "blob", ref: { $link: ATTACHMENT_CID }, mimeType: "image/png", size: 1 },
+			},
+		});
+
+		const summaries = await summariesFor(AUTHOR_B);
+		asListSummariesOutput({ summaries });
+		const [summary] = summaries;
+
+		expect(summary?.author).toBe(COMMUNITY);
+		expect(summary?.authorProfile).toMatchObject({
+			did: COMMUNITY,
+			displayName: "Alice Elsewhere",
+			bridge: { registration: "3lkbridgeaaaa", platform: "chat", remoteId: "alice-1" },
+		});
+		const avatar = new URL(summary?.authorProfile?.avatar ?? "");
+		expect(avatar.searchParams.get("space")).toBe(SPACE);
+	});
+
+	it("leaves authorProfile out for a message the community did not write", async () => {
+		await putMessage(nextTid(), {
+			bridged: {
+				registration: "3lkbridgeaaaa",
+				platform: "chat",
+				remoteId: "mallory",
+				name: "Not Really",
+			},
+		});
+
+		const [summary] = await summariesFor(AUTHOR_B);
+
+		expect(summary?.author).toBe(AUTHOR_A);
+		expect(summary).not.toHaveProperty("authorProfile");
+	});
+
 	it("skips a withheld message, but shows it to its own author", async () => {
 		const visible = nextTid();
 		const hidden = nextTid();

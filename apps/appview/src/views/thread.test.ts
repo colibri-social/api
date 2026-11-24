@@ -411,18 +411,18 @@ describe("ThreadViews last message", () => {
 
 	const postInThread = async (
 		rkey: string,
-		values: { text?: string; facets?: unknown[]; createdAt?: string } = {},
+		values: Partial<typeof database.tables.messages.$inferInsert> = {},
 	) => {
 		await database.db.insert(database.tables.messages).values({
 			space: THREAD,
 			author: AUTHOR,
 			rkey,
 			community: COMMUNITY,
-			text: values.text ?? "in the thread",
-			facets: values.facets,
-			createdAt: values.createdAt ?? NOW,
+			text: "in the thread",
+			createdAt: NOW,
 			fromLegacyRepo: false,
 			indexedAt: NOW,
+			...values,
 		});
 	};
 
@@ -460,6 +460,29 @@ describe("ThreadViews last message", () => {
 			attachmentCount: 0,
 			forward: false,
 			createdAt: "2026-08-24T00:00:00.000Z",
+		});
+	});
+
+	it("carries the remote author's profile when the latest message is bridged", async () => {
+		await putThread();
+		await postInThread(nextTid(), {
+			author: COMMUNITY,
+			bridged: {
+				registration: "3lkbridgeaaaa",
+				platform: "chat",
+				remoteId: "alice-1",
+				name: "Alice Elsewhere",
+			},
+		});
+
+		const view = await threads.view((await threads.row(THREAD))!, reader(), READER);
+
+		asThreadView(view);
+		expect(view?.lastMessage?.author).toBe(COMMUNITY);
+		expect(view?.lastMessage?.authorProfile).toMatchObject({
+			did: COMMUNITY,
+			displayName: "Alice Elsewhere",
+			bridge: { registration: "3lkbridgeaaaa", platform: "chat", remoteId: "alice-1" },
 		});
 	});
 

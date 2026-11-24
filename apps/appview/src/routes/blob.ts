@@ -155,10 +155,11 @@ export const mountBlobRoutes = (ctx: AppContext, app: Router): void => {
 			) {
 				return unauthenticated("this media link is invalid or has expired");
 			}
+			if (parsed.spaceType === SPACE_TYPES.communityProfile) {
+				return { authorized: true };
+			}
 			if (candidate === "") {
-				return parsed.spaceType === SPACE_TYPES.communityProfile
-					? { authorized: true }
-					: forbid("an anonymous media link only covers a community profile");
+				return forbid("an anonymous media link only covers a community profile");
 			}
 			viewer = candidate;
 		} else {

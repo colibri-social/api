@@ -320,6 +320,11 @@ type ChannelSummary = { $type?: "social.colibri.beta.channel.defs#channelSummary
   "author":l.DidString;
 
   /**
+   * The latest message's author as a message view would show it. Present when the message came through a bridge, where it carries the remote person's name and avatar and author is the community.
+   */
+  "authorProfile"?:ActorDefs.ProfileView;
+
+  /**
    * The latest message's text, which is empty when it only carries attachments or a forward.
    */
   "text":string;
@@ -352,6 +357,6 @@ type ChannelSummary = { $type?: "social.colibri.beta.channel.defs#channelSummary
 export type { ChannelSummary };
 
 /** The latest message in a channel, reduced to what a channel list preview shows. */
-const channelSummary = /*#__PURE__*/ l.typedObject<ChannelSummary>($nsid, "channelSummary", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"author":/*#__PURE__*/ l.string({"format":"did"}),"text":/*#__PURE__*/ l.string(),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"attachmentKind":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["image","file"]}>()),"attachmentCount":/*#__PURE__*/ l.integer({"minimum":0}),"forward":/*#__PURE__*/ l.boolean(),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
+const channelSummary = /*#__PURE__*/ l.typedObject<ChannelSummary>($nsid, "channelSummary", /*#__PURE__*/ l.object({"channel":/*#__PURE__*/ l.string({"format":"space-ref"}),"rkey":/*#__PURE__*/ l.string({"format":"record-key"}),"author":/*#__PURE__*/ l.string({"format":"did"}),"authorProfile":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<ActorDefs.ProfileView>((() => ActorDefs.profileView) as any)),"text":/*#__PURE__*/ l.string(),"facets":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<RichtextFacet.Main>((() => RichtextFacet.main) as any), )),"attachmentKind":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["image","file"]}>()),"attachmentCount":/*#__PURE__*/ l.integer({"minimum":0}),"forward":/*#__PURE__*/ l.boolean(),"createdAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
 
 export { channelSummary };
