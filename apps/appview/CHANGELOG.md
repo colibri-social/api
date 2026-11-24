@@ -1,5 +1,17 @@
 # @colibri-social/appview
 
+## 2.45.1
+
+### Patch Changes
+
+- ff95f38: Serve community profile images to invited non-members, and add the bridged author's profile to channel summaries as `authorProfile`
+- a3618ba: Log YouTube parser mismatches during artwork lookups at debug level
+- Updated dependencies [ff95f38]
+  - @colibri-social/lexicons@2.43.0
+  - @colibri-social/community@2.20.1
+  - @colibri-social/notifications@1.12.8
+  - @colibri-social/projections@1.17.2
+
 ## 2.45.0
 
 ### Minor Changes
