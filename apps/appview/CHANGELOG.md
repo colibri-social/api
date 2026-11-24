@@ -1,5 +1,17 @@
 # @colibri-social/appview
 
+## 2.45.2
+
+### Patch Changes
+
+- 1fe6291: Start Alloy on a new node when it joins the cluster
+- c8bfd4b: Add the `legacySpaceUris` feature to `describeServer`, controlled by `LEGACY_SPACE_URIS` (on by default), which tells clients to send space URIs in the `at://{did}/space/...` form
+- Updated dependencies [c8bfd4b]
+  - @colibri-social/lexicons@2.44.0
+  - @colibri-social/community@2.20.2
+  - @colibri-social/notifications@1.12.9
+  - @colibri-social/projections@1.17.3
+
 ## 2.45.1
 
 ### Patch Changes
