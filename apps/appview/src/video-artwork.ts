@@ -154,13 +154,17 @@ const toHit = (result: SearchResult): VideoHit | undefined => {
 	return { id, title, author: text(result.author?.name) };
 };
 
-const youtubeSearch = (): VideoSearch => {
+const youtubeSearch = (log: ArtworkLog): VideoSearch => {
 	let pending: Promise<YoutubeClient> | undefined;
 
 	const client = (): Promise<YoutubeClient> => {
-		pending ??= import("youtubei.js").then(({ Innertube }) =>
-			Innertube.create({ retrieve_player: false }),
-		);
+		pending ??= import("youtubei.js").then(({ Innertube, Parser }) => {
+			Parser.setParserErrorHandler(({ classname, error_type }) =>
+				log.debug({ classname, errorType: error_type }, "activity.artwork.youtubeParse"),
+			);
+
+			return Innertube.create({ retrieve_player: false });
+		});
 		return pending;
 	};
 
@@ -194,7 +198,7 @@ const reachable = async (url: string): Promise<boolean> => {
 };
 
 export const createVideoArtworkClient = (options: VideoArtworkOptions): VideoArtworkClient => {
-	const search = options.search ?? youtubeSearch();
+	const search = options.search ?? youtubeSearch(options.log);
 	const exists = options.exists ?? reachable;
 
 	return {
