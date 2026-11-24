@@ -1,7 +1,7 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlaybookRun } from "./ansible.js";
-import { clusterBusy, handleOrder, type OrderDeps } from "./orders.js";
+import { clusterBusy, handleOrder, type OrderDeps, startAlloyOnJoin } from "./orders.js";
 import { createRegistry } from "./registry.js";
 
 let database: TestDatabase;
@@ -376,7 +376,7 @@ describe("Ansible orders", () => {
 		expect(run).not.toHaveBeenCalled();
 	});
 
-	it("starts Alloy on a new node once monitoring exists", async () => {
+	it("leaves Alloy to the join of a provisioned node", async () => {
 		const { deps: ansibleDeps, run, background } = withAnsible();
 
 		await handleOrder(
@@ -392,17 +392,51 @@ describe("Ansible orders", () => {
 			{
 				kind: "provision",
 				id: "p5",
-				node: "eu-3",
+				node: "eu-4",
 				ip: "203.0.113.7",
 				region: "eu",
 				roles: ["api"],
-				publicUrl: "https://eu-3.test",
+				publicUrl: "https://eu-4.test",
 				joinToken: "t",
 			},
 		);
 		await background.mock.calls[0]?.[0];
 
-		expect(run.mock.calls.map(([call]) => call.playbook)).toEqual(["bootstrap", "alloy"]);
+		expect(run.mock.calls.map(([call]) => call.playbook)).toEqual(["bootstrap"]);
+	});
+
+	it("starts Alloy on a node that joins once monitoring exists", async () => {
+		const { deps: ansibleDeps, run } = withAnsible();
+		const monitoring = {
+			vars: () => null,
+			remoteWriteUrl: () => "http://eu-2:9090/api/v1/write",
+			setRemoteWriteUrl: vi.fn(async () => {}),
+			alloyVars: (node: { id: string }) => ({ node: node.id }),
+		};
+
+		expect(await startAlloyOnJoin({ ...ansibleDeps, monitoring }, "eu-3")).toMatchObject({
+			ok: true,
+		});
+		expect(run.mock.calls.map(([call]) => [call.playbook, call.host, call.vars])).toEqual([
+			["alloy", "eu-3", { node: "eu-3" }],
+		]);
+	});
+
+	it("skips Alloy on join without monitoring or an unknown node", async () => {
+		const { deps: ansibleDeps, run } = withAnsible();
+		const monitoring = {
+			vars: () => null,
+			remoteWriteUrl: (): string | null => null,
+			setRemoteWriteUrl: vi.fn(async () => {}),
+			alloyVars: () => ({}),
+		};
+
+		expect(await startAlloyOnJoin({ ...ansibleDeps, monitoring }, "eu-3")).toBeNull();
+
+		monitoring.remoteWriteUrl = () => "http://eu-2:9090/api/v1/write";
+
+		expect(await startAlloyOnJoin({ ...ansibleDeps, monitoring }, "eu-9")).toBeNull();
+		expect(run).not.toHaveBeenCalled();
 	});
 
 	it("spreads the database hosts once a failover node is provisioned", async () => {

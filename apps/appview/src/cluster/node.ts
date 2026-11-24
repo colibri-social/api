@@ -33,7 +33,13 @@ import {
 	monitoringFingerprint,
 } from "./monitoring-sync.js";
 import { joinCluster, ownCredentials } from "./node-secret.js";
-import { type ClusterOrder, clusterBusy, handleOrder, type OrderDeps } from "./orders.js";
+import {
+	type ClusterOrder,
+	clusterBusy,
+	handleOrder,
+	type OrderDeps,
+	startAlloyOnJoin,
+} from "./orders.js";
 import { ALIVE_PATH, type Alive, aliveSchema, type DrainMode, type NodeFrame } from "./protocol.js";
 import {
 	type BackupKeys,
@@ -194,6 +200,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 			? watchPrimary({ ping: () => ctx.database.ping(), log })
 			: null;
 
+	let onJoined: ((nodeId: string) => void) | null = null;
 	const control = ctx.clustered
 		? new ControlServer({
 				registry,
@@ -205,6 +212,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 				config: () => ctx.clusterConfig.values(),
 				app: deps.app,
 				blobs: ctx.polyfillBlobs.ownBucket,
+				onJoined: (nodeId) => onJoined?.(nodeId),
 				onFrame: (nodeId, frame) => {
 					log.info({ node: nodeId, mode: frame.mode }, "cluster.drained");
 
@@ -701,6 +709,17 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 				void work.catch((error: unknown) => log.warn({ err: error }, "ansible.runFailed"));
 			}),
 	});
+
+	onJoined = (nodeId) => {
+		void startAlloyOnJoin(orderDeps(), nodeId).then(
+			(result) => {
+				if (result && !result.ok) {
+					log.warn({ node: nodeId, code: result.code }, "monitoring.alloyFailed");
+				}
+			},
+			(error: unknown) => log.warn({ node: nodeId, err: error }, "monitoring.alloyFailed"),
+		);
+	};
 
 	const monitoringPaths = [
 		resolve(config.ANSIBLE_DIR, "../observability"),

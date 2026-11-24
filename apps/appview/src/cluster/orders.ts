@@ -206,6 +206,21 @@ const startAlloy = async (
 	});
 };
 
+export const startAlloyOnJoin = async (
+	deps: OrderDeps,
+	nodeId: string,
+): Promise<PlaybookResult | null> => {
+	const url = deps.monitoring?.remoteWriteUrl() ?? null;
+
+	if (!deps.ansible || !url) {
+		return null;
+	}
+
+	const node = await deps.registry.node(nodeId);
+
+	return node ? startAlloy(deps, deps.ansible, node, url) : null;
+};
+
 const runInBackground = (
 	deps: OrderDeps,
 	ansible: AnsibleRunner,
@@ -259,22 +274,13 @@ const provision = async (
 		}
 	}
 
-	const remoteWrite = deps.monitoring?.remoteWriteUrl() ?? null;
 	const standby = order.roles.includes("failover");
 	const work = ansible.run({ playbook: "bootstrap", host: order.ip, vars }).then(async (result) => {
-		if (!result.ok) {
-			return result;
-		}
-
-		if (standby) {
+		if (result.ok && standby) {
 			await provisioning.spreadDatabaseHosts?.().catch(() => undefined);
 		}
 
-		const node = remoteWrite ? await deps.registry.node(order.node) : null;
-
-		return node && remoteWrite
-			? ((await startAlloy(deps, ansible, node, remoteWrite)) ?? result)
-			: result;
+		return result;
 	});
 
 	if (deps.background) {

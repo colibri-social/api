@@ -39,6 +39,7 @@ export type ControlServerDeps = {
 	draining?: () => boolean;
 	primaryDownSince?: () => number | null;
 	onFrame?: (nodeId: string, frame: NodeFrame) => void;
+	onJoined?: (nodeId: string) => void;
 	routes?: (request: IncomingMessage, response: ServerResponse) => boolean;
 	config?: (nodeId: string) => Promise<Record<string, string>>;
 	app?: (request: IncomingMessage, response: ServerResponse) => void;
@@ -270,6 +271,7 @@ export class ControlServer {
 
 		this.deps.log.info({ node: joined.id }, "cluster.joined");
 		respond(response, 200, joined);
+		this.deps.onJoined?.(joined.id);
 	}
 
 	private async notMain(response: ServerResponse): Promise<void> {

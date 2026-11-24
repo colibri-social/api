@@ -88,6 +88,21 @@ describe("joining", () => {
 		).rejects.toThrow(/401/);
 	});
 
+	it("reports each node that joins", async () => {
+		const onJoined = vi.fn();
+
+		await server.close();
+		server = new ControlServer({ registry, log, nodeId: "eu-1", isMain: () => true, onJoined });
+		mainUrl = `http://127.0.0.1:${await server.listen(0, "127.0.0.1")}`;
+
+		await expect(
+			joinCluster({ file: join(directory, "s"), mainUrl, token: "made-up", address: ADDRESS }),
+		).rejects.toThrow(/401/);
+		await join2();
+
+		expect(onJoined.mock.calls).toEqual([["eu-2"]]);
+	});
+
 	it("refuses joins on a node that is not main", async () => {
 		isMain = false;
 
