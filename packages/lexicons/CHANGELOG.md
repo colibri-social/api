@@ -1,5 +1,11 @@
 # @colibri-social/lexicons
 
+## 2.43.0
+
+### Minor Changes
+
+- ff95f38: Serve community profile images to invited non-members, and add the bridged author's profile to channel summaries as `authorProfile`
+
 ## 2.42.0
 
 ### Minor Changes
