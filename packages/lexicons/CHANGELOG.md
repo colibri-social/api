@@ -1,5 +1,11 @@
 # @colibri-social/lexicons
 
+## 2.44.0
+
+### Minor Changes
+
+- c8bfd4b: Add the `legacySpaceUris` feature to `describeServer`, controlled by `LEGACY_SPACE_URIS` (on by default), which tells clients to send space URIs in the `at://{did}/space/...` form
+
 ## 2.43.0
 
 ### Minor Changes
