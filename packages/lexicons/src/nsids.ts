@@ -124,6 +124,19 @@ export const channelSpace = (community: string, type: ChannelSpaceType, skey: st
 export const threadSpace = (community: string, skey: string) =>
 	spaceUri(community, SPACE_TYPES.channelThread, skey);
 
+export const canonicalSpaceUris = <T>(value: T): T => {
+	if (typeof value === "string") return canonicalSpaceUri(value) as T;
+	if (Array.isArray(value)) return value.map((item) => canonicalSpaceUris(item)) as T;
+	if (typeof value !== "object" || value === null) return value;
+
+	const prototype = Object.getPrototypeOf(value);
+	if (prototype !== Object.prototype && prototype !== null) return value;
+
+	return Object.fromEntries(
+		Object.entries(value).map(([key, item]) => [key, canonicalSpaceUris(item)]),
+	) as T;
+};
+
 export const spaceTypeOf = (uri: string): string | undefined => {
 	const canonical = canonicalSpaceUri(uri);
 	if (!canonical.startsWith(SPACE_URI_PREFIX)) return undefined;

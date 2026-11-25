@@ -1,5 +1,6 @@
 import {
 	COLLECTIONS,
+	canonicalSpaceUris,
 	SPACE_TYPES,
 	social,
 	toJsonForm,
@@ -295,7 +296,7 @@ const upsertReaction = async (deps: ProjectionDeps, row: ReactionRow) => {
 };
 
 const parsedReaction = (value: unknown): social.colibri.beta.reaction.Main | null => {
-	const result = social.colibri.beta.reaction.$safeParse(toLexForm(value));
+	const result = social.colibri.beta.reaction.$safeParse(canonicalSpaceUris(toLexForm(value)));
 	return result.success ? result.value : null;
 };
 

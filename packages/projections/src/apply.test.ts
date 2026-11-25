@@ -1044,6 +1044,27 @@ describe("member-written collections", () => {
 		expect(row).toMatchObject({ targetAuthor: OUTSIDER, targetRkey: "3mry5ybrnx222" });
 	});
 
+	it("reads a reaction written with a legacy space uri", async () => {
+		const legacyUri = spaceRecordUri(
+			TEXT_CHANNEL,
+			OUTSIDER,
+			"social.colibri.beta.message",
+			"3mry5ybrnx222",
+		).replace(/^at:space\/([^/]+)\//, "at://$1/space/");
+
+		await applyChange(
+			deps,
+			put(TEXT_CHANNEL, MEMBER, "social.colibri.beta.reaction", "3lkreact7", {
+				$type: "social.colibri.beta.reaction",
+				target: { did: MEMBER, rkey: "3mry5ybrnx333" },
+				uri: legacyUri,
+				emoji: "👍",
+			}),
+		);
+		const [row] = await database.db.select().from(database.tables.reactions);
+		expect(row).toMatchObject({ targetAuthor: OUTSIDER, targetRkey: "3mry5ybrnx222" });
+	});
+
 	it("falls back to the target reference when the reaction uri names another collection", async () => {
 		await applyChange(
 			deps,
