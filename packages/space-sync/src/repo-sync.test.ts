@@ -24,7 +24,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { RepoHostMissingError, RepoSync, RepoTooLargeError } from "./repo-sync.js";
 import type { RepoChange, RepoCursor, SyncStore } from "./types.js";
 
-const SPACE = "at://did:plc:2hnjxkqm6bpuvvpjbztkxxxx/space/social.colibri.beta.channel.text/3lkabc";
+const SPACE = "at:space/did:plc:2hnjxkqm6bpuvvpjbztkxxxx/social.colibri.beta.channel.text/3lkabc";
 const AUTHOR = "did:plc:7fkdlwjqmzcuvvpjbztkyyyy";
 const HOST = "https://pds.test";
 const MESSAGE = "social.colibri.beta.message";

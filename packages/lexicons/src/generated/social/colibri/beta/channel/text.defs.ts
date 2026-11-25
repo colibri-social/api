@@ -3,6 +3,10 @@
  */
 
 import { l } from "@atproto/lex";
+import * as BetaChannel from "../channel.defs.js";
+import * as BetaMessage from "../message.defs.js";
+import * as BetaReaction from "../reaction.defs.js";
+import * as BetaLabel from "../label.defs.js";
 
 const $nsid = "social.colibri.beta.channel.text";
 
@@ -11,6 +15,12 @@ type $nsid = typeof $nsid;
 export { $nsid };
 
 /** A text channel. The space key is the channel's identity, and the channel's own configuration is the social.colibri.beta.channel record at key 'self' inside it. */
-const main = /*#__PURE__*/ l.space("tid", $nsid, ["social.colibri.beta.channel","social.colibri.beta.message","social.colibri.beta.reaction","social.colibri.beta.label"], {"title":"Colibri text channel"});
+const main = /*#__PURE__*/ l.space("tid", $nsid, [/*#__PURE__*/ l.typedRef(() => BetaChannel.main),/*#__PURE__*/ l.typedRef(() => BetaMessage.main),/*#__PURE__*/ l.typedRef(() => BetaReaction.main),/*#__PURE__*/ l.typedRef(() => BetaLabel.main)] as readonly (l.RecordSchema | l.TypedRefSchema<l.RecordSchema>)[]);
 
 export { main };
+
+const $spaceType = $nsid;
+
+type $spaceType = typeof $spaceType;
+
+export { $spaceType };

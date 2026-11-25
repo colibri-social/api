@@ -3,6 +3,7 @@
  */
 
 import { l } from "@atproto/lex";
+import * as BetaCommunity from "../community.defs.js";
 
 const $nsid = "social.colibri.beta.community.profile";
 
@@ -11,6 +12,12 @@ type $nsid = typeof $nsid;
 export { $nsid };
 
 /** A community's public identity: the one part of a community that can be read before joining it. */
-const main = /*#__PURE__*/ l.space("literal:self", $nsid, ["social.colibri.beta.community"], {"title":"Colibri community profile"});
+const main = /*#__PURE__*/ l.space("literal:self", $nsid, [/*#__PURE__*/ l.typedRef(() => BetaCommunity.main)] as readonly (l.RecordSchema | l.TypedRefSchema<l.RecordSchema>)[]);
 
 export { main };
+
+const $spaceType = $nsid;
+
+type $spaceType = typeof $spaceType;
+
+export { $spaceType };

@@ -99,7 +99,7 @@ describe("ColibriClient writes", () => {
 describe("ColibriClient channels", () => {
 	it("lists a registration's channels", async () => {
 		const channel = {
-			space: "at://did:plc:community/space/social.colibri.beta.channel.text/general",
+			space: "at:space/did:plc:community/social.colibri.beta.channel.text/general",
 			type: "social.colibri.beta.channel.text",
 			name: "general",
 			viewer: { canRead: true, canPost: true },
@@ -125,7 +125,7 @@ describe("ColibriClient reads", () => {
 		]);
 
 		await expect(
-			client.listMessages("at://did:plc:community/space/x/general", {
+			client.listMessages("at:space/did:plc:community/x/general", {
 				around: "3lkmsg0000001",
 				limit: 9,
 			}),

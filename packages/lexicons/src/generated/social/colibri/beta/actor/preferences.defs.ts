@@ -3,6 +3,15 @@
  */
 
 import { l } from "@atproto/lex";
+import * as ActorBlock from "./block.defs.js";
+import * as ActorClientPreferences from "./clientPreferences.defs.js";
+import * as ActorComposerState from "./composerState.defs.js";
+import * as ActorMute from "./mute.defs.js";
+import * as ActorSettings from "./settings.defs.js";
+import * as ActorSpaceModeration from "./spaceModeration.defs.js";
+import * as ActorSpaceNotification from "./spaceNotification.defs.js";
+import * as ChannelRead from "../channel/read.defs.js";
+import * as EmojiFollow from "../emoji/follow.defs.js";
 
 const $nsid = "social.colibri.beta.actor.preferences";
 
@@ -11,6 +20,12 @@ type $nsid = typeof $nsid;
 export { $nsid };
 
 /** A user's own Colibri settings, client preferences, composer state, mutes, blocks, per-Space notification and moderation preferences, emoji follows and read state. */
-const main = /*#__PURE__*/ l.space("literal:self", $nsid, ["social.colibri.beta.actor.block","social.colibri.beta.actor.clientPreferences","social.colibri.beta.actor.composerState","social.colibri.beta.actor.mute","social.colibri.beta.actor.settings","social.colibri.beta.actor.spaceModeration","social.colibri.beta.actor.spaceNotification","social.colibri.beta.channel.read","social.colibri.beta.emoji.follow"], {"title":"Colibri preferences"});
+const main = /*#__PURE__*/ l.space("literal:self", $nsid, [/*#__PURE__*/ l.typedRef(() => ActorBlock.main),/*#__PURE__*/ l.typedRef(() => ActorClientPreferences.main),/*#__PURE__*/ l.typedRef(() => ActorComposerState.main),/*#__PURE__*/ l.typedRef(() => ActorMute.main),/*#__PURE__*/ l.typedRef(() => ActorSettings.main),/*#__PURE__*/ l.typedRef(() => ActorSpaceModeration.main),/*#__PURE__*/ l.typedRef(() => ActorSpaceNotification.main),/*#__PURE__*/ l.typedRef(() => ChannelRead.main),/*#__PURE__*/ l.typedRef(() => EmojiFollow.main)] as readonly (l.RecordSchema | l.TypedRefSchema<l.RecordSchema>)[]);
 
 export { main };
+
+const $spaceType = $nsid;
+
+type $spaceType = typeof $spaceType;
+
+export { $spaceType };

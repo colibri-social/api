@@ -3,6 +3,7 @@
  */
 
 import { l } from "@atproto/lex";
+import * as BetaModeration from "../moderation.defs.js";
 
 const $nsid = "social.colibri.beta.community.moderation";
 
@@ -11,6 +12,12 @@ type $nsid = typeof $nsid;
 export { $nsid };
 
 /** A community's moderation audit log. Kept in its own space so it can be read by moderators without being readable by the whole membership. */
-const main = /*#__PURE__*/ l.space("literal:self", $nsid, ["social.colibri.beta.moderation"], {"title":"Colibri community moderation log"});
+const main = /*#__PURE__*/ l.space("literal:self", $nsid, [/*#__PURE__*/ l.typedRef(() => BetaModeration.main)] as readonly (l.RecordSchema | l.TypedRefSchema<l.RecordSchema>)[]);
 
 export { main };
+
+const $spaceType = $nsid;
+
+type $spaceType = typeof $spaceType;
+
+export { $spaceType };

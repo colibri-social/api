@@ -7,6 +7,7 @@ import {
 	LEGACY_COLLECTIONS,
 	SELF,
 	SPACE_TYPES,
+	spaceTypeOf,
 	spaceUri,
 } from "@colibri-social/lexicons";
 import { messageFutureRefusal } from "@colibri-social/projections";
@@ -426,7 +427,7 @@ export const migrateCommunity = async (
 	}
 
 	const createSpace = async (space: string) => {
-		const type = space.split("/")[4] as string;
+		const type = spaceTypeOf(space) as string;
 		const skey = rkeyOf(space);
 		if (deps.dryRun) return;
 		await host.pds

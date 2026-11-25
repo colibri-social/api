@@ -7,8 +7,8 @@ import {
 	placeName,
 } from "./place.js";
 
-const CHANNEL = "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchannel1";
-const THREAD = "at://did:plc:community/space/social.colibri.beta.channel.thread/3lkthread1";
+const CHANNEL = "at:space/did:plc:community/social.colibri.beta.channel.text/3lkchannel1";
+const THREAD = "at:space/did:plc:community/social.colibri.beta.channel.thread/3lkthread1";
 
 const mention = { kind: "mention", mentionRole: null };
 

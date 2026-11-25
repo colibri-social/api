@@ -44,7 +44,7 @@ describe("provisioning a community", () => {
 		expect(community).toMatch(/^did:/);
 		const spaces = communitySpaces(community);
 		for (const space of Object.values(spaces)) {
-			expect(space.startsWith(`at://${community}/space/`)).toBe(true);
+			expect(space.startsWith(`at:space/${community}/`)).toBe(true);
 		}
 	});
 
@@ -265,7 +265,7 @@ describe("a member writing into a channel", () => {
 describe("a personal space", () => {
 	it("syncs the owner's own preferences", async () => {
 		const user = await harness.createUser(unique("prefs"));
-		const space = `at://${user.did}/space/${SPACE_TYPES.actorPreferences}/${SELF}`;
+		const space = `at:space/${user.did}/${SPACE_TYPES.actorPreferences}/${SELF}`;
 
 		await harness.pds.createSpace(user.session, {
 			spaceType: SPACE_TYPES.actorPreferences,

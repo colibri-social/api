@@ -70,7 +70,7 @@ describe("registrationView", () => {
 			links: [
 				{
 					channel:
-						"at://did:plc:communityxxxxxxxxxxxxxxxxxxx/space/social.colibri.beta.channel.text/3lkchannel001",
+						"at:space/did:plc:communityxxxxxxxxxxxxxxxxxxx/social.colibri.beta.channel.text/3lkchannel001",
 					remoteRoom: "room-1",
 					remoteName: "general",
 				},
@@ -256,7 +256,7 @@ describe("handleInstallBridge", () => {
 
 describe("bridge update announcements", () => {
 	const REGISTRATION = "3lkbridgeaaaa";
-	const CHANNEL = `at://${COMMUNITY}/space/social.colibri.beta.channel.text/3lkchannel001`;
+	const CHANNEL = `at:space/${COMMUNITY}/social.colibri.beta.channel.text/3lkchannel001`;
 	const REPORT = {
 		community: COMMUNITY,
 		registration: REGISTRATION,

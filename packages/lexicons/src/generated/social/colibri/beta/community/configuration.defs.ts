@@ -3,6 +3,10 @@
  */
 
 import { l } from "@atproto/lex";
+import * as BetaCategory from "../category.defs.js";
+import * as CommunitySettings from "./settings.defs.js";
+import * as BetaLabel from "../label.defs.js";
+import * as BridgeRegistration from "../bridge/registration.defs.js";
 
 const $nsid = "social.colibri.beta.community.configuration";
 
@@ -11,6 +15,12 @@ type $nsid = typeof $nsid;
 export { $nsid };
 
 /** A community's operational settings and its category layout. */
-const main = /*#__PURE__*/ l.space("literal:self", $nsid, ["social.colibri.beta.category","social.colibri.beta.community.settings","social.colibri.beta.label","social.colibri.beta.bridge.registration"], {"title":"Colibri community settings"});
+const main = /*#__PURE__*/ l.space("literal:self", $nsid, [/*#__PURE__*/ l.typedRef(() => BetaCategory.main),/*#__PURE__*/ l.typedRef(() => CommunitySettings.main),/*#__PURE__*/ l.typedRef(() => BetaLabel.main),/*#__PURE__*/ l.typedRef(() => BridgeRegistration.main)] as readonly (l.RecordSchema | l.TypedRefSchema<l.RecordSchema>)[]);
 
 export { main };
+
+const $spaceType = $nsid;
+
+type $spaceType = typeof $spaceType;
+
+export { $spaceType };

@@ -38,7 +38,7 @@ parentPort.on("message", ({ id, job }) => {
 });
 `;
 
-const SPACE = "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchan";
+const SPACE = "at:space/did:plc:community/social.colibri.beta.channel.text/3lkchan";
 const ALICE = "did:plc:alice";
 
 let emptyCommit: ProvenCommit;

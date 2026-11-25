@@ -3,6 +3,9 @@
  */
 
 import { l } from "@atproto/lex";
+import * as BetaMember from "../member.defs.js";
+import * as BetaRole from "../role.defs.js";
+import * as BetaLabel from "../label.defs.js";
 
 const $nsid = "social.colibri.beta.community.members";
 
@@ -11,6 +14,12 @@ type $nsid = typeof $nsid;
 export { $nsid };
 
 /** A community's membership and the roles that can be assigned within it. */
-const main = /*#__PURE__*/ l.space("literal:self", $nsid, ["social.colibri.beta.member","social.colibri.beta.role","social.colibri.beta.label"], {"title":"Colibri community members"});
+const main = /*#__PURE__*/ l.space("literal:self", $nsid, [/*#__PURE__*/ l.typedRef(() => BetaMember.main),/*#__PURE__*/ l.typedRef(() => BetaRole.main),/*#__PURE__*/ l.typedRef(() => BetaLabel.main)] as readonly (l.RecordSchema | l.TypedRefSchema<l.RecordSchema>)[]);
 
 export { main };
+
+const $spaceType = $nsid;
+
+type $spaceType = typeof $spaceType;
+
+export { $spaceType };

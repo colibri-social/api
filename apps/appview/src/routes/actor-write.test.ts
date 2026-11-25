@@ -22,12 +22,12 @@ const NOW = "2026-08-23T00:00:00.000Z";
 const CALLER = "did:plc:callerxxxxxxxxxxxxxxxxxxxxxx";
 const OTHER = "did:plc:otherxxxxxxxxxxxxxxxxxxxxxxx";
 const COMMUNITY = "did:plc:communityxxxxxxxxxxxxxxxxxxx";
-const CHANNEL = `at://${COMMUNITY}/space/social.colibri.beta.channel.text/3lkchannel001` as const;
+const CHANNEL = `at:space/${COMMUNITY}/social.colibri.beta.channel.text/3lkchannel001` as const;
 const MUTED_ACTOR = "social.colibri.beta.actor.defs#mutedActor" as const;
 const MUTED_CHANNEL = "social.colibri.beta.actor.defs#mutedChannel" as const;
-const THREAD = `at://${COMMUNITY}/space/social.colibri.beta.channel.thread/3lkthread0001` as const;
+const THREAD = `at:space/${COMMUNITY}/social.colibri.beta.channel.thread/3lkthread0001` as const;
 const OTHER_THREAD =
-	`at://${COMMUNITY}/space/social.colibri.beta.channel.thread/3lkthread0002` as const;
+	`at:space/${COMMUNITY}/social.colibri.beta.channel.thread/3lkthread0002` as const;
 const LATER = "2026-08-23T01:00:00.000Z";
 
 let database: TestDatabase;

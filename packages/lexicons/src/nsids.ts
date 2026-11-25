@@ -89,8 +89,17 @@ export const LABEL_VALUES = {
 
 export type LabelValue = (typeof LABEL_VALUES)[keyof typeof LABEL_VALUES];
 
+export const SPACE_URI_PREFIX = "at:space/";
+
+const LEGACY_SPACE_URI = /^at:\/\/([^/]+)\/space\/(.*)$/;
+
 export const spaceUri = (authority: string, spaceType: string, skey: string) =>
-	`at://${authority}/space/${spaceType}/${skey}`;
+	`${SPACE_URI_PREFIX}${authority}/${spaceType}/${skey}`;
+
+export const canonicalSpaceUri = (uri: string): string => {
+	const legacy = LEGACY_SPACE_URI.exec(uri);
+	return legacy ? `${SPACE_URI_PREFIX}${legacy[1]}/${legacy[2]}` : uri;
+};
 
 export type CommunitySpaces = {
 	profile: string;
@@ -115,4 +124,8 @@ export const channelSpace = (community: string, type: ChannelSpaceType, skey: st
 export const threadSpace = (community: string, skey: string) =>
 	spaceUri(community, SPACE_TYPES.channelThread, skey);
 
-export const spaceTypeOf = (uri: string): string | undefined => uri.split("/")[4];
+export const spaceTypeOf = (uri: string): string | undefined => {
+	const canonical = canonicalSpaceUri(uri);
+	if (!canonical.startsWith(SPACE_URI_PREFIX)) return undefined;
+	return canonical.slice(SPACE_URI_PREFIX.length).split("/")[1];
+};

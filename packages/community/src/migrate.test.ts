@@ -418,7 +418,7 @@ describe("migrateCommunity", () => {
 		await migrateCommunity({ ...deps, target: NEW }, COMMUNITY);
 
 		expect(repoWrites).toEqual([]);
-		expect(writes.every((write) => write.space.startsWith(`at://${NEW}/`))).toBe(true);
+		expect(writes.every((write) => write.space.startsWith(`at:space/${NEW}/`))).toBe(true);
 		expect(createdSpaces).toContain(`${SPACE_TYPES.channelText}/${TEXT}`);
 		const messages = await database.db.select().from(database.tables.messages);
 		expect(messages).toEqual([

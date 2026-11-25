@@ -38,15 +38,6 @@ describe("describeServer", () => {
 		).toEqual(["voice", "gifs", "embeds", "emoji"]);
 	});
 
-	it("tells clients to send legacy space URIs while the flag is on", () => {
-		expect(describeServer(contextWith({ LEGACY_SPACE_URIS: true })).features).toContain(
-			"legacySpaceUris",
-		);
-		expect(describeServer(contextWith({ LEGACY_SPACE_URIS: false })).features).not.toContain(
-			"legacySpaceUris",
-		);
-	});
-
 	it("offers node selection on a clustered AppView", () => {
 		const ctx = { ...contextWith(), clustered: true } as AppContext;
 

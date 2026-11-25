@@ -1007,7 +1007,7 @@ describe("bridge route echoes", () => {
 });
 
 describe("configuration events", () => {
-	const CONFIG_SPACE = `at://${COMMUNITY}/space/${SPACE_TYPES.communityConfiguration}/self`;
+	const CONFIG_SPACE = `at:space/${COMMUNITY}/${SPACE_TYPES.communityConfiguration}/self`;
 
 	it("tells the channel's readers that its record landed", async () => {
 		emit({
@@ -1072,7 +1072,7 @@ describe("configuration events", () => {
 	});
 
 	it("purges and announces a community whose profile space was deleted", async () => {
-		const PROFILE_SPACE = `at://${COMMUNITY}/space/${SPACE_TYPES.communityProfile}/self`;
+		const PROFILE_SPACE = `at:space/${COMMUNITY}/${SPACE_TYPES.communityProfile}/self`;
 
 		emitSpaceDeleted(PROFILE_SPACE);
 		await vi.waitFor(() => expect(communityDeletes).toEqual([COMMUNITY]));
@@ -1084,7 +1084,7 @@ describe("configuration events", () => {
 	});
 
 	it("stays quiet when the community row is already gone", async () => {
-		const PROFILE_SPACE = `at://${COMMUNITY}/space/${SPACE_TYPES.communityProfile}/self`;
+		const PROFILE_SPACE = `at:space/${COMMUNITY}/${SPACE_TYPES.communityProfile}/self`;
 		await database.db.delete(database.tables.communities);
 
 		emitSpaceDeleted(PROFILE_SPACE);
@@ -1096,7 +1096,7 @@ describe("configuration events", () => {
 });
 
 describe("personal space events", () => {
-	const PREFERENCES = `at://${AUTHOR}/space/${SPACE_TYPES.actorPreferences}/self`;
+	const PREFERENCES = `at:space/${AUTHOR}/${SPACE_TYPES.actorPreferences}/self`;
 
 	it("tells the actor's own devices when their preferences change", async () => {
 		emit({

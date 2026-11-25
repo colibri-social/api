@@ -31,7 +31,7 @@ const AUTHORITY = "did:plc:rjwk3hgp6bidml6zlwvyhdwi";
 const REPO = "did:plc:t4ckug4y36pkmxo5ej75v3ug";
 const CID = "bafkreif62j6x5eug3jub6ympnpsoqzzz5wrqnvxzrna4c4watqfkdxms4e";
 const SPACE =
-	`at://${AUTHORITY}/space/social.colibri.beta.channel.text/3mttl45nkb22p` as SpaceRefString;
+	`at:space/${AUTHORITY}/social.colibri.beta.channel.text/3mttl45nkb22p` as SpaceRefString;
 const HOST = "https://pds.test";
 
 const COLLECTION = "social.colibri.beta.message";

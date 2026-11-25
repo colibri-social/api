@@ -19,7 +19,7 @@ const SKEY = "3lkabcdefgh2k";
 
 describe("space references", () => {
 	it("builds a space reference from its three parts", () => {
-		expect(spaceRef(COMMUNITY, CHANNEL, SKEY)).toBe(`at://${COMMUNITY}/space/${CHANNEL}/${SKEY}`);
+		expect(spaceRef(COMMUNITY, CHANNEL, SKEY)).toBe(`at:space/${COMMUNITY}/${CHANNEL}/${SKEY}`);
 	});
 
 	it("round trips a space reference", () => {
@@ -28,7 +28,7 @@ describe("space references", () => {
 			authority: COMMUNITY,
 			spaceType: CHANNEL,
 			skey: SKEY,
-			uri: `at://${COMMUNITY}/space/${CHANNEL}/${SKEY}`,
+			uri: `at:space/${COMMUNITY}/${CHANNEL}/${SKEY}`,
 		});
 	});
 
@@ -56,7 +56,7 @@ describe("space record references", () => {
 
 	it("addresses a record by space, author, collection and key", () => {
 		expect(spaceRecordUri(space, AUTHOR, "social.colibri.beta.message", "3lxyz")).toBe(
-			`at://${COMMUNITY}/space/${CHANNEL}/${SKEY}/${AUTHOR}/social.colibri.beta.message/3lxyz`,
+			`at:space/${COMMUNITY}/${CHANNEL}/${SKEY}/${AUTHOR}/social.colibri.beta.message/3lxyz`,
 		);
 	});
 

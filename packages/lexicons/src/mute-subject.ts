@@ -1,6 +1,6 @@
 import { asDid, asSpaceRef } from "./branded.js";
 import type { social } from "./generated/index.js";
-import { SPACE_TYPES, spaceTypeOf } from "./nsids.js";
+import { canonicalSpaceUri, SPACE_TYPES, SPACE_URI_PREFIX, spaceTypeOf } from "./nsids.js";
 
 export type MuteSubject = social.colibri.beta.actor.defs.Mute["subject"];
 
@@ -15,10 +15,11 @@ export const encodeMuteSubject = (subject: MuteSubject): string => {
 };
 
 export const decodeMuteSubject = (stored: string): MuteSubject => {
-	if (!stored.startsWith("at://")) return { $type: ACTOR, did: asDid(stored) };
-	return spaceTypeOf(stored) === SPACE_TYPES.channelThread
-		? { $type: THREAD, thread: asSpaceRef(stored) }
-		: { $type: CHANNEL, channel: asSpaceRef(stored) };
+	const space = canonicalSpaceUri(stored);
+	if (!space.startsWith(SPACE_URI_PREFIX)) return { $type: ACTOR, did: asDid(stored) };
+	return spaceTypeOf(space) === SPACE_TYPES.channelThread
+		? { $type: THREAD, thread: asSpaceRef(space) }
+		: { $type: CHANNEL, channel: asSpaceRef(space) };
 };
 
 export const isChannelMute = (subject: MuteSubject): boolean => subject.$type === CHANNEL;

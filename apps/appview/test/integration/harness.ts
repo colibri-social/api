@@ -217,7 +217,7 @@ export const createHarness = async () => {
 	const spaceCredentials = new SpaceCredentials({
 		hosts,
 		delegation: async (space) => {
-			const authority = space.slice("at://".length).split("/")[0] as string;
+			const authority = space.slice("at:space/".length).split("/")[0] as string;
 			const stored = await credentials.load(authority);
 			if (!stored) return null;
 			const host = await credentials.connect(authority);

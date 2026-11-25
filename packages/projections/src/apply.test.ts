@@ -1254,7 +1254,7 @@ describe("personal spaces", () => {
 	});
 
 	it("projects a channel mute as its space reference", async () => {
-		const channel = `at://${COMMUNITY}/space/social.colibri.beta.channel.text/3lkchan1`;
+		const channel = `at:space/${COMMUNITY}/social.colibri.beta.channel.text/3lkchan1`;
 		await applyChange(
 			deps,
 			put(personal, MEMBER, "social.colibri.beta.actor.mute", "3lkmute2", {

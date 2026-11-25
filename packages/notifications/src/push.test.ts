@@ -56,7 +56,7 @@ const notification = {
 	recipient: ACTOR,
 	kind: "message",
 	mentionRole: null,
-	space: "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchannel1",
+	space: "at:space/did:plc:community/social.colibri.beta.channel.text/3lkchannel1",
 	author: "did:plc:author00000000000000000000",
 	messageRkey: "3lkmsg1",
 };
@@ -151,8 +151,8 @@ describe("deliverNotification", () => {
 });
 
 describe("buildPayload", () => {
-	const channel = "at://did:plc:community/space/social.colibri.beta.channel.text/3lkchannel1";
-	const thread = "at://did:plc:community/space/social.colibri.beta.channel.thread/3lkthread1";
+	const channel = "at:space/did:plc:community/social.colibri.beta.channel.text/3lkchannel1";
+	const thread = "at:space/did:plc:community/social.colibri.beta.channel.thread/3lkthread1";
 
 	it("carries every field the native shells and the old clients read", () => {
 		const payload = buildPayload(

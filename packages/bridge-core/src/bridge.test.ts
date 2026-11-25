@@ -45,8 +45,8 @@ import { type BridgeStore, MemoryBridgeStore } from "./store.js";
 const COMMUNITY = "did:plc:communityxxxxxxxxxxxxxxxxxxx";
 const BRIDGE_DID = "did:plc:bridgexxxxxxxxxxxxxxxxxxxxxx";
 const MEMBER = "did:plc:memberxxxxxxxxxxxxxxxxxxxxx";
-const CHANNEL = `at://${COMMUNITY}/space/social.colibri.beta.channel.text/3lkchannel001`;
-const THREAD = `at://${COMMUNITY}/space/social.colibri.beta.channel.thread/3lkthread0001`;
+const CHANNEL = `at:space/${COMMUNITY}/social.colibri.beta.channel.text/3lkchannel001`;
+const THREAD = `at:space/${COMMUNITY}/social.colibri.beta.channel.thread/3lkthread0001`;
 const REGISTRATION = "3lkbridgeaaaa";
 const GUILD = "guild-1";
 const ROOM = "room-1";
@@ -729,8 +729,8 @@ describe("from Colibri to the other service", () => {
 	});
 });
 
-const OPEN = `at://${COMMUNITY}/space/social.colibri.beta.channel.text/3lkchannel002`;
-const OPEN_THREAD = `at://${COMMUNITY}/space/social.colibri.beta.channel.thread/3lkthread0002`;
+const OPEN = `at:space/${COMMUNITY}/social.colibri.beta.channel.text/3lkchannel002`;
+const OPEN_THREAD = `at:space/${COMMUNITY}/social.colibri.beta.channel.thread/3lkthread0002`;
 
 class FakeOpenConnector
 	implements
@@ -1160,7 +1160,7 @@ describe("open channels", () => {
 	});
 
 	it("reports installed, updated and removed registrations after the first load", async () => {
-		const SECOND = `at://${COMMUNITY}/space/social.colibri.beta.channel.text/3lkchannel003`;
+		const SECOND = `at:space/${COMMUNITY}/social.colibri.beta.channel.text/3lkchannel003`;
 		const other = "3lkbridgebbbb";
 
 		expect(open.changes).toEqual([]);
