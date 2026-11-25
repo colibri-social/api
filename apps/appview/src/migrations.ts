@@ -1,5 +1,4 @@
 import {
-	CommunityCredentialError,
 	isMigrationStep,
 	MIGRATION_STEPS,
 	type MigrationProgress,
@@ -213,16 +212,10 @@ export class MigrationJobs {
 	}
 
 	private async resolveTarget(community: string): Promise<string> {
-		const target = await this.ctx.credentials
-			.connect(community)
-			.then(() => community)
-			.catch(async (error: unknown) => {
-				if (!(error instanceof CommunityCredentialError)) throw error;
-				this.ctx.log.info({ community, reason: error.message }, "migration.provisioningNewAccount");
-				return (await this.ctx.provisioner.createBareAccount()).did;
-			});
-		await this.record(community, { target });
-		return target;
+		await this.ctx.credentials.connect(community);
+		await this.record(community, { target: community });
+
+		return community;
 	}
 
 	private async finalize(community: string): Promise<void> {
