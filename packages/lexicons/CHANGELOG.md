@@ -1,5 +1,11 @@
 # @colibri-social/lexicons
 
+## 2.45.0
+
+### Minor Changes
+
+- dbd18da: Move to the `0.0.0-spaces-alpha-20261124235736` atproto packages, which address spaces as `at:space/{did}/{type}/{skey}`, drop the `legacySpaceUris` feature and `LEGACY_SPACE_URIS`, rewrite stored `at://{did}/space/...` URIs to the new form, and keep indexing records that still embed the old form
+
 ## 2.44.0
 
 ### Minor Changes

@@ -1,5 +1,13 @@
 # @colibri-social/space-sync
 
+## 0.10.1
+
+### Patch Changes
+
+- dbd18da: Move to the `0.0.0-spaces-alpha-20261124235736` atproto packages, which address spaces as `at:space/{did}/{type}/{skey}`, drop the `legacySpaceUris` feature and `LEGACY_SPACE_URIS`, rewrite stored `at://{did}/space/...` URIs to the new form, and keep indexing records that still embed the old form
+- Updated dependencies [dbd18da]
+  - @colibri-social/space@0.12.1
+
 ## 0.10.0
 
 ### Minor Changes
