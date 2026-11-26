@@ -80,7 +80,8 @@ const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<Main
 		log: ctx.log,
 	});
 
-	await ctx.sync.start();
+	void ctx.sync.start().catch((error: unknown) => ctx.log.warn({ err: error }, "sync.startFailed"));
+
 	await jetstream.start();
 	activities.start();
 	handOvers.start();

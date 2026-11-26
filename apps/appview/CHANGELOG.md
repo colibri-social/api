@@ -1,5 +1,13 @@
 # @colibri-social/appview
 
+## 2.46.1
+
+### Patch Changes
+
+- 9c7454c: Store plain message notifications only for members with a push device, and prune them after 7 days. Editing a message no longer re-notifies the plain message audience.
+- Updated dependencies [9c7454c]
+  - @colibri-social/notifications@1.12.12
+
 ## 2.46.0
 
 ### Minor Changes
