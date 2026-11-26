@@ -36,6 +36,10 @@
 				{
 					"name": "NotManagingApp",
 					"description": "The calling AppView doesn't manage the community the call is about."
+				},
+				{
+					"name": "FederationDisabled",
+					"description": "The receiving AppView doesn't federate with other AppViews."
 				}
 			]
 		}

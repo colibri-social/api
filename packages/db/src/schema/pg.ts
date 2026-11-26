@@ -630,6 +630,8 @@ export const notifications = pgTable(
 		messageAuthor: text("message_author").notNull(),
 		messageRkey: text("message_rkey").notNull(),
 		mentionRole: text("mention_role"),
+		originAppview: text("origin_appview"),
+		view: json<Record<string, unknown>>("view"),
 		indexedAt: timestamp("indexed_at").notNull(),
 		seenAt: timestamp("seen_at"),
 	},
@@ -845,6 +847,26 @@ export const profileCache = pgTable("profile_cache", {
 export const linkPreviews = pgTable("link_previews", {
 	url: text("url").primaryKey(),
 	embed: json<Record<string, unknown>>("embed").notNull(),
+	fetchedAt: timestamp("fetched_at").notNull(),
+});
+
+export const federationPeers = pgTable("federation_peers", {
+	did: text("did").primaryKey(),
+	blocked: flag("blocked").notNull().default(false),
+	note: text("note"),
+	updatedAt: timestamp("updated_at").notNull(),
+});
+
+export const actorAppviews = pgTable("actor_appviews", {
+	did: text("did").primaryKey(),
+	appviews: json<string[]>("appviews").notNull(),
+	fetchedAt: timestamp("fetched_at").notNull(),
+});
+
+export const spaceHosts = pgTable("space_hosts", {
+	authority: text("authority").primaryKey(),
+	managingApp: text("managing_app"),
+	endpoint: text("endpoint"),
 	fetchedAt: timestamp("fetched_at").notNull(),
 });
 

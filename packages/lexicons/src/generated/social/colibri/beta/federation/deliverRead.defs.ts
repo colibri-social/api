@@ -25,7 +25,7 @@ export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
 /** Tells one of the AppViews a user declared that the user read a channel or thread up to a message, so it clears the matching notifications on every device. */
-const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","NotDeclared","NotManagingApp"]);
+const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","NotDeclared","NotManagingApp","FederationDisabled"]);
 
 export { main };
 

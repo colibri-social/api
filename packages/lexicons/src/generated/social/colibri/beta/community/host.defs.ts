@@ -10,7 +10,7 @@ type $nsid = typeof $nsid;
 
 export { $nsid };
 
-/** Names the AppView that manages a community. Lives in the community account's public repository, so any AppView can find where to send requests about the community without being a member. The managing AppView writes it. */
+/** Names the AppView that manages a community. Lives in the community account's public repository, so any AppView can find where to send requests about the community without being a member. Written by the managing AppView. */
 type Main = { $type: "social.colibri.beta.community.host";
 
   /**
@@ -25,7 +25,7 @@ type Main = { $type: "social.colibri.beta.community.host";
 
 export type { Main };
 
-/** Names the AppView that manages a community. Lives in the community account's public repository, so any AppView can find where to send requests about the community without being a member. The managing AppView writes it. */
+/** Names the AppView that manages a community. Lives in the community account's public repository, so any AppView can find where to send requests about the community without being a member. Written by the managing AppView. */
 const main = /*#__PURE__*/ l.record<"literal:self", Main>("literal:self", $nsid, /*#__PURE__*/ l.object({"managingApp":/*#__PURE__*/ l.string({"format":"did"}),"updatedAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
 
 export { main };
