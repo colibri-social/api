@@ -1,5 +1,11 @@
 # @colibri-social/appview
 
+## 2.46.2
+
+### Patch Changes
+
+- 8acd0dc: Start Jetstream, the notification pruner and the other main-node jobs without waiting for the startup Space sync sweep to finish.
+
 ## 2.46.1
 
 ### Patch Changes

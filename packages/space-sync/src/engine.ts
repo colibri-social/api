@@ -36,6 +36,36 @@ const lacksKemKey = (error: unknown): boolean => {
 export const signalsSpacesUnsupported = (error: unknown): boolean =>
 	hostLacksSpaces(error) || lacksKemKey(error);
 
+const causeCode = (error: Error): unknown => {
+	const cause = error.cause;
+
+	if (typeof cause !== "object" || cause === null) {
+		return undefined;
+	}
+
+	return (cause as { code?: unknown }).code;
+};
+
+export const hostIncompatibility = (error: unknown): string | null => {
+	if (error instanceof XrpcError) {
+		if (error.status === 400 && error.message.includes("invalid space URI")) {
+			return "invalidSpaceUri";
+		}
+
+		if (error.status === 401 && error.message.includes("bad space ref")) {
+			return "badSpaceRef";
+		}
+
+		return null;
+	}
+
+	if (error instanceof Error && causeCode(error) === "ENOTFOUND") {
+		return "hostNotFound";
+	}
+
+	return null;
+};
+
 export type NotifyWriteHint = {
 	rev?: string;
 	spaceRev?: string;
@@ -83,11 +113,13 @@ const REGISTRATION_RETRY_BASE_MS = 5_000;
 const REGISTRATION_RETRY_MAX_MS = 60_000;
 const DEFAULT_RENEW_MARGIN_MS = 120_000;
 const DEFAULT_CHASE_ATTEMPTS = 3;
+const HOST_PARK_FAILURES = 3;
 
 const tracer = trace.getTracer("colibri-space-sync");
 
-const backoffFor = (failures: number, maxMs: number) =>
-	Math.min(maxMs, 2 ** Math.min(failures, 10) * 1000);
+const backoffFor = (failures: number, maxMs: number) => {
+	return Math.min(maxMs, 2 ** Math.min(failures, 30) * 1000);
+};
 
 const laterRev = (a: string | null, b: string | null): string | null => {
 	if (!a) return b;
@@ -129,11 +161,14 @@ export class SpaceSyncEngine {
 	private readonly spaceRevs = new Map<string, string>();
 	private readonly catchingUp = new Set<string>();
 	private readonly registrations = new Map<string, RegistrationState>();
+	private readonly parkedHosts = new Set<string>();
 	private readonly now: () => Date;
 	private sweepTimer: NodeJS.Timeout | null = null;
 	private registrationTimer: NodeJS.Timeout | null = null;
 	private started = false;
 	private sweeping = false;
+	private renewing = false;
+	private paused = false;
 
 	constructor(private readonly options: SyncEngineOptions) {
 		this.now = options.now ?? (() => new Date());
@@ -185,8 +220,14 @@ export class SpaceSyncEngine {
 	async start(): Promise<void> {
 		if (this.started) return;
 		this.started = true;
+		this.paused = false;
+		this.queue.resume();
+		await this.loadParkedHosts();
 		await this.loadRegistrations();
 		await this.sweep();
+
+		if (this.paused) return;
+
 		const interval = this.options.sweepIntervalMs ?? 300_000;
 		this.sweepTimer = setInterval(() => void this.sweep(), interval);
 		this.sweepTimer.unref?.();
@@ -197,14 +238,33 @@ export class SpaceSyncEngine {
 		this.registrationTimer.unref?.();
 	}
 
-	async stop(): Promise<void> {
+	pause(): void {
 		this.started = false;
+		this.paused = true;
 		if (this.sweepTimer) clearInterval(this.sweepTimer);
 		this.sweepTimer = null;
 		if (this.registrationTimer) clearInterval(this.registrationTimer);
 		this.registrationTimer = null;
 		this.queue.stop();
+	}
+
+	async stop(): Promise<void> {
+		this.pause();
 		if (this.ownsVerifier) await this.verifier.close();
+	}
+
+	async hostNotified(author: string): Promise<void> {
+		if (this.parkedHosts.size === 0) return;
+
+		const host = await this.hostOf(author);
+
+		if (host === null || !this.parkedHosts.has(host)) return;
+
+		this.parkedHosts.delete(host);
+		await this.options.store
+			.unparkHost?.(host)
+			.catch((error: unknown) => this.log("unparkHost.failed", { host, error }));
+		this.log("host.unparked", { host, reason: "notified" });
 	}
 
 	notifyWrite(space: string, author: string, hint: NotifyWriteHint = {}): void {
@@ -331,8 +391,10 @@ export class SpaceSyncEngine {
 		}
 		this.sweeping = true;
 		try {
+			await this.loadParkedHosts();
 			const spaces = await this.options.store.listSpaces();
 			for (const space of spaces) {
+				if (this.paused) break;
 				if (this.registrations.get(space.uri)?.dormant) continue;
 				if (!(await this.sweepEligible(space.uri))) {
 					this.log("sweep.idle", { space: space.uri }, "debug");
@@ -467,6 +529,53 @@ export class SpaceSyncEngine {
 		this.appliedRevs.delete(key);
 	}
 
+	private async loadParkedHosts(): Promise<void> {
+		if (!this.options.store.listParkedHosts) return;
+
+		const hosts = await this.options.store.listParkedHosts().catch((error: unknown) => {
+			this.log("listParkedHosts.failed", { error });
+
+			return null;
+		});
+
+		if (hosts === null) return;
+
+		this.parkedHosts.clear();
+		for (const host of hosts) this.parkedHosts.add(host);
+	}
+
+	private async hostOf(author: string): Promise<string | null> {
+		return this.options.hosts.hostFor(author).catch(() => null);
+	}
+
+	private async onParkedHost(author: string): Promise<boolean> {
+		if (this.parkedHosts.size === 0) return false;
+
+		const host = await this.hostOf(author);
+
+		return host !== null && this.parkedHosts.has(host);
+	}
+
+	private async parkHost(
+		space: string,
+		author: string,
+		reason: string,
+		error: unknown,
+	): Promise<void> {
+		const host = await this.hostOf(author);
+
+		if (host === null || this.parkedHosts.has(host)) return;
+
+		this.parkedHosts.add(host);
+
+		const lastError = error instanceof Error ? error.message : String(error);
+
+		await this.options.store
+			.parkHost?.(host, reason, lastError)
+			.catch((cause: unknown) => this.log("parkHost.failed", { host, error: cause }));
+		this.log("host.parked", { host, reason, space, author, error });
+	}
+
 	private async loadRegistrations(): Promise<void> {
 		if (!this.options.store.listRegistrations) return;
 		const rows = await this.options.store.listRegistrations().catch((error: unknown) => {
@@ -527,12 +636,21 @@ export class SpaceSyncEngine {
 	}
 
 	private async renewRegistrations(): Promise<void> {
-		const now = this.now();
-		for (const [space, state] of this.registrations) {
-			if (!this.registrationDue(state, now)) continue;
-			await this.register(space, state).catch((error: unknown) =>
-				this.log("registration.renewFailed", { space, error }),
-			);
+		if (this.renewing) return;
+
+		this.renewing = true;
+
+		try {
+			const now = this.now();
+			for (const [space, state] of this.registrations) {
+				if (this.paused) break;
+				if (!this.registrationDue(state, now)) continue;
+				await this.register(space, state).catch((error: unknown) =>
+					this.log("registration.renewFailed", { space, error }),
+				);
+			}
+		} finally {
+			this.renewing = false;
 		}
 	}
 
@@ -669,6 +787,12 @@ export class SpaceSyncEngine {
 			return;
 		}
 
+		if (await this.onParkedHost(author)) {
+			this.targets.delete(key);
+			this.log("repo.hostParkedSkipped", { space, author }, "debug");
+			return;
+		}
+
 		try {
 			const outcome = await this.repos.sync(space, author);
 			const committedAt = Date.now();
@@ -763,10 +887,16 @@ export class SpaceSyncEngine {
 			),
 		});
 		const unsupported = signalsSpacesUnsupported(error);
+		const incompatibility = hostIncompatibility(error);
+		const quiet = unsupported || incompatibility !== null;
 
-		this.log("repo.syncFailed", { space, author, failures, error }, unsupported ? "debug" : "warn");
+		this.log("repo.syncFailed", { space, author, failures, error }, quiet ? "debug" : "warn");
 
 		if (unsupported) this.reportUnsupported(space, author);
+
+		if (incompatibility !== null && failures >= HOST_PARK_FAILURES) {
+			await this.parkHost(space, author, incompatibility, error);
+		}
 	}
 
 	private reportUnsupported(space: string, author: string): void {

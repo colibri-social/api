@@ -1,7 +1,7 @@
 {
 	"version": "6",
 	"dialect": "sqlite",
-	"id": "24dbd0bb-a38b-4782-9c7a-c869fa106936",
+	"id": "b8542e28-c5dc-4570-a105-1c88b1e82f6c",
 	"prevId": "80920d06-0cf4-4398-8d2a-b3b239e27c3b",
 	"tables": {
 		"actor_activity": {
@@ -99,37 +99,6 @@
 					"name": "actor_activity_did_source_pk"
 				}
 			},
-			"uniqueConstraints": {},
-			"checkConstraints": {}
-		},
-		"actor_appviews": {
-			"name": "actor_appviews",
-			"columns": {
-				"did": {
-					"name": "did",
-					"type": "text",
-					"primaryKey": true,
-					"notNull": true,
-					"autoincrement": false
-				},
-				"appviews": {
-					"name": "appviews",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": true,
-					"autoincrement": false
-				},
-				"fetched_at": {
-					"name": "fetched_at",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": true,
-					"autoincrement": false
-				}
-			},
-			"indexes": {},
-			"foreignKeys": {},
-			"compositePrimaryKeys": {},
 			"uniqueConstraints": {},
 			"checkConstraints": {}
 		},
@@ -1665,45 +1634,6 @@
 			"uniqueConstraints": {},
 			"checkConstraints": {}
 		},
-		"federation_peers": {
-			"name": "federation_peers",
-			"columns": {
-				"did": {
-					"name": "did",
-					"type": "text",
-					"primaryKey": true,
-					"notNull": true,
-					"autoincrement": false
-				},
-				"blocked": {
-					"name": "blocked",
-					"type": "integer",
-					"primaryKey": false,
-					"notNull": true,
-					"autoincrement": false,
-					"default": false
-				},
-				"note": {
-					"name": "note",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": false,
-					"autoincrement": false
-				},
-				"updated_at": {
-					"name": "updated_at",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": true,
-					"autoincrement": false
-				}
-			},
-			"indexes": {},
-			"foreignKeys": {},
-			"compositePrimaryKeys": {},
-			"uniqueConstraints": {},
-			"checkConstraints": {}
-		},
 		"host_authorizations": {
 			"name": "host_authorizations",
 			"columns": {
@@ -2858,20 +2788,6 @@
 					"notNull": false,
 					"autoincrement": false
 				},
-				"origin_appview": {
-					"name": "origin_appview",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": false,
-					"autoincrement": false
-				},
-				"view": {
-					"name": "view",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": false,
-					"autoincrement": false
-				},
 				"indexed_at": {
 					"name": "indexed_at",
 					"type": "text",
@@ -2931,6 +2847,44 @@
 					"type": "text",
 					"primaryKey": false,
 					"notNull": false,
+					"autoincrement": false
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"checkConstraints": {}
+		},
+		"parked_repo_hosts": {
+			"name": "parked_repo_hosts",
+			"columns": {
+				"host": {
+					"name": "host",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"reason": {
+					"name": "reason",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"last_error": {
+					"name": "last_error",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				},
+				"parked_at": {
+					"name": "parked_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
 					"autoincrement": false
 				}
 			},
@@ -3742,44 +3696,6 @@
 				},
 				"expires_at": {
 					"name": "expires_at",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": true,
-					"autoincrement": false
-				}
-			},
-			"indexes": {},
-			"foreignKeys": {},
-			"compositePrimaryKeys": {},
-			"uniqueConstraints": {},
-			"checkConstraints": {}
-		},
-		"space_hosts": {
-			"name": "space_hosts",
-			"columns": {
-				"authority": {
-					"name": "authority",
-					"type": "text",
-					"primaryKey": true,
-					"notNull": true,
-					"autoincrement": false
-				},
-				"managing_app": {
-					"name": "managing_app",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": false,
-					"autoincrement": false
-				},
-				"endpoint": {
-					"name": "endpoint",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": false,
-					"autoincrement": false
-				},
-				"fetched_at": {
-					"name": "fetched_at",
 					"type": "text",
 					"primaryKey": false,
 					"notNull": true,

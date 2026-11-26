@@ -89,6 +89,7 @@ export const registerProtocolRoutes = ({ server, ctx, auth }: RouteDeps): void =
 			await assertToken(space.uri, input.body.token);
 
 			if (update.$type === defs.repoWrite.$type && defs.repoWrite.isTypeOf(update)) {
+				await ctx.sync.hostNotified(update.repo);
 				ctx.sync.notifyWrite(space.uri, update.repo, {
 					rev: update.repoRev,
 					spaceRev: update.spaceRev,
