@@ -89,9 +89,14 @@ export type DeclaredStoreDeps = {
 
 export const createDeclaredStore = (deps: DeclaredStoreDeps): DeclaredAppviews => {
 	const { db, tables } = deps.database;
+	const memory = new Map<string, DeclaredEntry>();
 
 	return createDeclaredAppviews({
 		load: async (did) => {
+			const remembered = memory.get(did);
+
+			if (remembered) return remembered;
+
 			const [row] = await db
 				.select()
 				.from(tables.actorAppviews)
@@ -102,10 +107,13 @@ export const createDeclaredStore = (deps: DeclaredStoreDeps): DeclaredAppviews =
 		save: async (did, entry) => {
 			const row = { did, appviews: entry.appviews, fetchedAt: entry.fetchedAt.toISOString() };
 
+			memory.set(did, entry);
+
 			await db
 				.insert(tables.actorAppviews)
 				.values(row)
-				.onConflictDoUpdate({ target: tables.actorAppviews.did, set: row });
+				.onConflictDoUpdate({ target: tables.actorAppviews.did, set: row })
+				.catch(() => undefined);
 		},
 		fetch: async (did) => {
 			const { pds } = await deps.identity.resolveDid(did);

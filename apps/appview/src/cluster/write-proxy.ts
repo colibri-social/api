@@ -126,6 +126,14 @@ const declaredLength = (request: IncomingMessage): number | null => {
 };
 
 const readBody = async (request: IncomingMessage, limit: number): Promise<Buffer> => {
+	const buffered = (request as IncomingMessage & { rawBody?: Buffer }).rawBody;
+
+	if (buffered) {
+		if (buffered.length > limit) throw new Error("request body too large");
+
+		return buffered;
+	}
+
 	const declared = declaredLength(request);
 
 	if (declared !== null && declared > limit) {

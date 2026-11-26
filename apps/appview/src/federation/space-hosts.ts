@@ -3,7 +3,11 @@ import type { IdentityResolver } from "@colibri-social/identity";
 import { COLLECTIONS, SELF } from "@colibri-social/lexicons";
 import { type PdsClient, XrpcError } from "@colibri-social/space";
 import { eq } from "drizzle-orm";
-import { createSpaceHostResolver, type SpaceHostResolver } from "./resolve-host.js";
+import {
+	type CachedSpaceHost,
+	createSpaceHostResolver,
+	type SpaceHostResolver,
+} from "./resolve-host.js";
 
 export type SpaceHostsDeps = {
 	database: Database;
@@ -18,6 +22,7 @@ const APPVIEW_FRAGMENT = "colibri_appview";
 
 export const createSpaceHosts = (deps: SpaceHostsDeps): SpaceHostResolver => {
 	const { db, tables } = deps.database;
+	const memory = new Map<string, CachedSpaceHost>();
 
 	return createSpaceHostResolver({
 		self: deps.self,
@@ -30,6 +35,10 @@ export const createSpaceHosts = (deps: SpaceHostsDeps): SpaceHostResolver => {
 			return row ? row.managingApp : undefined;
 		},
 		load: async (authority) => {
+			const remembered = memory.get(authority);
+
+			if (remembered) return remembered;
+
 			const [row] = await db
 				.select()
 				.from(tables.spaceHosts)
@@ -40,10 +49,13 @@ export const createSpaceHosts = (deps: SpaceHostsDeps): SpaceHostResolver => {
 		save: async (entry) => {
 			const row = { ...entry, fetchedAt: entry.fetchedAt.toISOString() };
 
+			memory.set(entry.authority, entry);
+
 			await db
 				.insert(tables.spaceHosts)
 				.values(row)
-				.onConflictDoUpdate({ target: tables.spaceHosts.authority, set: row });
+				.onConflictDoUpdate({ target: tables.spaceHosts.authority, set: row })
+				.catch(() => undefined);
 		},
 		publishedManagingApp: async (authority) => {
 			const { pds } = await deps.identity.resolveDid(authority);

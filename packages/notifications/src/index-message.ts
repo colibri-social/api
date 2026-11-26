@@ -394,6 +394,8 @@ export const indexMessage = async (
 		messageAuthor: message.author,
 		messageRkey: message.rkey,
 		mentionRole: recipient.mentionRole,
+		originAppview: null,
+		view: null,
 		indexedAt: now,
 		seenAt: null,
 	}));

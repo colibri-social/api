@@ -1,10 +1,13 @@
 import { createServer, type Server } from "@atproto/xrpc-server";
+import { mintServiceAuth } from "@colibri-social/identity";
 import type { Request, Response } from "express";
 import { authVerifiers } from "./auth.js";
 import { isWrite } from "./cluster/write-proxy.js";
 import type { AppContext } from "./context.js";
 import { corsMiddleware, nodeHeaderMiddleware } from "./cors.js";
 import { didDocumentForHost } from "./did-web.js";
+import { createForwarder } from "./federation/forward.js";
+import { createFederationRouter } from "./federation/router.js";
 import { record, xrpcMethod } from "./metrics.js";
 import { registerPolyfillRoutes } from "./polyfill/routes.js";
 import { logRejectedUploads } from "./polyfill/upload-log.js";
@@ -86,6 +89,23 @@ export const createAppServer = (
 	app.use(logRejectedUploads(ctx.log, ctx.config.NODE_ID ?? null));
 	app.use(nodeHeaderMiddleware(ctx.config.NODE_ID, ctx.config.NODE_REGION));
 	app.use(corsMiddleware(ctx.config.corsOrigins));
+	app.use(
+		createFederationRouter({
+			enabled: ctx.config.FEDERATION_ENABLED,
+			hosts: ctx.spaceHosts,
+			forward: createForwarder({
+				mint: (audience, lxm) =>
+					mintServiceAuth({
+						issuer: ctx.config.APPVIEW_DID,
+						audience,
+						lxm,
+						keypair: ctx.keypair,
+					}),
+			}),
+			verifyUser: async (token, lxm) => (await ctx.serviceAuth.verify(token, lxm)).did,
+			log: ctx.log,
+		}),
+	);
 	app.use((req: Request, res: Response, next: (error?: unknown) => void) => {
 		const proxy = ctx.writeProxy;
 
