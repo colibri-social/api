@@ -280,6 +280,25 @@ describe("signingKeyFor", () => {
 		await expect(resolver(store([]).store).kemKeyFor(did)).resolves.toBe(kem);
 	});
 
+	it("finds a service endpoint by its fragment, in either id form", async () => {
+		const did = await serveDocument((id) => ({
+			id,
+			service: [
+				{ id: "#colibri_appview", type: "ColibriAppView", serviceEndpoint: "https://a.example" },
+				{ id: `${id}#colibri_notifs`, type: "Notifs", serviceEndpoint: "https://b.example" },
+			],
+		}));
+		const resolve = resolver(store([]).store);
+
+		await expect(resolve.serviceEndpointFor(did, "colibri_appview")).resolves.toBe(
+			"https://a.example",
+		);
+		await expect(resolve.serviceEndpointFor(did, "colibri_notifs")).resolves.toBe(
+			"https://b.example",
+		);
+		await expect(resolve.serviceEndpointFor(did, "atproto_pds")).resolves.toBeUndefined();
+	});
+
 	it("reports an account without a published KEM key", async () => {
 		const did = await serveDocument((id) => ({
 			id,

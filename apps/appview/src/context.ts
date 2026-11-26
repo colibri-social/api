@@ -52,6 +52,7 @@ import type { WriteProxy } from "./cluster/write-proxy.js";
 import type { Config } from "./config.js";
 import { buildDidDocuments, serviceAuthAudience } from "./did-web.js";
 import { createDrainState } from "./drain.js";
+import { createSpaceHosts } from "./federation/space-hosts.js";
 import { HostOAuth } from "./host-oauth.js";
 import {
 	createLinkEmbedResolver,
@@ -360,6 +361,13 @@ export const createContext = async (config: Config) => {
 		return host.pds.getDelegationToken(host.session, space);
 	}
 
+	const spaceHosts = createSpaceHosts({
+		database,
+		identity,
+		clientFor: (endpoint) => credentials.clientFor(endpoint),
+		self: config.appviewDids,
+	});
+
 	const nodeId = config.NODE_ID ?? `local-${randomUUID()}`;
 
 	return {
@@ -383,6 +391,7 @@ export const createContext = async (config: Config) => {
 		pds,
 		admin,
 		credentials,
+		spaceHosts,
 		hostOAuth,
 		hosts,
 		spaceCredentials,

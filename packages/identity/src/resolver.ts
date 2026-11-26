@@ -197,6 +197,21 @@ export class IdentityResolver {
 		return key;
 	};
 
+	serviceEndpointFor = async (
+		did: string,
+		fragment: string,
+		forceRefresh = false,
+	): Promise<string | undefined> => {
+		const document = await this.resolver.did.resolve(did, forceRefresh).catch((cause) => {
+			throw new IdentityResolutionError(did, `could not resolve ${did}`, { cause });
+		});
+		const service = document?.service?.find(
+			(entry) => entry.id === `#${fragment}` || entry.id === `${did}#${fragment}`,
+		);
+
+		return typeof service?.serviceEndpoint === "string" ? service.serviceEndpoint : undefined;
+	};
+
 	private async atprotoDocument(did: string, forceRefresh: boolean) {
 		const document = await this.resolver.did.resolve(did, forceRefresh).catch(async (cause) => {
 			throw await this.resolutionFailure(did, cause);
