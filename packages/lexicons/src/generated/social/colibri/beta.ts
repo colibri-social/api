@@ -11,6 +11,7 @@ export * as community from "./beta/community.js";
 export * as defs from "./beta/defs.js";
 export * as embed from "./beta/embed.js";
 export * as emoji from "./beta/emoji.js";
+export * as federation from "./beta/federation.js";
 export * as label from "./beta/label.js";
 export * as member from "./beta/member.js";
 export * as message from "./beta/message.js";

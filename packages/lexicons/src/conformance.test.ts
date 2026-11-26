@@ -31,6 +31,8 @@ const byId = new Map(docs.map(({ doc }) => [doc.id, doc]));
 
 const METHOD_TYPES = new Set(["query", "procedure", "subscription"]);
 
+const APPVIEW_ONLY_PREFIX = "social.colibri.beta.federation.";
+
 const METHODS_WITHOUT_ERRORS = new Set(["social.colibri.beta.server.describeServer"]);
 
 const walkNodes = function* (
@@ -299,7 +301,9 @@ describe("permission sets", () => {
 					.flatMap((p) => p.lxm ?? []),
 			),
 		);
-		const ungoverned = [...methodIds].filter((id) => !granted.has(id)).sort();
+		const ungoverned = [...methodIds]
+			.filter((id) => !granted.has(id) && !id.startsWith(APPVIEW_ONLY_PREFIX))
+			.sort();
 		expect(ungoverned).toEqual([]);
 	});
 });

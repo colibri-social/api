@@ -20,6 +20,7 @@ export * as getHostAuthorization from "./community/getHostAuthorization.js";
 export * as getHosting from "./community/getHosting.js";
 export * as getInvitation from "./community/getInvitation.js";
 export * as handOverHost from "./community/handOverHost.js";
+export * as host from "./community/host.js";
 export * as join from "./community/join.js";
 export * as kick from "./community/kick.js";
 export * as leave from "./community/leave.js";
