@@ -1,10 +1,13 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { type BridgeStore, MemoryBridgeStore, SqliteBridgeStore } from "./store.js";
 
 const directories: string[] = [];
+const CHANNEL = "at:space/did:plc:community/social.colibri.beta.channel.text/general";
+const LEGACY_CHANNEL = "at://did:plc:community/space/social.colibri.beta.channel.text/general";
 
 const sqlite = (): BridgeStore => {
 	const directory = mkdtempSync(join(tmpdir(), "bridge-store-"));
@@ -38,6 +41,28 @@ describe.each([
 
 		await store.remove(mapping);
 		expect(await store.byRemote({ ...mapping })).toBeNull();
+		await store.close();
+	});
+
+	it("finds a mapping stored under a legacy space URI by its canonical key", async () => {
+		const store = create();
+
+		await store.put({
+			registration: "community registration",
+			channel: LEGACY_CHANNEL,
+			kind: "message",
+			remoteId: "remote-1",
+			rkey: `${LEGACY_CHANNEL} did:plc:x 3lkmsg`,
+			origin: "colibri",
+		});
+
+		expect(
+			await store.byColibri({
+				registration: "community registration",
+				kind: "message",
+				rkey: `${CHANNEL} did:plc:x 3lkmsg`,
+			}),
+		).toMatchObject({ channel: CHANNEL, rkey: `${CHANNEL} did:plc:x 3lkmsg` });
 		await store.close();
 	});
 
@@ -133,6 +158,80 @@ describe.each([
 		expect(await store.addReactor("community gone remote-1 👍", "bob")).toBe(1);
 		expect(await store.avatar("community kept", "alice")).not.toBeNull();
 		expect(await store.addReactor("community kept remote-1 👍", "bob")).toBe(2);
+		await store.close();
+	});
+});
+
+describe("sqlite store opened on legacy space URIs", () => {
+	const legacyDatabase = (): string => {
+		const directory = mkdtempSync(join(tmpdir(), "bridge-store-"));
+		const path = join(directory, "bridge.sqlite");
+
+		directories.push(directory);
+		new SqliteBridgeStore(path).close();
+
+		const db = new DatabaseSync(path);
+		const insert = db.prepare(
+			"INSERT INTO mappings (registration, channel, kind, remote_id, rkey, origin) VALUES (?, ?, ?, ?, ?, ?)",
+		);
+
+		insert.run(
+			"community registration",
+			LEGACY_CHANNEL,
+			"message",
+			"remote-original",
+			`${LEGACY_CHANNEL} did:plc:x 3lkmsg`,
+			"colibri",
+		);
+		insert.run(
+			"community registration",
+			CHANNEL,
+			"message",
+			"remote-repost",
+			`${CHANNEL} did:plc:x 3lkmsg`,
+			"colibri",
+		);
+		insert.run(
+			"community registration",
+			LEGACY_CHANNEL,
+			"thread",
+			"remote-thread",
+			"at://did:plc:community/space/social.colibri.beta.channel.thread/3lkthread",
+			"colibri",
+		);
+		db.prepare("INSERT INTO backfills (key, progress) VALUES (?, ?)").run(
+			`community registration ${LEGACY_CHANNEL} 2026-09-24`,
+			JSON.stringify({ state: "done", from: "a", until: "b", threadsDone: [], imported: 3 }),
+		);
+		db.close();
+
+		return path;
+	};
+
+	it("rewrites stored keys to the canonical format and keeps the original copy", async () => {
+		const store = new SqliteBridgeStore(legacyDatabase());
+		const registration = "community registration";
+
+		expect(
+			await store.byColibri({
+				registration,
+				kind: "message",
+				rkey: `${CHANNEL} did:plc:x 3lkmsg`,
+			}),
+		).toMatchObject({ remoteId: "remote-original", channel: CHANNEL });
+		expect(
+			await store.byRemote({ registration, kind: "message", remoteId: "remote-repost" }),
+		).toBeNull();
+		expect(await store.list({ registration, kind: "thread" })).toEqual([
+			expect.objectContaining({
+				channel: CHANNEL,
+				rkey: "at:space/did:plc:community/social.colibri.beta.channel.thread/3lkthread",
+			}),
+		]);
+		expect(await store.backfill(`${registration} ${CHANNEL} 2026-09-24`)).toMatchObject({
+			state: "done",
+			imported: 3,
+		});
 		await store.close();
 	});
 });

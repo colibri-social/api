@@ -22,6 +22,7 @@ export type RecordWrite = {
 	value: Record<string, unknown>;
 	rev?: string;
 	replayed?: boolean;
+	recovered?: boolean;
 };
 
 export type StoredRecord = {

@@ -25,6 +25,7 @@ import {
 import {
 	type SpaceRecordPointer,
 	sameSpaceRecordPointer,
+	tidTime,
 	trySpaceRecordUri,
 } from "@colibri-social/space";
 import type { RepoChange } from "@colibri-social/space-sync";
@@ -61,6 +62,7 @@ import type { ServerFrame } from "./ws/events.js";
 type ServableNotification = { row: IndexedNotificationRow; routing: PushRouting };
 
 const SLOW_DELIVERY_MS = 2_000;
+const RECOVERED_LIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 type Deps = {
 	ctx: AppContext;
@@ -85,6 +87,12 @@ const messagePointerOf = (space: string, uri: unknown, ref: unknown): SpaceRecor
 			? { did: fallback.did, rkey: fallback.rkey }
 			: undefined,
 	);
+};
+
+const recoveredLongAgo = (now: string, rkey: string): boolean => {
+	const keyTime = tidTime(rkey);
+
+	return keyTime !== null && Date.parse(now) - keyTime > RECOVERED_LIVE_WINDOW_MS;
 };
 
 const announcedByBridgeRoute = (
@@ -611,12 +619,14 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 				if (refusal) continue;
 				const imported =
 					(put.value.bridged as { imported?: unknown } | undefined)?.imported === true;
+				const backdated =
+					put.recovered === true && recoveredLongAgo(ctx.projections.now(), put.rkey);
 				const published = await publishMessage(change.space, change.author, put.rkey, {
 					imported,
-					announced: announcedByBridgeRoute(change, put.value),
+					announced: backdated || announcedByBridgeRoute(change, put.value),
 				});
 				publishedMessages += 1;
-				if (imported) continue;
+				if (imported || backdated) continue;
 				const wasEdited = published ? Boolean(published.updatedAt) : Boolean(put.value.updatedAt);
 				if (isThreadSpace(space)) {
 					if (!wasEdited) {

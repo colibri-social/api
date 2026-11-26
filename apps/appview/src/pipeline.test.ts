@@ -2,7 +2,7 @@ import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db"
 import { CommunityLoader } from "@colibri-social/community";
 import { createTtlCache, type LinkEmbed } from "@colibri-social/embeds";
 import { COLLECTIONS, channelSpace, SPACE_TYPES, threadSpace } from "@colibri-social/lexicons";
-import { nextTid } from "@colibri-social/space";
+import { firstTidAt, nextTid } from "@colibri-social/space";
 import type { RepoChange } from "@colibri-social/space-sync";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -632,6 +632,42 @@ describe("connectPipeline", () => {
 		const notification = entry?.frame.notification as { message: { rkey: string } } | undefined;
 		expect(notification?.message.rkey).toBe(accepted);
 		expect(pushed.notified).toEqual([mentioned]);
+	});
+
+	it("projects a month-old message a recovery found without streaming or notifying it", async () => {
+		const mentioned = "did:plc:mentionedmentionedment";
+		await database.db.insert(database.tables.members).values([
+			{ community: COMMUNITY, did: AUTHOR, roles: [], joinedAt: NOW },
+			{ community: COMMUNITY, did: mentioned, roles: [], joinedAt: NOW },
+		]);
+		const old = firstTidAt(Date.now() - 30 * 24 * 60 * 60 * 1000);
+		const recovered = messageChange(old);
+		const recoveredPut = recovered.puts[0] as {
+			value: Record<string, unknown>;
+			recovered?: boolean;
+		};
+		recoveredPut.value.facets = [mentionFacet(mentioned)];
+		recoveredPut.recovered = true;
+		const fresh = nextTid();
+		const freshRecovered = messageChange(fresh);
+		(freshRecovered.puts[0] as { recovered?: boolean }).recovered = true;
+		await putMessageRow(old, "hello");
+		await putMessageRow(fresh, "hello");
+
+		emit(recovered);
+		emit(freshRecovered);
+		await vi.waitFor(() => expect(framesOfType("messageEvent")).toHaveLength(1));
+		await new Promise((resolve) => setTimeout(resolve, 50));
+
+		const [entry] = framesOfType("messageEvent");
+		expect(entry?.frame.message).toMatchObject({ rkey: fresh });
+		const notified = framesOfType("notificationEvent").map(
+			(notification) =>
+				(notification.frame.notification as { message: { rkey: string } }).message.rkey,
+		);
+		expect(notified).not.toContain(old);
+		const stored = (await notificationsFor(mentioned)).map((row) => row.messageRkey);
+		expect(stored).not.toContain(old);
 	});
 
 	it("never notifies a mention that only appears inside a forwarded snapshot", async () => {

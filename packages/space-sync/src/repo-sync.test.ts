@@ -465,10 +465,10 @@ describe("failures", () => {
 
 		expect(outcome.kind).toBe("recovered");
 		const puts = outcome.kind === "recovered" ? outcome.change.puts : [];
-		expect(puts.map((put) => [put.rkey, put.replayed === true])).toEqual([
-			["3a", true],
-			["3b", false],
-			["3c", false],
+		expect(puts.map((put) => [put.rkey, put.replayed === true, put.recovered === true])).toEqual([
+			["3a", true, false],
+			["3b", false, true],
+			["3c", false, true],
 		]);
 	});
 

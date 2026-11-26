@@ -55,7 +55,7 @@ import {
 } from "./connector.js";
 import { EventStream, type EventStreamOptions, frameKind, type ServerFrame } from "./events.js";
 import { BoundedSet, ExpiringCache, outboundAttachments, outboundEmbeds } from "./open.js";
-import type { BackfillProgress, BridgeStore } from "./store.js";
+import { type BackfillProgress, type BridgeStore, canonicalSpaceRefs } from "./store.js";
 import {
 	colibriToMarkdown,
 	type Feature,
@@ -102,6 +102,8 @@ type Portal = LinkedRoom & {
 	backfill?: { since?: string; requestedAt: string };
 };
 
+type OutboundSource = "live" | "update" | "backlog";
+
 type BackfillJob = {
 	connector: HistoryConnector;
 	parent: Portal;
@@ -134,6 +136,7 @@ const OPEN_HISTORY_LIMIT = 50;
 const MAX_OPEN_HISTORY_LIMIT = 100;
 const OPEN_MESSAGE_WINDOW = 9;
 const FALLBACK_THREAD_NAME = "Thread";
+const LIVE_CREATE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const CHANNEL_FEATURE = "social.colibri.beta.richtext.facet#channel";
 const BRIDGED_MENTION_FEATURE = "social.colibri.beta.richtext.facet#bridgedMention";
 const TIME_FEATURE = "social.colibri.beta.richtext.facet#time";
@@ -357,12 +360,13 @@ export class Bridge {
 		for (const registration of this.registrations) {
 			if (!registration.enabled || !relaying) continue;
 			for (const link of registration.links) {
+				const channel = canonicalSpaceRefs(link.channel);
 				const portal: Portal = {
-					key: `${registrationKey(registration.community, registration.id)} ${link.channel}`,
+					key: `${registrationKey(registration.community, registration.id)} ${channel}`,
 					community: registration.community,
 					registration: registration.id,
-					channel: link.channel,
-					parentChannel: link.channel,
+					channel,
+					parentChannel: channel,
 					remoteRoom: link.remoteRoom,
 					remoteName: link.remoteName,
 					remoteSpace: registration.remoteSpace,
@@ -378,7 +382,7 @@ export class Bridge {
 							}
 						: {}),
 				};
-				byChannel.set(link.channel, [...(byChannel.get(link.channel) ?? []), portal]);
+				byChannel.set(channel, [...(byChannel.get(channel) ?? []), portal]);
 				const remote = remoteLocationKey(registration.remoteSpace, link.remoteRoom);
 				byRemote.set(remote, [...(byRemote.get(remote) ?? []), portal]);
 			}
@@ -1205,7 +1209,9 @@ export class Bridge {
 	}
 
 	private portalsFor(space: string): Portal[] {
-		return this.byChannel.get(space) ?? this.threads.get(space) ?? [];
+		const canonical = canonicalSpaceRefs(space);
+
+		return this.byChannel.get(canonical) ?? this.threads.get(canonical) ?? [];
 	}
 
 	private location(portal: Portal): RemoteLocation {
@@ -1315,7 +1321,11 @@ export class Bridge {
 						await this.outboundDelete(portal, subject);
 						return;
 					}
-					await this.outboundMessage(portal, frame.message as MessageView);
+					await this.outboundMessage(
+						portal,
+						frame.message as MessageView,
+						frame.event === "update" ? "update" : "live",
+					);
 				}),
 			);
 		}
@@ -2095,7 +2105,11 @@ export class Bridge {
 		return author.did === portal.community && author.bridgeRegistration === portal.registration;
 	}
 
-	private async outboundMessage(portal: Portal, message: MessageView): Promise<void> {
+	private async outboundMessage(
+		portal: Portal,
+		message: MessageView,
+		source: OutboundSource = "backlog",
+	): Promise<void> {
 		const connector = this.options.connector;
 
 		if (!canRelay(connector)) return;
@@ -2133,6 +2147,17 @@ export class Bridge {
 				markdown,
 				embeds,
 			});
+			return;
+		}
+
+		if (source === "update") return;
+
+		if (source === "live" && staleCreate(message.createdAt)) {
+			this.log.info(
+				{ channel: portal.channel, did: message.author.did, rkey: message.rkey },
+				"bridge.staleCreateSkipped",
+			);
+
 			return;
 		}
 
@@ -2343,6 +2368,12 @@ export class Bridge {
 		}
 	}
 }
+
+const staleCreate = (createdAt: string): boolean => {
+	const created = Date.parse(createdAt);
+
+	return Number.isFinite(created) && Date.now() - created > LIVE_CREATE_WINDOW_MS;
+};
 
 const colibriAuthor = (profile: MessageView["author"]) => {
 	return {

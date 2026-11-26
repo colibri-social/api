@@ -335,7 +335,7 @@ export class RepoSync {
 		const held = await this.deps.store.replace({ space, author, puts: verified.records }, cursor);
 		const unchanged = new Set(held.map(storedKey));
 		const puts = verified.records.map((put) =>
-			unchanged.has(storedKey(put)) ? { ...put, replayed: true } : put,
+			unchanged.has(storedKey(put)) ? { ...put, replayed: true } : { ...put, recovered: true },
 		);
 		return {
 			kind: "recovered",

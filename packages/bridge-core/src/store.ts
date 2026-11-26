@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { canonicalSpaceUri } from "@colibri-social/lexicons";
 import type { BlobRef } from "./client.js";
 
 export type MappingKind = "message" | "reaction" | "thread";
@@ -45,6 +46,20 @@ export interface BridgeStore {
 	close(): Promise<void>;
 }
 
+const LEGACY_SPACE_PATTERN = "%at://%/space/%";
+
+export const canonicalSpaceRefs = (value: string): string => {
+	return value.split(" ").map(canonicalSpaceUri).join(" ");
+};
+
+const canonicalMapping = (mapping: Mapping): Mapping => {
+	return {
+		...mapping,
+		channel: canonicalSpaceUri(mapping.channel),
+		rkey: canonicalSpaceRefs(mapping.rkey),
+	};
+};
+
 const mappingKey = (registration: string, kind: string, id: string) =>
 	`${registration} ${kind} ${id}`;
 
@@ -62,7 +77,9 @@ export class MemoryBridgeStore implements BridgeStore {
 	}
 
 	async byColibri(key: MappingKey & { rkey: string }): Promise<Mapping | null> {
-		return this.colibri.get(mappingKey(key.registration, key.kind, key.rkey)) ?? null;
+		const rkey = canonicalSpaceRefs(key.rkey);
+
+		return this.colibri.get(mappingKey(key.registration, key.kind, rkey)) ?? null;
 	}
 
 	async list(key: MappingKey): Promise<Mapping[]> {
@@ -72,14 +89,19 @@ export class MemoryBridgeStore implements BridgeStore {
 	}
 
 	async put(mapping: Mapping): Promise<void> {
-		this.remote.set(mappingKey(mapping.registration, mapping.kind, mapping.remoteId), mapping);
-		this.colibri.set(mappingKey(mapping.registration, mapping.kind, mapping.rkey), mapping);
+		const canonical = canonicalMapping(mapping);
+
+		this.remote.set(
+			mappingKey(canonical.registration, canonical.kind, canonical.remoteId),
+			canonical,
+		);
+		this.colibri.set(mappingKey(canonical.registration, canonical.kind, canonical.rkey), canonical);
 	}
 
 	async remove(key: MappingKey & { rkey: string }): Promise<void> {
 		const mapping = await this.byColibri(key);
 		if (!mapping) return;
-		this.colibri.delete(mappingKey(key.registration, key.kind, key.rkey));
+		this.colibri.delete(mappingKey(key.registration, key.kind, mapping.rkey));
 		this.remote.delete(mappingKey(key.registration, key.kind, mapping.remoteId));
 	}
 
@@ -111,12 +133,12 @@ export class MemoryBridgeStore implements BridgeStore {
 	}
 
 	async backfill(key: string): Promise<BackfillProgress | null> {
-		const progress = this.backfills.get(key);
+		const progress = this.backfills.get(canonicalSpaceRefs(key));
 		return progress ? structuredClone(progress) : null;
 	}
 
 	async putBackfill(key: string, progress: BackfillProgress): Promise<void> {
-		this.backfills.set(key, structuredClone(progress));
+		this.backfills.set(canonicalSpaceRefs(key), structuredClone(progress));
 	}
 
 	async registrations(): Promise<string[]> {
@@ -198,6 +220,57 @@ export class SqliteBridgeStore implements BridgeStore {
 				progress TEXT NOT NULL
 			);
 		`);
+		this.canonicalizeSpaceUris();
+	}
+
+	private canonicalizeSpaceUris(): void {
+		const mappings = this.db
+			.prepare("SELECT * FROM mappings WHERE rkey LIKE ? OR channel LIKE ?")
+			.all(LEGACY_SPACE_PATTERN, LEGACY_SPACE_PATTERN) as MappingRow[];
+		const backfills = this.db
+			.prepare("SELECT key, progress FROM backfills WHERE key LIKE ?")
+			.all(LEGACY_SPACE_PATTERN) as { key: string; progress: string }[];
+
+		if (mappings.length === 0 && backfills.length === 0) return;
+
+		const dropDuplicate = this.db.prepare(
+			"DELETE FROM mappings WHERE registration = ? AND kind = ? AND rkey = ? AND remote_id != ?",
+		);
+		const rewrite = this.db.prepare(
+			"UPDATE mappings SET channel = ?, rkey = ? WHERE registration = ? AND kind = ? AND remote_id = ?",
+		);
+		const keepBackfill = this.db.prepare(
+			"INSERT OR IGNORE INTO backfills (key, progress) VALUES (?, ?)",
+		);
+		const dropBackfill = this.db.prepare("DELETE FROM backfills WHERE key = ?");
+
+		this.db.exec("BEGIN");
+
+		try {
+			for (const row of mappings) {
+				const rkey = canonicalSpaceRefs(row.rkey);
+
+				dropDuplicate.run(row.registration, row.kind, rkey, row.remote_id);
+				rewrite.run(
+					canonicalSpaceUri(row.channel),
+					rkey,
+					row.registration,
+					row.kind,
+					row.remote_id,
+				);
+			}
+
+			for (const row of backfills) {
+				keepBackfill.run(canonicalSpaceRefs(row.key), row.progress);
+				dropBackfill.run(row.key);
+			}
+
+			this.db.exec("COMMIT");
+		} catch (error) {
+			this.db.exec("ROLLBACK");
+
+			throw error;
+		}
 	}
 
 	async byRemote(key: MappingKey & { remoteId: string }): Promise<Mapping | null> {
@@ -212,7 +285,7 @@ export class SqliteBridgeStore implements BridgeStore {
 		return toMapping(
 			this.db
 				.prepare("SELECT * FROM mappings WHERE registration = ? AND kind = ? AND rkey = ?")
-				.get(key.registration, key.kind, key.rkey) as MappingRow | undefined,
+				.get(key.registration, key.kind, canonicalSpaceRefs(key.rkey)) as MappingRow | undefined,
 		);
 	}
 
@@ -225,24 +298,26 @@ export class SqliteBridgeStore implements BridgeStore {
 	}
 
 	async put(mapping: Mapping): Promise<void> {
+		const canonical = canonicalMapping(mapping);
+
 		this.db
 			.prepare(
 				"INSERT OR REPLACE INTO mappings (registration, channel, kind, remote_id, rkey, origin) VALUES (?, ?, ?, ?, ?, ?)",
 			)
 			.run(
-				mapping.registration,
-				mapping.channel,
-				mapping.kind,
-				mapping.remoteId,
-				mapping.rkey,
-				mapping.origin,
+				canonical.registration,
+				canonical.channel,
+				canonical.kind,
+				canonical.remoteId,
+				canonical.rkey,
+				canonical.origin,
 			);
 	}
 
 	async remove(key: MappingKey & { rkey: string }): Promise<void> {
 		this.db
 			.prepare("DELETE FROM mappings WHERE registration = ? AND kind = ? AND rkey = ?")
-			.run(key.registration, key.kind, key.rkey);
+			.run(key.registration, key.kind, canonicalSpaceRefs(key.rkey));
 	}
 
 	async avatar(registration: string, remoteId: string): Promise<CachedAvatar | null> {
@@ -286,16 +361,16 @@ export class SqliteBridgeStore implements BridgeStore {
 	}
 
 	async backfill(key: string): Promise<BackfillProgress | null> {
-		const row = this.db.prepare("SELECT progress FROM backfills WHERE key = ?").get(key) as
-			| { progress: string }
-			| undefined;
+		const row = this.db
+			.prepare("SELECT progress FROM backfills WHERE key = ?")
+			.get(canonicalSpaceRefs(key)) as { progress: string } | undefined;
 		return row ? (JSON.parse(row.progress) as BackfillProgress) : null;
 	}
 
 	async putBackfill(key: string, progress: BackfillProgress): Promise<void> {
 		this.db
 			.prepare("INSERT OR REPLACE INTO backfills (key, progress) VALUES (?, ?)")
-			.run(key, JSON.stringify(progress));
+			.run(canonicalSpaceRefs(key), JSON.stringify(progress));
 	}
 
 	async registrations(): Promise<string[]> {

@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Bridge } from "./bridge.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Bridge, registrationKey } from "./bridge.js";
 import {
 	type ColibriClient,
 	ColibriRequestError,
@@ -202,6 +202,7 @@ let current: RegistrationView[];
 let store: MemoryBridgeStore;
 
 beforeEach(async () => {
+	vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-09-24T01:00:00.000Z") });
 	connector = new FakeConnector();
 	current = [registration()];
 	client = fakeClient(() => current);
@@ -224,6 +225,10 @@ beforeEach(async () => {
 		},
 	});
 	await bridge.start();
+});
+
+afterEach(() => {
+	vi.useRealTimers();
 });
 
 const inboundMessage = (id: string, markdown: string, extra: Record<string, unknown> = {}) =>
@@ -564,6 +569,46 @@ describe("from Colibri to the other service", () => {
 		await bridge.idle();
 
 		expect(connector.sent).toHaveLength(1);
+	});
+
+	it("does not send an edit of a message it never sent", async () => {
+		messageFrame(
+			"update",
+			messageView({ text: "changed", facets: [], updatedAt: "2026-09-24T00:01:00.000Z" }),
+		);
+		await bridge.idle();
+
+		expect(connector.sent).toEqual([]);
+	});
+
+	it("does not send a message from more than a day ago as new", async () => {
+		vi.setSystemTime(new Date("2026-10-30T00:00:00.000Z"));
+		messageFrame("create", messageView());
+		await bridge.idle();
+
+		expect(connector.sent).toEqual([]);
+	});
+
+	it("recognises what it sent under the legacy space URI format", async () => {
+		const legacyChannel = CHANNEL.replace(/^at:space\/([^/]+)\//, "at://$1/space/");
+
+		await store.put({
+			registration: registrationKey(COMMUNITY, REGISTRATION),
+			channel: legacyChannel,
+			kind: "message",
+			remoteId: "remote-original",
+			rkey: `${legacyChannel} ${MEMBER} 3lkmsg0000001`,
+			origin: "colibri",
+		});
+		messageFrame("create", messageView());
+		messageFrame(
+			"update",
+			messageView({ text: "changed", facets: [], updatedAt: "2026-09-24T00:01:00.000Z" }),
+		);
+		await bridge.idle();
+
+		expect(connector.sent).toEqual([]);
+		expect(connector.edits).toEqual([{ id: "remote-original", markdown: "changed" }]);
 	});
 
 	it("does not send a message another bridge imported from earlier history", async () => {
