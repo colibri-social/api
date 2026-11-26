@@ -1,5 +1,20 @@
 # @colibri-social/admin
 
+## 0.4.0
+
+### Minor Changes
+
+- 5cb9f7b: Add `colibri-admin network down` and `network up` to park and restart every node at once, and `colibri-admin db wipe` to empty the AppView data and the polyfill bucket while the network is down. The main node keeps the main role while parked and stops Jetstream and its background jobs.
+
+### Patch Changes
+
+- Updated dependencies [5cb9f7b]
+- Updated dependencies [06e34d7]
+  - @colibri-social/appview@2.46.0
+  - @colibri-social/appview-db@0.27.0
+  - @colibri-social/blobs@0.5.0
+  - @colibri-social/community@2.20.4
+
 ## 0.3.20
 
 ### Patch Changes

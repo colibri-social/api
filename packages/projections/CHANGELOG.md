@@ -1,5 +1,12 @@
 # @colibri-social/projections
 
+## 1.17.5
+
+### Patch Changes
+
+- Updated dependencies [5cb9f7b]
+  - @colibri-social/appview-db@0.27.0
+
 ## 1.17.4
 
 ### Patch Changes

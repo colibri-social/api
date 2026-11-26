@@ -1,5 +1,23 @@
 # @colibri-social/appview
 
+## 2.46.0
+
+### Minor Changes
+
+- 5cb9f7b: Add `colibri-admin network down` and `network up` to park and restart every node at once, and `colibri-admin db wipe` to empty the AppView data and the polyfill bucket while the network is down. The main node keeps the main role while parked and stops Jetstream and its background jobs.
+
+### Patch Changes
+
+- 06e34d7: Stop bridges from posting old Colibri messages again. Bridges match their stored messages and threads under both space URI formats, send nothing for an edit of a message they never sent, and skip new messages older than a day. The AppView no longer streams or notifies messages older than a day that a repo recovery picks up.
+- Updated dependencies [5cb9f7b]
+- Updated dependencies [06e34d7]
+  - @colibri-social/appview-db@0.27.0
+  - @colibri-social/blobs@0.5.0
+  - @colibri-social/space-sync@0.10.2
+  - @colibri-social/community@2.20.4
+  - @colibri-social/notifications@1.12.11
+  - @colibri-social/projections@1.17.5
+
 ## 2.45.4
 
 ### Patch Changes
