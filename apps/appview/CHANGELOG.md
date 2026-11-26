@@ -1,5 +1,17 @@
 # @colibri-social/appview
 
+## 2.46.3
+
+### Patch Changes
+
+- dae5858: Stop the main-node jobs on a node that hands the main role back before they finish starting, and stop Space sync when a node gives up the main role. Park PDS hosts that keep rejecting Space sync or no longer resolve until they send a write notice again, and list or unpark them with `colibri-admin hosts parked` and `colibri-admin hosts unpark`.
+- Updated dependencies [dae5858]
+  - @colibri-social/appview-db@0.27.1
+  - @colibri-social/space-sync@0.10.3
+  - @colibri-social/community@2.20.5
+  - @colibri-social/notifications@1.12.13
+  - @colibri-social/projections@1.17.6
+
 ## 2.46.2
 
 ### Patch Changes
