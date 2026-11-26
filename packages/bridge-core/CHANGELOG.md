@@ -1,5 +1,11 @@
 # @colibri-social/bridge-core
 
+## 0.5.4
+
+### Patch Changes
+
+- 06e34d7: Stop bridges from posting old Colibri messages again. Bridges match their stored messages and threads under both space URI formats, send nothing for an edit of a message they never sent, and skip new messages older than a day. The AppView no longer streams or notifies messages older than a day that a repo recovery picks up.
+
 ## 0.5.3
 
 ### Patch Changes
