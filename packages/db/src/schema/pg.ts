@@ -568,6 +568,17 @@ export const spaceModerations = pgTable(
 	(t) => [primaryKey({ columns: [t.did, t.community] })],
 );
 
+export const remoteSpaces = pgTable(
+	"remote_spaces",
+	{
+		did: text("did").notNull(),
+		community: text("community").notNull(),
+		managingApp: text("managing_app").notNull(),
+		joinedAt: timestamp("joined_at").notNull(),
+	},
+	(t) => [primaryKey({ columns: [t.did, t.community] })],
+);
+
 export const readCursors = pgTable(
 	"read_cursors",
 	{
@@ -1161,6 +1172,7 @@ export const schema = {
 	federationPeers,
 	actorAppviews,
 	spaceHosts,
+	remoteSpaces,
 	serviceState,
 	nodes,
 	nodeJoinTokens,

@@ -212,6 +212,40 @@ export const spaceModeration: Projector<social.colibri.beta.actor.spaceModeratio
 	},
 };
 
+export const remoteSpace: Projector<social.colibri.beta.actor.remoteSpace.Main> = {
+	collection: COLLECTIONS.remoteSpace,
+	writer: "authority",
+	spaceTypes: PERSONAL,
+	schema: social.colibri.beta.actor.remoteSpace,
+	rkey: (ref) => ref.rkey.startsWith("did:"),
+	put: async (deps, ref, value) => {
+		const row = {
+			did: ref.author,
+			community: ref.rkey,
+			managingApp: value.managingApp,
+			joinedAt: value.joinedAt,
+		};
+
+		await deps.db
+			.insert(deps.tables.remoteSpaces)
+			.values(row)
+			.onConflictDoUpdate({
+				target: [deps.tables.remoteSpaces.did, deps.tables.remoteSpaces.community],
+				set: { managingApp: row.managingApp, joinedAt: row.joinedAt },
+			});
+	},
+	remove: async (deps, ref) => {
+		await deps.db
+			.delete(deps.tables.remoteSpaces)
+			.where(
+				and(
+					eq(deps.tables.remoteSpaces.did, ref.author),
+					eq(deps.tables.remoteSpaces.community, ref.rkey),
+				),
+			);
+	},
+};
+
 export const readCursors: Projector<social.colibri.beta.channel.read.Main> = {
 	collection: COLLECTIONS.channelRead,
 	writer: "authority",

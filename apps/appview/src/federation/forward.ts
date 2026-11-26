@@ -24,6 +24,7 @@ export type ForwardRequest = {
 	headers: IncomingMessage["headers"];
 	body: Buffer | undefined;
 	actingFor: string | undefined;
+	timeoutMs?: number;
 };
 
 export type ForwardAnswer = {
@@ -99,7 +100,7 @@ export const createForwarder = (deps: ForwardDeps) => {
 				method: forward.method,
 				headers: outgoingHeaders(forward, token),
 				body: forward.body && forward.body.length > 0 ? new Uint8Array(forward.body) : undefined,
-				signal: AbortSignal.timeout(timeout),
+				signal: AbortSignal.timeout(forward.timeoutMs ?? timeout),
 				redirect: "error",
 			});
 		} catch (error) {

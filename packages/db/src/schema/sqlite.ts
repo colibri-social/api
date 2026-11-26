@@ -562,6 +562,17 @@ export const spaceModerations = sqliteTable(
 	(t) => [primaryKey({ columns: [t.did, t.community] })],
 );
 
+export const remoteSpaces = sqliteTable(
+	"remote_spaces",
+	{
+		did: text("did").notNull(),
+		community: text("community").notNull(),
+		managingApp: text("managing_app").notNull(),
+		joinedAt: timestamp("joined_at").notNull(),
+	},
+	(t) => [primaryKey({ columns: [t.did, t.community] })],
+);
+
 export const readCursors = sqliteTable(
 	"read_cursors",
 	{
@@ -1155,6 +1166,7 @@ export const schema = {
 	federationPeers,
 	actorAppviews,
 	spaceHosts,
+	remoteSpaces,
 	serviceState,
 	nodes,
 	nodeJoinTokens,

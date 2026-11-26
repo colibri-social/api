@@ -22,6 +22,7 @@ import {
 import {
 	IdentityResolver,
 	MissingPdsError,
+	mintServiceAuth,
 	SERVICE_FRAGMENTS,
 	ServiceAuth,
 	serviceId,
@@ -53,6 +54,8 @@ import type { Config } from "./config.js";
 import { buildDidDocuments, serviceAuthAudience } from "./did-web.js";
 import { createDrainState } from "./drain.js";
 import { createDeclaredStore } from "./federation/declared.js";
+import { createForwarder } from "./federation/forward.js";
+import { createRemoteCommunities } from "./federation/remote-communities.js";
 import { createSpaceHosts } from "./federation/space-hosts.js";
 import { HostOAuth } from "./host-oauth.js";
 import {
@@ -138,7 +141,10 @@ export const createContext = async (config: Config) => {
 		? new PdsAdmin(pds.xrpc, { password: config.PDS_ADMIN_PASSWORD })
 		: null;
 
-	const hosts = new DidDocumentSpaceHostResolver({ ...identityFetch, plcUrl: config.PLC_URL });
+	const hosts = new DidDocumentSpaceHostResolver({
+		...identityFetch,
+		plcUrl: config.PLC_URL,
+	});
 
 	let hostOAuth: HostOAuth | null = null;
 
@@ -221,7 +227,12 @@ export const createContext = async (config: Config) => {
 		mirror: { db: database.db, tables: database.tables, projections },
 	});
 
-	const bridges = new Bridges({ db: database.db, tables: database.tables, loader, writer });
+	const bridges = new Bridges({
+		db: database.db,
+		tables: database.tables,
+		loader,
+		writer,
+	});
 
 	const sync = new SpaceSyncEngine({
 		client: spaceClient,
@@ -279,7 +290,10 @@ export const createContext = async (config: Config) => {
 		bucket:
 			ownBucket ??
 			(config.MAIN_NODE_URL
-				? remoteBlobBucket({ mainUrl: config.MAIN_NODE_URL, secretFile: config.NODE_SECRET_FILE })
+				? remoteBlobBucket({
+						mainUrl: config.MAIN_NODE_URL,
+						secretFile: config.NODE_SECRET_FILE,
+					})
 				: null),
 	};
 
@@ -375,6 +389,17 @@ export const createContext = async (config: Config) => {
 		self: config.appviewDids,
 	});
 
+	const forwarder = createForwarder({
+		mint: (audience, lxm) =>
+			mintServiceAuth({ issuer: config.APPVIEW_DID, audience, lxm, keypair }),
+	});
+
+	const remoteCommunities = createRemoteCommunities({
+		enabled: config.FEDERATION_ENABLED,
+		hosts: spaceHosts,
+		forward: forwarder,
+	});
+
 	const nodeId = config.NODE_ID ?? `local-${randomUUID()}`;
 
 	return {
@@ -384,7 +409,11 @@ export const createContext = async (config: Config) => {
 		registry: createRegistry(database),
 		clusterConfig: createConfigStore(database, secrets),
 		writeProxy: null as WriteProxy | null,
-		voiceCalls: createVoiceCalls({ database, nodeId, region: config.NODE_REGION }),
+		voiceCalls: createVoiceCalls({
+			database,
+			nodeId,
+			region: config.NODE_REGION,
+		}),
 		turn: turnCredentialsFor(config, log),
 		announce: silentAnnouncer as Announcer,
 		voiceRoster: emptyVoiceRoster as VoiceRoster,
@@ -399,6 +428,8 @@ export const createContext = async (config: Config) => {
 		admin,
 		credentials,
 		spaceHosts,
+		forwarder,
+		remoteCommunities,
 		peers,
 		declaredAppviews,
 		hostOAuth,

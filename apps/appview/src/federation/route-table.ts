@@ -17,7 +17,7 @@ export const ROUTES: Readonly<Record<string, Route>> = {
 	[`${NS}.actor.getDeletionStatus`]: "local",
 	[`${NS}.actor.getPreferences`]: "local",
 	[`${NS}.actor.getProfile`]: "local",
-	[`${NS}.actor.grantSpaceAccess`]: "local",
+	[`${NS}.actor.grantSpaceAccess`]: community,
 	[`${NS}.actor.listCommunities`]: "local",
 	[`${NS}.actor.putBlocks`]: "local",
 	[`${NS}.actor.putMutes`]: "local",

@@ -79,6 +79,19 @@ describe("spaceAuthority", () => {
 		).toBeUndefined();
 	});
 
+	it("sends a preferences grant to the AppView of the named community, and keeps it local without one", () => {
+		const route = routeOf("social.colibri.beta.actor.grantSpaceAccess");
+		const grant = {
+			space: "at:space/did:plc:userxxxxxxxxxxxxxxxxxxxxxx/prefs",
+			delegationToken: "t",
+		};
+
+		expect(spaceAuthority(route, new URLSearchParams(), { ...grant, community: SPACE })).toBe(
+			SPACE,
+		);
+		expect(spaceAuthority(route, new URLSearchParams(), grant)).toBeUndefined();
+	});
+
 	it("keeps bridge methods on the AppView the bridge talks to", () => {
 		expect(routeOf("social.colibri.beta.bridge.postMessage")).toBe("local");
 	});

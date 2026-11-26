@@ -344,6 +344,13 @@
 			"when": 1795712853594,
 			"tag": "0048_federation",
 			"breakpoints": true
+		},
+		{
+			"idx": 49,
+			"version": "6",
+			"when": 1795732418525,
+			"tag": "0049_remote_spaces",
+			"breakpoints": true
 		}
 	]
 }

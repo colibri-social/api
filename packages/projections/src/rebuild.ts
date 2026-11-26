@@ -19,6 +19,7 @@ const PROJECTION_TABLES = [
 	"actorSettings",
 	"spaceNotifications",
 	"spaceModerations",
+	"remoteSpaces",
 	"readCursors",
 	"emojiFollows",
 ] as const;

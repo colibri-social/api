@@ -1,12 +1,10 @@
 import { createServer, type Server } from "@atproto/xrpc-server";
-import { mintServiceAuth } from "@colibri-social/identity";
 import type { Request, Response } from "express";
 import { authVerifiers } from "./auth.js";
 import { isWrite } from "./cluster/write-proxy.js";
 import type { AppContext } from "./context.js";
 import { corsMiddleware, nodeHeaderMiddleware } from "./cors.js";
 import { didDocumentForHost } from "./did-web.js";
-import { createForwarder } from "./federation/forward.js";
 import { createFederationRouter } from "./federation/router.js";
 import { record, xrpcMethod } from "./metrics.js";
 import { registerPolyfillRoutes } from "./polyfill/routes.js";
@@ -93,15 +91,7 @@ export const createAppServer = (
 		createFederationRouter({
 			enabled: ctx.config.FEDERATION_ENABLED,
 			hosts: ctx.spaceHosts,
-			forward: createForwarder({
-				mint: (audience, lxm) =>
-					mintServiceAuth({
-						issuer: ctx.config.APPVIEW_DID,
-						audience,
-						lxm,
-						keypair: ctx.keypair,
-					}),
-			}),
+			forward: ctx.forwarder,
 			verifyUser: async (token, lxm) => (await ctx.serviceAuth.verify(token, lxm)).did,
 			log: ctx.log,
 		}),
