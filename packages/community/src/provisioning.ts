@@ -22,6 +22,7 @@ import type { PermissionOverride } from "./authz.js";
 import type { CommunityCredentials, CommunityHost } from "./credentials.js";
 import { generateHandlePrefix, generatePassword } from "./crypto.js";
 import { defaultRoleRecord } from "./heal.js";
+import { writeHostRecord } from "./host-record.js";
 import type { SpaceRegistry } from "./spaces.js";
 
 export type ProvisionStep =
@@ -307,6 +308,8 @@ export class CommunityProvisioner {
 				...(request.description ? { description: request.description } : {}),
 			},
 		});
+
+		await writeHostRecord(host, this.appviewDid, this.now());
 
 		report("creatingOwnerRole", completed + 2, community);
 		const ownerRole = nextTid();

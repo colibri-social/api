@@ -16,6 +16,7 @@ import { describeConfig, loadConfig } from "./config.js";
 import { type AppContext, createContext } from "./context.js";
 import { drainGraceMs, hasPeers, waitForConnections } from "./drain.js";
 import { eventDelivery } from "./event-delivery.js";
+import { backfillHostRecords } from "./federation/host-records.js";
 import { HandOverSweeper, hostIdentityChanged } from "./hand-overs.js";
 import { healOwnerRolePermissions } from "./heal.js";
 import { Jetstream } from "./jetstream.js";
@@ -106,6 +107,9 @@ const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<Main
 	);
 	void healCategoryOrders(ctx).catch((error: unknown) =>
 		ctx.log.warn({ err: error }, "heal.categoryOrdersSweepFailed"),
+	);
+	void backfillHostRecords(ctx).catch((error: unknown) =>
+		ctx.log.warn({ err: error }, "federation.hostRecordsSweepFailed"),
 	);
 	void resyncBrokenCids(ctx.database, ctx.sync, ctx.log).catch((error: unknown) =>
 		ctx.log.warn({ err: error }, "heal.brokenCidResyncFailed"),
