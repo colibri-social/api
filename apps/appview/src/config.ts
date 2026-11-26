@@ -276,6 +276,10 @@ export const configSchema = z.object({
 	KLIPY_API_KEY: optionalString,
 	VIDEO_ARTWORK_ENABLED: boolish(false),
 
+	FEDERATION_ENABLED: boolish(true),
+	FEDERATION_PEER_RATE: z.coerce.number().positive().default(20),
+	FEDERATION_PEER_BURST: z.coerce.number().int().positive().default(200),
+
 	VOICE_ENABLED: boolish(true),
 	SFU_WORKER_COUNT: z.coerce.number().int().positive().optional(),
 	SFU_LISTEN_IP: z.string().default("0.0.0.0"),
@@ -450,6 +454,7 @@ export const describeConfig = (config: Config): Record<string, string> => ({
 	pushActions: config.PUSH_ACTION_SECRET ? "enabled" : "disabled, no PUSH_ACTION_SECRET",
 	gifs: config.gifsEnabled ? "enabled" : "disabled",
 	hostSignIn: config.HOST_OAUTH_PRIVATE_KEY ? "enabled" : "disabled, no HOST_OAUTH_PRIVATE_KEY",
+	federation: config.FEDERATION_ENABLED ? "enabled" : "disabled",
 	voice: config.VOICE_ENABLED ? "enabled" : "disabled",
 	polyfillBlobs: !config.ROLES.includes("main")
 		? config.MAIN_NODE_URL

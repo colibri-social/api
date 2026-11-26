@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { Secp256k1Keypair } from "@atproto/crypto";
-import { type Database, openDatabase } from "@colibri-social/appview-db";
+import { createPeerStore, type Database, openDatabase } from "@colibri-social/appview-db";
 import { BlobCache, BlobService, DiskOriginalCache, DiskVariantCache } from "@colibri-social/blobs";
 import {
 	admitCommunityWrites,
@@ -52,6 +52,7 @@ import type { WriteProxy } from "./cluster/write-proxy.js";
 import type { Config } from "./config.js";
 import { buildDidDocuments, serviceAuthAudience } from "./did-web.js";
 import { createDrainState } from "./drain.js";
+import { createDeclaredStore } from "./federation/declared.js";
 import { createSpaceHosts } from "./federation/space-hosts.js";
 import { HostOAuth } from "./host-oauth.js";
 import {
@@ -361,6 +362,12 @@ export const createContext = async (config: Config) => {
 		return host.pds.getDelegationToken(host.session, space);
 	}
 
+	const peers = createPeerStore(database);
+	const declaredAppviews = createDeclaredStore({
+		database,
+		identity,
+		clientFor: (endpoint) => credentials.clientFor(endpoint),
+	});
 	const spaceHosts = createSpaceHosts({
 		database,
 		identity,
@@ -392,6 +399,8 @@ export const createContext = async (config: Config) => {
 		admin,
 		credentials,
 		spaceHosts,
+		peers,
+		declaredAppviews,
 		hostOAuth,
 		hosts,
 		spaceCredentials,

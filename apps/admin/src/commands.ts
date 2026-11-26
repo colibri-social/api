@@ -16,12 +16,13 @@ import {
 	type Registry,
 	switchoverChecks,
 } from "@colibri-social/appview/cluster";
-import type { NodeRole } from "@colibri-social/appview-db";
+import type { NodeRole, PeerStore } from "@colibri-social/appview-db";
 import type { ConfirmRequest } from "./confirm.js";
 
 export type Admin = {
 	registry: Registry;
 	config: ConfigStore;
+	peers: PeerStore;
 	sendOrder: (order: ClusterOrder) => Promise<OrderResult>;
 	setRolloutPaused: (paused: boolean) => Promise<void>;
 	readFile: (path: string) => Promise<string>;
@@ -668,6 +669,44 @@ export const networkUp = async (admin: Admin): Promise<void> => {
 	});
 
 	await runOrder(admin, { kind: "networkUp", id: randomUUID() });
+};
+
+const PEER_DID = /^did:web:[a-zA-Z0-9.%:-]+$/;
+
+const peerDid = (value: string): string => {
+	if (!PEER_DID.test(value)) {
+		throw new UsageError(`${value} isn't an AppView DID, which starts with did:web:`);
+	}
+
+	return value;
+};
+
+export const federationBlock = async (admin: Admin, did: string, note?: string): Promise<void> => {
+	await admin.peers.block(peerDid(did), note);
+	admin.print(`Blocked ${did}. Nodes refuse its requests within 30 seconds.`);
+};
+
+export const federationUnblock = async (admin: Admin, did: string): Promise<void> => {
+	const removed = await admin.peers.unblock(peerDid(did));
+
+	admin.print(removed ? `Unblocked ${did}.` : `${did} wasn't blocked.`);
+};
+
+export const federationList = async (admin: Admin): Promise<void> => {
+	const peers = await admin.peers.list();
+
+	if (peers.length === 0) {
+		admin.print("No AppViews are blocked.");
+
+		return;
+	}
+
+	for (const line of formatTable([
+		["APPVIEW", "BLOCKED SINCE", "NOTE"],
+		...peers.map((peer) => [peer.did, peer.updatedAt, peer.note ?? ""]),
+	])) {
+		admin.print(line);
+	}
 };
 
 export const configList = async (admin: Admin): Promise<void> => {

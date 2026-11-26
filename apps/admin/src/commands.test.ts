@@ -1,5 +1,5 @@
 import { createConfigStore, createRegistry, type Registry } from "@colibri-social/appview/cluster";
-import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
+import { createPeerStore, openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { SecretBox } from "@colibri-social/community";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -9,6 +9,9 @@ import {
 	dbBackup,
 	dbStatus,
 	dbSwitchover,
+	federationBlock,
+	federationList,
+	federationUnblock,
 	formatTable,
 	monitoringDeploy,
 	networkDown,
@@ -46,6 +49,7 @@ beforeEach(async () => {
 	admin = {
 		registry,
 		config: createConfigStore(database, await SecretBox.fromBase64(SecretBox.generateKeyBase64())),
+		peers: createPeerStore(database, () => new Date("2026-11-09T12:00:00Z")),
 		sendOrder: vi.fn(async (order) => ({ id: order.id, ok: true, message: "eu-2 is draining" })),
 		setRolloutPaused: vi.fn(async () => {}),
 		readFile: vi.fn(async () => ""),
@@ -259,6 +263,29 @@ describe("node commands", () => {
 		await expect(
 			nodeAdd(admin, { id: "eu-2", region: "eu", roles: "api", ip: "203.0.113.7" }),
 		).rejects.toThrow(UsageError);
+	});
+});
+
+describe("federation", () => {
+	it("blocks, lists and unblocks an AppView", async () => {
+		await federationBlock(admin, "did:web:rogue.example", "spam");
+		await federationList(admin);
+		await federationUnblock(admin, "did:web:rogue.example");
+		await federationUnblock(admin, "did:web:rogue.example");
+		await federationList(admin);
+
+		expect(printed).toEqual([
+			"Blocked did:web:rogue.example. Nodes refuse its requests within 30 seconds.",
+			"APPVIEW                BLOCKED SINCE             NOTE",
+			"did:web:rogue.example  2026-11-09T12:00:00.000Z  spam",
+			"Unblocked did:web:rogue.example.",
+			"did:web:rogue.example wasn't blocked.",
+			"No AppViews are blocked.",
+		]);
+	});
+
+	it("refuses anything but a did:web", async () => {
+		await expect(federationBlock(admin, "did:plc:abc")).rejects.toBeInstanceOf(UsageError);
 	});
 });
 

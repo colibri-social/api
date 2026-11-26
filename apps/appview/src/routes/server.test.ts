@@ -38,6 +38,15 @@ describe("describeServer", () => {
 		).toEqual(["voice", "gifs", "embeds", "emoji"]);
 	});
 
+	it("advertises federation unless the operator opted out", () => {
+		expect(describeServer(contextWith({ FEDERATION_ENABLED: true })).features).toContain(
+			"federation",
+		);
+		expect(describeServer(contextWith({ FEDERATION_ENABLED: false })).features).not.toContain(
+			"federation",
+		);
+	});
+
 	it("offers node selection on a clustered AppView", () => {
 		const ctx = { ...contextWith(), clustered: true } as AppContext;
 

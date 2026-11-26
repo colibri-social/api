@@ -24,6 +24,7 @@ export const resolveVersion = (): string => process.env.VERSION || readPackageVe
 export const describeServer = (ctx: AppContext): ServerDescription => {
 	const features: string[] = [];
 	if (ctx.config.VOICE_ENABLED) features.push("voice");
+	if (ctx.config.FEDERATION_ENABLED) features.push("federation");
 	if (ctx.config.pushProviders.length > 0) features.push("push");
 	if (ctx.config.gifsEnabled) features.push("gifs");
 	features.push("embeds");
