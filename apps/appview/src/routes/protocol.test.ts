@@ -23,6 +23,7 @@ type Calls = {
 	deleteChecks: string[];
 	renewals: unknown[][];
 	lxms: Array<string | null>;
+	order: string[];
 };
 
 let http: HttpServer;
@@ -57,7 +58,11 @@ const contextFor = (): AppContext => {
 			spaceStates: async () => ({ channel: channelState, thread: null }),
 		},
 		sync: {
-			notifyWrite: (...args: unknown[]) => void calls.writes.push(args),
+			hostNotified: async (repo: string) => void calls.order.push(`hostNotified ${repo}`),
+			notifyWrite: (...args: unknown[]) => {
+				calls.writes.push(args);
+				calls.order.push(`notifyWrite ${String(args[1])}`);
+			},
 			notifyRepoRemoved: (...args: unknown[]) => void calls.removals.push(args),
 			confirmSpaceDeleted: async (space: string) => void calls.deleteChecks.push(space),
 			renewLapsedRegistration: async (...args: unknown[]) => void calls.renewals.push(args),
@@ -86,7 +91,7 @@ const notify = (update: unknown, token = TOKEN): Promise<Response> => {
 };
 
 beforeEach(async () => {
-	calls = { writes: [], removals: [], deleteChecks: [], renewals: [], lxms: [] };
+	calls = { writes: [], removals: [], deleteChecks: [], renewals: [], lxms: [], order: [] };
 	channelState = null;
 
 	const ctx = contextFor();
@@ -155,6 +160,19 @@ describe("notifySpaceUpdate", () => {
 				}),
 			],
 		]);
+	});
+
+	it("tells sync the repo's host reached out before queueing the write", async () => {
+		await notify({
+			$type: "com.atproto.space.defs#repoWrite",
+			repo: MEMBER,
+			repoRev: REV,
+			data: { $bytes: Buffer.alloc(32, 1).toString("base64") },
+			spaceRev: NEXT_REV,
+			prevSpaceRev: REV,
+		});
+
+		expect(calls.order).toEqual([`hostNotified ${MEMBER}`, `notifyWrite ${MEMBER}`]);
 	});
 
 	it("drops a repo on a removal notice", async () => {

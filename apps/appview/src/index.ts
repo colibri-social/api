@@ -8,6 +8,7 @@ import { busAnnouncer, type EventMessage } from "./announce.js";
 import { type EventBus, memoryBus, postgresBus } from "./bus.js";
 import { healCategoryOrders } from "./category-order.js";
 import { resolveClusterEnv } from "./cluster/boot.js";
+import { type MainJobs, mainJobsSlot } from "./cluster/main-jobs.js";
 import { createMainRole } from "./cluster/main-role.js";
 import { type ClusterNode, startClusterNode } from "./cluster/node.js";
 import { parkedState } from "./cluster/orders.js";
@@ -42,10 +43,6 @@ const UPDATE_HOLD_MS = 15 * 60_000;
 const PRESENCE_RECONCILE_MS = 60_000;
 
 const EVENT_PAYLOAD_TTL_MS = 10 * 60_000;
-
-type MainJobs = {
-	stop: () => Promise<void>;
-};
 
 const announceVoiceLeaves = (ctx: AppContext, rows: readonly ParticipantRow[]): void => {
 	for (const row of rows) {
@@ -141,6 +138,7 @@ const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<Main
 			notificationPruner.stop();
 			polyfillBlobSweeper.stop();
 			telemetry.stop();
+			ctx.sync.pause();
 			await jetstream.stop();
 			await activities.stop();
 			await handOvers.stop();
@@ -349,7 +347,7 @@ const main = async (): Promise<void> => {
 		voice.attach(http);
 	}
 
-	let mainJobs: MainJobs | null = null;
+	const mainJobs = mainJobsSlot(() => startMainJobs(ctx, events));
 	let shuttingDown = false;
 	let skipDrain: () => void = () => {};
 
@@ -363,6 +361,10 @@ const main = async (): Promise<void> => {
 		} catch (error) {
 			ctx.log.error({ step: name, err: error }, "shutdown.step-failed");
 		}
+	};
+
+	const stopMainJobs = async (): Promise<void> => {
+		await step("main-jobs", () => mainJobs.stop());
 	};
 
 	const connectionCount = () => {
@@ -491,14 +493,21 @@ const main = async (): Promise<void> => {
 				return;
 			}
 
-			mainJobs = await startMainJobs(ctx, events);
+			await mainJobs.start();
+
+			if (!holdsMain) {
+				ctx.log.warn("main.releasedWhileStarting");
+				await stopMainJobs();
+
+				return;
+			}
+
 			cluster?.checkForUpdate();
 		},
 		onReleasing: async () => {
 			holdsMain = false;
 			cluster?.releasedMain();
-			await step("main-jobs", () => mainJobs?.stop());
-			mainJobs = null;
+			await stopMainJobs();
 		},
 		onLost: (error) => {
 			holdsMain = false;
@@ -559,8 +568,7 @@ const main = async (): Promise<void> => {
 			await step("events", () => events.close());
 			await step("voice", () => voice.close());
 			ctx.drain.park();
-			await step("main-jobs", () => mainJobs?.stop());
-			mainJobs = null;
+			await stopMainJobs();
 			await step("park", () => cluster?.setState("maintenance", null));
 			ctx.log.info("node.networkParked");
 		})();

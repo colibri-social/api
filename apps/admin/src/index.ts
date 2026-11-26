@@ -25,6 +25,8 @@ import {
 	dbBackup,
 	dbStatus,
 	dbSwitchover,
+	hostsParked,
+	hostsUnpark,
 	monitoringDeploy,
 	networkDown,
 	networkUp,
@@ -45,6 +47,7 @@ import { type ConfirmPrompts, type ConfirmRequest, createConfirm } from "./confi
 import { CopyRefusedError, copyDatabase } from "./db-copy.js";
 import { POLYFILL_PREFIX, WipeRefusedError, wipeDatabase } from "./db-wipe.js";
 import { openOrderBus, sendOrder } from "./orders.js";
+import { createParkedHosts } from "./parked-hosts.js";
 import {
 	createIncident,
 	endMaintenance,
@@ -100,6 +103,10 @@ Status page and monitoring
   status maintenance schedule <title> --start now|+30m|<ISO> --end +2h|<ISO> [--nodes a,b] [--message <text>]
   status maintenance end <id>
   monitoring deploy <node>
+
+PDS hosts
+  hosts parked
+  hosts unpark <host>
 
 Shared settings
   config list
@@ -329,6 +336,7 @@ const main = async (): Promise<void> => {
 
 	const admin: Admin = {
 		registry: createRegistry(database),
+		parkedHosts: createParkedHosts(database),
 		config: {
 			set: async (key, value) => (await configStore()).set(key, value),
 			unset: async (key) => (await configStore()).unset(key),
@@ -580,6 +588,10 @@ const main = async (): Promise<void> => {
 				return rollout(admin, false);
 			case "rollout now":
 				return rolloutNow(admin, values.grace);
+			case "hosts parked":
+				return hostsParked(admin);
+			case "hosts unpark":
+				return hostsUnpark(admin, required(first, "<host>"));
 			case "config list":
 				return configList(admin);
 			case "config set":

@@ -18,10 +18,12 @@ import {
 } from "@colibri-social/appview/cluster";
 import type { NodeRole } from "@colibri-social/appview-db";
 import type { ConfirmRequest } from "./confirm.js";
+import type { ParkedHosts } from "./parked-hosts.js";
 
 export type Admin = {
 	registry: Registry;
 	config: ConfigStore;
+	parkedHosts: ParkedHosts;
 	sendOrder: (order: ClusterOrder) => Promise<OrderResult>;
 	setRolloutPaused: (paused: boolean) => Promise<void>;
 	readFile: (path: string) => Promise<string>;
@@ -748,4 +750,36 @@ export const configImport = async (
 	if (skipped.length > 0) {
 		admin.print(`Kept local to each node: ${skipped.join(", ")}`);
 	}
+};
+
+export const hostsParked = async (admin: Admin): Promise<void> => {
+	const hosts = await admin.parkedHosts.list();
+
+	if (hosts.length === 0) {
+		admin.print("No PDS hosts are parked.");
+
+		return;
+	}
+
+	const now = admin.now();
+	const rows = hosts.map((host) => [
+		host.host,
+		host.reason,
+		age(host.parkedAt, now),
+		host.lastError ?? "-",
+	]);
+
+	for (const line of formatTable([["HOST", "REASON", "PARKED", "LAST ERROR"], ...rows])) {
+		admin.print(line);
+	}
+};
+
+export const hostsUnpark = async (admin: Admin, host: string): Promise<void> => {
+	const removed = await admin.parkedHosts.unpark(host);
+
+	admin.print(
+		removed
+			? `Unparked ${host}. The main node syncs its repos again from its next sweep.`
+			: `${host} was not parked.`,
+	);
 };

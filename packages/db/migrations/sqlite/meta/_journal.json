@@ -330,6 +330,13 @@
 			"when": 1795687033260,
 			"tag": "0046_network_parked",
 			"breakpoints": true
+		},
+		{
+			"idx": 47,
+			"version": "6",
+			"when": 1795712004803,
+			"tag": "0047_parked_repo_hosts",
+			"breakpoints": true
 		}
 	]
 }

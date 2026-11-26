@@ -197,6 +197,13 @@ export const polyfillPdsSupport = pgTable("polyfill_pds_support", {
 	checkedAt: timestamp("checked_at").notNull(),
 });
 
+export const parkedRepoHosts = pgTable("parked_repo_hosts", {
+	host: text("host").primaryKey(),
+	reason: text("reason").notNull(),
+	lastError: text("last_error"),
+	parkedAt: timestamp("parked_at").notNull(),
+});
+
 export const polyfillBlobs = pgTable(
 	"polyfill_blobs",
 	{
@@ -1090,6 +1097,7 @@ export const schema = {
 	polyfillActors,
 	polyfillRepos,
 	polyfillPdsSupport,
+	parkedRepoHosts,
 	polyfillBlobs,
 	spaceCredentials,
 	notifyRegistrations,

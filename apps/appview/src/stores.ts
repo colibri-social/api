@@ -256,6 +256,27 @@ export const drizzleSyncStore = (
 			await checkFallback({ database, support }, author, host);
 		},
 
+		listParkedHosts: async () => {
+			const rows = await db
+				.select({ host: tables.parkedRepoHosts.host })
+				.from(tables.parkedRepoHosts);
+
+			return rows.map((row) => row.host);
+		},
+
+		parkHost: async (host, reason, lastError) => {
+			const row = { host, reason, lastError, parkedAt: now() };
+
+			await db
+				.insert(tables.parkedRepoHosts)
+				.values(row)
+				.onConflictDoUpdate({ target: tables.parkedRepoHosts.host, set: row });
+		},
+
+		unparkHost: async (host) => {
+			await db.delete(tables.parkedRepoHosts).where(eq(tables.parkedRepoHosts.host, host));
+		},
+
 		expectedRepos: async (space) => {
 			const [row] = await db
 				.select({

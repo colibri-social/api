@@ -75,6 +75,9 @@ export type SyncStore = {
 	hostedAuthors?(space: string, authors: readonly string[]): Promise<string[]>;
 	isHosted?(space: string, author: string): Promise<boolean>;
 	spacesUnsupported?(space: string, author: string, host: string): Promise<void>;
+	listParkedHosts?(): Promise<string[]>;
+	parkHost?(host: string, reason: string, lastError: string): Promise<void>;
+	unparkHost?(host: string): Promise<void>;
 	loadCursor(space: string, author: string): Promise<RepoCursor | null>;
 	saveCursor(cursor: RepoCursor): Promise<void>;
 	commit(change: RepoChange, cursor: CommittedCursor): Promise<void>;

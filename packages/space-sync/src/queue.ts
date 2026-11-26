@@ -51,6 +51,10 @@ export class KeyedWorkQueue {
 		await new Promise<void>((resolve) => this.idleWaiters.push(resolve));
 	}
 
+	resume(): void {
+		this.stopped = false;
+	}
+
 	stop(): void {
 		this.stopped = true;
 		this.waiting.length = 0;

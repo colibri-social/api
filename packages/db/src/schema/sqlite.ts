@@ -191,6 +191,13 @@ export const polyfillPdsSupport = sqliteTable("polyfill_pds_support", {
 	checkedAt: timestamp("checked_at").notNull(),
 });
 
+export const parkedRepoHosts = sqliteTable("parked_repo_hosts", {
+	host: text("host").primaryKey(),
+	reason: text("reason").notNull(),
+	lastError: text("last_error"),
+	parkedAt: timestamp("parked_at").notNull(),
+});
+
 export const polyfillBlobs = sqliteTable(
 	"polyfill_blobs",
 	{
@@ -1084,6 +1091,7 @@ export const schema = {
 	polyfillActors,
 	polyfillRepos,
 	polyfillPdsSupport,
+	parkedRepoHosts,
 	polyfillBlobs,
 	spaceCredentials,
 	notifyRegistrations,

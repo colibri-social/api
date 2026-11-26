@@ -1045,3 +1045,221 @@ describe("repos the AppView hosts", () => {
 		expect(changes).toEqual([ALICE]);
 	});
 });
+
+describe("pausing the engine", () => {
+	it("renews nothing while paused and renews again after a restart", async () => {
+		vi.useFakeTimers();
+		let clock = new Date("2026-08-23T00:00:00.000Z").getTime();
+		const { engine, credentials } = engineFor([], async () => undefined, {
+			now: () => new Date(clock),
+			engine: { registrationRenewMarginMs: 60_000 },
+		});
+		credentials.reauthorize.mockImplementation(async () => ({
+			expiresAt: new Date(clock + 120_000),
+		}));
+
+		await engine.start();
+		engine.pause();
+
+		clock += 70_000;
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(credentials.reauthorize).toHaveBeenCalledTimes(1);
+
+		await engine.start();
+
+		expect(credentials.reauthorize).toHaveBeenCalledTimes(2);
+
+		clock += 70_000;
+		await vi.advanceTimersByTimeAsync(30_000);
+
+		expect(credentials.reauthorize).toHaveBeenCalledTimes(3);
+		await engine.stop();
+		vi.useRealTimers();
+	});
+
+	it("syncs notified writes again after a restart", async () => {
+		const pulled: string[] = [];
+		const { engine } = engineFor([], async (_space, author) => {
+			pulled.push(author);
+		});
+
+		await engine.start();
+		engine.pause();
+		engine.notifyWrite(SPACE, ALICE);
+		await engine.drain();
+
+		expect(pulled).toEqual([]);
+
+		await engine.start();
+		engine.notifyWrite(SPACE, ALICE);
+		await engine.drain();
+
+		expect(pulled).toEqual([ALICE]);
+		await engine.stop();
+	});
+
+	it("runs one renewal pass at a time", async () => {
+		vi.useFakeTimers();
+		let clock = new Date("2026-08-23T00:00:00.000Z").getTime();
+		const { engine, credentials } = engineFor([], async () => undefined, {
+			now: () => new Date(clock),
+			engine: { registrationRenewMarginMs: 60_000 },
+		});
+		credentials.reauthorize.mockImplementation(async () => ({
+			expiresAt: new Date(clock + 120_000),
+		}));
+
+		await engine.start();
+		credentials.reauthorize.mockImplementation(() => new Promise(() => undefined));
+
+		clock += 70_000;
+		await vi.advanceTimersByTimeAsync(90_000);
+
+		expect(credentials.reauthorize).toHaveBeenCalledTimes(2);
+		engine.pause();
+		vi.useRealTimers();
+	});
+});
+
+describe("repo failure backoff", () => {
+	it("backs off up to the configured maximum", async () => {
+		const now = new Date("2026-08-23T00:00:00.000Z");
+		const { engine } = engineFor(
+			[],
+			async () => {
+				throw new Error("still broken");
+			},
+			{ now: () => now },
+		);
+		engine.on("failed", () => undefined);
+		cursors.set(ALICE, cursor(ALICE, null, { state: "error", consecutiveFailures: 11 }));
+
+		engine.notifyWrite(SPACE, ALICE);
+		await engine.drain();
+
+		expect(cursors.get(ALICE)?.retryAfter?.getTime()).toBe(now.getTime() + 3_600_000);
+	});
+});
+
+describe("hosts that stop answering correctly", () => {
+	const HOST = "https://pds.test";
+
+	const parkingStore = (parked: Set<string>): SyncStore => ({
+		...store(),
+		listParkedHosts: async () => [...parked],
+		parkHost: async (host) => void parked.add(host),
+		unparkHost: async (host) => void parked.delete(host),
+	});
+
+	const invalidUri = () => {
+		return new XrpcError(
+			400,
+			"InvalidRequest",
+			`invalid space URI: error-atproto-space-types-1 invalid space URI: ${SPACE}`,
+			"com.atproto.space.getRepo",
+		);
+	};
+
+	const failTimes = async (engine: SpaceSyncEngine, times: number) => {
+		for (let attempt = 0; attempt < times; attempt += 1) {
+			engine.notifyWrite(SPACE, ALICE);
+			await engine.drain();
+		}
+	};
+
+	it.each([
+		["a host that rejects the space URI", invalidUri()],
+		[
+			"a host that rejects the space ref",
+			new XrpcError(401, "AuthRequired", "bad space ref", "com.atproto.space.getRepo"),
+		],
+		[
+			"a host whose name no longer resolves",
+			new TypeError("fetch failed", {
+				cause: Object.assign(new Error("getaddrinfo ENOTFOUND pds.test"), {
+					code: "ENOTFOUND",
+				}),
+			}),
+		],
+	])("parks %s after three failures and warns once", async (_name, error) => {
+		const parked = new Set<string>();
+		const logged: Array<{ event: string; level: string }> = [];
+		const { engine } = engineFor(
+			[],
+			async () => {
+				throw error;
+			},
+			{
+				engine: {
+					store: parkingStore(parked),
+					log: (event, _detail, level = "warn") => void logged.push({ event, level }),
+				},
+			},
+		);
+		engine.on("failed", () => undefined);
+
+		await failTimes(engine, 2);
+
+		expect(parked.size).toBe(0);
+
+		await failTimes(engine, 1);
+
+		expect(parked).toEqual(new Set([HOST]));
+		expect(logged.filter((entry) => entry.level === "warn")).toEqual([
+			{ event: "host.parked", level: "warn" },
+		]);
+	});
+
+	it("skips repos on a parked host", async () => {
+		const parked = new Set<string>();
+		const sync = vi.fn(async () => {
+			throw invalidUri();
+		});
+		const { engine } = engineFor([], sync, { engine: { store: parkingStore(parked) } });
+		engine.on("failed", () => undefined);
+
+		await failTimes(engine, 3);
+		sync.mockClear();
+		await failTimes(engine, 2);
+
+		expect(sync).not.toHaveBeenCalled();
+	});
+
+	it("loads hosts another node parked when it starts", async () => {
+		const parked = new Set([HOST]);
+		const sync = vi.fn(async () => undefined);
+		const { engine } = engineFor([], sync, { engine: { store: parkingStore(parked) } });
+
+		await engine.start();
+		engine.notifyWrite(SPACE, ALICE);
+		await engine.drain();
+
+		expect(sync).not.toHaveBeenCalled();
+		await engine.stop();
+	});
+
+	it("unparks a host once it notifies a write again", async () => {
+		const parked = new Set<string>();
+		let broken = true;
+		const pulled: string[] = [];
+		const { engine } = engineFor(
+			[],
+			async (_space, author) => {
+				if (broken) throw invalidUri();
+				pulled.push(author);
+			},
+			{ engine: { store: parkingStore(parked) } },
+		);
+		engine.on("failed", () => undefined);
+
+		await failTimes(engine, 3);
+		broken = false;
+		await engine.hostNotified(ALICE);
+		engine.notifyWrite(SPACE, ALICE);
+		await engine.drain();
+
+		expect(parked.size).toBe(0);
+		expect(pulled).toEqual([ALICE]);
+	});
+});

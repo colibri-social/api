@@ -10,6 +10,8 @@ import {
 	dbStatus,
 	dbSwitchover,
 	formatTable,
+	hostsParked,
+	hostsUnpark,
 	monitoringDeploy,
 	networkDown,
 	networkUp,
@@ -26,6 +28,7 @@ import {
 	statusDeploy,
 	UsageError,
 } from "./commands.js";
+import { createParkedHosts } from "./parked-hosts.js";
 
 let database: TestDatabase;
 let registry: Registry;
@@ -46,6 +49,7 @@ beforeEach(async () => {
 	admin = {
 		registry,
 		config: createConfigStore(database, await SecretBox.fromBase64(SecretBox.generateKeyBase64())),
+		parkedHosts: createParkedHosts(database),
 		sendOrder: vi.fn(async (order) => ({ id: order.id, ok: true, message: "eu-2 is draining" })),
 		setRolloutPaused: vi.fn(async () => {}),
 		readFile: vi.fn(async () => ""),
@@ -286,6 +290,48 @@ describe("config import", () => {
 		await configImport(admin, { file: ".env", dryRun: true });
 
 		expect(await admin.config.keys()).toEqual([]);
+	});
+});
+
+describe("parked hosts", () => {
+	it("lists parked PDS hosts with their reason", async () => {
+		await database.primary.insert(database.tables.parkedRepoHosts).values({
+			host: "https://roost.example",
+			reason: "hostNotFound",
+			lastError: "fetch failed",
+			parkedAt: "2026-11-09T12:00:00Z",
+		});
+
+		await hostsParked(admin);
+
+		expect(printed).toEqual([
+			"HOST                   REASON        PARKED   LAST ERROR",
+			"https://roost.example  hostNotFound  30s ago  fetch failed",
+		]);
+	});
+
+	it("says so when no host is parked", async () => {
+		await hostsParked(admin);
+
+		expect(printed).toEqual(["No PDS hosts are parked."]);
+	});
+
+	it("unparks a host", async () => {
+		await database.primary.insert(database.tables.parkedRepoHosts).values({
+			host: "https://roost.example",
+			reason: "hostNotFound",
+			lastError: null,
+			parkedAt: "2026-11-09T12:00:00Z",
+		});
+
+		await hostsUnpark(admin, "https://roost.example");
+		await hostsUnpark(admin, "https://roost.example");
+
+		expect(await admin.parkedHosts.list()).toEqual([]);
+		expect(printed).toEqual([
+			"Unparked https://roost.example. The main node syncs its repos again from its next sweep.",
+			"https://roost.example was not parked.",
+		]);
 	});
 });
 
