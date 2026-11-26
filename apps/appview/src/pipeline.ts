@@ -653,6 +653,7 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 							facets: (put.value.facets as unknown[] | undefined) ?? null,
 							parentAuthor: parent?.did ?? null,
 							parentRkey: parent?.rkey ?? null,
+							edited: wasEdited,
 						}),
 					)
 					.then((rows) => publishNotifications(rows, text, published))

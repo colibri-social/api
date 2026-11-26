@@ -199,6 +199,16 @@ describe("a blocked author", () => {
 });
 
 describe("listNotifications", () => {
+	it("leaves out plain message notifications", async () => {
+		const mention = await insertNotification({ kind: "mention" });
+		const reply = await insertNotification({ kind: "reply" });
+
+		await insertNotification({ kind: "message" });
+
+		const page = await listNotifications(deps, RECIPIENT);
+		expect(page.notifications.map((row) => row.id).sort()).toEqual([mention, reply].sort());
+	});
+
 	it("paginates newest first with a cursor", async () => {
 		const ids: string[] = [];
 		for (let i = 0; i < 5; i++) {

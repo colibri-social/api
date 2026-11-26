@@ -15,14 +15,18 @@ const daysAgo = (days: number) => {
 	return new Date(new Date(NOW).getTime() - days * DAY_MS + sequence);
 };
 
-const insertNotification = async (days: number, seen: boolean) => {
+const insertNotification = async (
+	days: number,
+	seen: boolean,
+	kind: "mention" | "reply" | "message" = "mention",
+) => {
 	const at = daysAgo(days);
 	const id = idAt(at);
 
 	await database.db.insert(database.tables.notifications).values({
 		id,
 		recipient: "did:plc:recipient000000000000000",
-		kind: "message",
+		kind,
 		community: "did:plc:community0000000000000000",
 		space: "at://did:plc:community0000000000000000/space/1",
 		author: "did:plc:author00000000000000000000",
@@ -85,6 +89,17 @@ describe("pruneNotifications", () => {
 
 		expect(await pruneNotifications(deps())).toBe(3);
 		expect(await remainingIds()).toEqual([oldUnseen, recentSeen, recentUnseen].sort());
+	});
+
+	it("deletes plain message rows past 7 days, seen or not", async () => {
+		const recentMessage = await insertNotification(5, false, "message");
+		const oldMention = await insertNotification(10, false, "mention");
+
+		await insertNotification(10, false, "message");
+		await insertNotification(10, true, "message");
+
+		expect(await pruneNotifications(deps())).toBe(2);
+		expect(await remainingIds()).toEqual([oldMention, recentMessage].sort());
 	});
 
 	it("deletes in batches and stops at the batch cap", async () => {

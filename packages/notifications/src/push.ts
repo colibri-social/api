@@ -277,7 +277,7 @@ export const buildReadPayload = (target: ReadPushTarget, badge: number): PushPay
 	},
 });
 
-const TRAY_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+export const TRAY_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type ReadActionConfig = { url: string; secret: string; now?: () => number };
 

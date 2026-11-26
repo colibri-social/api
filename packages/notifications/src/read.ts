@@ -20,7 +20,7 @@ import {
 	messageRefKey,
 } from "@colibri-social/projections";
 import { spaceRecordUri } from "@colibri-social/space";
-import { and, desc, eq, gt, gte, inArray, isNull, lt, lte, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, or, type SQL } from "drizzle-orm";
 import type { NotificationDeps } from "./deps.js";
 
 export type NotificationRow = Schema["notifications"]["$inferSelect"];
@@ -182,6 +182,7 @@ export const listNotifications = async (
 	const limit = clampLimit(options.limit, 50, 100);
 	const conditions = [
 		eq(deps.tables.notifications.recipient, recipient),
+		ne(deps.tables.notifications.kind, "message"),
 		await afterClear(deps, recipient),
 	];
 	if (options.cursor) conditions.push(lt(deps.tables.notifications.id, options.cursor));

@@ -13,6 +13,7 @@ export type IndexMessageInput = {
 	facets: unknown[] | null;
 	parentAuthor: string | null;
 	parentRkey: string | null;
+	edited?: boolean;
 };
 
 export type IndexedNotificationRow = Schema["notifications"]["$inferSelect"];
@@ -305,6 +306,33 @@ const filterRecipients = async (
 	return readable;
 };
 
+const withPushDevice = async (
+	deps: NotificationDeps,
+	dids: readonly string[],
+): Promise<Set<string>> => {
+	if (dids.length === 0) return new Set();
+
+	const rows = await deps.db
+		.selectDistinct({ actor: deps.tables.pushSubscriptions.actor })
+		.from(deps.tables.pushSubscriptions)
+		.where(inArray(deps.tables.pushSubscriptions.actor, [...dids]));
+
+	return new Set(rows.map((row) => row.actor));
+};
+
+const rowsToStore = async (
+	deps: NotificationDeps,
+	rows: readonly IndexedNotificationRow[],
+): Promise<IndexedNotificationRow[]> => {
+	const plain = rows.filter((row) => row.kind === "message");
+	const devices = await withPushDevice(
+		deps,
+		plain.map((row) => row.recipient),
+	);
+
+	return rows.filter((row) => row.kind !== "message" || devices.has(row.recipient));
+};
+
 export const indexMessage = async (
 	deps: NotificationDeps,
 	message: IndexMessageInput,
@@ -343,9 +371,11 @@ export const indexMessage = async (
 		[...recipients.values()].map((recipient) => recipient.did),
 	);
 
-	for (const did of await plainMessageAudience(deps, message)) {
-		if (did === message.author || recipients.has(did)) continue;
-		recipients.set(did, { did, kind: "message", mentionRole: null });
+	if (!message.edited) {
+		for (const did of await plainMessageAudience(deps, message)) {
+			if (did === message.author || recipients.has(did)) continue;
+			recipients.set(did, { did, kind: "message", mentionRole: null });
+		}
 	}
 
 	if (recipients.size === 0) return [];
@@ -368,6 +398,11 @@ export const indexMessage = async (
 		seenAt: null,
 	}));
 
-	await deps.db.insert(deps.tables.notifications).values(rows);
+	const stored = await rowsToStore(deps, rows);
+
+	if (stored.length > 0) {
+		await deps.db.insert(deps.tables.notifications).values(stored);
+	}
+
 	return rows;
 };

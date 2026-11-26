@@ -1,6 +1,7 @@
-import { and, asc, inArray, isNotNull, lt, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, lt, or } from "drizzle-orm";
 import type { NotificationDeps } from "./deps.js";
 import { idAt } from "./id.js";
+import { TRAY_LIFETIME_MS } from "./push.js";
 
 export type PruneOptions = {
 	batchSize?: number;
@@ -11,6 +12,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const SEEN_RETENTION_MS = 30 * DAY_MS;
 export const UNSEEN_RETENTION_MS = 90 * DAY_MS;
+export const MESSAGE_RETENTION_MS = TRAY_LIFETIME_MS;
 export const PRUNE_BATCH_SIZE = 5_000;
 export const PRUNE_MAX_BATCHES = 50;
 
@@ -24,10 +26,12 @@ export const pruneNotifications = async (
 	const now = new Date(deps.now()).getTime();
 	const seenCutoff = idAt(new Date(now - SEEN_RETENTION_MS));
 	const allCutoff = idAt(new Date(now - UNSEEN_RETENTION_MS));
+	const messageCutoff = idAt(new Date(now - MESSAGE_RETENTION_MS));
 
 	const expired = or(
 		lt(notifications.id, allCutoff),
 		and(lt(notifications.id, seenCutoff), isNotNull(notifications.seenAt)),
+		and(lt(notifications.id, messageCutoff), eq(notifications.kind, "message")),
 	);
 
 	let deleted = 0;

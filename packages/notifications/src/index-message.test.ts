@@ -18,13 +18,28 @@ let database: TestDatabase;
 let deps: NotificationDeps;
 let readable: Set<string> | null;
 
-const member = async (did: string, roles: string[] = []) => {
+const pushDevice = async (did: string) => {
+	await database.db.insert(database.tables.pushSubscriptions).values({
+		id: `push-${did}`,
+		actor: did,
+		provider: "fcm",
+		platform: "android",
+		token: `token-${did}`,
+		createdAt: NOW,
+	});
+};
+
+const member = async (did: string, roles: string[] = [], device = true) => {
 	await database.db.insert(database.tables.members).values({
 		community: COMMUNITY,
 		did,
 		roles,
 		joinedAt: NOW,
 	});
+
+	if (device) {
+		await pushDevice(did);
+	}
 };
 
 const role = async (
@@ -205,6 +220,66 @@ describe("indexMessage", () => {
 		const rows = await rowsFor(recipient);
 		expect(rows).toHaveLength(1);
 		expect(rows[0]?.kind).toBe("message");
+	});
+
+	describe("for a member without a push device", () => {
+		const recipient = "did:plc:nodevice00000000000000000";
+
+		beforeEach(async () => {
+			await member(recipient, [], false);
+		});
+
+		it("returns a plain message notification without storing it", async () => {
+			const returned = await indexMessage(deps, {
+				space: CHANNEL,
+				community: COMMUNITY,
+				author: AUTHOR,
+				rkey: "3lkmsg1",
+				facets: null,
+				parentAuthor: null,
+				parentRkey: null,
+			});
+
+			expect(returned.filter((row) => row.recipient === recipient)).toHaveLength(1);
+			expect(await rowsFor(recipient)).toHaveLength(0);
+		});
+
+		it("still stores a mention", async () => {
+			await indexMessage(deps, {
+				space: CHANNEL,
+				community: COMMUNITY,
+				author: AUTHOR,
+				rkey: "3lkmsg1",
+				facets: [mentionFacet(recipient)],
+				parentAuthor: null,
+				parentRkey: null,
+			});
+
+			const rows = await rowsFor(recipient);
+			expect(rows).toHaveLength(1);
+			expect(rows[0]?.kind).toBe("mention");
+		});
+	});
+
+	it("skips the plain message audience for an edit but keeps a new mention", async () => {
+		const plain = "did:plc:plain00000000000000000000";
+		const mentioned = "did:plc:mentioned0000000000000000";
+		await member(plain);
+		await member(mentioned);
+
+		const returned = await indexMessage(deps, {
+			space: CHANNEL,
+			community: COMMUNITY,
+			author: AUTHOR,
+			rkey: "3lkmsg1",
+			facets: [mentionFacet(mentioned)],
+			parentAuthor: null,
+			parentRkey: null,
+			edited: true,
+		});
+
+		expect(returned.map((row) => [row.recipient, row.kind])).toEqual([[mentioned, "mention"]]);
+		expect(await rowsFor(plain)).toHaveLength(0);
 	});
 
 	describe("in a thread", () => {

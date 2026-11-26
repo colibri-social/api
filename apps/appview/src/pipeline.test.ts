@@ -676,6 +676,14 @@ describe("connectPipeline", () => {
 			{ community: COMMUNITY, did: AUTHOR, roles: [], joinedAt: NOW },
 			{ community: COMMUNITY, did: mentioned, roles: [], joinedAt: NOW },
 		]);
+		await database.db.insert(database.tables.pushSubscriptions).values({
+			id: "push-mentioned",
+			actor: mentioned,
+			provider: "fcm",
+			platform: "android",
+			token: "token-mentioned",
+			createdAt: NOW,
+		});
 
 		const rkey = nextTid();
 		await putForwardedMessageRow(rkey, mentioned);
