@@ -130,13 +130,14 @@ export const handleGetInvitation = async (
 	communities: CommunityViews,
 	code: string,
 	callerDid: string | null,
+	community?: string,
 ): Promise<{ invitation: InvitationView; community: CommunityView }> => {
 	const [row] = await ctx.database.db
 		.select()
 		.from(ctx.database.tables.invitations)
 		.where(eq(ctx.database.tables.invitations.code, code))
 		.limit(1);
-	if (!row) throw invitationNotFound();
+	if (!row || (community && row.community !== community)) throw invitationNotFound();
 
 	const communityRow = await ctx.loader.community(row.community);
 	if (!communityRow) throw invitationNotFound();
@@ -232,7 +233,13 @@ export const registerCommunityRoutes = ({ server, ctx, auth }: RouteDeps): void 
 		auth: auth.optional,
 		handler: async ({ params, auth: caller }) => ({
 			encoding: "application/json" as const,
-			body: await handleGetInvitation(ctx, communities, params.code, caller.credentials.did),
+			body: await handleGetInvitation(
+				ctx,
+				communities,
+				params.code,
+				caller.credentials.did,
+				params.community,
+			),
 		}),
 	});
 

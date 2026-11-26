@@ -196,6 +196,25 @@ describe("getInvitation", () => {
 		expect(result.community.did).toBe(COMMUNITY);
 	});
 
+	it("refuses a code that belongs to another community than the link names", async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+		await insertInvitation(COMMUNITY, "welcome-code");
+
+		await expect(
+			handleGetInvitation(
+				ctx,
+				communities,
+				"welcome-code",
+				null,
+				"did:plc:otherxxxxxxxxxxxxxxxxxxxxx",
+			),
+		).rejects.toMatchObject({ customErrorName: "InvitationNotFound" });
+
+		const named = await handleGetInvitation(ctx, communities, "welcome-code", null, COMMUNITY);
+
+		expect(named.community.did).toBe(COMMUNITY);
+	});
+
 	it("reports an unknown code as InvitationNotFound", async () => {
 		await expect(handleGetInvitation(ctx, communities, "nope", null)).rejects.toMatchObject({
 			customErrorName: "InvitationNotFound",
