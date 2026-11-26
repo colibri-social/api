@@ -1,7 +1,9 @@
 import {
 	CreateBucketCommand,
 	DeleteObjectCommand,
+	DeleteObjectsCommand,
 	GetObjectCommand,
+	ListObjectsV2Command,
 	PutObjectCommand,
 	S3Client,
 } from "@aws-sdk/client-s3";
@@ -138,6 +140,74 @@ export class S3BlobBucket implements BlobBucket {
 
 	async delete(key: string): Promise<void> {
 		await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+	}
+
+	async countPrefix(prefix: string): Promise<number> {
+		let count = 0;
+		let token: string | undefined;
+
+		do {
+			const page = await this.listPage(prefix, token);
+
+			count += page.keys.length;
+			token = page.next;
+		} while (token);
+
+		return count;
+	}
+
+	async deletePrefix(prefix: string): Promise<number> {
+		let deleted = 0;
+
+		for (;;) {
+			const { keys } = await this.listPage(prefix);
+
+			if (keys.length === 0) {
+				return deleted;
+			}
+
+			const output = await this.client.send(
+				new DeleteObjectsCommand({
+					Bucket: this.bucket,
+					Delete: { Objects: keys.map((key) => ({ Key: key })), Quiet: true },
+				}),
+			);
+			const failed = output.Errors ?? [];
+
+			if (failed.length > 0) {
+				throw new Error(
+					`could not delete ${failed.length} objects under ${prefix}, first ${failed[0]?.Key}: ${failed[0]?.Code}`,
+				);
+			}
+
+			deleted += keys.length;
+		}
+	}
+
+	private async listPage(
+		prefix: string,
+		token?: string,
+	): Promise<{ keys: string[]; next: string | undefined }> {
+		try {
+			const output = await this.client.send(
+				new ListObjectsV2Command({
+					Bucket: this.bucket,
+					Prefix: prefix,
+					...(token ? { ContinuationToken: token } : {}),
+				}),
+			);
+
+			return {
+				keys: (output.Contents ?? []).flatMap((object) => (object.Key ? [object.Key] : [])),
+				next: output.IsTruncated ? output.NextContinuationToken : undefined,
+			};
+		} catch (error) {
+			if (isMissingBucket(error)) {
+				return { keys: [], next: undefined };
+			}
+
+			throw error;
+		}
 	}
 }
 

@@ -341,6 +341,9 @@ importers:
       '@colibri-social/appview-db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@colibri-social/blobs':
+        specifier: workspace:*
+        version: link:../../packages/blobs
       '@colibri-social/community':
         specifier: workspace:*
         version: link:../../packages/community

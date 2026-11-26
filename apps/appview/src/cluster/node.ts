@@ -69,6 +69,8 @@ export const INVITE_MS = 60_000;
 
 export const ALIVE_TIMEOUT_MS = 2_000;
 
+export const SELF_RESTART_DELAY_MS = 2_000;
+
 export type ClusterNodeDeps = {
 	ctx: AppContext;
 	roles: ReadonlySet<NodeRole>;
@@ -76,6 +78,7 @@ export type ClusterNodeDeps = {
 	load: () => { connections: number; activeCalls: number };
 	onDrain: (mode: DrainMode, graceMinutes: number | undefined) => void;
 	onResume: () => void;
+	onNetworkPark: (graceMinutes: number | undefined) => void;
 	onWriteMode: (mode: WriteMode) => void;
 	yieldMain: (target: string) => Promise<boolean>;
 	app: (request: IncomingMessage, response: ServerResponse) => void;
@@ -584,6 +587,10 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 		registry,
 		self: ctx.nodeId,
 		send,
+		parkSelf: deps.onNetworkPark,
+		restartSelf: () => {
+			setTimeout(deps.onResume, SELF_RESTART_DELAY_MS);
+		},
 		...(ansible ? { ansible } : {}),
 		...(rollout
 			? {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConfigError, loadConfig } from "./config.js";
+import { ConfigError, loadConfig, readPolyfillBucket } from "./config.js";
 
 const REQUIRED = {
 	PUBLIC_URL: "https://appview.example.com",
@@ -227,5 +227,34 @@ describe("POLYFILL_S3_*", () => {
 		expect(() => withBucket({ POLYFILL_S3_BUCKET: "colibri-blobs" })).toThrow(
 			/POLYFILL_S3_ACCESS_KEY_ID/,
 		);
+	});
+});
+
+describe("readPolyfillBucket", () => {
+	it("reads the bucket from the POLYFILL_S3_ settings alone", () => {
+		expect(
+			readPolyfillBucket({
+				POLYFILL_S3_ENDPOINT: "http://blobs:8333",
+				POLYFILL_S3_BUCKET: "colibri",
+				POLYFILL_S3_ACCESS_KEY_ID: "key",
+				POLYFILL_S3_SECRET_ACCESS_KEY: "secret",
+				POLYFILL_S3_FORCE_PATH_STYLE: "true",
+			}),
+		).toEqual({
+			endpoint: "http://blobs:8333",
+			region: "us-east-1",
+			bucket: "colibri",
+			accessKeyId: "key",
+			secretAccessKey: "secret",
+			forcePathStyle: true,
+		});
+	});
+
+	it("returns null without bucket settings", () => {
+		expect(readPolyfillBucket({})).toBeNull();
+	});
+
+	it("rejects a partial bucket", () => {
+		expect(() => readPolyfillBucket({ POLYFILL_S3_BUCKET: "colibri" })).toThrow(ConfigError);
 	});
 });

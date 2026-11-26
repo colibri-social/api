@@ -66,6 +66,9 @@ export type Registry = {
 	rolloutPaused: () => Promise<boolean>;
 	pauseRollout: () => Promise<void>;
 	resumeRollout: () => Promise<void>;
+	networkParked: () => Promise<boolean>;
+	networkParkedNodes: () => Promise<string[]>;
+	setNetworkParked: (parked: boolean, nodes?: string[]) => Promise<void>;
 };
 
 const hash = (value: string): string => {
@@ -348,6 +351,37 @@ export const createRegistry = (
 					target: tables.clusterState.id,
 					set: { rolloutPaused: false, updatedAt: at },
 				});
+		},
+		networkParked: async () => {
+			const [state] = await primary
+				.select({ parked: tables.clusterState.networkParked })
+				.from(tables.clusterState)
+				.where(eq(tables.clusterState.id, CLUSTER_STATE_ID))
+				.limit(1);
+
+			return state?.parked ?? false;
+		},
+		networkParkedNodes: async () => {
+			const [state] = await primary
+				.select({ nodes: tables.clusterState.networkParkedNodes })
+				.from(tables.clusterState)
+				.where(eq(tables.clusterState.id, CLUSTER_STATE_ID))
+				.limit(1);
+
+			return state?.nodes ?? [];
+		},
+		setNetworkParked: async (parked, parkedNodes = []) => {
+			const at = now().toISOString();
+			const values = {
+				networkParked: parked,
+				networkParkedNodes: parked ? parkedNodes : null,
+				updatedAt: at,
+			};
+
+			await primary
+				.insert(tables.clusterState)
+				.values({ id: CLUSTER_STATE_ID, ...values })
+				.onConflictDoUpdate({ target: tables.clusterState.id, set: values });
 		},
 	};
 };

@@ -276,6 +276,7 @@ const main = async (): Promise<void> => {
 	let cluster: ClusterNode | null = null;
 	let onDrainOrder: (mode: DrainMode, graceMinutes: number | undefined) => void = () => {};
 	let onResumeOrder: () => void = () => {};
+	let onNetworkParkOrder: (graceMinutes: number | undefined) => void = () => {};
 
 	cluster = await startClusterNode({
 		ctx,
@@ -287,6 +288,7 @@ const main = async (): Promise<void> => {
 		}),
 		onDrain: (mode, graceMinutes) => onDrainOrder(mode, graceMinutes),
 		onResume: () => onResumeOrder(),
+		onNetworkPark: (graceMinutes) => onNetworkParkOrder(graceMinutes),
 		onWriteMode: (mode) => events.announceWriteState(mode),
 		yieldMain: (target) => yieldMainTo(target),
 		app: server.router,
@@ -303,9 +305,17 @@ const main = async (): Promise<void> => {
 
 	observeNode(ctx, events, voice);
 
+	let networkParked = cluster
+		? await ctx.registry.networkParked().catch((error: unknown) => {
+				ctx.log.warn({ err: error }, "cluster.networkStateFailed");
+
+				return false;
+			})
+		: false;
+
 	if (cluster?.parked) {
 		ctx.drain.park();
-		ctx.log.warn({ node: ctx.nodeId }, "node.parked");
+		ctx.log.warn({ node: ctx.nodeId, networkParked }, "node.parked");
 	}
 
 	const stopDelivery = bus.subscribe(
@@ -448,7 +458,7 @@ const main = async (): Promise<void> => {
 
 	const mainRole = createMainRole({
 		lock: () => ctx.database.advisoryLock(MAIN_LOCK_KEY),
-		canContend: () => !shuttingDown && !ctx.drain.draining,
+		canContend: () => !shuttingDown && (networkParked || !ctx.drain.draining),
 		mayAcquire: () => cluster?.mayTakeMain() ?? Promise.resolve(true),
 		invite: (target) => cluster?.inviteToMain(target),
 		mainNode: async () => (await ctx.registry.mainNode())?.id ?? null,
@@ -473,6 +483,13 @@ const main = async (): Promise<void> => {
 			await cluster
 				?.becameMain()
 				.catch((error: unknown) => ctx.log.warn({ err: error }, "cluster.claimMainFailed"));
+
+			if (networkParked) {
+				ctx.log.warn("main.networkParked");
+
+				return;
+			}
+
 			mainJobs = await startMainJobs(ctx, events);
 			cluster?.checkForUpdate();
 		},
@@ -523,6 +540,28 @@ const main = async (): Promise<void> => {
 			await step("park", () => cluster?.setState(parkedState(mode), null));
 			cluster?.report({ t: "drained", mode });
 			ctx.log.info({ mode }, "node.parked");
+		})();
+	};
+
+	onNetworkParkOrder = (graceMinutes) => {
+		networkParked = true;
+
+		if (parking || shuttingDown) {
+			return;
+		}
+
+		parking = true;
+		ctx.log.info({ graceMinutes }, "node.networkParking");
+
+		void (async () => {
+			await step("drain", () => drain(graceMinutes));
+			await step("events", () => events.close());
+			await step("voice", () => voice.close());
+			ctx.drain.park();
+			await step("main-jobs", () => mainJobs?.stop());
+			mainJobs = null;
+			await step("park", () => cluster?.setState("maintenance", null));
+			ctx.log.info("node.networkParked");
 		})();
 	};
 

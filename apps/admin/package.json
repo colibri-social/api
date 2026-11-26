@@ -27,6 +27,7 @@
 		"@clack/prompts": "catalog:",
 		"@colibri-social/appview": "workspace:*",
 		"@colibri-social/appview-db": "workspace:*",
+		"@colibri-social/blobs": "workspace:*",
 		"@colibri-social/community": "workspace:*",
 		"drizzle-orm": "catalog:"
 	}

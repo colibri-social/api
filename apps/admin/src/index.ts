@@ -10,9 +10,11 @@ import {
 	probeNode,
 	promoteLocal,
 	readDatabaseStatus,
+	readPolyfillBucket,
 	slotName,
 } from "@colibri-social/appview/cluster";
 import { hostUrls, openDatabase, pickPrimary, probeHost } from "@colibri-social/appview-db";
+import { S3BlobBucket } from "@colibri-social/blobs";
 import { SecretBox } from "@colibri-social/community";
 import {
 	type Admin,
@@ -24,6 +26,8 @@ import {
 	dbStatus,
 	dbSwitchover,
 	monitoringDeploy,
+	networkDown,
+	networkUp,
 	nodeAdd,
 	nodeList,
 	nodeLocation,
@@ -39,6 +43,7 @@ import {
 } from "./commands.js";
 import { type ConfirmPrompts, type ConfirmRequest, createConfirm } from "./confirm.js";
 import { CopyRefusedError, copyDatabase } from "./db-copy.js";
+import { POLYFILL_PREFIX, WipeRefusedError, wipeDatabase } from "./db-wipe.js";
 import { openOrderBus, sendOrder } from "./orders.js";
 import {
 	createIncident,
@@ -74,6 +79,11 @@ Database
   db promote                                                   [irreversible]
   db backup [full|diff|incr]
   db copy --from <libSQL url> --to <Postgres url> [--truncate] [irreversible with --truncate]
+  db wipe [--force]                                            [irreversible]
+
+Network
+  network down [--grace 15m]                                   [disruptive]
+  network up                                                   [disruptive]
 
 Rollouts
   rollout pause|resume
@@ -98,7 +108,7 @@ Shared settings
   config import <file|-> [--dry-run]                           [disruptive when it replaces values]
 
 Disruptive commands describe what they do and ask before they run. Pass --yes to skip the
-question. Irreversible commands ask you to type the node ID, or "truncate" for db copy. Pass
+question. Irreversible commands ask you to type the node ID, "truncate" for db copy, or "wipe" for db wipe. Pass
 --confirm <node id> to skip that question. Without a terminal, both refuse unless you pass the flag.`;
 
 const fail = (message: string, code: number): never => {
@@ -298,7 +308,10 @@ const main = async (): Promise<void> => {
 		Boolean(process.stdin.isTTY && process.stdout.isTTY),
 	);
 
-	if (group === "db" && !["failback", "switchover", "backup", "status"].includes(command ?? "")) {
+	if (
+		group === "db" &&
+		!["failback", "switchover", "backup", "status", "wipe"].includes(command ?? "")
+	) {
 		process.exit(await runDbCommand(command, values, confirm));
 	}
 
@@ -385,6 +398,58 @@ const main = async (): Promise<void> => {
 			now: admin.now,
 			close: () => kuma.close(),
 		};
+	};
+
+	const polyfillBucket = async (): Promise<S3BlobBucket | null> => {
+		const shared = process.env.CREDENTIAL_ENCRYPTION_KEY ? await admin.config.values() : {};
+		const local = Object.fromEntries(
+			Object.entries(process.env).filter(([key, value]) => key.startsWith("POLYFILL_S3_") && value),
+		);
+
+		try {
+			const config = readPolyfillBucket({ ...shared, ...local });
+
+			return config ? new S3BlobBucket(config) : null;
+		} catch (error) {
+			throw new RefusedError(error instanceof Error ? error.message : String(error));
+		}
+	};
+
+	const runWipe = async (): Promise<void> => {
+		const bucket = await polyfillBucket();
+
+		try {
+			await wipeDatabase({
+				database,
+				registry: admin.registry,
+				bucket,
+				force: values.force,
+				now: admin.now,
+				print: admin.print,
+				beforeWipe: (plan) =>
+					confirm({
+						risk: "irreversible",
+						title: "wipe the AppView data",
+						token: "wipe",
+						effects: [
+							`Empties every table except the cluster setup. ${plan.tables.length} tables have rows now: ${plan.tables.map((entry) => `${entry.table} ${entry.rows}`).join(", ") || "none"}.`,
+							"Keeps cluster_config, cluster_state, nodes, node_join_tokens, telemetry_state, the migrations and the monitoring fingerprint. Jetstream starts from now on the next start.",
+							plan.objects === null
+								? "No polyfill bucket is configured, so no objects are deleted."
+								: `Deletes ${plan.objects} objects under ${POLYFILL_PREFIX} in the polyfill bucket.`,
+							"Nothing comes back afterwards. Run colibri-admin db backup full first if you need the data.",
+						],
+					}),
+			});
+		} catch (error) {
+			if (error instanceof WipeRefusedError) throw new RefusedError(error.message);
+
+			throw error;
+		}
+
+		admin.print(
+			"Blob caches keep their files. Empty BLOB_DISK_CACHE_DIR on every node to free that space.",
+		);
 	};
 
 	const runStatus = async (): Promise<void> => {
@@ -495,6 +560,12 @@ const main = async (): Promise<void> => {
 				return dbBackup(admin, first);
 			case "db status":
 				return dbStatus(admin);
+			case "db wipe":
+				return runWipe();
+			case "network down":
+				return networkDown(admin, values.grace);
+			case "network up":
+				return networkUp(admin);
 			case "db failback":
 				return dbSwitchover(admin, { force: values.force, wait: !values["no-wait"] });
 			case "db switchover":

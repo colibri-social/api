@@ -32,7 +32,9 @@ export type ClusterOrder =
 	| { kind: "failback"; id: string; node: string; force?: boolean }
 	| { kind: "switchoverCheck"; id: string; node: string }
 	| { kind: "rolloutNow"; id: string; graceMinutes: number }
-	| { kind: "backup"; id: string; type: BackupType };
+	| { kind: "backup"; id: string; type: BackupType }
+	| { kind: "networkDown"; id: string; graceMinutes?: number }
+	| { kind: "networkUp"; id: string };
 
 export const BACKUP_TYPES = ["full", "diff", "incr"] as const;
 
@@ -83,6 +85,8 @@ export type OrderDeps = {
 	backup?: {
 		vars: () => Record<string, unknown>;
 	};
+	parkSelf?: (graceMinutes: number | undefined) => void;
+	restartSelf?: () => void;
 };
 
 const tailOf = (result: PlaybookResult): string => {
@@ -586,6 +590,103 @@ const backup = async (
 	return done(order, `the ${order.type} backup on ${deps.self} finished`);
 };
 
+const networkDown = async (
+	deps: OrderDeps,
+	order: Extract<ClusterOrder, { kind: "networkDown" }>,
+): Promise<OrderResult> => {
+	const { parkSelf, registry } = deps;
+
+	if (!parkSelf) {
+		return refused(order, "this main node can't park itself");
+	}
+
+	if (busyWith) {
+		return refused(order, `a ${busyWith} is running. Try again when it's done`);
+	}
+
+	const already = (await registry.networkParked()) ? await registry.networkParkedNodes() : [];
+	const targets = (await registry.list()).filter(
+		(node) => node.id !== deps.self && node.state !== "retired" && node.state !== "maintenance",
+	);
+
+	await registry.setNetworkParked(true, [
+		...new Set([...already, deps.self, ...targets.map((node) => node.id)]),
+	]);
+
+	const lines: string[] = [];
+
+	for (const node of targets) {
+		const sent = deps.send(node.id, {
+			t: "drain",
+			mode: "maintenance",
+			...(order.graceMinutes === undefined ? {} : { graceMinutes: order.graceMinutes }),
+		});
+
+		if (sent) {
+			await registry.setState(node.id, "draining");
+			lines.push(`${node.id} is draining`);
+		} else {
+			await registry.setState(node.id, "maintenance", null);
+			lines.push(`${node.id} is not connected and is now marked maintenance`);
+		}
+	}
+
+	parkSelf(order.graceMinutes);
+	lines.push(`${deps.self} is draining and keeps the main role`);
+
+	return done(order, lines.join("\n"));
+};
+
+const networkUp = async (
+	deps: OrderDeps,
+	order: Extract<ClusterOrder, { kind: "networkUp" }>,
+): Promise<OrderResult> => {
+	const { restartSelf, registry } = deps;
+
+	if (!restartSelf) {
+		return refused(order, "this main node can't restart itself");
+	}
+
+	if (!(await registry.networkParked())) {
+		return refused(
+			order,
+			"the network isn't down. To bring back a single node, run colibri-admin node resume",
+		);
+	}
+
+	const parked = new Set(await registry.networkParkedNodes());
+
+	await registry.setNetworkParked(false);
+
+	const lines: string[] = [];
+
+	for (const node of await registry.list()) {
+		if (node.id === deps.self || !parked.has(node.id)) {
+			continue;
+		}
+
+		if (node.state !== "maintenance" && node.state !== "draining") {
+			lines.push(`${node.id} is ${node.state} and stays as it is`);
+
+			continue;
+		}
+
+		await registry.setState(node.id, "active", null);
+
+		const sent = deps.send(node.id, { t: "resume" });
+
+		lines.push(
+			sent ? `${node.id} is restarting` : `${node.id} is marked active and rejoins when it starts`,
+		);
+	}
+
+	await registry.setState(deps.self, "active", null);
+	restartSelf();
+	lines.push(`${deps.self} is restarting`);
+
+	return done(order, lines.join("\n"));
+};
+
 export const ORDER_TIMEOUTS_MS: Record<ClusterOrder["kind"], number> = {
 	shutdown: 30_000,
 	resume: 30_000,
@@ -598,6 +699,8 @@ export const ORDER_TIMEOUTS_MS: Record<ClusterOrder["kind"], number> = {
 	switchoverCheck: 30_000,
 	rolloutNow: 30_000,
 	backup: 3 * 60 * 60_000,
+	networkDown: 30_000,
+	networkUp: 30_000,
 };
 
 export const handleOrder = (deps: OrderDeps, order: ClusterOrder): Promise<OrderResult> => {
@@ -624,5 +727,9 @@ export const handleOrder = (deps: OrderDeps, order: ClusterOrder): Promise<Order
 			return rolloutNow(deps, order);
 		case "backup":
 			return backup(deps, order);
+		case "networkDown":
+			return networkDown(deps, order);
+		case "networkUp":
+			return networkUp(deps, order);
 	}
 };

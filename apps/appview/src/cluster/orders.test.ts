@@ -578,3 +578,97 @@ describe("backup orders", () => {
 		expect(missing.ok).toBe(false);
 	});
 });
+
+describe("network orders", () => {
+	it("parks every node, the main node last, and keeps maintenance nodes as they are", async () => {
+		const parkSelf = vi.fn();
+
+		await deps.registry.setState("eu-3", "maintenance", null);
+		deps.send.mockImplementation((node: string) => node === "eu-2");
+
+		const result = await handleOrder(
+			{ ...deps, parkSelf },
+			{ kind: "networkDown", id: "n1", graceMinutes: 5 },
+		);
+
+		expect(result.ok).toBe(true);
+		expect(await deps.registry.networkParked()).toBe(true);
+		expect(deps.send).toHaveBeenCalledTimes(1);
+		expect(deps.send).toHaveBeenCalledWith("eu-2", {
+			t: "drain",
+			mode: "maintenance",
+			graceMinutes: 5,
+		});
+		expect((await deps.registry.node("eu-2"))?.state).toBe("draining");
+		expect((await deps.registry.node("eu-3"))?.state).toBe("maintenance");
+		expect(parkSelf).toHaveBeenCalledWith(5);
+	});
+
+	it("marks a node that isn't connected as maintenance", async () => {
+		deps.send.mockReturnValue(false);
+
+		const result = await handleOrder(
+			{ ...deps, parkSelf: vi.fn() },
+			{ kind: "networkDown", id: "n2" },
+		);
+
+		expect(result.message).toMatch(/eu-2 is not connected/);
+		expect((await deps.registry.node("eu-2"))?.state).toBe("maintenance");
+	});
+
+	it("refuses network up while the network is running", async () => {
+		const restartSelf = vi.fn();
+		const result = await handleOrder({ ...deps, restartSelf }, { kind: "networkUp", id: "n3" });
+
+		expect(result.ok).toBe(false);
+		expect(restartSelf).not.toHaveBeenCalled();
+	});
+
+	it("records the nodes it parks, keeping earlier ones on a second run", async () => {
+		await deps.registry.setState("eu-3", "maintenance", null);
+		await handleOrder({ ...deps, parkSelf: vi.fn() }, { kind: "networkDown", id: "n4" });
+
+		expect((await deps.registry.networkParkedNodes()).sort()).toEqual(["eu-1", "eu-2"]);
+
+		await register("eu-4");
+		await handleOrder({ ...deps, parkSelf: vi.fn() }, { kind: "networkDown", id: "n5" });
+
+		expect((await deps.registry.networkParkedNodes()).sort()).toEqual(["eu-1", "eu-2", "eu-4"]);
+	});
+
+	it("restarts only the nodes network down parked, then the main node", async () => {
+		const restartSelf = vi.fn();
+
+		await deps.registry.setState("eu-3", "maintenance", null);
+		await handleOrder({ ...deps, parkSelf: vi.fn() }, { kind: "networkDown", id: "n6" });
+		await deps.registry.setState("eu-1", "maintenance", null);
+		await deps.registry.setState("eu-2", "maintenance", null);
+		deps.send.mockClear();
+
+		const result = await handleOrder({ ...deps, restartSelf }, { kind: "networkUp", id: "n7" });
+
+		expect(result.ok).toBe(true);
+		expect(await deps.registry.networkParked()).toBe(false);
+		expect(await deps.registry.networkParkedNodes()).toEqual([]);
+		expect(deps.send).toHaveBeenCalledTimes(1);
+		expect(deps.send).toHaveBeenCalledWith("eu-2", { t: "resume" });
+		expect((await deps.registry.node("eu-1"))?.state).toBe("active");
+		expect((await deps.registry.node("eu-2"))?.state).toBe("active");
+		expect((await deps.registry.node("eu-3"))?.state).toBe("maintenance");
+		expect(restartSelf).toHaveBeenCalledOnce();
+	});
+
+	it("leaves a parked node alone that was retired in the meantime", async () => {
+		await handleOrder({ ...deps, parkSelf: vi.fn() }, { kind: "networkDown", id: "n8" });
+		await deps.registry.setState("eu-3", "retired", null);
+		deps.send.mockClear();
+
+		const result = await handleOrder(
+			{ ...deps, restartSelf: vi.fn() },
+			{ kind: "networkUp", id: "n9" },
+		);
+
+		expect(result.message).toMatch(/eu-3 is retired and stays as it is/);
+		expect(deps.send).not.toHaveBeenCalledWith("eu-3", expect.anything());
+	});
+});

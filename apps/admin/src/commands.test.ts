@@ -11,6 +11,8 @@ import {
 	dbSwitchover,
 	formatTable,
 	monitoringDeploy,
+	networkDown,
+	networkUp,
 	nodeAdd,
 	nodeList,
 	nodeLocation,
@@ -571,5 +573,55 @@ describe("database switching", () => {
 					line.startsWith("fsn-1 isn't ready:") && line.includes("eu-2's DATABASE_URL lists hel-1"),
 			),
 		).toBe(true);
+	});
+});
+
+describe("network", () => {
+	it("confirms before taking the network down and passes the grace", async () => {
+		await register("eu-1", ["main", "api"]);
+		await register("eu-2");
+
+		await networkDown(admin, "15m");
+
+		expect(admin.confirm).toHaveBeenCalledWith(
+			expect.objectContaining({ risk: "disruptive", effects: expect.any(Array) }),
+		);
+		expect(admin.sendOrder).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "networkDown", graceMinutes: 15 }),
+		);
+	});
+
+	it("leaves the grace to the nodes when none is given", async () => {
+		await networkDown(admin, undefined);
+
+		expect(admin.sendOrder).toHaveBeenCalledWith(
+			expect.not.objectContaining({ graceMinutes: expect.anything() }),
+		);
+	});
+
+	it("names the nodes network down parked and the ones that stay in maintenance", async () => {
+		await register("eu-1", ["main", "api"]);
+		await register("eu-2");
+		await register("eu-3");
+		await registry.setState("eu-2", "maintenance", null);
+		await registry.setState("eu-3", "maintenance", null);
+		await registry.setNetworkParked(true, ["eu-1", "eu-2"]);
+
+		await networkUp(admin);
+
+		const effects = vi.mocked(admin.confirm).mock.calls[0]?.[0].effects ?? [];
+
+		expect(effects[0]).toMatch(/2 nodes that network down parked: eu-1, eu-2/);
+		expect(effects[1]).toMatch(/^eu-3 stay in maintenance/);
+		expect(admin.sendOrder).toHaveBeenCalledWith(expect.objectContaining({ kind: "networkUp" }));
+	});
+
+	it("shows in the node list that the network is down", async () => {
+		await register("eu-1", ["main", "api"]);
+		await registry.setNetworkParked(true);
+
+		await nodeList(admin);
+
+		expect(printed.at(-1)).toMatch(/network is down/);
 	});
 });

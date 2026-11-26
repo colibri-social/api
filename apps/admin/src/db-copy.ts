@@ -24,13 +24,13 @@ export type TableCopy = {
 
 export class CopyRefusedError extends Error {}
 
-type AnyTable = Schema[keyof Schema];
+export type AnyTable = Schema[keyof Schema];
 
-const tableName = (table: AnyTable): string => {
+export const tableName = (table: AnyTable): string => {
 	return (table as unknown as { [key: symbol]: string })[Symbol.for("drizzle:Name")] ?? "";
 };
 
-const countRows = async (database: Database, table: AnyTable): Promise<number> => {
+export const countRows = async (database: Database, table: AnyTable): Promise<number> => {
 	const [row] = await (
 		database.primary as unknown as {
 			select: (fields: unknown) => { from: (table: AnyTable) => Promise<{ count: number }[]> };

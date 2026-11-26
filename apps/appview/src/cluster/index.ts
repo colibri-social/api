@@ -1,10 +1,12 @@
 export type { EventMessage } from "../announce.js";
 export { type BusDelivery, type EventBus, postgresBus } from "../bus.js";
-export { NODE_ROLES } from "../config.js";
+export { NODE_ROLES, readPolyfillBucket } from "../config.js";
+export { PEER_HEARTBEAT_WINDOW_MS } from "../drain.js";
 export * from "./config-store.js";
 export * from "./db-status.js";
 export * from "./failover.js";
 export * from "./kuma.js";
+export { MONITORING_FINGERPRINT_KEY } from "./monitoring-sync.js";
 export * from "./orders.js";
 export * from "./quorum.js";
 export * from "./registry.js";

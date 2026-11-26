@@ -332,7 +332,18 @@ const POLYFILL_BUCKET_KEYS = [
 	"POLYFILL_S3_SECRET_ACCESS_KEY",
 ] as const;
 
-const polyfillBucketOf = (raw: RawConfig): BlobBucketConfig | null => {
+const POLYFILL_SETTINGS = {
+	POLYFILL_S3_ENDPOINT: true,
+	POLYFILL_S3_REGION: true,
+	POLYFILL_S3_BUCKET: true,
+	POLYFILL_S3_ACCESS_KEY_ID: true,
+	POLYFILL_S3_SECRET_ACCESS_KEY: true,
+	POLYFILL_S3_FORCE_PATH_STYLE: true,
+} as const;
+
+type PolyfillSettings = Pick<RawConfig, keyof typeof POLYFILL_SETTINGS>;
+
+const polyfillBucketOf = (raw: PolyfillSettings): BlobBucketConfig | null => {
 	const missing = POLYFILL_BUCKET_KEYS.filter((key) => !raw[key]);
 
 	if (missing.length === POLYFILL_BUCKET_KEYS.length) {
@@ -353,6 +364,20 @@ const polyfillBucketOf = (raw: RawConfig): BlobBucketConfig | null => {
 		forcePathStyle: raw.POLYFILL_S3_FORCE_PATH_STYLE,
 		...(raw.POLYFILL_S3_ENDPOINT ? { endpoint: raw.POLYFILL_S3_ENDPOINT } : {}),
 	};
+};
+
+export const readPolyfillBucket = (
+	env: Record<string, string | undefined>,
+): BlobBucketConfig | null => {
+	const parsed = configSchema.pick(POLYFILL_SETTINGS).safeParse(env);
+
+	if (!parsed.success) {
+		throw new ConfigError(
+			parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`),
+		);
+	}
+
+	return polyfillBucketOf(parsed.data);
 };
 
 export const loadConfig = (env: NodeJS.ProcessEnv = process.env): Config => {

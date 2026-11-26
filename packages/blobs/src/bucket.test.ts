@@ -1,7 +1,9 @@
 import {
 	CreateBucketCommand,
 	DeleteObjectCommand,
+	DeleteObjectsCommand,
 	GetObjectCommand,
+	ListObjectsV2Command,
 	NoSuchKey,
 	PutObjectCommand,
 } from "@aws-sdk/client-s3";
@@ -160,6 +162,77 @@ describe("S3BlobBucket", () => {
 			Bucket: "colibri-blobs",
 			Key: "polyfill/a/b",
 		});
+	});
+});
+
+describe("S3BlobBucket prefixes", () => {
+	const objectStore = (keys: string[], pageSize: number) => {
+		const stored = new Set(keys);
+
+		return recordingClient((command) => {
+			if (command instanceof ListObjectsV2Command) {
+				const matching = [...stored].filter((key) => key.startsWith(command.input.Prefix ?? ""));
+				const start = Number(command.input.ContinuationToken ?? 0);
+				const page = matching.slice(start, start + pageSize);
+				const truncated = start + pageSize < matching.length;
+
+				return {
+					Contents: page.map((key) => ({ Key: key })),
+					IsTruncated: truncated,
+					...(truncated ? { NextContinuationToken: String(start + pageSize) } : {}),
+				};
+			}
+
+			if (command instanceof DeleteObjectsCommand) {
+				for (const object of command.input.Delete?.Objects ?? []) {
+					stored.delete(object.Key ?? "");
+				}
+
+				return {};
+			}
+
+			throw new Error("unexpected command");
+		});
+	};
+
+	const KEYS = ["polyfill/a/1", "polyfill/a/2", "polyfill/b/3", "other/c/4", "polyfill/b/5"];
+
+	it("counts the objects under a prefix across pages", async () => {
+		const { client } = objectStore(KEYS, 2);
+		const bucket = new S3BlobBucket(CONFIG, client);
+
+		expect(await bucket.countPrefix("polyfill/")).toBe(4);
+	});
+
+	it("deletes every object under a prefix and leaves the rest", async () => {
+		const { client, sent } = objectStore(KEYS, 2);
+		const bucket = new S3BlobBucket(CONFIG, client);
+
+		expect(await bucket.deletePrefix("polyfill/")).toBe(4);
+		expect(await bucket.countPrefix("polyfill/")).toBe(0);
+		expect(await bucket.countPrefix("other/")).toBe(1);
+		expect(sent.filter((command) => command instanceof DeleteObjectsCommand)).toHaveLength(2);
+	});
+
+	it("throws when the store refuses to delete an object", async () => {
+		const { client } = recordingClient((command) =>
+			command instanceof ListObjectsV2Command
+				? { Contents: [{ Key: "polyfill/a/1" }], IsTruncated: false }
+				: { Errors: [{ Key: "polyfill/a/1", Code: "AccessDenied" }] },
+		);
+		const bucket = new S3BlobBucket(CONFIG, client);
+
+		await expect(bucket.deletePrefix("polyfill/")).rejects.toThrow(/AccessDenied/);
+	});
+
+	it("treats a missing bucket as empty", async () => {
+		const { client } = recordingClient(() => {
+			throw Object.assign(new Error("missing"), { name: "NoSuchBucket" });
+		});
+		const bucket = new S3BlobBucket(CONFIG, client);
+
+		expect(await bucket.countPrefix("polyfill/")).toBe(0);
+		expect(await bucket.deletePrefix("polyfill/")).toBe(0);
 	});
 });
 

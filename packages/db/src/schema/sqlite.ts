@@ -893,6 +893,8 @@ export const clusterState = sqliteTable("cluster_state", {
 	mainNodeId: text("main_node_id"),
 	writeMode: text("write_mode").notNull().$type<WriteMode>().default("normal"),
 	rolloutPaused: flag("rollout_paused").notNull().default(false),
+	networkParked: flag("network_parked").notNull().default(false),
+	networkParkedNodes: json<string[]>("network_parked_nodes"),
 	updatedAt: timestamp("updated_at").notNull(),
 });
 

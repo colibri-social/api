@@ -141,6 +141,10 @@ export const nodeList = async (admin: Admin): Promise<void> => {
 
 	admin.print("");
 	admin.print("* holds the main role");
+
+	if (await admin.registry.networkParked()) {
+		admin.print("The network is down for maintenance. colibri-admin network up brings it back.");
+	}
 };
 
 const runOrder = async (admin: Admin, order: ClusterOrder): Promise<void> => {
@@ -615,6 +619,55 @@ export const rolloutNow = async (admin: Admin, grace: string | undefined): Promi
 	});
 
 	await runOrder(admin, { kind: "rolloutNow", id: randomUUID(), graceMinutes });
+};
+
+export const networkDown = async (admin: Admin, grace: string | undefined): Promise<void> => {
+	const nodes = (await admin.registry.list()).filter((node) => node.state !== "retired");
+	const sockets = nodes.reduce((total, node) => total + node.connections, 0);
+	const calls = nodes.reduce((total, node) => total + node.activeCalls, 0);
+	const drain = grace
+		? `for up to ${grace}`
+		: "for up to DRAIN_GRACE_MINUTES (120 minutes by default)";
+
+	await admin.confirm({
+		risk: "disruptive",
+		title: "take the whole network down for maintenance",
+		effects: [
+			`All ${nodes.length} nodes stop taking new sockets and calls and drain ${drain}. ${sockets} sockets and ${calls} calls are open now, and nothing takes them over.`,
+			"Every node then answers requests with 503. The main node keeps the main role and stops Jetstream and its background jobs.",
+			"Nodes that restart while the network is down stay parked.",
+			"colibri-admin network up restarts every node.",
+		],
+	});
+
+	await runOrder(admin, {
+		kind: "networkDown",
+		id: randomUUID(),
+		...(grace === undefined ? {} : { graceMinutes: parseGrace(grace) }),
+	});
+};
+
+export const networkUp = async (admin: Admin): Promise<void> => {
+	const parked = await admin.registry.networkParkedNodes();
+	const others = (await admin.registry.list()).filter(
+		(node) => node.state === "maintenance" && !parked.includes(node.id),
+	);
+
+	await admin.confirm({
+		risk: "disruptive",
+		title: "bring the network back",
+		effects: [
+			`Restarts the ${parked.length} nodes that network down parked: ${parked.join(", ") || "none"}. The main node restarts last.`,
+			...(others.length > 0
+				? [
+						`${others.map((node) => node.id).join(", ")} stay in maintenance, because they were parked before network down.`,
+					]
+				: []),
+			"The main node starts Jetstream from the stored cursor, or from now after a wipe.",
+		],
+	});
+
+	await runOrder(admin, { kind: "networkUp", id: randomUUID() });
 };
 
 export const configList = async (admin: Admin): Promise<void> => {
