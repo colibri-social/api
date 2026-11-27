@@ -1,5 +1,11 @@
 # @colibri-social/lexicons
 
+## 2.46.1
+
+### Patch Changes
+
+- 5e5d3b2: `federation.deliverNotification`, `federation.deliverRead` and `federation.retract` declare an empty JSON output, like every other method, and the AppView answers them with an empty object.
+
 ## 2.46.0
 
 ### Minor Changes
