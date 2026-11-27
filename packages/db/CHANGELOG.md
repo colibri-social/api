@@ -1,5 +1,37 @@
 # @colibri-social/appview-db
 
+## 0.28.0
+
+### Minor Changes
+
+- caa3ad8: Accept requests another AppView forwards on a user's behalf. The forwarding AppView signs a service JWT as itself and names the user in the `colibri-acting-for` header. The request goes through only when the user's `social.colibri.beta.actor.appview` record lists that AppView, the AppView isn't blocked, and it stays under `FEDERATION_PEER_RATE` and `FEDERATION_PEER_BURST`. `FEDERATION_ENABLED=false` refuses all of them with `FederationDisabled` and drops `federation` from `describeServer`. `colibri-admin federation block|unblock|list` manages the blocklist
+- 1a258d1: Add the federation tables `federation_peers`, `actor_appviews` and `space_hosts`, and the `origin_appview` and `view` columns on `notifications` for notifications another AppView delivers
+- 8e55a30: Delivers notifications to the other AppViews a user declared:
+  
+  - When a message notifies someone, the managing AppView queues a `federation.deliverNotification` call for each AppView in the recipient's `actor.appview` record other than itself. The call carries the rendered notification plus the Space and channel names for the push banner. `deliverNotification` has new optional `spaceName` and `channelName` inputs.
+  - The main node sends queued deliveries right away and checks the queue every 15 seconds. A failed delivery is tried again after 30 seconds, 2, 10 and 30 minutes, then hourly. Deliveries still undelivered after 24 hours are dropped, as are deliveries the other AppView refuses for good. They live in the new `federation_deliveries` table, added by migration 0050.
+  - The receiving AppView accepts a delivery when the caller manages the notification's Space and the recipient declared the receiving AppView. Blocked peers and the per-peer rate limit apply. It stores the notification with its view, sends it to the user's sockets, counts it toward the badge and pushes it. A repeated delivery for the same message is ignored.
+  - `listNotifications` serves a delivered notification from its stored view.
+- 01dc960: `actor.grantSpaceAccess` takes an optional `community`, which sends the grant to the AppView that manages that community. The new `remote_spaces` table holds the user's `actor.remoteSpace` records, and `actor.listCommunities` lists those communities next to local ones in the stored order. Communities whose AppView doesn't answer within 3 seconds come back in `unavailable`
+
+### Patch Changes
+
+- 858fcd1: Tighten federation between AppViews:
+  
+  - `deliverNotification`, `deliverRead` and `retract` answer `NotJoined` when the recipient has no `remote_spaces` row for the community, and `deliverNotification` refuses a channel or thread outside the notification's community. A failed host or declaration lookup answers `UpstreamFailure` with a 502.
+  - A delivered notification is dropped when the recipient blocked its author or muted the author, community, channel or thread. Listing delivered notifications applies the recipient's blocks.
+  - A `colibri-acting-for` request is only accepted on forwarded methods and `polyfill.beginMigration`. Other methods answer `ActingForNotAllowed`.
+  - Forwards and deliveries refuse endpoints on private, loopback, link-local or unique-local addresses outside development and test. An oversized or interrupted answer counts as unreachable and the router answers 502.
+  - With `FEDERATION_ENABLED=false`, the router decides from the local `communities` table alone. Personal spaces never trigger a host lookup.
+  - Deliveries retry `NotDeclared` and `NotJoined`, and each queued row is claimed before it's sent, so two runners never send the same row. A failed declared AppViews lookup is cached as empty for a minute.
+  - Checks against this AppView's DID accept every alias in `APPVIEW_DID_ALIASES`.
+  - Migration 0051 removes duplicate notifications, keeping the earliest, and adds a unique index on `notifications (recipient, space, message_author, message_rkey)`. Inserts into `notifications` ignore conflicts.
+- 56371fd: Add per-group sound volumes and keep polyfilled blobs readable while the main node drains:
+  
+  - `social.colibri.beta.actor.clientPreferences` and `actor.defs#clientPreferences` have a `soundVolumes` object (`actor.defs#soundVolumes`) with a volume in percent for the `ping`, `presence`, `mic` and `video` sound groups. The AppView stores and returns it with the other client preferences.
+  - Every node reads and writes SeaweedFS directly at `POLYFILL_S3_CLUSTER_ENDPOINT` and falls back to reading through the main node when SeaweedFS can't be reached. The SeaweedFS bucket, region, keys and path style setting are shared cluster config, so a failover node holding the main role serves blobs, accepts uploads and sweeps unreferenced blobs.
+- a48d881: Resolve which AppView manages a community from its `community.host` record, with a 10 minute cache in `space_hosts` and a 1 minute cache for communities without one. `IdentityResolver.serviceEndpointFor` reads a service endpoint from a DID document. The federation tables are now part of the exported schema
+
 ## 0.27.1
 
 ### Patch Changes

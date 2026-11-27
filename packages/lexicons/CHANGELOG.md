@@ -1,5 +1,41 @@
 # @colibri-social/lexicons
 
+## 2.46.0
+
+### Minor Changes
+
+- 8e55a30: Delivers notifications to the other AppViews a user declared:
+  
+  - When a message notifies someone, the managing AppView queues a `federation.deliverNotification` call for each AppView in the recipient's `actor.appview` record other than itself. The call carries the rendered notification plus the Space and channel names for the push banner. `deliverNotification` has new optional `spaceName` and `channelName` inputs.
+  - The main node sends queued deliveries right away and checks the queue every 15 seconds. A failed delivery is tried again after 30 seconds, 2, 10 and 30 minutes, then hourly. Deliveries still undelivered after 24 hours are dropped, as are deliveries the other AppView refuses for good. They live in the new `federation_deliveries` table, added by migration 0050.
+  - The receiving AppView accepts a delivery when the caller manages the notification's Space and the recipient declared the receiving AppView. Blocked peers and the per-peer rate limit apply. It stores the notification with its view, sends it to the user's sockets, counts it toward the badge and pushes it. A repeated delivery for the same message is ignored.
+  - `listNotifications` serves a delivered notification from its stored view.
+- 5621e4c: Hosts a polyfilled user's repo for a Space on the AppView that manages that Space:
+  
+  - `polyfill.uploadBlob` and `polyfill.getBlob` take an optional `space` parameter. When another AppView manages that Space, the call goes there, so a blob sits next to the repo that references it. Without the parameter, both calls stay on this AppView.
+  - `polyfill.beginMigration` also starts the migration on every AppView that manages one of the caller's remote Spaces and returns their spaces with its own. An AppView that refuses or doesn't answer is skipped, and calling `beginMigration` again picks it back up.
+- 01dc960: `actor.grantSpaceAccess` takes an optional `community`, which sends the grant to the AppView that manages that community. The new `remote_spaces` table holds the user's `actor.remoteSpace` records, and `actor.listCommunities` lists those communities next to local ones in the stored order. Communities whose AppView doesn't answer within 3 seconds come back in `unavailable`
+- fb47131: `getCommunity` reports in `viewer.preferencesAccessUntil` until when this AppView can read the caller's preferences space. The field is missing when it holds no access, so a client on another AppView knows to grant access again. `SpaceCredentials` has a new `expiry(space)` method that returns the expiry of a held credential.
+- 56371fd: Add per-group sound volumes and keep polyfilled blobs readable while the main node drains:
+  
+  - `social.colibri.beta.actor.clientPreferences` and `actor.defs#clientPreferences` have a `soundVolumes` object (`actor.defs#soundVolumes`) with a volume in percent for the `ping`, `presence`, `mic` and `video` sound groups. The AppView stores and returns it with the other client preferences.
+  - Every node reads and writes SeaweedFS directly at `POLYFILL_S3_CLUSTER_ENDPOINT` and falls back to reading through the main node when SeaweedFS can't be reached. The SeaweedFS bucket, region, keys and path style setting are shared cluster config, so a failover node holding the main role serves blobs, accepts uploads and sweeps unreferenced blobs.
+- 1c16c11: Add the federation lexicons: `community.host` and `actor.appview` records, the `actor.remoteSpace` preferences record, and the `federation.deliverNotification`, `deliverRead` and `retract` procedures, which answer `FederationDisabled` on an AppView that opted out. `community.getInvitation` takes an optional `community`, `actor.listCommunities` returns unreachable communities in `unavailable`, `describeServer` knows the `federation` feature, and `permissionAccount` covers the new user records
+
+### Patch Changes
+
+- 5137ec8: The `actor.remoteSpace` record description now covers every community the user joined, whichever AppView manages it.
+- 858fcd1: Tighten federation between AppViews:
+  
+  - `deliverNotification`, `deliverRead` and `retract` answer `NotJoined` when the recipient has no `remote_spaces` row for the community, and `deliverNotification` refuses a channel or thread outside the notification's community. A failed host or declaration lookup answers `UpstreamFailure` with a 502.
+  - A delivered notification is dropped when the recipient blocked its author or muted the author, community, channel or thread. Listing delivered notifications applies the recipient's blocks.
+  - A `colibri-acting-for` request is only accepted on forwarded methods and `polyfill.beginMigration`. Other methods answer `ActingForNotAllowed`.
+  - Forwards and deliveries refuse endpoints on private, loopback, link-local or unique-local addresses outside development and test. An oversized or interrupted answer counts as unreachable and the router answers 502.
+  - With `FEDERATION_ENABLED=false`, the router decides from the local `communities` table alone. Personal spaces never trigger a host lookup.
+  - Deliveries retry `NotDeclared` and `NotJoined`, and each queued row is claimed before it's sent, so two runners never send the same row. A failed declared AppViews lookup is cached as empty for a minute.
+  - Checks against this AppView's DID accept every alias in `APPVIEW_DID_ALIASES`.
+  - Migration 0051 removes duplicate notifications, keeping the earliest, and adds a unique index on `notifications (recipient, space, message_author, message_rkey)`. Inserts into `notifications` ignore conflicts.
+
 ## 2.45.0
 
 ### Minor Changes

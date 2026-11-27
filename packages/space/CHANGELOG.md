@@ -1,5 +1,11 @@
 # @colibri-social/space
 
+## 0.13.0
+
+### Minor Changes
+
+- fb47131: `getCommunity` reports in `viewer.preferencesAccessUntil` until when this AppView can read the caller's preferences space. The field is missing when it holds no access, so a client on another AppView knows to grant access again. `SpaceCredentials` has a new `expiry(space)` method that returns the expiry of a held credential.
+
 ## 0.12.1
 
 ### Patch Changes

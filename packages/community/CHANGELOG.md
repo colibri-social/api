@@ -1,5 +1,30 @@
 # @colibri-social/community
 
+## 2.21.0
+
+### Minor Changes
+
+- fad7d26: Publish a `social.colibri.beta.community.host` record naming this AppView in every community it creates or adopts, and backfill it on startup for communities it already manages. Host OAuth sign-ins now also ask to write that record
+
+### Patch Changes
+
+- Updated dependencies [5137ec8]
+- Updated dependencies [caa3ad8]
+- Updated dependencies [1a258d1]
+- Updated dependencies [8e55a30]
+- Updated dependencies [5621e4c]
+- Updated dependencies [858fcd1]
+- Updated dependencies [01dc960]
+- Updated dependencies [fb47131]
+- Updated dependencies [56371fd]
+- Updated dependencies [1c16c11]
+- Updated dependencies [a48d881]
+  - @colibri-social/lexicons@2.46.0
+  - @colibri-social/appview-db@0.28.0
+  - @colibri-social/projections@1.18.0
+  - @colibri-social/space@0.13.0
+  - @colibri-social/identity@0.6.0
+
 ## 2.20.5
 
 ### Patch Changes
