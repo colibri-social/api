@@ -93,7 +93,7 @@ export const createAppServer = (
 		createFederationRouter({
 			enabled: ctx.config.FEDERATION_ENABLED,
 			self: ctx.config.appviewDids,
-			localManagingApp: localManagingApp(ctx.database),
+			localManagingApp: (authority) => localManagingApp(ctx.database)(authority),
 			hosts: ctx.spaceHosts,
 			forward: ctx.forwarder,
 			verifyUser: async (token, lxm) => (await ctx.serviceAuth.verify(token, lxm)).did,
