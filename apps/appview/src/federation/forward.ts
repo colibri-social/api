@@ -26,6 +26,7 @@ export type ForwardRequest = {
 	actingFor: string | undefined;
 	serviceAuth?: boolean;
 	timeoutMs?: number;
+	maxResponseBytes?: number;
 };
 
 export type ForwardAnswer = {
@@ -69,16 +70,16 @@ const outgoingHeaders = (
 	return headers;
 };
 
-const readLimited = async (response: Response): Promise<Buffer> => {
+const readLimited = async (response: Response, limit: number): Promise<Buffer> => {
 	const declared = Number(response.headers.get("content-length"));
 
-	if (Number.isFinite(declared) && declared > FORWARD_RESPONSE_MAX_BYTES) {
+	if (Number.isFinite(declared) && declared > limit) {
 		throw new Error("forwarded response too large");
 	}
 
 	const body = Buffer.from(await response.arrayBuffer());
 
-	if (body.length > FORWARD_RESPONSE_MAX_BYTES) throw new Error("forwarded response too large");
+	if (body.length > limit) throw new Error("forwarded response too large");
 
 	return body;
 };
@@ -116,7 +117,11 @@ export const createForwarder = (deps: ForwardDeps) => {
 			if (value !== null) headers[name] = value;
 		}
 
-		return { status: response.status, headers, body: await readLimited(response) };
+		return {
+			status: response.status,
+			headers,
+			body: await readLimited(response, forward.maxResponseBytes ?? FORWARD_RESPONSE_MAX_BYTES),
+		};
 	};
 };
 

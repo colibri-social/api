@@ -187,6 +187,42 @@ describe("createFederationRouter", () => {
 		expect(forward.mock.calls[1]?.[0]).toBe(MOVED);
 	});
 
+	it("forwards a polyfill upload up to the polyfill's own size limit", async () => {
+		const { base, forwarded } = await start();
+		const space = `at:space/${REMOTE}/social.colibri.beta.channel.text/general`;
+		const upload = new Uint8Array(25 * 1024 * 1024);
+
+		const response = await fetch(
+			`${base}${xrpc("polyfill.uploadBlob")}?space=${encodeURIComponent(space)}`,
+			{
+				method: "POST",
+				headers: { "content-type": "image/png", authorization: "Bearer token" },
+				body: upload,
+			},
+		);
+
+		expect(response.status).toBe(200);
+		expect(forwarded[0]?.request.body?.length).toBe(upload.length);
+	});
+
+	it("refuses other forwarded bodies over the general upload limit", async () => {
+		const { base, forwarded } = await start();
+
+		const response = await fetch(
+			`${base}${xrpc("blob.get")}?space=${encodeURIComponent(
+				`at:space/${REMOTE}/social.colibri.beta.channel.text/general`,
+			)}`,
+			{
+				method: "POST",
+				headers: { "content-type": "application/octet-stream" },
+				body: new Uint8Array(21 * 1024 * 1024),
+			},
+		);
+
+		expect(response.status).toBe(413);
+		expect(forwarded).toEqual([]);
+	});
+
 	it("answers UpstreamFailure when the managing AppView doesn't answer", async () => {
 		const { base } = await start({
 			forward: async () => {

@@ -61,6 +61,22 @@ describe("createForwarder", () => {
 		expect(init.headers).not.toHaveProperty("colibri-acting-for");
 	});
 
+	it("takes a larger answer only when the request allows it", async () => {
+		const large = new Uint8Array(33 * 1024 * 1024);
+		const fetch = vi.fn(async () => new Response(large));
+		const mint = vi.fn(async () => "peer-token");
+		const forward = createForwarder({ mint, fetch: fetch as unknown as typeof globalThis.fetch });
+
+		await expect(forward(TARGET, request(USER))).rejects.toThrow("too large");
+
+		const answer = await forward(TARGET, {
+			...request(USER),
+			maxResponseBytes: 75 * 1024 * 1024,
+		});
+
+		expect(answer.body.length).toBe(large.length);
+	});
+
 	it("reports an AppView that doesn't answer", async () => {
 		const forward = createForwarder({
 			mint: async () => "t",

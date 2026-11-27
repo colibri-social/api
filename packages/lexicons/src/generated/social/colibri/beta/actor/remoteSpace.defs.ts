@@ -10,7 +10,7 @@ type $nsid = typeof $nsid;
 
 export { $nsid };
 
-/** A community the user joined that another AppView manages. Lives in the user's preferences space, so every AppView the user grants access to can list it. The record key is the community's DID. Deleting the record removes the community from the list. */
+/** A community the user joined, whichever AppView manages it. Lives in the user's preferences space, so every AppView the user grants access to can list it, including communities they joined while using another AppView. The record key is the community's DID. Deleting the record removes the community from the list. */
 type Main = { $type: "social.colibri.beta.actor.remoteSpace";
 
   /**
@@ -25,7 +25,7 @@ type Main = { $type: "social.colibri.beta.actor.remoteSpace";
 
 export type { Main };
 
-/** A community the user joined that another AppView manages. Lives in the user's preferences space, so every AppView the user grants access to can list it. The record key is the community's DID. Deleting the record removes the community from the list. */
+/** A community the user joined, whichever AppView manages it. Lives in the user's preferences space, so every AppView the user grants access to can list it, including communities they joined while using another AppView. The record key is the community's DID. Deleting the record removes the community from the list. */
 const main = /*#__PURE__*/ l.record<"any", Main>("any", $nsid, /*#__PURE__*/ l.object({"managingApp":/*#__PURE__*/ l.string({"format":"did"}),"joinedAt":/*#__PURE__*/ l.string({"format":"datetime"})}));
 
 export { main };

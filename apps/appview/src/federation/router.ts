@@ -1,5 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { DEFAULT_MAX_BLOB_BYTES } from "@colibri-social/blobs";
 import type { Logger } from "../logger.js";
+import { POLYFILL_BLOB_MAX_BYTES } from "../polyfill/blobs.js";
 import {
 	type ForwardAnswer,
 	type Forwarder,
@@ -12,6 +14,19 @@ import { routeOf, spaceAuthority } from "./route-table.js";
 
 export const JSON_BODY_LIMIT = 1_000_000;
 export const BLOB_BODY_LIMIT = 20 * 1024 * 1024;
+
+const BODY_LIMITS: Readonly<Record<string, number>> = {
+	"social.colibri.beta.polyfill.uploadBlob": POLYFILL_BLOB_MAX_BYTES,
+};
+
+const bodyLimitOf = (nsid: string): number => {
+	return BODY_LIMITS[nsid] ?? BLOB_BODY_LIMIT;
+};
+
+const ANSWER_LIMITS: Readonly<Record<string, number>> = {
+	"social.colibri.beta.polyfill.getBlob": POLYFILL_BLOB_MAX_BYTES,
+	"social.colibri.beta.blob.get": DEFAULT_MAX_BLOB_BYTES,
+};
 
 export type BufferedRequest = IncomingMessage & {
 	body?: unknown;
@@ -183,7 +198,7 @@ export const createFederationRouter = (deps: RouterDeps) => {
 		}
 
 		const payload =
-			request.method === "POST" ? await bufferBody(request, BLOB_BODY_LIMIT) : undefined;
+			request.method === "POST" ? await bufferBody(request, bodyLimitOf(nsid)) : undefined;
 		const forward = {
 			method: request.method ?? "GET",
 			path: request.url ?? "/",
@@ -191,6 +206,7 @@ export const createFederationRouter = (deps: RouterDeps) => {
 			headers: request.headers,
 			body: payload,
 			actingFor,
+			maxResponseBytes: ANSWER_LIMITS[nsid],
 		};
 
 		let answer = await deps.forward(host, forward);
