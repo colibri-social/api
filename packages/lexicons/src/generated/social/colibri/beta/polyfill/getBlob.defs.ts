@@ -10,7 +10,7 @@ type $nsid = typeof $nsid;
 
 export { $nsid };
 
-export const $params = /*#__PURE__*/ l.params({"cid":/*#__PURE__*/ l.string({"format":"cid"})});
+export const $params = /*#__PURE__*/ l.params({"cid":/*#__PURE__*/ l.string({"format":"cid"}),"space":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"space-ref"}))});
 
 export type $Params = l.InferOutput<typeof $params>;
 

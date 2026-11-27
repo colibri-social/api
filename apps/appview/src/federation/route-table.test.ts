@@ -92,6 +92,20 @@ describe("spaceAuthority", () => {
 		expect(spaceAuthority(route, new URLSearchParams(), grant)).toBeUndefined();
 	});
 
+	it("sends a polyfill blob to the AppView of the space it names, and keeps it local without one", () => {
+		const channel = `at:space/${SPACE}/social.colibri.beta.channel.text/general`;
+
+		for (const nsid of [
+			"social.colibri.beta.polyfill.uploadBlob",
+			"social.colibri.beta.polyfill.getBlob",
+		]) {
+			const route = routeOf(nsid);
+
+			expect(spaceAuthority(route, new URLSearchParams({ space: channel }), undefined)).toBe(SPACE);
+			expect(spaceAuthority(route, new URLSearchParams(), undefined)).toBeUndefined();
+		}
+	});
+
 	it("keeps bridge methods on the AppView the bridge talks to", () => {
 		expect(routeOf("social.colibri.beta.bridge.postMessage")).toBe("local");
 	});
