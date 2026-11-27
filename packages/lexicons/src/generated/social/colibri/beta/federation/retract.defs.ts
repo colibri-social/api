@@ -19,7 +19,7 @@ export const $input = /*#__PURE__*/ l.jsonPayload({"recipient":/*#__PURE__*/ l.s
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;
 
-export const $output = /*#__PURE__*/ l.payload();
+export const $output = /*#__PURE__*/ l.jsonPayload({});
 
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;

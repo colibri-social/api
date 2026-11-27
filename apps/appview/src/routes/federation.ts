@@ -327,6 +327,8 @@ export const registerFederationRoutes = ({ server, ctx, auth }: RouteDeps): void
 		auth: auth.peer,
 		handler: async ({ input, auth: caller }) => {
 			await handleDeliverNotification(ctx, caller.credentials.did, input.body);
+
+			return { encoding: "application/json" as const, body: {} };
 		},
 	});
 
@@ -334,6 +336,8 @@ export const registerFederationRoutes = ({ server, ctx, auth }: RouteDeps): void
 		auth: auth.peer,
 		handler: async ({ input, auth: caller }) => {
 			await handleDeliverRead(ctx, caller.credentials.did, input.body);
+
+			return { encoding: "application/json" as const, body: {} };
 		},
 	});
 
@@ -341,6 +345,8 @@ export const registerFederationRoutes = ({ server, ctx, auth }: RouteDeps): void
 		auth: auth.peer,
 		handler: async ({ input, auth: caller }) => {
 			await handleRetract(ctx, caller.credentials.did, input.body);
+
+			return { encoding: "application/json" as const, body: {} };
 		},
 	});
 };
