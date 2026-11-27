@@ -139,12 +139,17 @@ type ViewerState = { $type?: "social.colibri.beta.community.defs#viewerState";
   /**
    * Effective community-wide permissions.
    */
-  "permissions"?:(string)[] };
+  "permissions"?:(string)[];
+
+  /**
+   * When this AppView's access to the user's preferences space ends. Missing when this AppView holds no access.
+   */
+  "preferencesAccessUntil"?:l.DatetimeString };
 
 export type { ViewerState };
 
 /** The requesting user's relationship to a community. */
-const viewerState = /*#__PURE__*/ l.typedObject<ViewerState>($nsid, "viewerState", /*#__PURE__*/ l.object({"isMember":/*#__PURE__*/ l.boolean(),"isOwner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"isBanned":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"applicationPending":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"roles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"permissions":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), ))}));
+const viewerState = /*#__PURE__*/ l.typedObject<ViewerState>($nsid, "viewerState", /*#__PURE__*/ l.object({"isMember":/*#__PURE__*/ l.boolean(),"isOwner":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"isBanned":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"applicationPending":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"roles":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"record-key"}), )),"permissions":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string(), )),"preferencesAccessUntil":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"datetime"}))}));
 
 export { viewerState };
 

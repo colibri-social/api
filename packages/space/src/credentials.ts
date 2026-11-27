@@ -82,6 +82,12 @@ export class SpaceCredentials {
 		return this.mint(space);
 	}
 
+	async expiry(space: SpaceRefString): Promise<Date | null> {
+		const stored = await this.storage.load(space);
+
+		return stored && stored.expiresAt.getTime() > Date.now() ? stored.expiresAt : null;
+	}
+
 	async invalidate(space: SpaceRefString): Promise<void> {
 		await this.storage.forget(space);
 	}

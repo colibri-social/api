@@ -1,6 +1,12 @@
 import { InvalidRequestError } from "@atproto/xrpc-server";
 import { anonymousAuthz, has, isMember } from "@colibri-social/community";
-import { asDatetime, asDatetimeOrUndefined, asDid, social } from "@colibri-social/lexicons";
+import {
+	asDatetime,
+	asDatetimeOrUndefined,
+	asDid,
+	preferencesSpace,
+	social,
+} from "@colibri-social/lexicons";
 import { and, asc, count, eq, gt } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 import { route } from "../route.js";
@@ -76,7 +82,17 @@ export const handleGetCommunity = async (
 	const row = await requireCommunity(ctx, did);
 	const authz = await ctx.loader.authz(did, callerDid);
 	const total = await countMembers(ctx, did);
-	return { community: await communities.community(row, authz, total) };
+	const community = await communities.community(row, authz, total);
+	const access = await ctx.spaceCredentials.expiry(preferencesSpace(callerDid)).catch(() => null);
+
+	if (!access) return { community };
+
+	return {
+		community: {
+			...community,
+			viewer: { ...community.viewer, preferencesAccessUntil: asDatetime(access.toISOString()) },
+		},
+	};
 };
 
 export const handleListCategories = async (

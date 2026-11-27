@@ -1,7 +1,13 @@
 import { l } from "@atproto/lex-schema";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { CommunityLoader } from "@colibri-social/community";
-import { channelSpace, communitySpaces, SPACE_TYPES, social } from "@colibri-social/lexicons";
+import {
+	channelSpace,
+	communitySpaces,
+	preferencesSpace,
+	SPACE_TYPES,
+	social,
+} from "@colibri-social/lexicons";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { silentAnnouncer } from "../announce.js";
 import type { AppContext } from "../context.js";
@@ -24,6 +30,7 @@ let ctx: AppContext;
 let communities: CommunityViews;
 let didDocumentHandles: Map<string, string>;
 let remoteResults: RemoteCommunity[];
+let preferencesAccess: Map<string, Date>;
 
 const asListCommunitiesOutput = (body: unknown): void => {
 	const { output } = l.getMain(social.colibri.beta.actor.listCommunities);
@@ -77,6 +84,9 @@ beforeEach(async () => {
 	remoteResults = [];
 
 	const loader = new CommunityLoader({ db: database.db, tables: database.tables });
+
+	preferencesAccess = new Map();
+
 	ctx = {
 		announce: silentAnnouncer,
 		config: { PUBLIC_URL: "https://appview.test", APPVIEW_DID: "did:web:appview.test" },
@@ -90,6 +100,9 @@ beforeEach(async () => {
 			},
 			resolveVerifiedHandles: async (dids: readonly string[]) =>
 				new Map(dids.map((did) => [did, didDocumentHandles.get(did) ?? null])),
+		},
+		spaceCredentials: {
+			expiry: async (space: string) => preferencesAccess.get(space) ?? null,
 		},
 		remoteCommunities: {
 			fetch: async (_caller: string, rows: readonly { community: string }[]) =>
@@ -272,6 +285,20 @@ describe("managingApp", () => {
 
 		const result = await handleGetCommunity(ctx, communities, COMMUNITY, OUTSIDER);
 		expect(result.community.managingApp).toBe("did:web:appview.test");
+	});
+
+	it("tells the viewer until when this AppView can read their preferences", async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+
+		const without = await handleGetCommunity(ctx, communities, COMMUNITY, MEMBER);
+
+		expect(without.community.viewer.preferencesAccessUntil).toBeUndefined();
+
+		preferencesAccess.set(preferencesSpace(MEMBER), new Date("2026-08-23T01:00:00.000Z"));
+
+		const granted = await handleGetCommunity(ctx, communities, COMMUNITY, MEMBER);
+
+		expect(granted.community.viewer.preferencesAccessUntil).toBe("2026-08-23T01:00:00.000Z");
 	});
 
 	it("names the hub the record points at, so a client can dial it", async () => {

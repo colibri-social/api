@@ -5,6 +5,8 @@ import type { SpaceHostResolver } from "./resolve-host.js";
 type CommunityView = social.colibri.beta.community.defs.CommunityView;
 
 export const REMOTE_COMMUNITY_TIMEOUT_MS = 3_000;
+export const REMOTE_COMMUNITY_CACHE_MS = 30_000;
+export const REMOTE_COMMUNITY_CACHE_SIZE = 10_000;
 
 const GET_COMMUNITY = "social.colibri.beta.community.getCommunity";
 
@@ -20,6 +22,8 @@ export type RemoteCommunityDeps = {
 	hosts: Pick<SpaceHostResolver, "resolve" | "forget">;
 	forward: Forwarder;
 	timeoutMs?: number;
+	cacheMs?: number;
+	now?: () => number;
 };
 
 const errorOf = (body: Buffer): string | undefined => {
@@ -43,12 +47,44 @@ const viewOf = (body: Buffer): CommunityView | undefined => {
 };
 
 export const createRemoteCommunities = (deps: RemoteCommunityDeps) => {
+	const now = deps.now ?? Date.now;
+	const cacheMs = deps.cacheMs ?? REMOTE_COMMUNITY_CACHE_MS;
+	const cache = new Map<string, { view: CommunityView; at: number }>();
+
+	const cached = (key: string): CommunityView | undefined => {
+		const entry = cache.get(key);
+
+		if (!entry) return undefined;
+
+		if (now() - entry.at < cacheMs) return entry.view;
+
+		cache.delete(key);
+
+		return undefined;
+	};
+
+	const remember = (key: string, view: CommunityView) => {
+		cache.delete(key);
+		cache.set(key, { view, at: now() });
+
+		if (cache.size <= REMOTE_COMMUNITY_CACHE_SIZE) return;
+
+		const oldest = cache.keys().next().value;
+
+		if (oldest !== undefined) cache.delete(oldest);
+	};
+
 	const fetchOne = async (callerDid: string, row: RemoteSpaceRow): Promise<RemoteCommunity> => {
 		const unavailable = (managingApp: string): RemoteCommunity => {
 			return { kind: "unavailable", did: row.community, managingApp };
 		};
 
 		if (!deps.enabled) return unavailable(row.managingApp);
+
+		const key = `${callerDid} ${row.community}`;
+		const hit = cached(key);
+
+		if (hit) return { kind: "view", view: hit };
 
 		let host: Awaited<ReturnType<SpaceHostResolver["resolve"]>>;
 
@@ -76,8 +112,14 @@ export const createRemoteCommunities = (deps: RemoteCommunityDeps) => {
 			if (answer.status === 200) {
 				const view = viewOf(answer.body);
 
-				return view ? { kind: "view", view } : unavailable(host.managingApp);
+				if (!view) return unavailable(host.managingApp);
+
+				remember(key, view);
+
+				return { kind: "view", view };
 			}
+
+			cache.delete(key);
 
 			const error = errorOf(answer.body);
 

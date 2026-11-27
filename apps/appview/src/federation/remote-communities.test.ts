@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ForwardAnswer, Forwarder, ForwardRequest } from "./forward.js";
 import { ForwardUnreachable } from "./forward.js";
-import { createRemoteCommunities, REMOTE_COMMUNITY_TIMEOUT_MS } from "./remote-communities.js";
+import {
+	createRemoteCommunities,
+	REMOTE_COMMUNITY_CACHE_MS,
+	REMOTE_COMMUNITY_TIMEOUT_MS,
+} from "./remote-communities.js";
 import type { SpaceHost } from "./resolve-host.js";
 
 const USER = "did:plc:userxxxxxxxxxxxxxxxxxxxxxx";
@@ -22,6 +26,7 @@ const setup = (options: {
 	enabled?: boolean;
 	host?: SpaceHost | undefined | Error;
 	forward?: Forwarder;
+	now?: () => number;
 }) => {
 	const forget = vi.fn(async () => {});
 	const forward = vi.fn(options.forward ?? (async () => answer(200, {})));
@@ -37,6 +42,7 @@ const setup = (options: {
 			forget,
 		},
 		forward,
+		now: options.now,
 	});
 
 	return { remote, forward, forget };
@@ -61,6 +67,39 @@ describe("createRemoteCommunities", () => {
 		expect(request.path).toBe(
 			`/xrpc/social.colibri.beta.community.getCommunity?community=${encodeURIComponent(SPACE)}`,
 		);
+	});
+
+	it("reuses a view for the same user for a short while", async () => {
+		let clock = 1_000;
+		const view = { did: SPACE, name: "Elsewhere", managingApp: THEIRS };
+
+		const { remote, forward } = setup({
+			forward: async () => answer(200, { community: view }),
+			now: () => clock,
+		});
+
+		await remote.fetch(USER, [ROW]);
+		await expect(remote.fetch(USER, [ROW])).resolves.toEqual([{ kind: "view", view }]);
+		expect(forward).toHaveBeenCalledTimes(1);
+
+		await remote.fetch("did:plc:someoneelsexxxxxxxxxxxxx", [ROW]);
+		expect(forward).toHaveBeenCalledTimes(2);
+
+		clock += REMOTE_COMMUNITY_CACHE_MS;
+		await remote.fetch(USER, [ROW]);
+		expect(forward).toHaveBeenCalledTimes(3);
+	});
+
+	it("asks again after the AppView couldn't be reached", async () => {
+		const { remote, forward } = setup({
+			forward: async () => {
+				throw new ForwardUnreachable("down");
+			},
+		});
+
+		await remote.fetch(USER, [ROW]);
+		await remote.fetch(USER, [ROW]);
+		expect(forward).toHaveBeenCalledTimes(2);
 	});
 
 	it("marks the community unavailable when its AppView doesn't answer", async () => {
