@@ -1,5 +1,17 @@
 # @colibri-social/appview
 
+## 2.47.1
+
+### Patch Changes
+
+- 5e5d3b2: `federation.deliverNotification`, `federation.deliverRead` and `federation.retract` declare an empty JSON output, like every other method, and the AppView answers them with an empty object.
+- 2f26be6: Sends the link embed to open channels when its preview resolves before the new message is announced, so fast links such as direct GIF URLs embed without a reload.
+- Updated dependencies [5e5d3b2]
+  - @colibri-social/lexicons@2.46.1
+  - @colibri-social/community@2.21.1
+  - @colibri-social/notifications@1.13.1
+  - @colibri-social/projections@1.18.1
+
 ## 2.47.0
 
 ### Minor Changes
