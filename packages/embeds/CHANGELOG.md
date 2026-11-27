@@ -1,5 +1,11 @@
 # @colibri-social/embeds
 
+## 0.3.1
+
+### Patch Changes
+
+- 43b66c4: Post previews that cut text inside an emoji no longer break `listMessages` for the whole channel, and previews already stored that way load again.
+
 ## 0.3.0
 
 ### Minor Changes

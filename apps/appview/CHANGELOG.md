@@ -1,5 +1,14 @@
 # @colibri-social/appview
 
+## 2.47.2
+
+### Patch Changes
+
+- 652f240: Reactions on a message come back in the order each emoji was first added, and `getReactions` pages in that same order.
+- 43b66c4: Post previews that cut text inside an emoji no longer break `listMessages` for the whole channel, and previews already stored that way load again.
+- Updated dependencies [43b66c4]
+  - @colibri-social/embeds@0.3.1
+
 ## 2.47.1
 
 ### Patch Changes
