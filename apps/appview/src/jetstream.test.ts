@@ -736,11 +736,16 @@ describe("emoji commits", () => {
 		const socket = await startAgainstServer();
 
 		socket.send(commitFrame(1, ITEM, "create", wave, DID, "wave"));
-		await settle();
-		socket.send(commitFrame(2, ITEM, "delete", undefined, DID, "wave"));
-		await settle();
 
-		expect(await storedItems()).toEqual([]);
+		await vi.waitFor(async () => expect(await storedItems()).toHaveLength(1), {
+			timeout: 5_000,
+		});
+
+		socket.send(commitFrame(2, ITEM, "delete", undefined, DID, "wave"));
+
+		await vi.waitFor(async () => expect(await storedItems()).toEqual([]), {
+			timeout: 5_000,
+		});
 	});
 });
 
