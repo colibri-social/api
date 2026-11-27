@@ -1,5 +1,50 @@
 # @colibri-social/notifications
 
+## 1.13.0
+
+### Minor Changes
+
+- e1d726f: Keeps notifications on other AppViews in step with the managing AppView:
+  
+  - When a message is deleted or hidden, the managing AppView sends `federation.retract` to the other AppViews of everyone it notified. The receiving AppView drops that notification, updates the user's badge on their sockets and clears the pushed banner. It only drops notifications the calling AppView delivered.
+  - When a user's read covers notifications the managing AppView sent elsewhere, it sends `federation.deliverRead` and marks its own copies seen, so the next read doesn't send it again. The receiving AppView clears the matching pushed banners.
+  - The managing AppView now keeps plain message notifications for users of other AppViews, even without a push device on it, so retractions and reads can find them. `NotificationDeps` has a new optional `usesOtherAppviews` check for this.
+- 8e55a30: Delivers notifications to the other AppViews a user declared:
+  
+  - When a message notifies someone, the managing AppView queues a `federation.deliverNotification` call for each AppView in the recipient's `actor.appview` record other than itself. The call carries the rendered notification plus the Space and channel names for the push banner. `deliverNotification` has new optional `spaceName` and `channelName` inputs.
+  - The main node sends queued deliveries right away and checks the queue every 15 seconds. A failed delivery is tried again after 30 seconds, 2, 10 and 30 minutes, then hourly. Deliveries still undelivered after 24 hours are dropped, as are deliveries the other AppView refuses for good. They live in the new `federation_deliveries` table, added by migration 0050.
+  - The receiving AppView accepts a delivery when the caller manages the notification's Space and the recipient declared the receiving AppView. Blocked peers and the per-peer rate limit apply. It stores the notification with its view, sends it to the user's sockets, counts it toward the badge and pushes it. A repeated delivery for the same message is ignored.
+  - `listNotifications` serves a delivered notification from its stored view.
+
+### Patch Changes
+
+- 6996adc: Forward requests about a community another AppView manages to that AppView, acting for the signed-in user, and relay its answer. A request that was already forwarded is never forwarded again: it gets `NotManagingApp` with the current managing AppView, and the forwarding AppView looks the community up again and retries once. With `FEDERATION_ENABLED=false` such requests get `FederationDisabled`. An AppView that doesn't answer gives `UpstreamFailure`
+- 858fcd1: Tighten federation between AppViews:
+  
+  - `deliverNotification`, `deliverRead` and `retract` answer `NotJoined` when the recipient has no `remote_spaces` row for the community, and `deliverNotification` refuses a channel or thread outside the notification's community. A failed host or declaration lookup answers `UpstreamFailure` with a 502.
+  - A delivered notification is dropped when the recipient blocked its author or muted the author, community, channel or thread. Listing delivered notifications applies the recipient's blocks.
+  - A `colibri-acting-for` request is only accepted on forwarded methods and `polyfill.beginMigration`. Other methods answer `ActingForNotAllowed`.
+  - Forwards and deliveries refuse endpoints on private, loopback, link-local or unique-local addresses outside development and test. An oversized or interrupted answer counts as unreachable and the router answers 502.
+  - With `FEDERATION_ENABLED=false`, the router decides from the local `communities` table alone. Personal spaces never trigger a host lookup.
+  - Deliveries retry `NotDeclared` and `NotJoined`, and each queued row is claimed before it's sent, so two runners never send the same row. A failed declared AppViews lookup is cached as empty for a minute.
+  - Checks against this AppView's DID accept every alias in `APPVIEW_DID_ALIASES`.
+  - Migration 0051 removes duplicate notifications, keeping the earliest, and adds a unique index on `notifications (recipient, space, message_author, message_rkey)`. Inserts into `notifications` ignore conflicts.
+- Updated dependencies [5137ec8]
+- Updated dependencies [caa3ad8]
+- Updated dependencies [1a258d1]
+- Updated dependencies [8e55a30]
+- Updated dependencies [5621e4c]
+- Updated dependencies [858fcd1]
+- Updated dependencies [01dc960]
+- Updated dependencies [fb47131]
+- Updated dependencies [56371fd]
+- Updated dependencies [1c16c11]
+- Updated dependencies [a48d881]
+  - @colibri-social/lexicons@2.46.0
+  - @colibri-social/appview-db@0.28.0
+  - @colibri-social/projections@1.18.0
+  - @colibri-social/space@0.13.0
+
 ## 1.12.13
 
 ### Patch Changes

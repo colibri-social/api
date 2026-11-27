@@ -1,5 +1,32 @@
 # @colibri-social/projections
 
+## 1.18.0
+
+### Minor Changes
+
+- 01dc960: `actor.grantSpaceAccess` takes an optional `community`, which sends the grant to the AppView that manages that community. The new `remote_spaces` table holds the user's `actor.remoteSpace` records, and `actor.listCommunities` lists those communities next to local ones in the stored order. Communities whose AppView doesn't answer within 3 seconds come back in `unavailable`
+
+### Patch Changes
+
+- 56371fd: Add per-group sound volumes and keep polyfilled blobs readable while the main node drains:
+  
+  - `social.colibri.beta.actor.clientPreferences` and `actor.defs#clientPreferences` have a `soundVolumes` object (`actor.defs#soundVolumes`) with a volume in percent for the `ping`, `presence`, `mic` and `video` sound groups. The AppView stores and returns it with the other client preferences.
+  - Every node reads and writes SeaweedFS directly at `POLYFILL_S3_CLUSTER_ENDPOINT` and falls back to reading through the main node when SeaweedFS can't be reached. The SeaweedFS bucket, region, keys and path style setting are shared cluster config, so a failover node holding the main role serves blobs, accepts uploads and sweeps unreferenced blobs.
+- Updated dependencies [5137ec8]
+- Updated dependencies [caa3ad8]
+- Updated dependencies [1a258d1]
+- Updated dependencies [8e55a30]
+- Updated dependencies [5621e4c]
+- Updated dependencies [858fcd1]
+- Updated dependencies [01dc960]
+- Updated dependencies [fb47131]
+- Updated dependencies [56371fd]
+- Updated dependencies [1c16c11]
+- Updated dependencies [a48d881]
+  - @colibri-social/lexicons@2.46.0
+  - @colibri-social/appview-db@0.28.0
+  - @colibri-social/space@0.13.0
+
 ## 1.17.6
 
 ### Patch Changes

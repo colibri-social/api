@@ -1,5 +1,82 @@
 # @colibri-social/appview
 
+## 2.47.0
+
+### Minor Changes
+
+- caa3ad8: Accept requests another AppView forwards on a user's behalf. The forwarding AppView signs a service JWT as itself and names the user in the `colibri-acting-for` header. The request goes through only when the user's `social.colibri.beta.actor.appview` record lists that AppView, the AppView isn't blocked, and it stays under `FEDERATION_PEER_RATE` and `FEDERATION_PEER_BURST`. `FEDERATION_ENABLED=false` refuses all of them with `FederationDisabled` and drops `federation` from `describeServer`. `colibri-admin federation block|unblock|list` manages the blocklist
+- e1d726f: Keeps notifications on other AppViews in step with the managing AppView:
+  
+  - When a message is deleted or hidden, the managing AppView sends `federation.retract` to the other AppViews of everyone it notified. The receiving AppView drops that notification, updates the user's badge on their sockets and clears the pushed banner. It only drops notifications the calling AppView delivered.
+  - When a user's read covers notifications the managing AppView sent elsewhere, it sends `federation.deliverRead` and marks its own copies seen, so the next read doesn't send it again. The receiving AppView clears the matching pushed banners.
+  - The managing AppView now keeps plain message notifications for users of other AppViews, even without a push device on it, so retractions and reads can find them. `NotificationDeps` has a new optional `usesOtherAppviews` check for this.
+- 8e55a30: Delivers notifications to the other AppViews a user declared:
+  
+  - When a message notifies someone, the managing AppView queues a `federation.deliverNotification` call for each AppView in the recipient's `actor.appview` record other than itself. The call carries the rendered notification plus the Space and channel names for the push banner. `deliverNotification` has new optional `spaceName` and `channelName` inputs.
+  - The main node sends queued deliveries right away and checks the queue every 15 seconds. A failed delivery is tried again after 30 seconds, 2, 10 and 30 minutes, then hourly. Deliveries still undelivered after 24 hours are dropped, as are deliveries the other AppView refuses for good. They live in the new `federation_deliveries` table, added by migration 0050.
+  - The receiving AppView accepts a delivery when the caller manages the notification's Space and the recipient declared the receiving AppView. Blocked peers and the per-peer rate limit apply. It stores the notification with its view, sends it to the user's sockets, counts it toward the badge and pushes it. A repeated delivery for the same message is ignored.
+  - `listNotifications` serves a delivered notification from its stored view.
+- 5621e4c: Hosts a polyfilled user's repo for a Space on the AppView that manages that Space:
+  
+  - `polyfill.uploadBlob` and `polyfill.getBlob` take an optional `space` parameter. When another AppView manages that Space, the call goes there, so a blob sits next to the repo that references it. Without the parameter, both calls stay on this AppView.
+  - `polyfill.beginMigration` also starts the migration on every AppView that manages one of the caller's remote Spaces and returns their spaces with its own. An AppView that refuses or doesn't answer is skipped, and calling `beginMigration` again picks it back up.
+- e1d726f: Reports how much the polyfill hosts. Three new gauges, measured at most every 5 minutes:
+  
+  - `colibri_polyfill_users`: users with a known hosting mode, labelled by `mode` (`polyfill`, `migrating` or `native`).
+  - `colibri_polyfill_blobs`: blobs stored for polyfilled users.
+  - `colibri_polyfill_bytes`: storage polyfilled users take, labelled by `kind`. `blobs` is the size of their blobs in object storage, and `records` is the size of their records in the database.
+  
+  The Colibri Postgres dashboard shows them in four new panels: polyfilled users, polyfill blobs, total polyfill storage, and storage by kind over time.
+- 6996adc: Forward requests about a community another AppView manages to that AppView, acting for the signed-in user, and relay its answer. A request that was already forwarded is never forwarded again: it gets `NotManagingApp` with the current managing AppView, and the forwarding AppView looks the community up again and retries once. With `FEDERATION_ENABLED=false` such requests get `FederationDisabled`. An AppView that doesn't answer gives `UpstreamFailure`
+- fad7d26: Publish a `social.colibri.beta.community.host` record naming this AppView in every community it creates or adopts, and backfill it on startup for communities it already manages. Host OAuth sign-ins now also ask to write that record
+- 01dc960: `actor.grantSpaceAccess` takes an optional `community`, which sends the grant to the AppView that manages that community. The new `remote_spaces` table holds the user's `actor.remoteSpace` records, and `actor.listCommunities` lists those communities next to local ones in the stored order. Communities whose AppView doesn't answer within 3 seconds come back in `unavailable`
+- fb47131: `getCommunity` reports in `viewer.preferencesAccessUntil` until when this AppView can read the caller's preferences space. The field is missing when it holds no access, so a client on another AppView knows to grant access again. `SpaceCredentials` has a new `expiry(space)` method that returns the expiry of a held credential.
+- a48d881: Resolve which AppView manages a community from its `community.host` record, with a 10 minute cache in `space_hosts` and a 1 minute cache for communities without one. `IdentityResolver.serviceEndpointFor` reads a service endpoint from a DID document. The federation tables are now part of the exported schema
+
+### Patch Changes
+
+- fb47131: `listCommunities` reuses the view of a Space on another AppView for 30 seconds per user, so repeated loads don't ask that AppView again each time
+- d678c65: An invitation code only resolves for the community the invite link names, because codes are only unique within the AppView that issued them
+- 858fcd1: Tighten federation between AppViews:
+  
+  - `deliverNotification`, `deliverRead` and `retract` answer `NotJoined` when the recipient has no `remote_spaces` row for the community, and `deliverNotification` refuses a channel or thread outside the notification's community. A failed host or declaration lookup answers `UpstreamFailure` with a 502.
+  - A delivered notification is dropped when the recipient blocked its author or muted the author, community, channel or thread. Listing delivered notifications applies the recipient's blocks.
+  - A `colibri-acting-for` request is only accepted on forwarded methods and `polyfill.beginMigration`. Other methods answer `ActingForNotAllowed`.
+  - Forwards and deliveries refuse endpoints on private, loopback, link-local or unique-local addresses outside development and test. An oversized or interrupted answer counts as unreachable and the router answers 502.
+  - With `FEDERATION_ENABLED=false`, the router decides from the local `communities` table alone. Personal spaces never trigger a host lookup.
+  - Deliveries retry `NotDeclared` and `NotJoined`, and each queued row is claimed before it's sent, so two runners never send the same row. A failed declared AppViews lookup is cached as empty for a minute.
+  - Checks against this AppView's DID accept every alias in `APPVIEW_DID_ALIASES`.
+  - Migration 0051 removes duplicate notifications, keeping the earliest, and adds a unique index on `notifications (recipient, space, message_author, message_rkey)`. Inserts into `notifications` ignore conflicts.
+- db8a366: Send the telemetry heartbeat only when `NODE_ENV` is `production`, so development AppViews stay out of the statistics
+- 56371fd: Add per-group sound volumes and keep polyfilled blobs readable while the main node drains:
+  
+  - `social.colibri.beta.actor.clientPreferences` and `actor.defs#clientPreferences` have a `soundVolumes` object (`actor.defs#soundVolumes`) with a volume in percent for the `ping`, `presence`, `mic` and `video` sound groups. The AppView stores and returns it with the other client preferences.
+  - Every node reads and writes SeaweedFS directly at `POLYFILL_S3_CLUSTER_ENDPOINT` and falls back to reading through the main node when SeaweedFS can't be reached. The SeaweedFS bucket, region, keys and path style setting are shared cluster config, so a failover node holding the main role serves blobs, accepts uploads and sweeps unreferenced blobs.
+- 5137ec8: Forwards requests to the managing AppView with the same size limits this AppView applies to its own handlers. `polyfill.uploadBlob` bodies go up to 75 MB, other bodies up to 20 MB, and JSON bodies up to 1 MB. Forwarded answers from `polyfill.getBlob` go up to 75 MB and from `blob.get` up to 100 MB, and other answers up to 32 MB.
+- Updated dependencies [5137ec8]
+- Updated dependencies [caa3ad8]
+- Updated dependencies [e1d726f]
+- Updated dependencies [1a258d1]
+- Updated dependencies [8e55a30]
+- Updated dependencies [5621e4c]
+- Updated dependencies [6996adc]
+- Updated dependencies [fad7d26]
+- Updated dependencies [858fcd1]
+- Updated dependencies [01dc960]
+- Updated dependencies [fb47131]
+- Updated dependencies [56371fd]
+- Updated dependencies [1c16c11]
+- Updated dependencies [a48d881]
+  - @colibri-social/lexicons@2.46.0
+  - @colibri-social/appview-db@0.28.0
+  - @colibri-social/notifications@1.13.0
+  - @colibri-social/community@2.21.0
+  - @colibri-social/projections@1.18.0
+  - @colibri-social/space@0.13.0
+  - @colibri-social/identity@0.6.0
+  - @colibri-social/blobs@0.5.1
+  - @colibri-social/space-sync@0.10.4
+
 ## 2.46.3
 
 ### Patch Changes
