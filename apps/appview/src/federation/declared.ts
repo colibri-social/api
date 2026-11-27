@@ -13,6 +13,7 @@ export type DeclaredAppviewsDeps = {
 	now?: () => Date;
 	ttlMs?: number;
 	recheckMs?: number;
+	failureTtlMs?: number;
 };
 
 export type DeclaredAppviews = {
@@ -23,6 +24,8 @@ export type DeclaredAppviews = {
 
 export const DECLARED_TTL_MS = 10 * 60 * 1000;
 export const DECLARED_RECHECK_MS = 60 * 1000;
+export const DECLARED_FAILURE_TTL_MS = 60 * 1000;
+export const DECLARED_FAILURE_CACHE_SIZE = 10_000;
 
 export const appviewsOf = (record: unknown): string[] => {
 	if (typeof record !== "object" || record === null) return [];
@@ -38,7 +41,32 @@ export const createDeclaredAppviews = (deps: DeclaredAppviewsDeps): DeclaredAppv
 	const now = deps.now ?? (() => new Date());
 	const ttl = deps.ttlMs ?? DECLARED_TTL_MS;
 	const recheck = deps.recheckMs ?? DECLARED_RECHECK_MS;
+	const failureTtl = deps.failureTtlMs ?? DECLARED_FAILURE_TTL_MS;
 	const pending = new Map<string, Promise<DeclaredEntry>>();
+	const failures = new Map<string, number>();
+
+	const recentlyFailed = (did: string) => {
+		const failedAt = failures.get(did);
+
+		if (failedAt === undefined) return false;
+
+		if (now().getTime() - failedAt < failureTtl) return true;
+
+		failures.delete(did);
+
+		return false;
+	};
+
+	const rememberFailure = (did: string) => {
+		failures.delete(did);
+		failures.set(did, now().getTime());
+
+		if (failures.size <= DECLARED_FAILURE_CACHE_SIZE) return;
+
+		const oldest = failures.keys().next().value;
+
+		if (oldest !== undefined) failures.delete(oldest);
+	};
 
 	const age = (entry: DeclaredEntry) => {
 		return now().getTime() - entry.fetchedAt.getTime();
@@ -81,7 +109,19 @@ export const createDeclaredAppviews = (deps: DeclaredAppviewsDeps): DeclaredAppv
 
 			if (cached && age(cached) < ttl) return cached.appviews;
 
-			return (await refresh(did)).appviews;
+			if (recentlyFailed(did)) return [];
+
+			try {
+				const entry = await refresh(did);
+
+				failures.delete(did);
+
+				return entry.appviews;
+			} catch {
+				rememberFailure(did);
+
+				return [];
+			}
 		},
 		update: (did, appviews) => {
 			return deps.save(did, { appviews, fetchedAt: now() });

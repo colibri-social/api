@@ -1,16 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "@colibri-social/appview-db";
-import { asc, eq, lte } from "drizzle-orm";
+import { and, asc, eq, lte } from "drizzle-orm";
 import type { DeclaredAppviews } from "./declared.js";
-import type { Forwarder } from "./forward.js";
+import { type Forwarder, ForwardRefused } from "./forward.js";
 
 export const DELIVERY_CUTOFF_MS = 24 * 60 * 60 * 1000;
 export const DELIVERY_BATCH = 50;
 export const DELIVERY_TIMEOUT_MS = 10_000;
+export const DELIVERY_LEASE_MS = DELIVERY_TIMEOUT_MS + 60_000;
 
 export const DELIVERY_BACKOFF_MS = [30_000, 120_000, 600_000, 1_800_000, 3_600_000];
 
-const RETRIED_ERRORS = new Set(["AuthRequired", "RateLimitExceeded"]);
+const RETRIED_ERRORS = new Set(["AuthRequired", "RateLimitExceeded", "NotDeclared", "NotJoined"]);
 
 export type DeliveryMethod =
 	| "social.colibri.beta.federation.deliverNotification"
@@ -133,8 +134,12 @@ export const createDeliveries = (deps: DeliveryDeps) => {
 			deps.onDropped?.(row.target, row.method, error ?? String(answer.status));
 
 			return "dropped";
-		} catch {
-			return "retry";
+		} catch (error) {
+			if (!(error instanceof ForwardRefused)) return "retry";
+
+			deps.onDropped?.(row.target, row.method, "PrivateAddress");
+
+			return "dropped";
 		}
 	};
 
@@ -159,6 +164,18 @@ export const createDeliveries = (deps: DeliveryDeps) => {
 			.where(eq(table.id, row.id));
 	};
 
+	const claim = async (row: DeliveryRow): Promise<boolean> => {
+		const leaseUntil = new Date(now().getTime() + DELIVERY_LEASE_MS).toISOString();
+
+		const claimed = await db
+			.update(table)
+			.set({ nextAttemptAt: leaseUntil })
+			.where(and(eq(table.id, row.id), eq(table.nextAttemptAt, row.nextAttemptAt)))
+			.returning({ id: table.id });
+
+		return claimed.length === 1;
+	};
+
 	const runBatch = async (): Promise<number> => {
 		const due = await db
 			.select()
@@ -169,7 +186,7 @@ export const createDeliveries = (deps: DeliveryDeps) => {
 
 		await Promise.all(
 			due.map(async (row) => {
-				await settle(row, await send(row));
+				if (await claim(row)) await settle(row, await send(row));
 			}),
 		);
 

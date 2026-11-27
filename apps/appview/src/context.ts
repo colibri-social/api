@@ -393,6 +393,7 @@ export const createContext = async (config: Config) => {
 	const forwarder = createForwarder({
 		mint: (audience, lxm) =>
 			mintServiceAuth({ issuer: config.APPVIEW_DID, audience, lxm, keypair }),
+		allowPrivateAddresses: config.NODE_ENV !== "production",
 	});
 
 	const remoteCommunities = createRemoteCommunities({

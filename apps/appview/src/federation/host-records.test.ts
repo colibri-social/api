@@ -6,6 +6,7 @@ import type { AppContext } from "../context.js";
 import { backfillHostRecords } from "./host-records.js";
 
 const OURS = "did:web:appview.example";
+const ALIAS = "did:web:alias.example";
 const NOW = "2026-11-26T12:00:00.000Z";
 
 let database: TestDatabase;
@@ -55,7 +56,10 @@ const context = () =>
 	({
 		database,
 		log,
-		config: { APPVIEW_DID: OURS },
+		config: {
+			APPVIEW_DID: OURS,
+			appviewDids: [OURS, ALIAS],
+		},
 		credentials: {
 			has: async (did: string) => held.has(did),
 			connect: async (did: string) => hostFor(did),
@@ -81,14 +85,23 @@ describe("backfillHostRecords", () => {
 		await insertCommunity("did:plc:current", OURS);
 		await insertCommunity("did:plc:elsewhere", "did:web:other.example");
 		await insertCommunity("did:plc:nocreds", OURS);
-		held = new Set(["did:plc:missing", "did:plc:legacy", "did:plc:current", "did:plc:elsewhere"]);
+		await insertCommunity("did:plc:aliased", ALIAS);
+
+		held = new Set([
+			"did:plc:missing",
+			"did:plc:legacy",
+			"did:plc:current",
+			"did:plc:elsewhere",
+			"did:plc:aliased",
+		]);
+
 		published.set("did:plc:current", OURS);
 
 		await backfillHostRecords(context());
 
-		expect(written.sort()).toEqual(["did:plc:legacy", "did:plc:missing"]);
+		expect(written.sort()).toEqual(["did:plc:aliased", "did:plc:legacy", "did:plc:missing"]);
 		expect(log.info).toHaveBeenCalledWith(
-			{ written: 2, code: "HostRecordsWritten" },
+			{ written: 3, code: "HostRecordsWritten" },
 			"federation.hostRecords",
 		);
 	});

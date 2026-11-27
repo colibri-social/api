@@ -10,6 +10,7 @@ import { handleDeliverNotification, handleDeliverRead, handleRetract } from "./f
 type NotificationView = social.colibri.beta.notification.defs.NotificationView;
 
 const HOME = "did:web:home.example";
+const HOME_ALIAS = "did:web:alias.home.example";
 const MARKET = "did:web:market.example";
 const USER = "did:plc:userxxxxxxxxxxxxxxxxxxxxxx";
 const AUTHOR = "did:plc:authorxxxxxxxxxxxxxxxxxxxx";
@@ -21,6 +22,7 @@ let database: TestDatabase;
 let ctx: AppContext;
 let declared: string[];
 let managingApp: string;
+let hostLookup: () => Promise<unknown>;
 let toUser: ReturnType<typeof vi.fn>;
 
 const notification = (rkey = "3mabcdefghijk"): NotificationView => {
@@ -55,9 +57,23 @@ beforeEach(async () => {
 	managingApp = MARKET;
 	toUser = vi.fn();
 
+	hostLookup = async () => ({
+		local: false,
+		managingApp,
+		endpoint: "https://market.example",
+	});
+
+	await database.db.insert(database.tables.remoteSpaces).values({
+		did: USER,
+		community: SPACE,
+		managingApp: MARKET,
+		joinedAt: "2026-11-27T11:00:00.000Z",
+	});
+
 	ctx = {
 		config: {
 			APPVIEW_DID: HOME,
+			appviewDids: [HOME, HOME_ALIAS],
 			FEDERATION_ENABLED: true,
 			PUBLIC_URL: "https://home.example",
 			pushProviders: [],
@@ -68,11 +84,7 @@ beforeEach(async () => {
 			allows: async (_did: string, appview: string) => declared.includes(appview),
 		},
 		spaceHosts: {
-			resolve: async () => ({
-				local: false,
-				managingApp,
-				endpoint: "https://market.example",
-			}),
+			resolve: () => hostLookup(),
 		},
 		announce: { toUser },
 		log: { warn: vi.fn() },
@@ -143,6 +155,88 @@ describe("deliverNotification", () => {
 				notification: notification(),
 			}),
 		).rejects.toMatchObject({ customErrorName: "NotManagingApp" });
+	});
+
+	it("accepts a user who declared an alias of this AppView", async () => {
+		declared = [HOME_ALIAS];
+
+		await handleDeliverNotification(ctx, MARKET, {
+			recipient: USER,
+			notification: notification(),
+		});
+
+		expect(await stored()).toHaveLength(1);
+	});
+
+	it("refuses a user who never joined the Space here", async () => {
+		await database.db.delete(database.tables.remoteSpaces);
+
+		await expect(
+			handleDeliverNotification(ctx, MARKET, {
+				recipient: USER,
+				notification: notification(),
+			}),
+		).rejects.toMatchObject({ type: 403, customErrorName: "NotJoined" });
+		expect(await stored()).toEqual([]);
+	});
+
+	it("refuses a channel or thread outside the notification's Space", async () => {
+		const foreign = channelSpace(AUTHOR, "social.colibri.beta.channel.text", "general");
+
+		for (const override of [{ channel: foreign }, { thread: foreign }]) {
+			await expect(
+				handleDeliverNotification(ctx, MARKET, {
+					recipient: USER,
+					notification: { ...notification(), ...override } as NotificationView,
+				}),
+			).rejects.toMatchObject({ customErrorName: "InvalidRequest" });
+		}
+
+		expect(await stored()).toEqual([]);
+	});
+
+	it("answers UpstreamFailure when the Space's host can't be looked up", async () => {
+		hostLookup = async () => {
+			throw new Error("plc down");
+		};
+
+		await expect(
+			handleDeliverNotification(ctx, MARKET, {
+				recipient: USER,
+				notification: notification(),
+			}),
+		).rejects.toMatchObject({ type: 502, customErrorName: "UpstreamFailure" });
+	});
+
+	it.each([
+		["blocks", AUTHOR],
+		["mutes", AUTHOR],
+		["mutes", SPACE],
+		["mutes", CHANNEL],
+	] as const)("drops a delivery quietly when the user %s %s", async (table, subject) => {
+		await database.db.insert(database.tables[table]).values({
+			did: USER,
+			rkey: "3mblockormute",
+			subject,
+			createdAt: "2026-11-27T11:00:00.000Z",
+		});
+
+		await handleDeliverNotification(ctx, MARKET, {
+			recipient: USER,
+			notification: notification(),
+		});
+
+		expect(await stored()).toEqual([]);
+		expect(toUser).not.toHaveBeenCalled();
+	});
+
+	it("announces a repeated delivery only once", async () => {
+		const input = { recipient: USER, notification: notification() };
+
+		await handleDeliverNotification(ctx, MARKET, input);
+		await handleDeliverNotification(ctx, MARKET, input);
+
+		expect(toUser).toHaveBeenCalledOnce();
 	});
 
 	it("lists a delivered notification from its stored view", async () => {

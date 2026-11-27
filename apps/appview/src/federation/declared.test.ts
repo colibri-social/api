@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	appviewsOf,
 	createDeclaredAppviews,
+	DECLARED_FAILURE_TTL_MS,
 	DECLARED_RECHECK_MS,
 	DECLARED_TTL_MS,
 	type DeclaredEntry,
@@ -74,6 +75,25 @@ describe("createDeclaredAppviews", () => {
 
 		await Promise.all([declared.allows(USER, HOME), declared.allows(USER, HOME)]);
 		expect(fetch).toHaveBeenCalledOnce();
+	});
+
+	it("lists nothing for a minute after a failed lookup and keeps allows asking", async () => {
+		const { declared, fetch, advance } = setup([HOME]);
+
+		fetch.mockRejectedValueOnce(new Error("pds down"));
+
+		await expect(declared.list(USER)).resolves.toEqual([]);
+		await expect(declared.list(USER)).resolves.toEqual([]);
+		expect(fetch).toHaveBeenCalledOnce();
+
+		fetch.mockRejectedValueOnce(new Error("pds down"));
+
+		await expect(declared.allows(USER, HOME)).rejects.toThrow("pds down");
+
+		advance(DECLARED_FAILURE_TTL_MS);
+
+		await expect(declared.list(USER)).resolves.toEqual([HOME]);
+		expect(fetch).toHaveBeenCalledTimes(3);
 	});
 });
 

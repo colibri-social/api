@@ -36,6 +36,8 @@ export type BufferedRequest = IncomingMessage & {
 
 export type RouterDeps = {
 	enabled: boolean;
+	self: readonly string[];
+	localManagingApp: (authority: string) => Promise<string | null | undefined>;
 	hosts: Pick<SpaceHostResolver, "resolve" | "forget">;
 	forward: Forwarder;
 	verifyUser: (token: string, lxm: string) => Promise<string>;
@@ -151,6 +153,17 @@ export const createFederationRouter = (deps: RouterDeps) => {
 
 		if (!authority) return next();
 
+		if (!deps.enabled) {
+			const managingApp = await deps.localManagingApp(authority);
+
+			if (!managingApp || deps.self.includes(managingApp)) return next();
+
+			return reply(response, 403, {
+				error: "FederationDisabled",
+				message: "this AppView doesn't reach communities on other AppViews",
+			});
+		}
+
 		let host: RemoteHost | undefined;
 
 		try {
@@ -173,13 +186,6 @@ export const createFederationRouter = (deps: RouterDeps) => {
 				error: "NotManagingApp",
 				message: "another AppView manages this community",
 				managingApp: host.managingApp,
-			});
-		}
-
-		if (!deps.enabled) {
-			return reply(response, 403, {
-				error: "FederationDisabled",
-				message: "this AppView doesn't reach communities on other AppViews",
 			});
 		}
 

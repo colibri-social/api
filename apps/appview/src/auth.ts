@@ -1,6 +1,6 @@
 import type { IncomingHttpHeaders } from "node:http";
 import type { AuthResult, MethodAuthVerifier } from "@atproto/xrpc-server";
-import { AuthRequiredError } from "@atproto/xrpc-server";
+import { AuthRequiredError, ForbiddenError } from "@atproto/xrpc-server";
 import type { AppContext } from "./context.js";
 import {
 	ACTING_FOR_HEADER,
@@ -10,6 +10,7 @@ import {
 	type InboundDeps,
 	verifyForwarded,
 } from "./federation/inbound.js";
+import { routeOf } from "./federation/route-table.js";
 
 export type Caller = AuthResult & {
 	credentials: { did: string; lxm: string | null; peer?: string };
@@ -29,6 +30,17 @@ const nsidFromPath = (url: string | undefined): string | null => {
 	if (!url) return null;
 	const match = /\/xrpc\/([^?/]+)/.exec(url);
 	return match?.[1] ?? null;
+};
+
+const BEGIN_MIGRATION = "social.colibri.beta.polyfill.beginMigration";
+
+export const mayActFor = (nsid: string | null): boolean => {
+	if (!nsid) return false;
+	if (nsid === BEGIN_MIGRATION) return true;
+
+	const route = routeOf(nsid);
+
+	return route !== undefined && route !== "local";
 };
 
 const header = (headers: IncomingHttpHeaders, name: string): string | null => {
@@ -76,9 +88,18 @@ export const authVerifiers = (ctx: AppContext) => {
 
 		if (!actingFor || !token) return verifyService(context);
 
+		const lxm = nsidFromPath(context.req.url);
+
+		if (!mayActFor(lxm)) {
+			throw new ForbiddenError(
+				"this method doesn't accept requests made on behalf of a user",
+				"ActingForNotAllowed",
+			);
+		}
+
 		const caller = await verifyForwarded(inboundDeps(), {
 			token,
-			lxm: nsidFromPath(context.req.url),
+			lxm,
 			actingFor,
 		});
 

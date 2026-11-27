@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ForwardRequest, ForwardTarget } from "./forward.js";
-import { ForwardUnreachable } from "./forward.js";
+import { ForwardRefused, ForwardUnreachable } from "./forward.js";
 import type { SpaceHost } from "./resolve-host.js";
 import { type BufferedRequest, createFederationRouter, type RouterDeps } from "./router.js";
 
@@ -32,6 +32,10 @@ const start = async (overrides: Partial<RouterDeps> = {}) => {
 	const forwarded: Array<{ target: ForwardTarget; request: ForwardRequest }> = [];
 	const deps: RouterDeps = {
 		enabled: true,
+		self: ["did:web:us"],
+		localManagingApp: vi.fn(async (authority: string) =>
+			authority === REMOTE ? THEIRS.managingApp : undefined,
+		),
 		hosts: {
 			resolve: vi.fn(async (authority: string) =>
 				authority === REMOTE ? THEIRS : { local: true as const, managingApp: "did:web:us" },
@@ -167,6 +171,18 @@ describe("createFederationRouter", () => {
 		expect(forwarded).toHaveLength(0);
 	});
 
+	it("decides from the local communities alone when federation is off", async () => {
+		const { base, deps, handled, forwarded } = await start({ enabled: false });
+		const unknown = "did:plc:unknownxxxxxxxxxxxxxxxxxxx";
+
+		const response = await fetch(`${base}${xrpc("community.getCommunity")}?community=${unknown}`);
+
+		expect(await response.text()).toBe("local");
+		expect(handled).toHaveLength(1);
+		expect(forwarded).toHaveLength(0);
+		expect(deps.hosts.resolve).not.toHaveBeenCalled();
+	});
+
 	it("looks the community up again and retries once when it moved", async () => {
 		const resolve = vi.fn().mockResolvedValueOnce(THEIRS).mockResolvedValueOnce(MOVED);
 		const forward = vi
@@ -234,6 +250,33 @@ describe("createFederationRouter", () => {
 
 		expect(response.status).toBe(502);
 		expect(await response.json()).toMatchObject({ error: "UpstreamFailure" });
+	});
+
+	it("answers UpstreamFailure when the managing AppView sits on a private address", async () => {
+		const { base } = await start({
+			forward: async () => {
+				throw new ForwardRefused("did:web:other.example", "10.0.0.1");
+			},
+		});
+
+		const response = await fetch(`${base}${xrpc("community.getCommunity")}?community=${REMOTE}`);
+
+		expect(response.status).toBe(502);
+		expect(await response.json()).toMatchObject({ error: "UpstreamFailure" });
+	});
+
+	it("keeps a personal space local without looking up its host", async () => {
+		const { base, deps, handled } = await start();
+		const preferences = `at:space/${REMOTE}/social.colibri.beta.actor.preferences/self`;
+
+		await fetch(`${base}${xrpc("polyfill.applyWrites")}`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ space: preferences, writes: [] }),
+		});
+
+		expect(handled).toHaveLength(1);
+		expect(deps.hosts.resolve).not.toHaveBeenCalled();
 	});
 
 	it("answers UpstreamFailure when the managing AppView can't be found", async () => {

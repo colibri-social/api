@@ -20,20 +20,26 @@ type StoredHostRecord = { value?: { managingApp?: unknown } };
 
 const APPVIEW_FRAGMENT = "colibri_appview";
 
+export const localManagingApp = (database: Database) => {
+	const { db, tables } = database;
+
+	return async (authority: string): Promise<string | null | undefined> => {
+		const [row] = await db
+			.select({ managingApp: tables.communities.managingApp })
+			.from(tables.communities)
+			.where(eq(tables.communities.did, authority));
+
+		return row ? row.managingApp : undefined;
+	};
+};
+
 export const createSpaceHosts = (deps: SpaceHostsDeps): SpaceHostResolver => {
 	const { db, tables } = deps.database;
 	const memory = new Map<string, CachedSpaceHost>();
 
 	return createSpaceHostResolver({
 		self: deps.self,
-		localManagingApp: async (authority) => {
-			const [row] = await db
-				.select({ managingApp: tables.communities.managingApp })
-				.from(tables.communities)
-				.where(eq(tables.communities.did, authority));
-
-			return row ? row.managingApp : undefined;
-		},
+		localManagingApp: localManagingApp(deps.database),
 		load: async (authority) => {
 			const remembered = memory.get(authority);
 

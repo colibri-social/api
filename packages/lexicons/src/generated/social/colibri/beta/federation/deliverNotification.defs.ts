@@ -26,7 +26,7 @@ export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
 /** Hands a notification to one of the AppViews a user declared. The managing AppView of the notification's community calls it with service auth as itself. The receiving AppView stores the notification, counts it toward the user's badge and pushes it to the user's devices. */
-const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","NotDeclared","NotManagingApp","FederationDisabled"]);
+const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","NotDeclared","NotJoined","NotManagingApp","FederationDisabled"]);
 
 export { main };
 

@@ -25,7 +25,7 @@ export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
 /** Tells one of the AppViews a user declared that a message behind one of the user's notifications was deleted or hidden, so it drops the notification and its pushed banner. */
-const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","NotDeclared","NotManagingApp","FederationDisabled"]);
+const main = /*#__PURE__*/ l.procedure($nsid, $params, $input, $output, ["AuthRequired","NotDeclared","NotJoined","NotManagingApp","FederationDisabled"]);
 
 export { main };
 

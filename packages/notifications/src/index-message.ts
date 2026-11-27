@@ -407,7 +407,7 @@ export const indexMessage = async (
 	const stored = await rowsToStore(deps, rows);
 
 	if (stored.length > 0) {
-		await deps.db.insert(deps.tables.notifications).values(stored);
+		await deps.db.insert(deps.tables.notifications).values(stored).onConflictDoNothing();
 	}
 
 	return rows;

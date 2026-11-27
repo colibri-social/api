@@ -106,6 +106,21 @@ describe("spaceAuthority", () => {
 		}
 	});
 
+	it("keeps personal spaces local without naming an authority", () => {
+		const preferences = `at:space/${SPACE}/social.colibri.beta.actor.preferences/self`;
+		const legacy = `at://${SPACE}/space/social.colibri.beta.actor.preferences/self`;
+		const route = routeOf("social.colibri.beta.polyfill.applyWrites");
+
+		expect(
+			spaceAuthority(route, new URLSearchParams(), {
+				space: preferences,
+			}),
+		).toBeUndefined();
+		expect(
+			spaceAuthority(route, new URLSearchParams({ space: legacy }), undefined),
+		).toBeUndefined();
+	});
+
 	it("keeps bridge methods on the AppView the bridge talks to", () => {
 		expect(routeOf("social.colibri.beta.bridge.postMessage")).toBe("local");
 	});

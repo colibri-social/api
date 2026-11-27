@@ -69,7 +69,7 @@ const insertNotification = async (
 		space: CHANNEL,
 		author: AUTHOR,
 		messageAuthor: AUTHOR,
-		messageRkey: overrides.messageRkey ?? "3lkmsg1",
+		messageRkey: overrides.messageRkey ?? id,
 		mentionRole: null,
 		indexedAt: overrides.indexedAt ?? "2026-08-23T00:00:00.000Z",
 		seenAt: overrides.seenAt ?? null,
@@ -132,7 +132,6 @@ describe("markSeen", () => {
 describe("markSeenForMessage", () => {
 	it("marks every notification for one message seen and returns the remaining unread count", async () => {
 		await insertNotification({ kind: "mention", messageRkey: "3lkmsg1" });
-		await insertNotification({ kind: "message", messageRkey: "3lkmsg1" });
 		await insertNotification({ kind: "reply", messageRkey: "3lkmsg2" });
 
 		const remaining = await markSeenForMessage(
@@ -413,6 +412,47 @@ describe("hydrateNotifications", () => {
 
 		expect(calls).toBe(0);
 		expect(view?.author.did).toBe(RECIPIENT);
+	});
+
+	it("drops a delivered notification from an author the recipient blocked", async () => {
+		const delivered = (id: string, author: string) => {
+			return {
+				id,
+				recipient: RECIPIENT,
+				kind: "mention" as const,
+				community: COMMUNITY,
+				space: CHANNEL,
+				author,
+				messageAuthor: author,
+				messageRkey: id,
+				originAppview: "did:web:market.example",
+				view: {
+					id,
+					kind: "mention",
+					author: { did: author },
+					channel: CHANNEL,
+				},
+				indexedAt: "2026-08-23T00:00:00.000Z",
+			};
+		};
+
+		await database.db
+			.insert(database.tables.notifications)
+			.values([delivered("3lkblocked", AUTHOR), delivered("3lkkept", COMMUNITY)]);
+
+		await database.db.insert(database.tables.blocks).values({
+			did: RECIPIENT,
+			rkey: "3lkblock1",
+			subject: AUTHOR,
+			createdAt: "2026-08-23T00:00:00.000Z",
+		});
+
+		const rows = await database.db.select().from(database.tables.notifications);
+		const views = await hydrateNotifications(deps, rows, {
+			hydrate: async () => new Map(),
+		});
+
+		expect(views.map((view) => view.id)).toEqual(["3lkkept"]);
 	});
 });
 

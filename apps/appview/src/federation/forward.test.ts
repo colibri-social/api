@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { createForwarder, ForwardUnreachable, notManagingAppOf } from "./forward.js";
+import {
+	createForwarder,
+	ForwardRefused,
+	ForwardUnreachable,
+	notManagingAppOf,
+} from "./forward.js";
 
 const TARGET = { managingApp: "did:web:host.example", endpoint: "https://host.example" };
 const USER = "did:plc:userxxxxxxxxxxxxxxxxxxxxxx";
@@ -24,7 +29,11 @@ describe("createForwarder", () => {
 			Response.json({ ok: true }, { headers: { "cache-control": "no-store", "set-cookie": "x" } }),
 		);
 		const mint = vi.fn(async () => "peer-token");
-		const forward = createForwarder({ mint, fetch: fetch as unknown as typeof globalThis.fetch });
+		const forward = createForwarder({
+			mint,
+			allowPrivateAddresses: true,
+			fetch: fetch as unknown as typeof globalThis.fetch,
+		});
 
 		const answer = await forward(TARGET, request(USER));
 
@@ -50,7 +59,11 @@ describe("createForwarder", () => {
 	it("forwards an anonymous request without any credentials", async () => {
 		const fetch = vi.fn(async () => Response.json({}));
 		const mint = vi.fn(async () => "peer-token");
-		const forward = createForwarder({ mint, fetch: fetch as unknown as typeof globalThis.fetch });
+		const forward = createForwarder({
+			mint,
+			allowPrivateAddresses: true,
+			fetch: fetch as unknown as typeof globalThis.fetch,
+		});
 
 		await forward(TARGET, request(undefined));
 
@@ -65,9 +78,13 @@ describe("createForwarder", () => {
 		const large = new Uint8Array(33 * 1024 * 1024);
 		const fetch = vi.fn(async () => new Response(large));
 		const mint = vi.fn(async () => "peer-token");
-		const forward = createForwarder({ mint, fetch: fetch as unknown as typeof globalThis.fetch });
+		const forward = createForwarder({
+			mint,
+			allowPrivateAddresses: true,
+			fetch: fetch as unknown as typeof globalThis.fetch,
+		});
 
-		await expect(forward(TARGET, request(USER))).rejects.toThrow("too large");
+		await expect(forward(TARGET, request(USER))).rejects.toBeInstanceOf(ForwardUnreachable);
 
 		const answer = await forward(TARGET, {
 			...request(USER),
@@ -80,12 +97,81 @@ describe("createForwarder", () => {
 	it("reports an AppView that doesn't answer", async () => {
 		const forward = createForwarder({
 			mint: async () => "t",
+			allowPrivateAddresses: true,
 			fetch: (async () => {
 				throw new TypeError("fetch failed");
 			}) as unknown as typeof globalThis.fetch,
 		});
 
 		await expect(forward(TARGET, request(USER))).rejects.toBeInstanceOf(ForwardUnreachable);
+	});
+
+	it("reports a body that times out while it's read as unreachable", async () => {
+		const stalled = new ReadableStream({
+			start: (controller) => controller.error(new DOMException("timed out", "TimeoutError")),
+		});
+
+		const forward = createForwarder({
+			mint: async () => "t",
+			allowPrivateAddresses: true,
+			fetch: (async () => new Response(stalled)) as unknown as typeof globalThis.fetch,
+		});
+
+		await expect(forward(TARGET, request(USER))).rejects.toBeInstanceOf(ForwardUnreachable);
+	});
+
+	it.each([
+		["https://127.0.0.1", []],
+		["https://[::1]", []],
+		["https://[fd00::1]", []],
+		["https://[::ffff:10.0.0.1]", []],
+		["https://169.254.169.254", []],
+		["https://internal.example", ["192.168.1.10"]],
+		["https://mixed.example", ["93.184.215.14", "10.1.2.3"]],
+	])("refuses to reach %s", async (endpoint, addresses) => {
+		const fetch = vi.fn(async () => Response.json({}));
+
+		const forward = createForwarder({
+			mint: async () => "t",
+			allowPrivateAddresses: false,
+			resolveHost: async () => addresses,
+			fetch: fetch as unknown as typeof globalThis.fetch,
+		});
+
+		const target = {
+			...TARGET,
+			endpoint,
+		};
+
+		await expect(forward(target, request(USER))).rejects.toBeInstanceOf(ForwardRefused);
+		expect(fetch).not.toHaveBeenCalled();
+	});
+
+	it("reaches a public address and allows private ones in development", async () => {
+		const fetch = vi.fn(async () => Response.json({}));
+
+		const strict = createForwarder({
+			mint: async () => "t",
+			allowPrivateAddresses: false,
+			resolveHost: async () => ["93.184.215.14", "2606:2800:21f:cb07:6820:80da:af6b:8b2c"],
+			fetch: fetch as unknown as typeof globalThis.fetch,
+		});
+
+		const relaxed = createForwarder({
+			mint: async () => "t",
+			allowPrivateAddresses: true,
+			fetch: fetch as unknown as typeof globalThis.fetch,
+		});
+
+		const local = {
+			...TARGET,
+			endpoint: "http://127.0.0.1:2583",
+		};
+
+		await strict(TARGET, request(USER));
+		await relaxed(local, request(USER));
+
+		expect(fetch).toHaveBeenCalledTimes(2);
 	});
 });
 

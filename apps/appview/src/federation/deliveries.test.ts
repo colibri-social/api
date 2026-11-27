@@ -8,7 +8,7 @@ import {
 	deliveryDelay,
 } from "./deliveries.js";
 import type { ForwardAnswer, Forwarder, ForwardRequest } from "./forward.js";
-import { ForwardUnreachable } from "./forward.js";
+import { ForwardRefused, ForwardUnreachable } from "./forward.js";
 
 const SELF = "did:web:market.example";
 const HOME = "did:web:home.example";
@@ -171,14 +171,54 @@ describe("createDeliveries", () => {
 
 	it("drops a delivery the AppView refuses for good", async () => {
 		const { deliveries, dropped } = setup({
-			forward: async () => answer(403, { error: "NotDeclared" }),
+			forward: async () => answer(400, { error: "NotManagingApp" }),
 		});
 
 		await deliveries.enqueue(USER, METHOD, {});
 		await deliveries.run();
 
 		expect(await queued()).toEqual([]);
-		expect(dropped).toHaveBeenCalledWith(HOME, METHOD, "NotDeclared");
+		expect(dropped).toHaveBeenCalledWith(HOME, METHOD, "NotManagingApp");
+	});
+
+	it.each(["NotDeclared", "NotJoined"])(
+		"tries again after %s from a stale cache",
+		async (error) => {
+			const { deliveries, dropped } = setup({
+				forward: async () => answer(403, { error }),
+			});
+
+			await deliveries.enqueue(USER, METHOD, {});
+			await deliveries.run();
+
+			expect((await queued())[0]?.attempts).toBe(1);
+			expect(dropped).not.toHaveBeenCalled();
+		},
+	);
+
+	it("drops a delivery to an endpoint on a private address", async () => {
+		const { deliveries, dropped } = setup({
+			forward: async () => {
+				throw new ForwardRefused(HOME, "10.0.0.1");
+			},
+		});
+
+		await deliveries.enqueue(USER, METHOD, {});
+		await deliveries.run();
+
+		expect(await queued()).toEqual([]);
+		expect(dropped).toHaveBeenCalledWith(HOME, METHOD, "PrivateAddress");
+	});
+
+	it("sends a due delivery once when two runners pick it up together", async () => {
+		const first = setup();
+		const second = setup();
+
+		await first.deliveries.enqueue(USER, METHOD, {});
+		await Promise.all([first.deliveries.run(), second.deliveries.run()]);
+
+		expect(first.forward.mock.calls.length + second.forward.mock.calls.length).toBe(1);
+		expect(await queued()).toEqual([]);
 	});
 
 	it("gives up after a day", async () => {

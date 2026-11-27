@@ -6,6 +6,7 @@ import type { AppContext } from "./context.js";
 import { corsMiddleware, nodeHeaderMiddleware } from "./cors.js";
 import { didDocumentForHost } from "./did-web.js";
 import { createFederationRouter } from "./federation/router.js";
+import { localManagingApp } from "./federation/space-hosts.js";
 import { record, xrpcMethod } from "./metrics.js";
 import { registerPolyfillRoutes } from "./polyfill/routes.js";
 import { logRejectedUploads } from "./polyfill/upload-log.js";
@@ -91,6 +92,8 @@ export const createAppServer = (
 	app.use(
 		createFederationRouter({
 			enabled: ctx.config.FEDERATION_ENABLED,
+			self: ctx.config.appviewDids,
+			localManagingApp: localManagingApp(ctx.database),
 			hosts: ctx.spaceHosts,
 			forward: ctx.forwarder,
 			verifyUser: async (token, lxm) => (await ctx.serviceAuth.verify(token, lxm)).did,

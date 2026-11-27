@@ -666,6 +666,12 @@ export const notifications = sqliteTable(
 		index("notifications_recipient_idx").on(t.recipient, t.indexedAt),
 		index("notifications_unseen_idx").on(t.recipient, t.space, t.seenAt),
 		index("notifications_message_idx").on(t.messageAuthor, t.messageRkey),
+		uniqueIndex("notifications_one_per_message_idx").on(
+			t.recipient,
+			t.space,
+			t.messageAuthor,
+			t.messageRkey,
+		),
 	],
 );
 

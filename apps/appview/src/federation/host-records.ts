@@ -1,6 +1,6 @@
 import { CommunityCredentialError, ensureHostRecord } from "@colibri-social/community";
 import { XrpcError } from "@colibri-social/space";
-import { eq, isNull, or } from "drizzle-orm";
+import { inArray, isNull, or } from "drizzle-orm";
 import type { AppContext } from "../context.js";
 
 const failureCode = (error: unknown): string => {
@@ -16,7 +16,9 @@ export const backfillHostRecords = async (ctx: AppContext): Promise<void> => {
 	const rows = await ctx.database.db
 		.select({ did: communities.did })
 		.from(communities)
-		.where(or(eq(communities.managingApp, appview), isNull(communities.managingApp)));
+		.where(
+			or(inArray(communities.managingApp, ctx.config.appviewDids), isNull(communities.managingApp)),
+		);
 
 	let written = 0;
 

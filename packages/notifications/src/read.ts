@@ -582,10 +582,16 @@ export const hydrateNotifications = async (
 			known,
 		);
 
+		const delivered = await withoutBlocked(
+			deps,
+			rows.filter((row) => row.originAppview),
+		);
+
+		const deliveredIds = new Set(delivered.map((row) => row.id));
 		const byId = new Map(local.map((view) => [view.id, view]));
 
 		return rows.flatMap((row) => {
-			const view = deliveredView(row) ?? byId.get(row.id);
+			const view = deliveredIds.has(row.id) ? deliveredView(row) : byId.get(row.id);
 
 			return view ? [view] : [];
 		});

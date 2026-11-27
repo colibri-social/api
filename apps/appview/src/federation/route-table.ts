@@ -1,4 +1,4 @@
-import { canonicalSpaceUri } from "@colibri-social/lexicons";
+import { canonicalSpaceUri, spaceTypeOf } from "@colibri-social/lexicons";
 import { tryParseSpaceRef } from "@colibri-social/space";
 
 export type RouteKey = "community" | "channel" | "thread" | "space" | "source";
@@ -145,6 +145,7 @@ export const ROUTES: Readonly<Record<string, Route>> = {
 };
 
 const BRIDGE_PREFIX = `${NS}.bridge.`;
+const PERSONAL_SPACE_PREFIX = `${NS}.actor.`;
 const LOCAL_SUBSCRIPTIONS = new Set([`${NS}.sync.subscribeEvents`, `${NS}.voice.subscribeSignals`]);
 
 export const routeOf = (nsid: string): Route | undefined => {
@@ -153,12 +154,20 @@ export const routeOf = (nsid: string): Route | undefined => {
 	return ROUTES[nsid];
 };
 
+export const isPersonalSpace = (space: string): boolean => {
+	return spaceTypeOf(space)?.startsWith(PERSONAL_SPACE_PREFIX) ?? false;
+};
+
 const authorityOf = (key: RouteKey, value: unknown): string | undefined => {
 	if (typeof value !== "string" || value.length === 0) return undefined;
 
 	if (key === "community") return value.startsWith("did:") ? value : undefined;
 
-	return tryParseSpaceRef(canonicalSpaceUri(value))?.authority;
+	const space = canonicalSpaceUri(value);
+
+	if (isPersonalSpace(space)) return undefined;
+
+	return tryParseSpaceRef(space)?.authority;
 };
 
 export const spaceAuthority = (

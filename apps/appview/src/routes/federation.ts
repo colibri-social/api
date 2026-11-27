@@ -1,4 +1,4 @@
-import { ForbiddenError, InvalidRequestError } from "@atproto/xrpc-server";
+import { ForbiddenError, InvalidRequestError, ResponseType, XRPCError } from "@atproto/xrpc-server";
 import type { NotificationKind } from "@colibri-social/appview-db";
 import { asDatetime, social } from "@colibri-social/lexicons";
 import {
@@ -9,7 +9,7 @@ import {
 	unreadCount,
 } from "@colibri-social/notifications";
 import { tryParseSpaceRecordUri, tryParseSpaceRef } from "@colibri-social/space";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { notificationEvent, seenEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { notificationDeps } from "../notification-deps.js";
@@ -44,21 +44,105 @@ const notManagingApp = (community: string) => {
 	return new InvalidRequestError(`the caller doesn't manage ${community}`, "NotManagingApp");
 };
 
+const upstreamFailure = (error: unknown) => {
+	return new XRPCError(
+		ResponseType.UpstreamFailure,
+		"couldn't check the delivery right now",
+		"UpstreamFailure",
+		{ cause: error },
+	);
+};
+
+const declaresThisAppview = async (ctx: AppContext, recipient: string): Promise<boolean> => {
+	for (const appview of ctx.config.appviewDids) {
+		if (await ctx.declaredAppviews.allows(recipient, appview)) return true;
+	}
+
+	return false;
+};
+
+const hasJoined = async (
+	ctx: AppContext,
+	recipient: string,
+	community: string,
+): Promise<boolean> => {
+	const table = ctx.database.tables.remoteSpaces;
+
+	const [row] = await ctx.database.db
+		.select({ did: table.did })
+		.from(table)
+		.where(and(eq(table.did, recipient), eq(table.community, community)))
+		.limit(1);
+
+	return Boolean(row);
+};
+
 export const admitDelivery = async (
 	ctx: AppContext,
 	peer: string,
 	recipient: string,
 	community: string,
 ): Promise<void> => {
-	if (!(await ctx.declaredAppviews.allows(recipient, ctx.config.APPVIEW_DID))) {
+	const declared = await declaresThisAppview(ctx, recipient).catch((error: unknown) => {
+		throw upstreamFailure(error);
+	});
+
+	if (!declared) {
 		throw new ForbiddenError(`${recipient} hasn't declared this AppView`, "NotDeclared");
 	}
 
-	const host = await ctx.spaceHosts.resolve(community).catch(() => undefined);
+	if (!(await hasJoined(ctx, recipient, community))) {
+		throw new ForbiddenError(`${recipient} hasn't joined ${community} here`, "NotJoined");
+	}
+
+	const host = await ctx.spaceHosts.resolve(community).catch((error: unknown) => {
+		throw upstreamFailure(error);
+	});
 
 	if (!host || host.local || host.managingApp !== peer) {
 		throw notManagingApp(community);
 	}
+};
+
+const belongsTo = (space: string | undefined, community: string): boolean => {
+	return space === undefined || tryParseSpaceRef(space)?.authority === community;
+};
+
+const isSuppressed = async (
+	ctx: AppContext,
+	recipient: string,
+	notification: NotificationView,
+	messageAuthor: string,
+): Promise<boolean> => {
+	const { db, tables } = ctx.database;
+
+	const muteSubjects = [
+		notification.author.did,
+		notification.community,
+		notification.channel,
+		...(notification.thread ? [notification.thread] : []),
+	];
+
+	const [blocked] = await db
+		.select({ did: tables.blocks.did })
+		.from(tables.blocks)
+		.where(
+			and(
+				eq(tables.blocks.did, recipient),
+				inArray(tables.blocks.subject, [notification.author.did, messageAuthor]),
+			),
+		)
+		.limit(1);
+
+	if (blocked) return true;
+
+	const [muted] = await db
+		.select({ did: tables.mutes.did })
+		.from(tables.mutes)
+		.where(and(eq(tables.mutes.did, recipient), inArray(tables.mutes.subject, muteSubjects)))
+		.limit(1);
+
+	return Boolean(muted);
 };
 
 export const handleDeliverNotification = async (
@@ -76,6 +160,16 @@ export const handleDeliverNotification = async (
 		);
 	}
 
+	if (
+		!belongsTo(notification.channel, notification.community) ||
+		!belongsTo(notification.thread, notification.community)
+	) {
+		throw new InvalidRequestError(
+			`the notification's channel isn't in ${notification.community}`,
+			"InvalidRequest",
+		);
+	}
+
 	await admitDelivery(ctx, peer, recipient, notification.community);
 
 	const { db, tables } = ctx.database;
@@ -84,20 +178,7 @@ export const handleDeliverNotification = async (
 	const messageAuthor = notification.message?.author.did ?? notification.author.did;
 	const messageRkey = notification.message?.rkey ?? notification.id;
 
-	const [existing] = await db
-		.select({ id: table.id })
-		.from(table)
-		.where(
-			and(
-				eq(table.recipient, recipient),
-				eq(table.space, space),
-				eq(table.messageAuthor, messageAuthor),
-				eq(table.messageRkey, messageRkey),
-			),
-		)
-		.limit(1);
-
-	if (existing) return;
+	if (await isSuppressed(ctx, recipient, notification, messageAuthor)) return;
 
 	const row = {
 		id: nextId(),
@@ -115,7 +196,13 @@ export const handleDeliverNotification = async (
 		seenAt: null,
 	};
 
-	await db.insert(table).values(row);
+	const inserted = await db
+		.insert(table)
+		.values(row)
+		.onConflictDoNothing()
+		.returning({ id: table.id });
+
+	if (inserted.length === 0) return;
 
 	ctx.announce.toUser(
 		recipient,
