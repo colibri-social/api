@@ -21,8 +21,16 @@ describe("isSharedKey", () => {
 		expect(isSharedKey("SIGNING_KEY")).toBe(true);
 		expect(isSharedKey("NODE_ID")).toBe(false);
 		expect(isSharedKey("DATABASE_READ_URL")).toBe(false);
-		expect(isSharedKey("POLYFILL_S3_ACCESS_KEY_ID")).toBe(false);
+		expect(isSharedKey("POLYFILL_S3_ENDPOINT")).toBe(false);
 		expect(isSharedKey("NOT_A_SETTING")).toBe(false);
+	});
+
+	it("shares the polyfill bucket and its cluster endpoint", () => {
+		expect(isSharedKey("POLYFILL_S3_CLUSTER_ENDPOINT")).toBe(true);
+		expect(isSharedKey("POLYFILL_S3_BUCKET")).toBe(true);
+		expect(isSharedKey("POLYFILL_S3_ACCESS_KEY_ID")).toBe(true);
+		expect(isSharedKey("POLYFILL_S3_SECRET_ACCESS_KEY")).toBe(true);
+		expect(isSharedKey("POLYFILL_S3_FORCE_PATH_STYLE")).toBe(true);
 	});
 });
 
@@ -56,7 +64,7 @@ describe("createConfigStore", () => {
 		await store.set("SIGNING_KEY", "a".repeat(64));
 		await database.db
 			.update(database.tables.clusterConfig)
-			.set({ key: "POLYFILL_S3_ACCESS_KEY_ID" })
+			.set({ key: "POLYFILL_S3_ENDPOINT" })
 			.where(eq(database.tables.clusterConfig.key, "SIGNING_KEY"));
 
 		expect(await store.values()).toEqual({ PDS_URL: "https://pds.test" });

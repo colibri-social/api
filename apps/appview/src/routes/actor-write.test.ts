@@ -211,6 +211,18 @@ describe("putSettings client state", () => {
 		asPreferencesOutput(result);
 	});
 
+	it("stores the volume of each sound group and returns it", async () => {
+		const result = await handlePutSettings(ctx, CALLER, {
+			clientPreferences: { soundVolume: 70, soundVolumes: { ping: 20, mic: 0 } },
+		});
+
+		expect(result.preferences.clientPreferences).toEqual({
+			soundVolume: 70,
+			soundVolumes: { ping: 20, mic: 0 },
+		});
+		asPreferencesOutput(result);
+	});
+
 	it("replaces client preferences whole and keeps them across other updates", async () => {
 		await handlePutSettings(ctx, CALLER, {
 			clientPreferences: { theme: "dark", messagePreviews: false },

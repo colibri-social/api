@@ -8,7 +8,7 @@ import { BLOB_PATH, NODE_ID_HEADER, NODE_SECRET_HEADER } from "./protocol.js";
 export const REMOTE_BLOB_TIMEOUT_MS = 15_000;
 
 export type RemoteBucketDeps = {
-	mainUrl: string;
+	mainUrl: string | (() => Promise<string | null>);
 	secretFile: string;
 	fetch?: typeof fetch;
 	timeoutMs?: number;
@@ -43,6 +43,16 @@ export const remoteBlobBucket = (deps: RemoteBucketDeps): BlobBucket => {
 	const fetchImpl = deps.fetch ?? fetch;
 	let credentials: NodeCredentials | null = null;
 
+	const mainUrlOf = async (): Promise<string> => {
+		const mainUrl = typeof deps.mainUrl === "string" ? deps.mainUrl : await deps.mainUrl();
+
+		if (!mainUrl) {
+			throw unavailable();
+		}
+
+		return mainUrl;
+	};
+
 	const credentialsOf = async (): Promise<NodeCredentials> => {
 		credentials ??= await readNodeCredentials(deps.secretFile);
 
@@ -62,7 +72,7 @@ export const remoteBlobBucket = (deps: RemoteBucketDeps): BlobBucket => {
 		},
 		get: async (key, range): Promise<BlobBucketObject | null> => {
 			const { id, secret } = await credentialsOf();
-			const url = new URL(BLOB_PATH, deps.mainUrl);
+			const url = new URL(BLOB_PATH, await mainUrlOf());
 			const abort = new AbortController();
 			const timer = setTimeout(() => abort.abort(), deps.timeoutMs ?? REMOTE_BLOB_TIMEOUT_MS);
 

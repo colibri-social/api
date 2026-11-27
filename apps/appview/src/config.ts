@@ -253,6 +253,10 @@ export const configSchema = z.object({
 		.url()
 		.optional()
 		.or(z.literal("").transform(() => undefined)),
+	POLYFILL_S3_CLUSTER_ENDPOINT: z
+		.url()
+		.optional()
+		.or(z.literal("").transform(() => undefined)),
 	POLYFILL_S3_REGION: z.string().trim().min(1).default("us-east-1"),
 	POLYFILL_S3_BUCKET: optionalString,
 	POLYFILL_S3_ACCESS_KEY_ID: optionalString,
@@ -338,6 +342,7 @@ const POLYFILL_BUCKET_KEYS = [
 
 const POLYFILL_SETTINGS = {
 	POLYFILL_S3_ENDPOINT: true,
+	POLYFILL_S3_CLUSTER_ENDPOINT: true,
 	POLYFILL_S3_REGION: true,
 	POLYFILL_S3_BUCKET: true,
 	POLYFILL_S3_ACCESS_KEY_ID: true,
@@ -347,7 +352,10 @@ const POLYFILL_SETTINGS = {
 
 type PolyfillSettings = Pick<RawConfig, keyof typeof POLYFILL_SETTINGS>;
 
-const polyfillBucketOf = (raw: PolyfillSettings): BlobBucketConfig | null => {
+const polyfillBucketOf = (
+	raw: PolyfillSettings,
+	endpoint: string | undefined,
+): BlobBucketConfig | null => {
 	const missing = POLYFILL_BUCKET_KEYS.filter((key) => !raw[key]);
 
 	if (missing.length === POLYFILL_BUCKET_KEYS.length) {
@@ -366,8 +374,21 @@ const polyfillBucketOf = (raw: PolyfillSettings): BlobBucketConfig | null => {
 		accessKeyId: raw.POLYFILL_S3_ACCESS_KEY_ID as string,
 		secretAccessKey: raw.POLYFILL_S3_SECRET_ACCESS_KEY as string,
 		forcePathStyle: raw.POLYFILL_S3_FORCE_PATH_STYLE,
-		...(raw.POLYFILL_S3_ENDPOINT ? { endpoint: raw.POLYFILL_S3_ENDPOINT } : {}),
+		...(endpoint ? { endpoint } : {}),
 	};
+};
+
+const nodePolyfillBucket = (
+	raw: PolyfillSettings & Pick<RawConfig, "ROLES">,
+): BlobBucketConfig | null => {
+	if (raw.ROLES.includes("main")) {
+		return polyfillBucketOf(raw, raw.POLYFILL_S3_ENDPOINT);
+	}
+
+	const endpoint = raw.POLYFILL_S3_CLUSTER_ENDPOINT ?? raw.POLYFILL_S3_ENDPOINT;
+	const bucket = polyfillBucketOf(raw, endpoint);
+
+	return endpoint ? bucket : null;
 };
 
 export const readPolyfillBucket = (
@@ -381,7 +402,10 @@ export const readPolyfillBucket = (
 		);
 	}
 
-	return polyfillBucketOf(parsed.data);
+	return polyfillBucketOf(
+		parsed.data,
+		parsed.data.POLYFILL_S3_ENDPOINT ?? parsed.data.POLYFILL_S3_CLUSTER_ENDPOINT,
+	);
 };
 
 export const loadConfig = (env: NodeJS.ProcessEnv = process.env): Config => {
@@ -438,8 +462,28 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): Config => {
 		],
 		telemetryEnabled:
 			raw.NODE_ENV === "production" && !raw.COLIBRI_TELEMETRY_DISABLED && !raw.DO_NOT_TRACK,
-		polyfillBucket: polyfillBucketOf(raw),
+		polyfillBucket: nodePolyfillBucket(raw),
 	};
+};
+
+const describePolyfillBlobs = (config: Config): string => {
+	const bucket = config.polyfillBucket;
+
+	if (config.ROLES.includes("main")) {
+		return bucket ? `bucket ${bucket.bucket}` : "disabled, no POLYFILL_S3_BUCKET";
+	}
+
+	if (bucket && config.MAIN_NODE_URL) {
+		return `bucket ${bucket.bucket} at ${bucket.endpoint}, through the main node when it can't be reached`;
+	}
+
+	if (bucket) {
+		return `bucket ${bucket.bucket} at ${bucket.endpoint}`;
+	}
+
+	return config.MAIN_NODE_URL
+		? "read through the main node, no POLYFILL_S3_CLUSTER_ENDPOINT"
+		: "disabled, no MAIN_NODE_URL";
 };
 
 export const describeConfig = (config: Config): Record<string, string> => ({
@@ -457,13 +501,7 @@ export const describeConfig = (config: Config): Record<string, string> => ({
 	hostSignIn: config.HOST_OAUTH_PRIVATE_KEY ? "enabled" : "disabled, no HOST_OAUTH_PRIVATE_KEY",
 	federation: config.FEDERATION_ENABLED ? "enabled" : "disabled",
 	voice: config.VOICE_ENABLED ? "enabled" : "disabled",
-	polyfillBlobs: !config.ROLES.includes("main")
-		? config.MAIN_NODE_URL
-			? `read from the main node at ${config.MAIN_NODE_URL}`
-			: "disabled, no MAIN_NODE_URL"
-		: config.polyfillBucket
-			? `bucket ${config.polyfillBucket.bucket}`
-			: "disabled, no POLYFILL_S3_BUCKET",
+	polyfillBlobs: describePolyfillBlobs(config),
 	cors: config.corsOrigins.length ? config.corsOrigins.join(" ") : "no browser origin allowed",
 	jetstream: config.JETSTREAM_ENABLED
 		? jetstreamEndpoint(config.JETSTREAM_URL).toString()

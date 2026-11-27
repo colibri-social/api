@@ -36,11 +36,6 @@ export const NODE_LOCAL_KEYS: ReadonlySet<string> = new Set([
 	"BLOB_DISK_ORIGINAL_MAX_BYTES",
 	"BLOB_RENDER_CONCURRENCY",
 	"POLYFILL_S3_ENDPOINT",
-	"POLYFILL_S3_REGION",
-	"POLYFILL_S3_BUCKET",
-	"POLYFILL_S3_ACCESS_KEY_ID",
-	"POLYFILL_S3_SECRET_ACCESS_KEY",
-	"POLYFILL_S3_FORCE_PATH_STYLE",
 ]);
 
 const sealedSchema = z.object({ c: z.string(), n: z.string() });

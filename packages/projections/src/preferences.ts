@@ -48,6 +48,14 @@ export const toStoredClientPreferences = (value: ClientPreferencesIn): ClientPre
 		linkEmbedsByDefault: value.linkEmbedsByDefault,
 		gifLoopLimit: value.gifLoopLimit,
 		soundVolume: value.soundVolume,
+		soundVolumes:
+			value.soundVolumes &&
+			withoutUndefined({
+				ping: value.soundVolumes.ping,
+				presence: value.soundVolumes.presence,
+				mic: value.soundVolumes.mic,
+				video: value.soundVolumes.video,
+			}),
 		warnOnExternalLinks: value.warnOnExternalLinks,
 		blueskyClient: value.blueskyClient,
 		customBlueskyClientBase: value.customBlueskyClientBase,

@@ -47,6 +47,7 @@ import { GAME_CACHE_MAX_ENTRIES, GAME_CACHE_TTL_MS, type GameEntry } from "./act
 import { type Announcer, silentAnnouncer } from "./announce.js";
 import { type AuthzChanges, createAuthzChanges } from "./authz-changes.js";
 import { createConfigStore } from "./cluster/config-store.js";
+import { fallbackBlobBucket } from "./cluster/fallback-bucket.js";
 import { createRegistry } from "./cluster/registry.js";
 import { remoteBlobBucket } from "./cluster/remote-bucket.js";
 import type { WriteProxy } from "./cluster/write-proxy.js";
@@ -284,18 +285,34 @@ export const createContext = async (config: Config) => {
 		...(config.COMMUNITY_EMAIL_DOMAIN ? { emailDomain: config.COMMUNITY_EMAIL_DOMAIN } : {}),
 	});
 
-	const ownBucket = config.ROLES.includes("main") ? polyfillBucket(config.polyfillBucket) : null;
+	const ownBucket = polyfillBucket(config.polyfillBucket);
+	const blobNodes = createRegistry(database);
+
+	const currentMainUrl = async (): Promise<string | null> => {
+		const main = await blobNodes.mainNode().catch(() => null);
+
+		if (!main) {
+			return config.MAIN_NODE_URL ?? null;
+		}
+
+		return main.id === config.NODE_ID ? null : main.tailnetUrl;
+	};
+
+	const mainBucket =
+		!config.ROLES.includes("main") && config.MAIN_NODE_URL
+			? remoteBlobBucket({
+					mainUrl: currentMainUrl,
+					secretFile: config.NODE_SECRET_FILE,
+				})
+			: null;
+
 	const polyfillBlobs = {
 		index: polyfillBlobIndex(database),
 		ownBucket,
 		bucket:
-			ownBucket ??
-			(config.MAIN_NODE_URL
-				? remoteBlobBucket({
-						mainUrl: config.MAIN_NODE_URL,
-						secretFile: config.NODE_SECRET_FILE,
-					})
-				: null),
+			ownBucket && mainBucket
+				? fallbackBlobBucket({ direct: ownBucket, fallback: mainBucket, log })
+				: (ownBucket ?? mainBucket),
 	};
 
 	const blobs = new BlobService({

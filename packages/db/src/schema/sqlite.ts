@@ -83,6 +83,12 @@ export type StoredVoiceView = {
 	showNonVideoParticipants?: boolean;
 	showOwnCamera?: boolean;
 };
+export type StoredSoundVolumes = {
+	ping?: number;
+	presence?: number;
+	mic?: number;
+	video?: number;
+};
 export type ClientPreferences = {
 	controls?: StoredControls;
 	theme?: string;
@@ -90,6 +96,7 @@ export type ClientPreferences = {
 	linkEmbedsByDefault?: boolean;
 	gifLoopLimit?: number;
 	soundVolume?: number;
+	soundVolumes?: StoredSoundVolumes;
 	warnOnExternalLinks?: boolean;
 	blueskyClient?: string;
 	customBlueskyClientBase?: string;

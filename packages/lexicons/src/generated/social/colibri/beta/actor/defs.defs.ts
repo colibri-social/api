@@ -493,9 +493,14 @@ type ClientPreferences = { $type?: "social.colibri.beta.actor.defs#clientPrefere
   "gifLoopLimit"?:number;
 
   /**
-   * The volume of in-app sound effects such as message pings and call sounds, in percent. Absent means 100.
+   * The volume of in-app sound effects such as message pings and call sounds, in percent. Absent means 100. A client that reads soundVolumes uses this only for the presence, mic and video groups that soundVolumes leaves out.
    */
   "soundVolume"?:number;
+
+  /**
+   * The volume of each group of in-app sound effects.
+   */
+  "soundVolumes"?:SoundVolumes;
 
   /**
    * Whether opening a link to another site asks for confirmation first.
@@ -550,7 +555,7 @@ type ClientPreferences = { $type?: "social.colibri.beta.actor.defs#clientPrefere
 export type { ClientPreferences };
 
 /** Client settings that follow the user across devices. Every field is optional and a client applies its own default for an absent one. */
-const clientPreferences = /*#__PURE__*/ l.typedObject<ClientPreferences>($nsid, "clientPreferences", /*#__PURE__*/ l.object({"controls":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Controls>((() => controls) as any)),"theme":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["system","dark","light"]}>()),"messagePreviews":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"linkEmbedsByDefault":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"gifLoopLimit":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":1,"maximum":5})),"soundVolume":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":0,"maximum":100})),"warnOnExternalLinks":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"blueskyClient":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":64,"knownValues":["anisota","blacksky","bluesky","deer","mu","northsky","witchsky","custom"]}>({"maxLength":64})),"customBlueskyClientBase":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":253})),"inboxPresentation":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":32,"knownValues":["popover","modal"]}>({"maxLength":32})),"developerMode":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"recordExplorer":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":32,"knownValues":["pdsls","atprotoAt"]}>({"maxLength":32})),"hideModeratedMessages":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"voiceView":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<VoiceView>((() => voiceView) as any)),"experiments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"maxLength":64}), {"maxLength":64})),"dismissedLegacyCommunities":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), {"maxLength":256}))}));
+const clientPreferences = /*#__PURE__*/ l.typedObject<ClientPreferences>($nsid, "clientPreferences", /*#__PURE__*/ l.object({"controls":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<Controls>((() => controls) as any)),"theme":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"knownValues":["system","dark","light"]}>()),"messagePreviews":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"linkEmbedsByDefault":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"gifLoopLimit":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":1,"maximum":5})),"soundVolume":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":0,"maximum":100})),"soundVolumes":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<SoundVolumes>((() => soundVolumes) as any)),"warnOnExternalLinks":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"blueskyClient":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":64,"knownValues":["anisota","blacksky","bluesky","deer","mu","northsky","witchsky","custom"]}>({"maxLength":64})),"customBlueskyClientBase":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"maxLength":253})),"inboxPresentation":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":32,"knownValues":["popover","modal"]}>({"maxLength":32})),"developerMode":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"recordExplorer":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string<{"maxLength":32,"knownValues":["pdsls","atprotoAt"]}>({"maxLength":32})),"hideModeratedMessages":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"voiceView":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.ref<VoiceView>((() => voiceView) as any)),"experiments":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"maxLength":64}), {"maxLength":64})),"dismissedLegacyCommunities":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.string({"format":"did"}), {"maxLength":256}))}));
 
 export { clientPreferences };
 
@@ -608,6 +613,36 @@ export type { VoiceView };
 const voiceView = /*#__PURE__*/ l.typedObject<VoiceView>($nsid, "voiceView", /*#__PURE__*/ l.object({"confirmJoin":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"showNonVideoParticipants":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean()),"showOwnCamera":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.boolean())}));
 
 export { voiceView };
+
+/** In-app sound effect volumes in percent, one per group. A client applies its own default for an absent group. */
+type SoundVolumes = { $type?: "social.colibri.beta.actor.defs#soundVolumes";
+
+  /**
+   * The notification ping. Absent means 50.
+   */
+  "ping"?:number;
+
+  /**
+   * Someone joining or leaving a call. Absent means soundVolume, or 100 without it.
+   */
+  "presence"?:number;
+
+  /**
+   * Muting, unmuting, deafening and undeafening. Absent means soundVolume, or 100 without it.
+   */
+  "mic"?:number;
+
+  /**
+   * Cameras and screen shares turning on or off. Absent means soundVolume, or 100 without it.
+   */
+  "video"?:number };
+
+export type { SoundVolumes };
+
+/** In-app sound effect volumes in percent, one per group. A client applies its own default for an absent group. */
+const soundVolumes = /*#__PURE__*/ l.typedObject<SoundVolumes>($nsid, "soundVolumes", /*#__PURE__*/ l.object({"ping":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":0,"maximum":100})),"presence":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":0,"maximum":100})),"mic":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":0,"maximum":100})),"video":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.integer({"minimum":0,"maximum":100}))}));
+
+export { soundVolumes };
 
 /** Emoji usage, skin tone and recent GIFs. */
 type ComposerState = { $type?: "social.colibri.beta.actor.defs#composerState";

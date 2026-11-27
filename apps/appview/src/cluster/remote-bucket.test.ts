@@ -132,6 +132,23 @@ describe("remoteBlobBucket", () => {
 		await expect(bucket.get(KEY)).rejects.toMatchObject({ code: "BlobStorageUnavailable" });
 	});
 
+	it("follows the main node the resolver names on every read", async () => {
+		const { mainUrl, secretFile } = await start(memoryBucket({ [KEY]: BYTES }));
+		const resolve = vi.fn(async () => mainUrl);
+		const bucket = remoteBlobBucket({ mainUrl: resolve, secretFile });
+
+		expect(await readAll(await bucket.get(KEY))).toBe("hello from hel-1");
+		expect(await readAll(await bucket.get(KEY))).toBe("hello from hel-1");
+		expect(resolve).toHaveBeenCalledTimes(2);
+	});
+
+	it("fails as unavailable when no other node is main", async () => {
+		const { secretFile } = await start(memoryBucket({ [KEY]: BYTES }));
+		const bucket = remoteBlobBucket({ mainUrl: async () => null, secretFile });
+
+		await expect(bucket.get(KEY)).rejects.toMatchObject({ code: "BlobStorageUnavailable" });
+	});
+
 	it("is refused with a secret the main node doesn't know", async () => {
 		const { mainUrl } = await start(memoryBucket({ [KEY]: BYTES }));
 		const secretFile = join(directory, "forged-secret");

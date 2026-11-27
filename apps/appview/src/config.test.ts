@@ -238,6 +238,68 @@ describe("POLYFILL_S3_*", () => {
 			/POLYFILL_S3_ACCESS_KEY_ID/,
 		);
 	});
+
+	const SHARED_BUCKET = {
+		POLYFILL_S3_CLUSTER_ENDPOINT: "http://100.64.0.1:8333",
+		POLYFILL_S3_BUCKET: "colibri-blobs",
+		POLYFILL_S3_ACCESS_KEY_ID: "key",
+		POLYFILL_S3_SECRET_ACCESS_KEY: "secret",
+		POLYFILL_S3_FORCE_PATH_STYLE: "true",
+	};
+
+	it("points the main node at its own endpoint", () => {
+		expect(
+			withBucket({
+				...SHARED_BUCKET,
+				ROLES: "main,api",
+				POLYFILL_S3_ENDPOINT: "http://seaweedfs:8333",
+			}).polyfillBucket?.endpoint,
+		).toBe("http://seaweedfs:8333");
+	});
+
+	it("points other nodes at the cluster endpoint", () => {
+		expect(
+			withBucket({
+				...SHARED_BUCKET,
+				ROLES: "api,live",
+				POLYFILL_S3_ENDPOINT: "http://seaweedfs:8333",
+			}).polyfillBucket,
+		).toEqual({
+			endpoint: "http://100.64.0.1:8333",
+			region: "us-east-1",
+			bucket: "colibri-blobs",
+			accessKeyId: "key",
+			secretAccessKey: "secret",
+			forcePathStyle: true,
+		});
+	});
+
+	it("points a failover node at the cluster endpoint", () => {
+		expect(withBucket({ ...SHARED_BUCKET, ROLES: "failover,api" }).polyfillBucket?.endpoint).toBe(
+			"http://100.64.0.1:8333",
+		);
+	});
+
+	it("lets another node use its own endpoint without a cluster endpoint", () => {
+		expect(
+			withBucket({
+				...SHARED_BUCKET,
+				ROLES: "api",
+				POLYFILL_S3_CLUSTER_ENDPOINT: "",
+				POLYFILL_S3_ENDPOINT: "http://blobs.internal:8333",
+			}).polyfillBucket?.endpoint,
+		).toBe("http://blobs.internal:8333");
+	});
+
+	it("leaves other nodes on the main node without any endpoint", () => {
+		expect(
+			withBucket({
+				...SHARED_BUCKET,
+				ROLES: "api",
+				POLYFILL_S3_CLUSTER_ENDPOINT: "",
+			}).polyfillBucket,
+		).toBeNull();
+	});
 });
 
 describe("readPolyfillBucket", () => {
@@ -262,6 +324,17 @@ describe("readPolyfillBucket", () => {
 
 	it("returns null without bucket settings", () => {
 		expect(readPolyfillBucket({})).toBeNull();
+	});
+
+	it("uses the cluster endpoint without a local one", () => {
+		expect(
+			readPolyfillBucket({
+				POLYFILL_S3_CLUSTER_ENDPOINT: "http://100.64.0.1:8333",
+				POLYFILL_S3_BUCKET: "colibri",
+				POLYFILL_S3_ACCESS_KEY_ID: "key",
+				POLYFILL_S3_SECRET_ACCESS_KEY: "secret",
+			})?.endpoint,
+		).toBe("http://100.64.0.1:8333");
 	});
 
 	it("rejects a partial bucket", () => {

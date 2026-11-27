@@ -1465,6 +1465,7 @@ describe("personal spaces", () => {
 				hideModeratedMessages: true,
 				inboxPresentation: "modal",
 				soundVolume: 40,
+				soundVolumes: { ping: 25, video: 60 },
 				experiments: ["light-mode-v1"],
 				dismissedLegacyCommunities: ["did:plc:legacyxxxxxxxxxxxxxxxxxxx"],
 			}),
@@ -1480,6 +1481,7 @@ describe("personal spaces", () => {
 			hideModeratedMessages: true,
 			inboxPresentation: "modal",
 			soundVolume: 40,
+			soundVolumes: { ping: 25, video: 60 },
 			experiments: ["light-mode-v1"],
 			dismissedLegacyCommunities: ["did:plc:legacyxxxxxxxxxxxxxxxxxxx"],
 		});
