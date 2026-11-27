@@ -101,6 +101,26 @@ describe("createDeliveries", () => {
 		expect(await queued()).toEqual([]);
 	});
 
+	it("names the recipients who use another AppView", async () => {
+		const declared = new Map([
+			[USER, [HOME, SELF]],
+			["did:plc:localonlyxxxxxxxxxxxxxxxx", [SELF]],
+		]);
+
+		const deliveries = createDeliveries({
+			enabled: true,
+			self: [SELF],
+			database,
+			declared: { list: async (did) => declared.get(did) ?? [] },
+			endpointFor: async () => undefined,
+			forward: vi.fn(),
+		});
+
+		const elsewhere = await deliveries.elsewhere([USER, "did:plc:localonlyxxxxxxxxxxxxxxxx"]);
+
+		expect([...elsewhere]).toEqual([USER]);
+	});
+
 	it("posts the body with service auth and removes it once delivered", async () => {
 		const { deliveries, forward } = setup();
 

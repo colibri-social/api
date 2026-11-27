@@ -1,9 +1,16 @@
 import { ForbiddenError, InvalidRequestError } from "@atproto/xrpc-server";
 import type { NotificationKind } from "@colibri-social/appview-db";
 import { asDatetime, social } from "@colibri-social/lexicons";
-import { deliverNotification, nextId } from "@colibri-social/notifications";
+import {
+	deliverMessageDeleted,
+	deliverNotification,
+	deliverRead,
+	nextId,
+	unreadCount,
+} from "@colibri-social/notifications";
+import { tryParseSpaceRecordUri, tryParseSpaceRef } from "@colibri-social/space";
 import { and, eq } from "drizzle-orm";
-import { notificationEvent } from "../announce.js";
+import { notificationEvent, seenEvent } from "../announce.js";
 import type { AppContext } from "../context.js";
 import { notificationDeps } from "../notification-deps.js";
 import { pushDelivery } from "../push-delivery.js";
@@ -17,6 +24,18 @@ export type DeliveredNotification = {
 	notification: NotificationView;
 	spaceName?: string;
 	channelName?: string;
+};
+
+export type DeliveredRead = {
+	recipient: string;
+	channel: string;
+	thread?: string;
+	through: string;
+};
+
+export type DeliveredRetraction = {
+	recipient: string;
+	message: string;
 };
 
 const KINDS = new Set<NotificationKind>(["mention", "reply", "message"]);
@@ -134,11 +153,107 @@ export const handleDeliverNotification = async (
 	).catch((error: unknown) => ctx.log.warn({ error }, "push.deliveryFailed"));
 };
 
+export const handleDeliverRead = async (
+	ctx: AppContext,
+	peer: string,
+	input: DeliveredRead,
+): Promise<void> => {
+	const community = tryParseSpaceRef(input.channel)?.authority;
+
+	if (!community) {
+		throw new InvalidRequestError(`${input.channel} isn't a channel`, "InvalidRequest");
+	}
+
+	await admitDelivery(ctx, peer, input.recipient, community);
+
+	const push = pushDelivery(ctx);
+
+	if (!push.enabled) return;
+
+	await deliverRead(notificationDeps(ctx), push.senders, input.recipient, {
+		channel: input.channel,
+		...(input.thread ? { thread: input.thread } : {}),
+		through: input.through,
+	}).catch((error: unknown) => ctx.log.warn({ error }, "push.readFailed"));
+};
+
+export const handleRetract = async (
+	ctx: AppContext,
+	peer: string,
+	input: DeliveredRetraction,
+): Promise<void> => {
+	const message = tryParseSpaceRecordUri(input.message);
+
+	if (!message) {
+		throw new InvalidRequestError(`${input.message} isn't a message`, "InvalidRequest");
+	}
+
+	await admitDelivery(ctx, peer, input.recipient, message.authority);
+
+	const { db, tables } = ctx.database;
+	const table = tables.notifications;
+
+	const removed = await db
+		.delete(table)
+		.where(
+			and(
+				eq(table.recipient, input.recipient),
+				eq(table.originAppview, peer),
+				eq(table.space, message.uri),
+				eq(table.messageAuthor, message.author),
+				eq(table.messageRkey, message.rkey),
+			),
+		)
+		.returning({ id: table.id });
+
+	if (removed.length === 0) return;
+
+	const deps = notificationDeps(ctx);
+	const unread = await unreadCount(deps, input.recipient);
+
+	ctx.announce.toUser(
+		input.recipient,
+		seenEvent(unread, {
+			seenAt: new Date().toISOString(),
+			channel: message.uri,
+			message: {
+				did: message.author,
+				rkey: message.rkey,
+			},
+		}),
+	);
+
+	const push = pushDelivery(ctx);
+
+	if (!push.enabled) return;
+
+	await deliverMessageDeleted(
+		deps,
+		push.senders,
+		{ space: message.uri, author: message.author, rkey: message.rkey },
+		[input.recipient],
+	).catch((error: unknown) => ctx.log.warn({ error }, "push.deleteFailed"));
+};
+
 export const registerFederationRoutes = ({ server, ctx, auth }: RouteDeps): void => {
 	route(server, social.colibri.beta.federation.deliverNotification, {
 		auth: auth.peer,
 		handler: async ({ input, auth: caller }) => {
 			await handleDeliverNotification(ctx, caller.credentials.did, input.body);
+		},
+	});
+
+	route(server, social.colibri.beta.federation.deliverRead, {
+		auth: auth.peer,
+		handler: async ({ input, auth: caller }) => {
+			await handleDeliverRead(ctx, caller.credentials.did, input.body);
+		},
+	});
+
+	route(server, social.colibri.beta.federation.retract, {
+		auth: auth.peer,
+		handler: async ({ input, auth: caller }) => {
+			await handleRetract(ctx, caller.credentials.did, input.body);
 		},
 	});
 };

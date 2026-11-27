@@ -229,6 +229,32 @@ const forwardedMessageChange = (rkey: string, mentioned: string): RepoChange => 
 	deletes: [],
 });
 
+const REMOTE_READER = "did:plc:remotereaderxxxxxxxxxxxx";
+
+const notifyRemoteReader = async (rkey: string, recipient = REMOTE_READER) => {
+	await database.db.insert(database.tables.notifications).values({
+		id: `n-${rkey}`,
+		recipient,
+		kind: "message",
+		community: COMMUNITY,
+		space: SPACE,
+		author: AUTHOR,
+		messageAuthor: AUTHOR,
+		messageRkey: rkey,
+		mentionRole: null,
+		originAppview: null,
+		view: null,
+		indexedAt: NOW,
+		seenAt: null,
+	});
+};
+
+const queuedOf = (method: string) => {
+	return queuedDeliveries.filter(
+		(entry) => entry.method === `social.colibri.beta.federation.${method}`,
+	);
+};
+
 const labelChange = (subjectRkey: string, val: string, neg: boolean): RepoChange => ({
 	space: SPACE,
 	author: LABELER,
@@ -318,6 +344,7 @@ beforeEach(async () => {
 
 				return 0;
 			},
+			elsewhere: async () => new Set<string>(),
 		},
 		projections: { now: () => new Date().toISOString() },
 		writer: {
@@ -906,6 +933,41 @@ describe("connectPipeline", () => {
 		});
 	});
 
+	it("asks the recipient's other AppViews to drop a deleted message's notification", async () => {
+		const rkey = nextTid();
+
+		await notifyRemoteReader(rkey);
+
+		emit({
+			space: SPACE,
+			author: AUTHOR,
+			puts: [],
+			deletes: [{ collection: COLLECTIONS.message, rkey }],
+		});
+
+		await vi.waitFor(() => expect(queuedOf("retract")).toHaveLength(1));
+
+		expect(queuedOf("retract")[0]?.body).toEqual({
+			recipient: REMOTE_READER,
+			message: `${SPACE}/${AUTHOR}/${COLLECTIONS.message}/${rkey}`,
+		});
+	});
+
+	it("asks the recipient's other AppViews to drop a hidden message's notification", async () => {
+		const rkey = nextTid();
+
+		await putMessageRow(rkey);
+		await notifyRemoteReader(rkey);
+
+		emit(labelChange(rkey, "hidden", false));
+
+		await vi.waitFor(() => expect(queuedOf("retract")).toHaveLength(1));
+
+		expect(queuedOf("retract")[0]?.body).toMatchObject({
+			recipient: REMOTE_READER,
+		});
+	});
+
 	it("publishes a reaction with the target's record uri, preferring the uri", async () => {
 		const rkey = nextTid();
 		const target = nextTid();
@@ -1204,6 +1266,51 @@ describe("personal space events", () => {
 		await vi.waitFor(() => expect(framesOfType("preferencesEvent")).toHaveLength(1));
 
 		expect(framesOfType("preferencesEvent")[0]?.space).toBe(AUTHOR);
+	});
+
+	it("tells the reader's other AppViews about a read that covers their notifications", async () => {
+		await notifyRemoteReader("3lkaaaaaaaaa1", AUTHOR);
+		await notifyRemoteReader("3lkaaaaaaaaa9", AUTHOR);
+
+		emit({
+			space: PREFERENCES,
+			author: AUTHOR,
+			puts: [
+				{
+					collection: COLLECTIONS.channelRead,
+					rkey: COMMUNITY,
+					cid: "bafyreictestread",
+					value: {
+						$type: COLLECTIONS.channelRead,
+						community: COMMUNITY,
+						cursors: [{ channel: CHANNEL_SKEY, cursor: "3lkaaaaaaaaa2" }],
+					},
+				},
+			],
+			deletes: [],
+		});
+
+		await vi.waitFor(() => expect(queuedOf("deliverRead")).toHaveLength(1));
+
+		expect(queuedOf("deliverRead")[0]?.body).toEqual({
+			recipient: AUTHOR,
+			channel: SPACE,
+			through: "3lkaaaaaaaaa2",
+		});
+
+		await vi.waitFor(async () => {
+			const seen = (await database.db.select().from(database.tables.notifications)).map((row) => [
+				row.messageRkey,
+				row.seenAt !== null,
+			]);
+
+			expect(seen).toEqual(
+				expect.arrayContaining([
+					["3lkaaaaaaaaa1", true],
+					["3lkaaaaaaaaa9", false],
+				]),
+			);
+		});
 	});
 
 	it("tells the actor's own devices about read cursors that arrive through sync", async () => {

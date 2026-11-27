@@ -14,6 +14,7 @@ import {
 	pushSuppressedFor,
 	removeNotificationsForMessage,
 	resolvePlace,
+	resolveReadTarget,
 	unreadCount,
 } from "@colibri-social/notifications";
 import {
@@ -31,7 +32,7 @@ import {
 	trySpaceRecordUri,
 } from "@colibri-social/space";
 import type { RepoChange } from "@colibri-social/space-sync";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, lte } from "drizzle-orm";
 import {
 	categoryEvent,
 	communityEvent,
@@ -188,6 +189,10 @@ const labelFrame = (
 });
 
 const DELIVER_NOTIFICATION = "social.colibri.beta.federation.deliverNotification";
+
+const DELIVER_READ = "social.colibri.beta.federation.deliverRead";
+
+const RETRACT = "social.colibri.beta.federation.retract";
 
 const readCursorsOf = (value: Record<string, unknown>): { channel: string; cursor: string }[] => {
 	const cursors = Array.isArray(value.cursors) ? value.cursors : [];
@@ -498,6 +503,101 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 		);
 
 		pushMessageDeleted(space, author, rkey, recipients);
+		federateRetraction(space, { did: author, rkey }, recipients);
+	};
+
+	const federateRetraction = (
+		space: string,
+		pointer: SpaceRecordPointer,
+		recipients: readonly string[],
+	): void => {
+		const message = messageUriOf(space, pointer);
+
+		if (!message || recipients.length === 0) return;
+
+		void Promise.all(
+			recipients.map((recipient) =>
+				ctx.deliveries.enqueue(recipient, RETRACT, {
+					recipient,
+					message,
+				}),
+			),
+		)
+			.then((queued) => {
+				if (queued.some((count) => count > 0)) return ctx.deliveries.run();
+			})
+			.catch((error: unknown) => ctx.log.warn({ error }, "federation.enqueueFailed"));
+	};
+
+	const retractHiddenMessage = async (
+		space: string,
+		pointer: SpaceRecordPointer,
+	): Promise<void> => {
+		const table = ctx.database.tables.notifications;
+
+		const rows = await ctx.database.db
+			.selectDistinct({ recipient: table.recipient })
+			.from(table)
+			.where(
+				and(
+					eq(table.space, space),
+					eq(table.messageAuthor, pointer.did),
+					eq(table.messageRkey, pointer.rkey),
+				),
+			);
+
+		federateRetraction(
+			space,
+			pointer,
+			rows.map((row) => row.recipient),
+		);
+	};
+
+	const federateRead = async (
+		did: string,
+		community: string,
+		cursors: readonly { channel: string; cursor: string }[],
+	): Promise<void> => {
+		const table = ctx.database.tables.notifications;
+		let queued = 0;
+
+		for (const { channel, cursor } of cursors) {
+			const target = await resolveReadTarget(notifications, community, channel);
+
+			if (!target) continue;
+
+			const space = target.thread ?? target.channel;
+
+			const covered = and(
+				eq(table.recipient, did),
+				eq(table.space, space),
+				lte(table.messageRkey, cursor),
+				isNull(table.seenAt),
+			);
+
+			const [unseen] = await ctx.database.db
+				.select({ id: table.id })
+				.from(table)
+				.where(covered)
+				.limit(1);
+
+			if (!unseen) continue;
+
+			const sent = await ctx.deliveries.enqueue(did, DELIVER_READ, {
+				recipient: did,
+				channel: target.channel,
+				...(target.thread ? { thread: target.thread } : {}),
+				through: cursor,
+			});
+
+			if (sent === 0) continue;
+
+			queued += sent;
+
+			await ctx.database.db.update(table).set({ seenAt: new Date().toISOString() }).where(covered);
+		}
+
+		if (queued > 0) await ctx.deliveries.run();
 	};
 
 	const publishMember = async (community: string, did: string): Promise<void> => {
@@ -646,6 +746,9 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 				if (put.collection === COLLECTIONS.channelRead) {
 					await publishReadCursors(space.authority, put.rkey);
 					push.readMoved(space.authority, put.rkey, readCursorsOf(put.value));
+					void federateRead(space.authority, put.rkey, readCursorsOf(put.value)).catch(
+						(error: unknown) => ctx.log.warn({ error }, "federation.readFailed"),
+					);
 				}
 			}
 			const follows = [...change.puts, ...change.deletes].filter(
@@ -732,6 +835,20 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 					change.space,
 					labelFrame(value.neg ? "negate" : "create", change.space, change.author, value),
 				);
+
+				if (
+					!value.neg &&
+					value.val === LABEL_VALUES.hidden &&
+					value.subject?.collection === COLLECTIONS.message &&
+					value.subject.did &&
+					value.subject.rkey
+				) {
+					void retractHiddenMessage(change.space, {
+						did: value.subject.did,
+						rkey: value.subject.rkey,
+					}).catch((error: unknown) => ctx.log.warn({ error }, "federation.retractFailed"));
+				}
+
 				if (
 					value.neg &&
 					value.val === LABEL_VALUES.hidden &&

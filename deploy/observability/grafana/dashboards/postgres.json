@@ -871,6 +871,163 @@
 				}
 			},
 			"id": 17
+		},
+		{
+			"type": "stat",
+			"title": "Polyfilled users",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 60,
+				"w": 8,
+				"h": 4
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum(max by (mode) (colibri_polyfill_users{mode=~\"polyfill|migrating\"}))"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "short"
+				},
+				"overrides": []
+			},
+			"options": {
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					]
+				},
+				"colorMode": "value",
+				"graphMode": "area"
+			},
+			"id": 18,
+			"description": "Users whose Space repos this AppView hosts because their PDS can't, including users moving to their own PDS"
+		},
+		{
+			"type": "stat",
+			"title": "Polyfill blobs",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 8,
+				"y": 60,
+				"w": 8,
+				"h": 4
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "max(colibri_polyfill_blobs)"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "short"
+				},
+				"overrides": []
+			},
+			"options": {
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					]
+				},
+				"colorMode": "value",
+				"graphMode": "area"
+			},
+			"id": 19,
+			"description": "Blobs stored for polyfilled users"
+		},
+		{
+			"type": "stat",
+			"title": "Polyfill storage",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 16,
+				"y": 60,
+				"w": 8,
+				"h": 4
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "sum(max by (kind) (colibri_polyfill_bytes))"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "bytes"
+				},
+				"overrides": []
+			},
+			"options": {
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					]
+				},
+				"colorMode": "value",
+				"graphMode": "area"
+			},
+			"id": 20,
+			"description": "Blob bytes in object storage plus record bytes in the database for polyfilled users"
+		},
+		{
+			"type": "timeseries",
+			"title": "Polyfill storage by kind",
+			"datasource": {
+				"type": "prometheus",
+				"uid": "colibri-prometheus"
+			},
+			"gridPos": {
+				"x": 0,
+				"y": 64,
+				"w": 24,
+				"h": 8
+			},
+			"targets": [
+				{
+					"refId": "A",
+					"datasource": {
+						"type": "prometheus",
+						"uid": "colibri-prometheus"
+					},
+					"expr": "max by (kind) (colibri_polyfill_bytes)",
+					"legendFormat": "{{kind}}"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "bytes"
+				},
+				"overrides": []
+			},
+			"options": {},
+			"id": 21,
+			"description": "Storage polyfilled users take, split into blobs and records"
 		}
 	]
 }

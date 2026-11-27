@@ -47,4 +47,5 @@ export const notificationDeps = (ctx: AppContext): NotificationDeps => ({
 	tables: ctx.database.tables,
 	now: () => new Date().toISOString(),
 	mayRead: (space, did) => mayReadSpace(ctx, space, did),
+	usesOtherAppviews: (dids) => ctx.deliveries.elsewhere(dids),
 });

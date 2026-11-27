@@ -27,7 +27,10 @@ export type GaugeName =
 	| "sfuWorkerCpu"
 	| "sfuBitrate"
 	| "sfuPacketLoss"
-	| "sfuTransports";
+	| "sfuTransports"
+	| "polyfillUsers"
+	| "polyfillBlobs"
+	| "polyfillBytes";
 
 export type CounterName = "pushDeliveries" | "turnCredentials" | "jetstreamEvents" | "syncFailures";
 
@@ -91,6 +94,18 @@ const GAUGES: Record<GaugeName, { name: string; description: string }> = {
 	sfuTransports: {
 		name: "colibri_sfu_transports",
 		description: "WebRTC transports, by ICE state",
+	},
+	polyfillUsers: {
+		name: "colibri_polyfill_users",
+		description: "Users whose Space repos this AppView knows a hosting mode for, by mode",
+	},
+	polyfillBlobs: {
+		name: "colibri_polyfill_blobs",
+		description: "Blobs this AppView stores for polyfilled users",
+	},
+	polyfillBytes: {
+		name: "colibri_polyfill_bytes",
+		description: "Storage polyfilled users take on this AppView, by kind (blobs or records)",
 	},
 };
 

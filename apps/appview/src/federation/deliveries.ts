@@ -55,6 +55,24 @@ export const createDeliveries = (deps: DeliveryDeps) => {
 	let running: Promise<number> | undefined;
 	let pending = false;
 
+	const otherTargets = async (recipient: string): Promise<string[]> => {
+		const declared = await deps.declared.list(recipient).catch(() => []);
+
+		return [...new Set(declared)].filter((target) => !deps.self.includes(target));
+	};
+
+	const elsewhere = async (dids: readonly string[]): Promise<ReadonlySet<string>> => {
+		if (!deps.enabled) return new Set();
+
+		const checked = await Promise.all(
+			dids.map(async (did) => {
+				return (await otherTargets(did)).length > 0 ? [did] : [];
+			}),
+		);
+
+		return new Set(checked.flat());
+	};
+
 	const enqueue = async (
 		recipient: string,
 		method: DeliveryMethod,
@@ -62,9 +80,7 @@ export const createDeliveries = (deps: DeliveryDeps) => {
 	): Promise<number> => {
 		if (!deps.enabled) return 0;
 
-		const declared = await deps.declared.list(recipient).catch(() => []);
-
-		const targets = [...new Set(declared)].filter((target) => !deps.self.includes(target));
+		const targets = await otherTargets(recipient);
 
 		if (targets.length === 0) return 0;
 
@@ -175,6 +191,7 @@ export const createDeliveries = (deps: DeliveryDeps) => {
 
 	return {
 		enqueue,
+		elsewhere,
 		run: () => {
 			pending = true;
 

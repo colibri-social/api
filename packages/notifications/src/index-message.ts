@@ -325,12 +325,16 @@ const rowsToStore = async (
 	rows: readonly IndexedNotificationRow[],
 ): Promise<IndexedNotificationRow[]> => {
 	const plain = rows.filter((row) => row.kind === "message");
-	const devices = await withPushDevice(
-		deps,
-		plain.map((row) => row.recipient),
-	);
+	const recipients = plain.map((row) => row.recipient);
 
-	return rows.filter((row) => row.kind !== "message" || devices.has(row.recipient));
+	const [devices, elsewhere] = await Promise.all([
+		withPushDevice(deps, recipients),
+		deps.usesOtherAppviews?.(recipients) ?? new Set<string>(),
+	]);
+
+	return rows.filter(
+		(row) => row.kind !== "message" || devices.has(row.recipient) || elsewhere.has(row.recipient),
+	);
 };
 
 export const indexMessage = async (

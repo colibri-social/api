@@ -28,6 +28,7 @@ import { migrationJobs } from "./migrations.js";
 import { NotificationPruner } from "./notification-prune.js";
 import { connectPipeline } from "./pipeline.js";
 import { PolyfillBlobSweeper } from "./polyfill/blobs.js";
+import { createPolyfillUsage } from "./polyfill/usage.js";
 import { resyncBrokenCids } from "./resync-broken-cids.js";
 import { resolveVersion } from "./routes/server.js";
 import { installFatalHandlers, startErrorReporting, stopErrorReporting } from "./sentry.js";
@@ -190,6 +191,30 @@ const observeNode = (ctx: AppContext, events: EventServer, voice: VoiceServer): 
 	observe("drainState", () => [{ value: ctx.drain.parked ? 2 : ctx.drain.draining ? 1 : 0 }]);
 	observe("writeMode", () => [{ value: WRITE_MODES[ctx.writeProxy?.mode ?? "normal"] }]);
 	observe("writeQueue", () => [{ value: ctx.writeProxy?.waiting ?? 0 }]);
+
+	const polyfillUsage = createPolyfillUsage(ctx.database);
+
+	observe("polyfillUsers", async () =>
+		(await polyfillUsage.read()).users.map((row) => ({
+			value: row.count,
+			attributes: { mode: row.mode },
+		})),
+	);
+
+	observe("polyfillBlobs", async () => [
+		{
+			value: (await polyfillUsage.read()).blobs,
+		},
+	]);
+
+	observe("polyfillBytes", async () => {
+		const usage = await polyfillUsage.read();
+
+		return [
+			{ value: usage.blobBytes, attributes: { kind: "blobs" } },
+			{ value: usage.recordBytes, attributes: { kind: "records" } },
+		];
+	});
 
 	if (!ctx.voice) {
 		return;

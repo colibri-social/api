@@ -1,10 +1,11 @@
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { channelSpace, type social } from "@colibri-social/lexicons";
 import { hydrateNotifications } from "@colibri-social/notifications";
+import { spaceRecordUri } from "@colibri-social/space";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppContext } from "../context.js";
 import { notificationDeps } from "../notification-deps.js";
-import { handleDeliverNotification } from "./federation.js";
+import { handleDeliverNotification, handleDeliverRead, handleRetract } from "./federation.js";
 
 type NotificationView = social.colibri.beta.notification.defs.NotificationView;
 
@@ -164,5 +165,72 @@ describe("deliverNotification", () => {
 				message: expect.objectContaining({ text: "hi @user" }),
 			}),
 		]);
+	});
+});
+
+describe("retract", () => {
+	const message = (rkey = "3mabcdefghijk") => {
+		return spaceRecordUri(CHANNEL, AUTHOR, "social.colibri.beta.channel.message", rkey);
+	};
+
+	it("drops the notification the managing AppView delivered and updates the badge", async () => {
+		await handleDeliverNotification(ctx, MARKET, {
+			recipient: USER,
+			notification: notification(),
+		});
+
+		await handleRetract(ctx, MARKET, {
+			recipient: USER,
+			message: message(),
+		});
+
+		expect(await stored()).toEqual([]);
+
+		expect(toUser).toHaveBeenLastCalledWith(USER, expect.objectContaining({ unread: 0 }));
+	});
+
+	it("leaves notifications from other AppViews alone", async () => {
+		await handleDeliverNotification(ctx, MARKET, {
+			recipient: USER,
+			notification: notification(),
+		});
+
+		managingApp = "did:web:elsewhere.example";
+
+		await expect(
+			handleRetract(ctx, MARKET, { recipient: USER, message: message() }),
+		).rejects.toMatchObject({ customErrorName: "NotManagingApp" });
+
+		expect(await stored()).toHaveLength(1);
+	});
+
+	it("refuses something that isn't a message", async () => {
+		await expect(
+			handleRetract(ctx, MARKET, { recipient: USER, message: "nonsense" }),
+		).rejects.toMatchObject({ customErrorName: "InvalidRequest" });
+	});
+});
+
+describe("deliverRead", () => {
+	it("accepts a read from the managing AppView", async () => {
+		await expect(
+			handleDeliverRead(ctx, MARKET, {
+				recipient: USER,
+				channel: CHANNEL,
+				through: "3mabcdefghijk",
+			}),
+		).resolves.toBeUndefined();
+	});
+
+	it("refuses a read from an AppView that doesn't manage the Space", async () => {
+		managingApp = "did:web:elsewhere.example";
+
+		await expect(
+			handleDeliverRead(ctx, MARKET, {
+				recipient: USER,
+				channel: CHANNEL,
+				through: "3mabcdefghijk",
+			}),
+		).rejects.toMatchObject({ customErrorName: "NotManagingApp" });
 	});
 });
