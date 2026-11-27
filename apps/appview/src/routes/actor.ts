@@ -213,7 +213,7 @@ export const handleListCommunities = async (
 					return await communities.community(row, authz, total);
 				}),
 		),
-		ctx.remoteCommunities.fetch(callerDid, remoteRows),
+		remoteRows.length > 0 ? ctx.remoteCommunities.fetch(callerDid, remoteRows) : [],
 	]);
 
 	const views = new Map<string, CommunityView>();

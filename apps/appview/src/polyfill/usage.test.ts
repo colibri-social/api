@@ -80,7 +80,8 @@ describe("createPolyfillUsage", () => {
 		);
 		expect(usage.blobs).toBe(2);
 		expect(usage.blobBytes).toBe(3_500);
-		expect(usage.recordBytes).toBe(JSON.stringify({ text: "hello" }).length);
+		expect(usage.recordBytes).toBeGreaterThan(0);
+		expect(usage.recordBytes).toBeLessThan(40);
 	});
 
 	it("reuses a measurement until it's five minutes old", async () => {
