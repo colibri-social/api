@@ -103,6 +103,8 @@ let threadWrites: { community: string; space: string; record: Record<string, unk
 let bus: EventBus<EventMessage>;
 const busErrors: unknown[] = [];
 let voicePresence: Map<string, string>;
+let queuedDeliveries: { recipient: string; method: string; body: Record<string, unknown> }[];
+let deliveryRuns: number;
 let ctx: AppContext;
 
 const laggingReplica = (replica: TestDatabase, caughtUp: () => boolean) => {
@@ -261,6 +263,8 @@ beforeEach(async () => {
 	pushed.notified = [];
 	pushed.notifiedMessages = [];
 	voicePresence = new Map();
+	queuedDeliveries = [];
+	deliveryRuns = 0;
 
 	ctx = {
 		database,
@@ -303,6 +307,18 @@ beforeEach(async () => {
 			publish: (change: { community: string }) => authzChanges.push(change.community),
 		},
 		voice: { presenceOf: (did: string) => voicePresence.get(did) },
+		deliveries: {
+			enqueue: async (recipient: string, method: string, body: Record<string, unknown>) => {
+				queuedDeliveries.push({ recipient, method, body });
+
+				return 1;
+			},
+			run: async () => {
+				deliveryRuns += 1;
+
+				return 0;
+			},
+		},
 		projections: { now: () => new Date().toISOString() },
 		writer: {
 			put: async (community: string, write: { space: string; record: Record<string, unknown> }) => {
@@ -668,6 +684,35 @@ describe("connectPipeline", () => {
 		expect(notified).not.toContain(old);
 		const stored = (await notificationsFor(mentioned)).map((row) => row.messageRkey);
 		expect(stored).not.toContain(old);
+	});
+
+	it("queues each notification for the recipient's other AppViews", async () => {
+		const mentioned = "did:plc:mentionedmentionedment";
+
+		await database.db.insert(database.tables.members).values([
+			{ community: COMMUNITY, did: AUTHOR, roles: [], joinedAt: NOW },
+			{ community: COMMUNITY, did: mentioned, roles: [], joinedAt: NOW },
+		]);
+
+		const rkey = nextTid();
+		const change = messageChange(rkey);
+
+		(change.puts[0] as { value: Record<string, unknown> }).value.facets = [mentionFacet(mentioned)];
+		await putMessageRow(rkey, "hello");
+
+		emit(change);
+		await vi.waitFor(() => expect(deliveryRuns).toBeGreaterThan(0));
+
+		expect(queuedDeliveries).toEqual([
+			{
+				recipient: mentioned,
+				method: "social.colibri.beta.federation.deliverNotification",
+				body: expect.objectContaining({
+					recipient: mentioned,
+					notification: expect.objectContaining({ kind: "mention", community: COMMUNITY }),
+				}),
+			},
+		]);
 	});
 
 	it("never notifies a mention that only appears inside a forwarded snapshot", async () => {

@@ -4,6 +4,7 @@ import { AuthRequiredError } from "@atproto/xrpc-server";
 import type { AppContext } from "./context.js";
 import {
 	ACTING_FOR_HEADER,
+	admitPeer,
 	createBlockCache,
 	createPeerLimiter,
 	type InboundDeps,
@@ -89,9 +90,19 @@ export const authVerifiers = (ctx: AppContext) => {
 		return verify(context);
 	};
 
+	const peer: MethodAuthVerifier<Caller> = async (context) => {
+		const verified = await verifyService(context);
+
+		if (!("credentials" in verified)) return verified;
+
+		await admitPeer(inboundDeps(), verified.credentials.did);
+
+		return verified;
+	};
+
 	const service = verifyService;
 
-	return { required: verify, optional, service };
+	return { required: verify, optional, service, peer };
 };
 
 export type AuthVerifiers = ReturnType<typeof authVerifiers>;

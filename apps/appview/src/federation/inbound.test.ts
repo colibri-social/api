@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+	admitPeer,
 	createBlockCache,
 	createPeerLimiter,
 	type InboundDeps,
@@ -17,6 +18,21 @@ const deps = (overrides: Partial<InboundDeps> = {}): InboundDeps => ({
 	allows: vi.fn(async () => true),
 	limiter: { take: () => true },
 	...overrides,
+});
+
+describe("admitPeer", () => {
+	it("lets a known peer through and refuses one that is off, blocked or over its limit", async () => {
+		await expect(admitPeer(deps(), PEER)).resolves.toBeUndefined();
+		await expect(admitPeer(deps({ enabled: false }), PEER)).rejects.toMatchObject({
+			customErrorName: "FederationDisabled",
+		});
+		await expect(
+			admitPeer(deps({ isBlocked: vi.fn(async () => true) }), PEER),
+		).rejects.toMatchObject({ customErrorName: "PeerBlocked" });
+		await expect(admitPeer(deps({ limiter: { take: () => false } }), PEER)).rejects.toMatchObject({
+			customErrorName: "RateLimitExceeded",
+		});
+	});
 });
 
 describe("verifyForwarded", () => {

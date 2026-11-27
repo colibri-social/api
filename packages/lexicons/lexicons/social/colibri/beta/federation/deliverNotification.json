@@ -20,6 +20,14 @@
 							"type": "ref",
 							"ref": "social.colibri.beta.notification.defs#notificationView",
 							"description": "The notification, rendered for the recipient by the managing AppView."
+						},
+						"spaceName": {
+							"type": "string",
+							"description": "The display name of the notification's community, for the push banner."
+						},
+						"channelName": {
+							"type": "string",
+							"description": "The display name of the notification's channel, for the push banner."
 						}
 					}
 				}

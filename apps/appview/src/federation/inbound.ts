@@ -68,6 +68,27 @@ export const createBlockCache = (
 	};
 };
 
+export const admitPeer = async (
+	deps: Pick<InboundDeps, "enabled" | "isBlocked" | "limiter">,
+	peer: string,
+): Promise<void> => {
+	if (!deps.enabled) {
+		throw new ForbiddenError("this AppView doesn't federate", "FederationDisabled");
+	}
+
+	if (await deps.isBlocked(peer)) {
+		throw new ForbiddenError(`${peer} is blocked here`, "PeerBlocked");
+	}
+
+	if (!deps.limiter.take(peer)) {
+		throw new XRPCError(
+			ResponseType.RateLimitExceeded,
+			`${peer} sent too many requests`,
+			"RateLimitExceeded",
+		);
+	}
+};
+
 export const verifyForwarded = async (
 	deps: InboundDeps,
 	request: { token: string; lxm: string | null; actingFor: string },
@@ -91,17 +112,7 @@ export const verifyForwarded = async (
 		);
 	}
 
-	if (await deps.isBlocked(peer)) {
-		throw new ForbiddenError(`${peer} is blocked here`, "PeerBlocked");
-	}
-
-	if (!deps.limiter.take(peer)) {
-		throw new XRPCError(
-			ResponseType.RateLimitExceeded,
-			`${peer} sent too many requests`,
-			"RateLimitExceeded",
-		);
-	}
+	await admitPeer(deps, peer);
 
 	if (!(await deps.allows(request.actingFor, peer))) {
 		throw new ForbiddenError(

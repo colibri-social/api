@@ -54,6 +54,7 @@ import type { Config } from "./config.js";
 import { buildDidDocuments, serviceAuthAudience } from "./did-web.js";
 import { createDrainState } from "./drain.js";
 import { createDeclaredStore } from "./federation/declared.js";
+import { createDeliveries } from "./federation/deliveries.js";
 import { createForwarder } from "./federation/forward.js";
 import { createRemoteCommunities } from "./federation/remote-communities.js";
 import { createSpaceHosts } from "./federation/space-hosts.js";
@@ -400,6 +401,17 @@ export const createContext = async (config: Config) => {
 		forward: forwarder,
 	});
 
+	const deliveries = createDeliveries({
+		enabled: config.FEDERATION_ENABLED,
+		self: config.appviewDids,
+		database,
+		declared: declaredAppviews,
+		endpointFor: (appview) => identity.serviceEndpointFor(appview, "colibri_appview"),
+		forward: forwarder,
+		onDropped: (target, method, reason) =>
+			log.info({ target, method, reason }, "federation.deliveryDropped"),
+	});
+
 	const nodeId = config.NODE_ID ?? `local-${randomUUID()}`;
 
 	return {
@@ -430,6 +442,7 @@ export const createContext = async (config: Config) => {
 		spaceHosts,
 		forwarder,
 		remoteCommunities,
+		deliveries,
 		peers,
 		declaredAppviews,
 		hostOAuth,

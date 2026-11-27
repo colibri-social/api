@@ -43,6 +43,8 @@ const UPDATE_HOLD_MS = 15 * 60_000;
 
 const PRESENCE_RECONCILE_MS = 60_000;
 
+const DELIVERY_RUN_MS = 15_000;
+
 const EVENT_PAYLOAD_TTL_MS = 10 * 60_000;
 
 const announceVoiceLeaves = (ctx: AppContext, rows: readonly ParticipantRow[]): void => {
@@ -136,9 +138,18 @@ const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<Main
 
 	housekeeping.unref?.();
 
+	const deliveries = setInterval(() => {
+		void ctx.deliveries
+			.run()
+			.catch((error: unknown) => ctx.log.warn({ err: error }, "federation.deliveryRunFailed"));
+	}, DELIVERY_RUN_MS);
+
+	deliveries.unref?.();
+
 	return {
 		stop: async () => {
 			clearInterval(housekeeping);
+			clearInterval(deliveries);
 			notificationPruner.stop();
 			polyfillBlobSweeper.stop();
 			telemetry.stop();

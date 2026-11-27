@@ -24,6 +24,7 @@ export type ForwardRequest = {
 	headers: IncomingMessage["headers"];
 	body: Buffer | undefined;
 	actingFor: string | undefined;
+	serviceAuth?: boolean;
 	timeoutMs?: number;
 };
 
@@ -61,10 +62,9 @@ const outgoingHeaders = (
 		if (typeof value === "string") headers[name] = value;
 	}
 
-	if (token && request.actingFor) {
-		headers.authorization = `Bearer ${token}`;
-		headers[ACTING_FOR_HEADER] = request.actingFor;
-	}
+	if (token) headers.authorization = `Bearer ${token}`;
+
+	if (token && request.actingFor) headers[ACTING_FOR_HEADER] = request.actingFor;
 
 	return headers;
 };
@@ -88,9 +88,10 @@ export const createForwarder = (deps: ForwardDeps) => {
 	const timeout = deps.timeoutMs ?? FORWARD_TIMEOUT_MS;
 
 	return async (target: ForwardTarget, forward: ForwardRequest): Promise<ForwardAnswer> => {
-		const token = forward.actingFor
-			? await deps.mint(`${target.managingApp}#colibri_appview`, forward.nsid)
-			: undefined;
+		const token =
+			forward.actingFor || forward.serviceAuth
+				? await deps.mint(`${target.managingApp}#colibri_appview`, forward.nsid)
+				: undefined;
 		const url = new URL(forward.path, target.endpoint);
 
 		let response: Response;

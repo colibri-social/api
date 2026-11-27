@@ -51,7 +51,10 @@ type RawForward = {
 	facets?: unknown[];
 };
 
-type SpaceGroup = { community: string; subjects: { author: string; rkey: string }[] };
+type SpaceGroup = {
+	community: string;
+	subjects: { author: string; rkey: string }[];
+};
 
 export type LabelIndex = Map<string, Map<string, CurrentLabel[]>>;
 
@@ -60,7 +63,10 @@ type SuppressedRows = { rows: NotificationRow[]; labels: LabelIndex };
 const groupBySpace = (rows: readonly NotificationRow[]): Map<string, SpaceGroup> => {
 	const groups = new Map<string, SpaceGroup>();
 	for (const row of rows) {
-		const group = groups.get(row.space) ?? { community: row.community, subjects: [] };
+		const group = groups.get(row.space) ?? {
+			community: row.community,
+			subjects: [],
+		};
 		group.subjects.push({ author: row.messageAuthor, rkey: row.messageRkey });
 		groups.set(row.space, group);
 	}
@@ -112,7 +118,10 @@ const withoutBlocked = async (
 	const recipients = [...new Set(rows.map((row) => row.recipient))];
 	const authors = [...new Set(rows.flatMap((row) => [row.author, row.messageAuthor]))];
 	const blockRows = await deps.db
-		.select({ did: deps.tables.blocks.did, subject: deps.tables.blocks.subject })
+		.select({
+			did: deps.tables.blocks.did,
+			subject: deps.tables.blocks.subject,
+		})
 		.from(deps.tables.blocks)
 		.where(
 			and(
@@ -152,7 +161,10 @@ const dropWithheld = async (
 const UNREAD_KINDS = ["mention", "reply"] as const;
 
 export type ListNotificationsOptions = { limit?: number; cursor?: string };
-export type ListNotificationsResult = { notifications: NotificationRow[]; cursor?: string };
+export type ListNotificationsResult = {
+	notifications: NotificationRow[];
+	cursor?: string;
+};
 
 const clampLimit = (limit: number | undefined, fallback: number, max: number): number =>
 	Math.min(Math.max(limit ?? fallback, 1), max);
@@ -384,7 +396,10 @@ export const clearNotifications = async (
 	await deps.db
 		.insert(deps.tables.notificationClears)
 		.values({ did: recipient, clearedAt })
-		.onConflictDoUpdate({ target: deps.tables.notificationClears.did, set: { clearedAt } });
+		.onConflictDoUpdate({
+			target: deps.tables.notificationClears.did,
+			set: { clearedAt },
+		});
 	await deps.db
 		.update(deps.tables.notifications)
 		.set({ seenAt: clearedAt })
@@ -439,7 +454,11 @@ const loadMessages = async (
 	const keys = new Map<string, { space: string; author: string; rkey: string }>();
 	for (const row of rows) {
 		const key = messageKey(row.space, row.messageAuthor, row.messageRkey);
-		keys.set(key, { space: row.space, author: row.messageAuthor, rkey: row.messageRkey });
+		keys.set(key, {
+			space: row.space,
+			author: row.messageAuthor,
+			rkey: row.messageRkey,
+		});
 	}
 
 	const byKey = new Map<string, MessageRow>();
@@ -536,6 +555,17 @@ const parentChannels = async (
 	return new Map(rows.map((row) => [row.space, { channel: row.channel, name: row.name }]));
 };
 
+const deliveredView = (row: NotificationRow): NotificationView | undefined => {
+	if (!row.originAppview || !row.view) return undefined;
+
+	return {
+		...(row.view as unknown as NotificationView),
+		id: row.id,
+		indexedAt: asDatetime(row.indexedAt),
+		seenAt: asDatetimeOrUndefined(row.seenAt),
+	};
+};
+
 export const hydrateNotifications = async (
 	deps: NotificationDeps,
 	rows: readonly NotificationRow[],
@@ -543,6 +573,23 @@ export const hydrateNotifications = async (
 	known?: LabelIndex,
 ): Promise<NotificationView[]> => {
 	if (rows.length === 0) return [];
+
+	if (rows.some((row) => row.originAppview)) {
+		const local = await hydrateNotifications(
+			deps,
+			rows.filter((row) => !row.originAppview),
+			authors,
+			known,
+		);
+
+		const byId = new Map(local.map((view) => [view.id, view]));
+
+		return rows.flatMap((row) => {
+			const view = deliveredView(row) ?? byId.get(row.id);
+
+			return view ? [view] : [];
+		});
+	}
 
 	const suppressed = known ? { rows: [...rows], labels: known } : await suppress(deps, rows);
 	const servable = suppressed.rows;

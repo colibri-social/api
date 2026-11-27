@@ -8,10 +8,12 @@ import {
 	type IndexedNotificationRow,
 	indexMessage,
 	type PushAttachment,
+	type PushPlace,
 	type PushRouting,
 	type PushSenderProfile,
 	pushSuppressedFor,
 	removeNotificationsForMessage,
+	resolvePlace,
 	unreadCount,
 } from "@colibri-social/notifications";
 import {
@@ -59,7 +61,10 @@ import { CommunityViews } from "./views/community.js";
 import { ThreadViews } from "./views/thread.js";
 import type { ServerFrame } from "./ws/events.js";
 
-type ServableNotification = { row: IndexedNotificationRow; routing: PushRouting };
+type ServableNotification = {
+	row: IndexedNotificationRow;
+	routing: PushRouting;
+};
 
 const SLOW_DELIVERY_MS = 2_000;
 const RECOVERED_LIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -181,6 +186,8 @@ const labelFrame = (
 	val: value.val,
 	src,
 });
+
+const DELIVER_NOTIFICATION = "social.colibri.beta.federation.deliverNotification";
 
 const readCursorsOf = (value: Record<string, unknown>): { channel: string; cursor: string }[] => {
 	const cursors = Array.isArray(value.cursors) ? value.cursors : [];
@@ -306,7 +313,10 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 		view.message && message
 			? {
 					...view,
-					message: { ...channels.forViewer(message, recipient), author: view.message.author },
+					message: {
+						...channels.forViewer(message, recipient),
+						author: view.message.author,
+					},
 				}
 			: view;
 
@@ -319,13 +329,39 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 		const views = await hydrateNotifications(notifications, rows, notificationAuthors);
 		const byId = new Map(rows.map((row) => [row.id, row]));
 		const servable: ServableNotification[] = [];
+		const federated: Promise<number>[] = [];
+		const places = new Map<string, Promise<PushPlace>>();
+
+		const placeOf = (space: string) => {
+			const known = places.get(space);
+
+			if (known) return known;
+
+			const resolved = resolvePlace(notifications, space);
+
+			places.set(space, resolved);
+
+			return resolved;
+		};
+
 		for (const view of views) {
 			const row = byId.get(view.id);
 			if (!row) continue;
-			ctx.announce.toUser(
-				row.recipient,
-				notificationEvent(withFullMessage(view, message, row.recipient)),
+			const rendered = withFullMessage(view, message, row.recipient);
+
+			ctx.announce.toUser(row.recipient, notificationEvent(rendered));
+
+			federated.push(
+				placeOf(row.space).then((place) =>
+					ctx.deliveries.enqueue(row.recipient, DELIVER_NOTIFICATION, {
+						recipient: row.recipient,
+						notification: rendered,
+						...(place.spaceName ? { spaceName: place.spaceName } : {}),
+						...(place.channelName ? { channelName: place.channelName } : {}),
+					}),
+				),
 			);
+
 			servable.push({
 				row,
 				routing: {
@@ -335,6 +371,13 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 				},
 			});
 		}
+
+		void Promise.all(federated)
+			.then((queued) => {
+				if (queued.some((count) => count > 0)) return ctx.deliveries.run();
+			})
+			.catch((error: unknown) => ctx.log.warn({ error }, "federation.enqueueFailed"));
+
 		await pushNotifications(servable, text, message);
 	};
 
@@ -385,7 +428,11 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 		const [[profile], [message]] = await Promise.all([
 			actors.hydrate([author]).then((profiles) => [...profiles.values()]),
 			ctx.database.db
-				.select({ author: table.author, community: table.community, bridged: table.bridged })
+				.select({
+					author: table.author,
+					community: table.community,
+					bridged: table.bridged,
+				})
 				.from(table)
 				.where(and(eq(table.space, space), eq(table.author, author), eq(table.rkey, rkey)))
 				.limit(1),
@@ -441,7 +488,11 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 
 				ctx.announce.toUser(
 					recipient,
-					seenEvent(unread, { seenAt, channel: space, message: { did: author, rkey } }),
+					seenEvent(unread, {
+						seenAt,
+						channel: space,
+						message: { did: author, rkey },
+					}),
 				);
 			}),
 		);
@@ -485,7 +536,9 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 		options: { imported?: boolean; announced?: boolean } = {},
 	): Promise<MessageView | undefined> => {
 		const key = { author, rkey };
-		const message = await channels.message(space, null, key, space, { embedWaitMs: 0 });
+		const message = await channels.message(space, null, key, space, {
+			embedWaitMs: 0,
+		});
 		if (!message) return undefined;
 
 		if (!options.announced) {
@@ -511,7 +564,13 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 		community: string,
 		event: "create" | "update",
 	): Promise<void> => {
-		ctx.announce.thread({ community, space, event, whenHidden: "skip", bridges: true });
+		ctx.announce.thread({
+			community,
+			space,
+			event,
+			whenHidden: "skip",
+			bridges: true,
+		});
 	};
 
 	const reopenOnPost = async (space: string, community: string, postedAt: string) => {
@@ -548,7 +607,10 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 		if (view) {
 			ctx.announce.toUser(
 				did,
-				threadEvent("update", community, { channel: row.channel, thread: view }),
+				threadEvent("update", community, {
+					channel: row.channel,
+					thread: view,
+				}),
 			);
 		}
 	};
@@ -738,7 +800,9 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 			}
 
 			if (space.community && entry.collection === COLLECTIONS.thread) {
-				const frame = threadEvent("delete", space.community, { space: change.space });
+				const frame = threadEvent("delete", space.community, {
+					space: change.space,
+				});
 				ctx.announce.toCommunity(space.community, frame);
 				ctx.announce.toBridges(space.community, frame);
 			}

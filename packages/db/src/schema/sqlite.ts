@@ -573,6 +573,21 @@ export const remoteSpaces = sqliteTable(
 	(t) => [primaryKey({ columns: [t.did, t.community] })],
 );
 
+export const federationDeliveries = sqliteTable(
+	"federation_deliveries",
+	{
+		id: text("id").primaryKey(),
+		target: text("target").notNull(),
+		method: text("method").notNull(),
+		recipient: text("recipient").notNull(),
+		body: json<Record<string, unknown>>("body").notNull(),
+		attempts: integer("attempts").notNull().default(0),
+		nextAttemptAt: timestamp("next_attempt_at").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [index("federation_deliveries_due_idx").on(t.nextAttemptAt)],
+);
+
 export const readCursors = sqliteTable(
 	"read_cursors",
 	{
@@ -1167,6 +1182,7 @@ export const schema = {
 	actorAppviews,
 	spaceHosts,
 	remoteSpaces,
+	federationDeliveries,
 	serviceState,
 	nodes,
 	nodeJoinTokens,

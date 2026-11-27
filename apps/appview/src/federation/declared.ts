@@ -17,6 +17,7 @@ export type DeclaredAppviewsDeps = {
 
 export type DeclaredAppviews = {
 	allows: (did: string, appview: string) => Promise<boolean>;
+	list: (did: string) => Promise<string[]>;
 	update: (did: string, appviews: string[]) => Promise<void>;
 };
 
@@ -74,6 +75,13 @@ export const createDeclaredAppviews = (deps: DeclaredAppviewsDeps): DeclaredAppv
 			}
 
 			return (await refresh(did)).appviews.includes(appview);
+		},
+		list: async (did) => {
+			const cached = await deps.load(did);
+
+			if (cached && age(cached) < ttl) return cached.appviews;
+
+			return (await refresh(did)).appviews;
 		},
 		update: (did, appviews) => {
 			return deps.save(did, { appviews, fetchedAt: now() });

@@ -15,7 +15,7 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $input = /*#__PURE__*/ l.jsonPayload({"recipient":/*#__PURE__*/ l.string({"format":"did"}),"notification":/*#__PURE__*/ l.ref<NotificationDefs.NotificationView>((() => NotificationDefs.notificationView) as any)});
+export const $input = /*#__PURE__*/ l.jsonPayload({"recipient":/*#__PURE__*/ l.string({"format":"did"}),"notification":/*#__PURE__*/ l.ref<NotificationDefs.NotificationView>((() => NotificationDefs.notificationView) as any),"spaceName":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string()),"channelName":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string())});
 
 export type $Input<B = l.BinaryData> = l.InferPayload<typeof $input, B>;
 export type $InputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $input, B>;

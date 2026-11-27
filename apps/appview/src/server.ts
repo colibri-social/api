@@ -22,6 +22,7 @@ import { registerCommunityWriteRoutes } from "./routes/community-write.js";
 import { registerEmbedRoutes } from "./routes/embed.js";
 import { mountEmbedMediaRoutes } from "./routes/embed-media.js";
 import { registerEmojiRoutes } from "./routes/emoji.js";
+import { registerFederationRoutes } from "./routes/federation.js";
 import { mountHostOAuthRoutes, registerHostingRoutes } from "./routes/hosting.js";
 import { mountIdentityRoutes } from "./routes/identity.js";
 import { registerModerationRoutes } from "./routes/moderation.js";
@@ -195,6 +196,7 @@ const registerXrpcRoutes = (deps: Parameters<typeof registerProtocolRoutes>[0]):
 	registerEmbedRoutes(deps);
 	registerEmojiRoutes(deps);
 	registerNotificationRoutes(deps);
+	registerFederationRoutes(deps);
 	registerServerRoutes(deps);
 	registerPolyfillRoutes(deps);
 	// NOTE: Humming was dropped with the rebuild, implementation follows after reconsideration
