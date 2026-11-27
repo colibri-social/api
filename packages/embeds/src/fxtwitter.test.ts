@@ -167,6 +167,26 @@ describe("xStatusToEmbed", () => {
 		]);
 	});
 
+	it("keeps spans well-formed when a facet splits an emoji", () => {
+		if (!link) throw new Error("unparsed");
+		const text = "\u{1F600}x #cats";
+		const embed = xStatusToEmbed("https://fixupx.com/x", link, {
+			status: {
+				...response.status,
+				quote: undefined,
+				raw_text: {
+					text,
+					display_text_range: [0, text.length],
+					facets: [{ type: "hashtag", indices: [1, 3] }],
+				},
+			},
+		});
+		const spans = embed?.post?.body.flatMap((block) => block.spans) ?? [];
+
+		expect(spans.length).toBeGreaterThan(0);
+		expect(spans.every((span) => span.text.isWellFormed())).toBe(true);
+	});
+
 	it("rejects error payloads", () => {
 		if (!link) throw new Error("unparsed");
 		expect(xStatusToEmbed("https://fixupx.com/x", link, { code: 404 })).toBeUndefined();

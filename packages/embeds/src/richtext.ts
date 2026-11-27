@@ -29,6 +29,16 @@ const safeHref = (raw: string | undefined): string | undefined => {
 
 type Format = Omit<RichSpan, "text">;
 
+const isHighSurrogate = (code: number): boolean => {
+	return code >= 0xd800 && code <= 0xdbff;
+};
+
+export const sliceWhole = (text: string, end: number): string => {
+	const cut = end > 0 && isHighSurrogate(text.charCodeAt(end - 1)) ? end - 1 : end;
+
+	return text.slice(0, cut);
+};
+
 const sameFormat = (a: Format, b: Format): boolean =>
 	a.bold === b.bold && a.italic === b.italic && a.href === b.href;
 
@@ -73,7 +83,7 @@ export function htmlToRichBlocks(html: string, maxLength = MAX_RICH_TEXT_LENGTH)
 		if (full || raw.length === 0) return;
 		let text = raw;
 		if (length + text.length > maxLength) {
-			text = `${text.slice(0, Math.max(0, maxLength - length))}...`;
+			text = `${sliceWhole(text, Math.max(0, maxLength - length))}...`;
 			full = true;
 		}
 		length += text.length;

@@ -224,13 +224,17 @@ export function rawTextToBlocks(raw: z.infer<typeof rawTextSchema>): RichBlock[]
 		.filter((facet) => facet.indices[0] >= start && facet.indices[1] <= end)
 		.sort((a, b) => a.indices[0] - b.indices[0]);
 
+	const part = (from: number, to: number) => {
+		return raw.text.slice(from, to).toWellFormed();
+	};
+
 	const spans: RichSpan[] = [];
 	let cursor = start;
 	for (const facet of facets) {
 		const [from, to] = facet.indices;
 		if (from < cursor) continue;
-		if (from > cursor) spans.push({ text: raw.text.slice(cursor, from) });
-		const original = raw.text.slice(from, to);
+		if (from > cursor) spans.push({ text: part(cursor, from) });
+		const original = part(from, to);
 		cursor = to;
 		if (facet.type === "media") continue;
 		if (facet.type === "bold") {
@@ -241,7 +245,8 @@ export function rawTextToBlocks(raw: z.infer<typeof rawTextSchema>): RichBlock[]
 		const href = facetHref(facet, original);
 		spans.push(href ? { text, href } : { text });
 	}
-	if (cursor < end) spans.push({ text: raw.text.slice(cursor, end) });
+	if (cursor < end) spans.push({ text: part(cursor, end) });
+
 	return textBlocks(spans);
 }
 

@@ -104,7 +104,7 @@ export const toLinkEmbedView = (
 const richBlock = (block: RichBlock) => ({
 	kind: block.kind,
 	spans: block.spans.map((span) => ({
-		text: span.text,
+		text: span.text.toWellFormed(),
 		bold: span.bold,
 		italic: span.italic,
 		href: asUriOrUndefined(span.href),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { htmlToRichBlocks, richBlocksText } from "./richtext.js";
+import { htmlToRichBlocks, richBlocksText, sliceWhole } from "./richtext.js";
 
 describe("htmlToRichBlocks", () => {
 	it("keeps quotes, bold links and line breaks from FxEmbed status content", () => {
@@ -46,5 +46,22 @@ describe("htmlToRichBlocks", () => {
 	it("caps the text length", () => {
 		const blocks = htmlToRichBlocks(`<p>${"a".repeat(50)}</p>`, 10);
 		expect(richBlocksText(blocks)).toBe(`${"a".repeat(10)}...`);
+	});
+});
+
+describe("sliceWhole", () => {
+	it("drops a high surrogate left at the cut", () => {
+		expect(sliceWhole("ab\u{1F600}cd", 3)).toBe("ab");
+	});
+
+	it("keeps a whole pair before the cut", () => {
+		expect(sliceWhole("ab\u{1F600}cd", 4)).toBe("ab\u{1F600}");
+	});
+
+	it("keeps truncated rich text well-formed", () => {
+		const blocks = htmlToRichBlocks("<p>abc\u{1F600}def</p>", 4);
+		const text = blocks.flatMap((block) => block.spans.map((span) => span.text)).join("");
+
+		expect(text.isWellFormed()).toBe(true);
 	});
 });
