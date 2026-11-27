@@ -99,6 +99,7 @@ let communityDeletes: string[];
 let authzChanges: string[];
 let forgotten: string[];
 let releasePreview: () => void;
+let instantPreview: boolean;
 let threadWrites: { community: string; space: string; record: Record<string, unknown> }[];
 let bus: EventBus<EventMessage>;
 const busErrors: unknown[] = [];
@@ -278,6 +279,7 @@ const labelChange = (subjectRkey: string, val: string, neg: boolean): RepoChange
 beforeEach(async () => {
 	database = await openTestDatabase();
 	published = [];
+	instantPreview = false;
 	pushed.deleted = [];
 	pushed.deletedFor = [];
 	pushed.edited = [];
@@ -307,6 +309,7 @@ beforeEach(async () => {
 			fetchPreview: (uri) =>
 				new Promise<LinkEmbed>((resolve) => {
 					releasePreview = () => resolve({ uri, siteName: "Tenor" });
+					if (instantPreview) releasePreview();
 				}),
 		}),
 		log: { warn: () => {}, debug: () => {} },
@@ -913,6 +916,49 @@ describe("connectPipeline", () => {
 		expect(update).toMatchObject({ event: "update", channel: SPACE });
 		expect(update?.message).toHaveProperty("embeds", [
 			expect.objectContaining({ uri: tenor, siteName: "Tenor" }),
+		]);
+	});
+
+	it("republishes a message whose link preview resolves before the create is announced", async () => {
+		instantPreview = true;
+		const rkey = nextTid();
+		const link = "https://example.com/fast-preview";
+
+		const facets = [
+			{
+				index: { byteStart: 0, byteEnd: link.length },
+				features: [{ $type: "social.colibri.beta.richtext.facet#link", uri: link }],
+			},
+		];
+
+		await putMessageRow(rkey, link);
+		await database.db
+			.update(database.tables.messages)
+			.set({ facets })
+			.where(eq(database.tables.messages.rkey, rkey));
+
+		emit({
+			space: SPACE,
+			author: AUTHOR,
+			puts: [
+				{
+					collection: COLLECTIONS.message,
+					rkey,
+					cid: "bafyreictestfastlink",
+					value: { $type: COLLECTIONS.message, text: link, facets, createdAt: NOW },
+				},
+			],
+			deletes: [],
+		});
+		await vi.waitFor(() => expect(framesOfType("messageEvent")).toHaveLength(2));
+
+		const [created, update] = framesOfType("messageEvent").map((entry) => entry.frame);
+
+		expect(created).toMatchObject({ event: "create" });
+		expect(created?.message).toMatchObject({ embeds: undefined });
+		expect(update).toMatchObject({ event: "update", channel: SPACE });
+		expect(update?.message).toHaveProperty("embeds", [
+			expect.objectContaining({ uri: link, siteName: "Tenor" }),
 		]);
 	});
 

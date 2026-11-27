@@ -49,7 +49,6 @@ import type { AppContext } from "./context.js";
 import { republishWhenPreviewsSettle } from "./embed-republish.js";
 import { ensureEmojiTracked } from "./emoji.js";
 import { announceLibrary } from "./emoji-library.js";
-import { linkUrisOf } from "./link-embeds.js";
 import { count, observe, record } from "./metrics.js";
 import { notificationDeps as buildNotificationDeps } from "./notification-deps.js";
 import { pushDelivery } from "./push-delivery.js";
@@ -57,7 +56,7 @@ import { loadPreferences } from "./routes/actor.js";
 import { reopenThread } from "./routes/thread-write.js";
 import { reportFailure } from "./sentry.js";
 import { ActorViews, type ProfileView } from "./views/actor.js";
-import { ChannelViews, type MessageView } from "./views/channel.js";
+import { ChannelViews, type LatePreviewTarget, type MessageView } from "./views/channel.js";
 import { CommunityViews } from "./views/community.js";
 import { ThreadViews } from "./views/thread.js";
 import type { ServerFrame } from "./ws/events.js";
@@ -636,9 +635,15 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 		options: { imported?: boolean; announced?: boolean } = {},
 	): Promise<MessageView | undefined> => {
 		const key = { author, rkey };
+		let late: { target: LatePreviewTarget; unresolved: string[] } | undefined;
+
 		const message = await channels.message(space, null, key, space, {
 			embedWaitMs: 0,
+			onLatePreviews: (target, unresolved) => {
+				late = { target, unresolved };
+			},
 		});
+
 		if (!message) return undefined;
 
 		if (!options.announced) {
@@ -647,15 +652,16 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 			});
 		}
 
-		republishWhenPreviewsSettle(
-			ctx,
-			channels,
-			(target, enriched) => ctx.announce.message(target, "update", enriched),
-			{ space, readingSpace: space, author, rkey },
-			linkUrisOf(message.facets, message.suppressedEmbeds).filter(
-				(uri) => !ctx.linkEmbeds.peek(uri),
-			),
-		);
+		if (late) {
+			republishWhenPreviewsSettle(
+				ctx,
+				channels,
+				(target, enriched) => ctx.announce.message(target, "update", enriched),
+				late.target,
+				late.unresolved,
+			);
+		}
+
 		return message;
 	};
 
