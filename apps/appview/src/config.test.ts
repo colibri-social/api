@@ -168,11 +168,21 @@ describe("ROLES", () => {
 
 describe("telemetry opt-out", () => {
 	const withEnv = (env: Record<string, string>) => {
-		return loadConfig({ ...REQUIRED, APPVIEW_DID: "did:web:appview.example.com", ...env });
+		return loadConfig({
+			...REQUIRED,
+			APPVIEW_DID: "did:web:appview.example.com",
+			NODE_ENV: "production",
+			...env,
+		});
 	};
 
-	it("is on by default", () => {
+	it("is on by default in production", () => {
 		expect(withEnv({}).telemetryEnabled).toBe(true);
+	});
+
+	it("is off outside production", () => {
+		expect(withEnv({ NODE_ENV: "development" }).telemetryEnabled).toBe(false);
+		expect(withEnv({ NODE_ENV: "test" }).telemetryEnabled).toBe(false);
 	});
 
 	it("turns off for any non-empty value other than 0", () => {

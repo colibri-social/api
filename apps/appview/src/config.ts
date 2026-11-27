@@ -436,7 +436,8 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): Config => {
 			raw.APPVIEW_DID,
 			...raw.APPVIEW_DID_ALIASES.filter((did) => did !== raw.APPVIEW_DID),
 		],
-		telemetryEnabled: !raw.COLIBRI_TELEMETRY_DISABLED && !raw.DO_NOT_TRACK,
+		telemetryEnabled:
+			raw.NODE_ENV === "production" && !raw.COLIBRI_TELEMETRY_DISABLED && !raw.DO_NOT_TRACK,
 		polyfillBucket: polyfillBucketOf(raw),
 	};
 };
