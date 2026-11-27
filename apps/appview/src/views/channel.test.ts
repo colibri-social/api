@@ -263,6 +263,50 @@ describe("ChannelViews.messages", () => {
 		expect(tada).toMatchObject({ count: 1, viewerReacted: true, reactors: [AUTHOR_B] });
 	});
 
+	it("orders reactions by the earliest reaction to each emoji", async () => {
+		const rkey = nextTid();
+		await putMessage(rkey);
+
+		const react = (author: string, emoji: string) => ({
+			space: SPACE,
+			author,
+			rkey: nextTid(),
+			targetAuthor: AUTHOR_A,
+			targetRkey: rkey,
+			emoji,
+		});
+
+		await database.db
+			.insert(database.tables.reactions)
+			.values([
+				react(AUTHOR_A, "zap"),
+				react(AUTHOR_A, "tada"),
+				react(AUTHOR_B, "airplane"),
+				react(AUTHOR_B, "zap"),
+			]);
+
+		const page = await views.messages(SPACE, AUTHOR_B, { limit: 10 });
+
+		expect(page.messages[0]?.reactions.map((reaction) => reaction.emoji)).toEqual([
+			"zap",
+			"tada",
+			"airplane",
+		]);
+
+		const first = await views.reactions(SPACE, AUTHOR_A, rkey, AUTHOR_B, { limit: 2 });
+
+		expect(first?.reactions.map((reaction) => reaction.emoji)).toEqual(["zap", "tada"]);
+		expect(first?.cursor).toBeDefined();
+
+		const rest = await views.reactions(SPACE, AUTHOR_A, rkey, AUTHOR_B, {
+			limit: 2,
+			cursor: first?.cursor,
+		});
+
+		expect(rest?.reactions.map((reaction) => reaction.emoji)).toEqual(["airplane"]);
+		expect(rest?.cursor).toBeUndefined();
+	});
+
 	it("leaves out reactions on other messages by the same authors", async () => {
 		const older = nextTid();
 		const shown = nextTid();

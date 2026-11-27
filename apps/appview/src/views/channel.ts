@@ -254,45 +254,61 @@ export class ChannelViews {
 	}
 
 	private aggregateReactions(rows: ReactionRow[], viewer: string | null): ReactionView[] {
+		return this.orderedReactions(rows, viewer).map(({ view }) => view);
+	}
+
+	private orderedReactions(
+		rows: ReactionRow[],
+		viewer: string | null,
+	): { position: string; view: ReactionView }[] {
 		const byEmoji = new Map<
 			string,
 			{
+				first: string;
 				reactors: string[];
 				bridged: BridgedAttribution[];
 				custom?: { rkey: string; ref: ReactionEmojiRef };
 			}
 		>();
+
 		for (const row of rows) {
-			const group = byEmoji.get(row.emoji) ?? { reactors: [], bridged: [] };
+			const group = byEmoji.get(row.emoji) ?? {
+				first: row.rkey,
+				reactors: [],
+				bridged: [],
+			};
+
+			if (row.rkey < group.first) group.first = row.rkey;
 			if (row.bridged) group.bridged.push(row.bridged);
 			else group.reactors.push(row.author);
 			if (row.customEmoji && (!group.custom || row.rkey < group.custom.rkey))
 				group.custom = { rkey: row.rkey, ref: row.customEmoji };
 			byEmoji.set(row.emoji, group);
 		}
+
 		return [...byEmoji.entries()]
-			.sort(([a], [b]) => a.localeCompare(b))
-			.map(
-				([emoji, { reactors, bridged, custom }]) =>
-					({
-						emoji,
-						customEmoji: custom
-							? { uri: custom.ref.uri, ...(custom.ref.cid ? { cid: custom.ref.cid } : {}) }
+			.map(([emoji, { first, reactors, bridged, custom }]) => ({
+				position: `${first}:${emoji}`,
+				view: {
+					emoji,
+					customEmoji: custom
+						? { uri: custom.ref.uri, ...(custom.ref.cid ? { cid: custom.ref.cid } : {}) }
+						: undefined,
+					count: reactors.length + bridged.length,
+					reactors: reactors.map(asDid),
+					bridgedReactors:
+						bridged.length > 0
+							? bridged.map((attribution) => ({
+									registration: asTid(attribution.registration),
+									platform: attribution.platform,
+									remoteId: attribution.remoteId,
+									name: attribution.name,
+								}))
 							: undefined,
-						count: reactors.length + bridged.length,
-						reactors: reactors.map(asDid),
-						bridgedReactors:
-							bridged.length > 0
-								? bridged.map((attribution) => ({
-										registration: asTid(attribution.registration),
-										platform: attribution.platform,
-										remoteId: attribution.remoteId,
-										name: attribution.name,
-									}))
-								: undefined,
-						viewerReacted: viewer ? reactors.includes(viewer) : undefined,
-					}) as ReactionView,
-			);
+					viewerReacted: viewer ? reactors.includes(viewer) : undefined,
+				} as ReactionView,
+			}))
+			.sort((a, b) => (a.position < b.position ? -1 : a.position > b.position ? 1 : 0));
 	}
 
 	async labelSources(community: string): Promise<string[]> {
@@ -912,15 +928,14 @@ export class ChannelViews {
 				),
 			);
 
-		const grouped = this.aggregateReactions(rows, viewer);
-		const start = options.cursor
-			? grouped.findIndex((group) => group.emoji > (options.cursor as string))
-			: 0;
+		const grouped = this.orderedReactions(rows, viewer);
+		const after = options.cursor;
+		const start = after ? grouped.findIndex((group) => group.position > after) : 0;
 		const from = start === -1 ? grouped.length : start;
 		const page = grouped.slice(from, from + options.limit);
-		const cursor = from + options.limit < grouped.length ? page.at(-1)?.emoji : undefined;
+		const cursor = from + options.limit < grouped.length ? page.at(-1)?.position : undefined;
 
-		return { reactions: page, cursor };
+		return { reactions: page.map(({ view }) => view), cursor };
 	}
 
 	async hasUnreadMessages(
