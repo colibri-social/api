@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import type { WriteMode } from "@colibri-social/appview-db";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { bufferBody } from "../federation/router.js";
 import { NODE_ID_HEADER, NODE_SECRET_HEADER } from "./protocol.js";
 import {
 	MAX_WRITE_BYTES,
@@ -142,6 +143,36 @@ describe("WriteProxy", () => {
 			[NODE_ID_HEADER]: "eu-2",
 			[NODE_SECRET_HEADER]: "s3cret",
 		});
+	});
+
+	it("forwards a body the federation router already read", async () => {
+		const main = await startMain(ok);
+		const proxy = new WriteProxy({
+			nodeId: "eu-2",
+			secret: "s3cret",
+			windowMs: 2_000,
+			mainUrl: async () => main.url,
+			log: { info: vi.fn(), warn: vi.fn() },
+			onMode: () => {},
+		});
+		const sub = createServer((request, response) => {
+			void bufferBody(request, 1_000).then(() => proxy.handle(request, response));
+		});
+
+		await new Promise<void>((resolve) => sub.listen(0, "127.0.0.1", resolve));
+		servers.push(sub);
+		proxies.push(proxy);
+
+		const response = await fetch(
+			`http://127.0.0.1:${(sub.address() as AddressInfo).port}/xrpc/social.colibri.beta.community.join`,
+			{
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ community: "did:plc:x" }),
+			},
+		);
+
+		expect(await response.json()).toEqual({ echoed: '{"community":"did:plc:x"}' });
 	});
 
 	it("passes the main node's errors through unchanged", async () => {

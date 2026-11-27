@@ -4,6 +4,7 @@ import { fetchVerifiedRepo } from "@colibri-social/space-sync";
 import type { AuthVerifiers } from "../auth.js";
 import type { AppContext } from "../context.js";
 import { toXrpcError } from "../errors.js";
+import { beginRemoteMigrations } from "../federation/migration.js";
 import { route } from "../route.js";
 import { markReferenced, mountPolyfillBlobRoutes } from "./blobs.js";
 import { spacesSupport, spacesSupportProbe } from "./detect.js";
@@ -151,7 +152,12 @@ export const registerPolyfillRoutes = ({
 		auth: auth.required,
 		handler: ({ auth: caller }) => {
 			return guarded(async () => {
-				return json((await beginMigration(deps, caller.credentials.did)) as never);
+				const did = caller.credentials.did;
+				const local = await beginMigration(deps, did);
+				const forwarded = "peer" in caller.credentials;
+				const remote = forwarded ? [] : await beginRemoteMigrations(ctx, did);
+
+				return json({ spaces: [...local.spaces, ...remote] } as never);
 			});
 		},
 	});

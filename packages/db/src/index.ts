@@ -1,4 +1,5 @@
 export * from "./client.js";
+export * from "./federation-peers.js";
 export * from "./following.js";
 export * from "./hosts.js";
 export * from "./lock.js";

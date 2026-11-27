@@ -11,7 +11,7 @@ type $nsid = typeof $nsid;
 
 export { $nsid };
 
-export const $params = /*#__PURE__*/ l.params({"code":/*#__PURE__*/ l.string()});
+export const $params = /*#__PURE__*/ l.params({"code":/*#__PURE__*/ l.string(),"community":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.string({"format":"did"}))});
 
 export type $Params = l.InferOutput<typeof $params>;
 
@@ -20,7 +20,7 @@ export const $output = /*#__PURE__*/ l.jsonPayload({"invitation":/*#__PURE__*/ l
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Resolves an invitation code, so a client can show what it leads to before the user accepts. This is readable without membership. */
+/** Resolves an invitation code, so a client can show what it leads to before the user accepts. This is readable without membership. With community set, an AppView that doesn't manage that community forwards the call to the one that does. */
 const main = /*#__PURE__*/ l.query($nsid, $params, $output, ["InvitationNotFound"]);
 
 export { main };

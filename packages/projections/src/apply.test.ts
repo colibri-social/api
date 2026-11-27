@@ -1593,6 +1593,37 @@ describe("personal spaces", () => {
 		await applyChange(deps, remove("social.colibri.beta.actor.spaceModeration", COMMUNITY));
 		expect(await database.db.select().from(database.tables.spaceModerations)).toEqual([]);
 	});
+
+	it("projects a remote Space keyed by the community and removes it on delete", async () => {
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.actor.remoteSpace", COMMUNITY, {
+				$type: "social.colibri.beta.actor.remoteSpace",
+				managingApp: "did:web:other.example",
+				joinedAt: NOW,
+			}),
+		);
+
+		expect(await database.db.select().from(database.tables.remoteSpaces)).toEqual([
+			{ did: MEMBER, community: COMMUNITY, managingApp: "did:web:other.example", joinedAt: NOW },
+		]);
+
+		await applyChange(deps, remove("social.colibri.beta.actor.remoteSpace", COMMUNITY));
+		expect(await database.db.select().from(database.tables.remoteSpaces)).toEqual([]);
+	});
+
+	it("refuses a remote Space whose key is not a DID", async () => {
+		await applyChange(
+			deps,
+			put(personal, MEMBER, "social.colibri.beta.actor.remoteSpace", "3lknotadid", {
+				$type: "social.colibri.beta.actor.remoteSpace",
+				managingApp: "did:web:other.example",
+				joinedAt: NOW,
+			}),
+		);
+
+		expect(await database.db.select().from(database.tables.remoteSpaces)).toEqual([]);
+	});
 });
 
 describe("channel projections", () => {

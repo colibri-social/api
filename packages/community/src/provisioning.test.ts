@@ -20,6 +20,8 @@ type Write = {
 	record: Record<string, unknown>;
 };
 
+const PUBLIC_REPO = "public repo";
+
 let writes: Write[];
 let createdSpaces: Array<{
 	service: string;
@@ -56,6 +58,13 @@ const fakeClient = (service: string): PdsClient =>
 		) => {
 			writes.push({ service, ...write });
 			return { uri: `${write.space}/${write.collection}`, cid: "bafycid" };
+		},
+		putRepoRecord: async (
+			_session: PdsSession,
+			write: { collection: string; rkey: string; record: Record<string, unknown> },
+		) => {
+			writes.push({ service, space: PUBLIC_REPO, ...write });
+			return { uri: `at://${sessionDid}/${write.collection}/${write.rkey}`, cid: "bafycid" };
 		},
 	}) as unknown as PdsClient;
 
@@ -236,6 +245,20 @@ describe("adopting an existing account", () => {
 		)?.record;
 		expect(profile?.managingApp).toBe(APPVIEW);
 		expect(profile?.name).toBe("Brought My Own");
+	});
+
+	it("publishes the managing app in the account's public repo", async () => {
+		await adopt();
+
+		const host = writes.find((write) => write.collection === "social.colibri.beta.community.host");
+
+		expect(host?.space).toBe(PUBLIC_REPO);
+		expect(host?.service).toBe(THEIRS);
+		expect(host?.record).toEqual({
+			$type: "social.colibri.beta.community.host",
+			managingApp: APPVIEW,
+			updatedAt: expect.any(String),
+		});
 	});
 
 	it("stores the credentials against the account's own PDS", async () => {

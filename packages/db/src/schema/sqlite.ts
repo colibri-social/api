@@ -562,6 +562,32 @@ export const spaceModerations = sqliteTable(
 	(t) => [primaryKey({ columns: [t.did, t.community] })],
 );
 
+export const remoteSpaces = sqliteTable(
+	"remote_spaces",
+	{
+		did: text("did").notNull(),
+		community: text("community").notNull(),
+		managingApp: text("managing_app").notNull(),
+		joinedAt: timestamp("joined_at").notNull(),
+	},
+	(t) => [primaryKey({ columns: [t.did, t.community] })],
+);
+
+export const federationDeliveries = sqliteTable(
+	"federation_deliveries",
+	{
+		id: text("id").primaryKey(),
+		target: text("target").notNull(),
+		method: text("method").notNull(),
+		recipient: text("recipient").notNull(),
+		body: json<Record<string, unknown>>("body").notNull(),
+		attempts: integer("attempts").notNull().default(0),
+		nextAttemptAt: timestamp("next_attempt_at").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [index("federation_deliveries_due_idx").on(t.nextAttemptAt)],
+);
+
 export const readCursors = sqliteTable(
 	"read_cursors",
 	{
@@ -631,6 +657,8 @@ export const notifications = sqliteTable(
 		messageAuthor: text("message_author").notNull(),
 		messageRkey: text("message_rkey").notNull(),
 		mentionRole: text("mention_role"),
+		originAppview: text("origin_appview"),
+		view: json<Record<string, unknown>>("view"),
 		indexedAt: timestamp("indexed_at").notNull(),
 		seenAt: timestamp("seen_at"),
 	},
@@ -638,6 +666,12 @@ export const notifications = sqliteTable(
 		index("notifications_recipient_idx").on(t.recipient, t.indexedAt),
 		index("notifications_unseen_idx").on(t.recipient, t.space, t.seenAt),
 		index("notifications_message_idx").on(t.messageAuthor, t.messageRkey),
+		uniqueIndex("notifications_one_per_message_idx").on(
+			t.recipient,
+			t.space,
+			t.messageAuthor,
+			t.messageRkey,
+		),
 	],
 );
 
@@ -846,6 +880,26 @@ export const profileCache = sqliteTable("profile_cache", {
 export const linkPreviews = sqliteTable("link_previews", {
 	url: text("url").primaryKey(),
 	embed: json<Record<string, unknown>>("embed").notNull(),
+	fetchedAt: timestamp("fetched_at").notNull(),
+});
+
+export const federationPeers = sqliteTable("federation_peers", {
+	did: text("did").primaryKey(),
+	blocked: flag("blocked").notNull().default(false),
+	note: text("note"),
+	updatedAt: timestamp("updated_at").notNull(),
+});
+
+export const actorAppviews = sqliteTable("actor_appviews", {
+	did: text("did").primaryKey(),
+	appviews: json<string[]>("appviews").notNull(),
+	fetchedAt: timestamp("fetched_at").notNull(),
+});
+
+export const spaceHosts = sqliteTable("space_hosts", {
+	authority: text("authority").primaryKey(),
+	managingApp: text("managing_app"),
+	endpoint: text("endpoint"),
 	fetchedAt: timestamp("fetched_at").notNull(),
 });
 
@@ -1130,6 +1184,11 @@ export const schema = {
 	identityCache,
 	profileCache,
 	linkPreviews,
+	federationPeers,
+	actorAppviews,
+	spaceHosts,
+	remoteSpaces,
+	federationDeliveries,
 	serviceState,
 	nodes,
 	nodeJoinTokens,

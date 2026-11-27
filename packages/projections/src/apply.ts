@@ -30,6 +30,7 @@ const ALL: ErasedProjector[] = [
 	erase(personal.composerState),
 	erase(personal.spaceNotification),
 	erase(personal.spaceModeration),
+	erase(personal.remoteSpace),
 	erase(personal.readCursors),
 	erase(personal.emojiFollow),
 ];

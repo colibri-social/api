@@ -1,6 +1,6 @@
 import type { ClientRequest, IncomingMessage } from "node:http";
 import { emojiRegistry } from "@colibri-social/emoji";
-import { asDatetime, asRecordKey, COLLECTIONS } from "@colibri-social/lexicons";
+import { asDatetime, asRecordKey, COLLECTIONS, SELF } from "@colibri-social/lexicons";
 import { eq } from "drizzle-orm";
 import { WebSocket } from "ws";
 import { applyActivityRecord, clearActivityFrom } from "./activity.js";
@@ -9,6 +9,7 @@ import { memberEvent } from "./announce.js";
 import type { AppContext } from "./context.js";
 import { applyEmojiChange, isEmojiTracked } from "./emoji.js";
 import { announceEmoji } from "./emoji-library.js";
+import { appviewsOf } from "./federation/declared.js";
 import { JETSTREAM_SUBPROTOCOL, jetstreamEndpoint } from "./jetstream-url.js";
 import { count, observe } from "./metrics.js";
 import { ActorViews } from "./views/actor.js";
@@ -26,6 +27,7 @@ const WANTED_KINDS = ["commit", "identity", "account"] as const;
 const BSKY_PROFILE = "app.bsky.actor.profile";
 const WANTED_COLLECTIONS = [
 	COLLECTIONS.profile,
+	COLLECTIONS.appview,
 	BSKY_PROFILE,
 	...ACTIVITY_COLLECTIONS,
 	...emojiRegistry.collections,
@@ -324,6 +326,7 @@ export class Jetstream {
 			await this.refreshProfile(payload);
 			await this.refreshActivity(payload);
 			await this.refreshEmoji(payload);
+			await this.refreshDeclaredAppviews(payload);
 			return;
 		}
 
@@ -396,6 +399,17 @@ export class Jetstream {
 		});
 		const community = await this.ctx.loader.community(did);
 		await announceEmoji(this.ctx, did, community ? "community" : "user");
+	}
+
+	private async refreshDeclaredAppviews(payload: Payload): Promise<void> {
+		if (payload.collection !== COLLECTIONS.appview || payload.rkey !== SELF) return;
+
+		const deleted = payload.operation === "delete" || !payload.record;
+
+		await this.ctx.declaredAppviews.update(
+			payload.did as string,
+			deleted ? [] : appviewsOf(payload.record),
+		);
 	}
 
 	private async announceProfile(did: string): Promise<void> {

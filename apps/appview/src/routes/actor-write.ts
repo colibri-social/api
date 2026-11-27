@@ -493,6 +493,7 @@ export const handleDeleteAccount = async (
 		{ table: tables.actorSettings, column: tables.actorSettings.did },
 		{ table: tables.spaceNotifications, column: tables.spaceNotifications.did },
 		{ table: tables.spaceModerations, column: tables.spaceModerations.did },
+		{ table: tables.remoteSpaces, column: tables.remoteSpaces.did },
 		{ table: tables.readCursors, column: tables.readCursors.did },
 		{ table: tables.emojiFollows, column: tables.emojiFollows.follower },
 		{ table: tables.userPresence, column: tables.userPresence.did },

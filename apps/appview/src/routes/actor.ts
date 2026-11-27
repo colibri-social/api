@@ -136,70 +136,105 @@ const clientPreferencesView = (
 	};
 };
 
+type UnavailableCommunity = social.colibri.beta.actor.listCommunities.UnavailableCommunity;
+
 export const handleListCommunities = async (
 	ctx: AppContext,
 	communities: CommunityViews,
 	callerDid: string,
-): Promise<{ communities: CommunityView[] }> => {
+): Promise<{ communities: CommunityView[]; unavailable?: UnavailableCommunity[] }> => {
+	const tables = ctx.database.tables;
 	const memberships = await ctx.database.db
-		.select({
-			community: ctx.database.tables.members.community,
-			joinedAt: ctx.database.tables.members.joinedAt,
-		})
-		.from(ctx.database.tables.members)
-		.where(eq(ctx.database.tables.members.did, callerDid));
+		.select({ community: tables.members.community, joinedAt: tables.members.joinedAt })
+		.from(tables.members)
+		.where(eq(tables.members.did, callerDid));
+
+	const joined = new Set(memberships.map((row) => row.community));
+	const remoteRows = (
+		await ctx.database.db
+			.select({
+				community: tables.remoteSpaces.community,
+				managingApp: tables.remoteSpaces.managingApp,
+				joinedAt: tables.remoteSpaces.joinedAt,
+			})
+			.from(tables.remoteSpaces)
+			.where(eq(tables.remoteSpaces.did, callerDid))
+	).filter((row) => !joined.has(row.community));
 
 	const [settings] = await ctx.database.db
 		.select()
-		.from(ctx.database.tables.actorSettings)
-		.where(eq(ctx.database.tables.actorSettings.did, callerDid))
+		.from(tables.actorSettings)
+		.where(eq(tables.actorSettings.did, callerDid))
 		.limit(1);
 
 	const order = settings?.communityOrder ?? [];
-	const joined = new Set(memberships.map((row) => row.community));
+	const everyJoin = [...memberships, ...remoteRows];
+	const known = new Set(everyJoin.map((row) => row.community));
 
-	const ordered = order.filter((did) => joined.has(did));
-	const remaining = memberships
+	const ordered = order.filter((did) => known.has(did));
+	const remaining = everyJoin
 		.filter((row) => !order.includes(row.community))
 		.sort((a, b) => a.joinedAt.localeCompare(b.joinedAt))
 		.map((row) => row.community);
 
 	const candidates = [...ordered, ...remaining];
+	const localCandidates = candidates.filter((did) => joined.has(did));
 	const migrating = new Set(
-		candidates.length === 0
+		localCandidates.length === 0
 			? []
 			: (
 					await ctx.database.db
 						.select({
-							community: ctx.database.tables.communityMigrations.community,
-							target: ctx.database.tables.communityMigrations.target,
+							community: tables.communityMigrations.community,
+							target: tables.communityMigrations.target,
 						})
-						.from(ctx.database.tables.communityMigrations)
+						.from(tables.communityMigrations)
 						.where(
 							and(
 								or(
-									inArray(ctx.database.tables.communityMigrations.community, candidates),
-									inArray(ctx.database.tables.communityMigrations.target, candidates),
+									inArray(tables.communityMigrations.community, localCandidates),
+									inArray(tables.communityMigrations.target, localCandidates),
 								),
-								ne(ctx.database.tables.communityMigrations.state, "done"),
+								ne(tables.communityMigrations.state, "done"),
 							),
 						)
 				).flatMap((row) => (row.target ? [row.community, row.target] : [row.community])),
 	);
 
-	const views = await Promise.all(
-		candidates
-			.filter((did) => !migrating.has(did))
-			.map(async (did) => {
-				const row = await ctx.loader.community(did);
-				if (!row) return null;
-				const authz = await ctx.loader.authz(did, callerDid);
-				const total = await countMembers(ctx, did);
-				return await communities.community(row, authz, total);
-			}),
-	);
+	const [localViews, remoteResults] = await Promise.all([
+		Promise.all(
+			localCandidates
+				.filter((did) => !migrating.has(did))
+				.map(async (did) => {
+					const row = await ctx.loader.community(did);
+					if (!row) return null;
+					const authz = await ctx.loader.authz(did, callerDid);
+					const total = await countMembers(ctx, did);
+					return await communities.community(row, authz, total);
+				}),
+		),
+		remoteRows.length > 0 ? ctx.remoteCommunities.fetch(callerDid, remoteRows) : [],
+	]);
 
-	return { communities: views.filter((view): view is CommunityView => view !== null) };
+	const views = new Map<string, CommunityView>();
+	const unavailable: UnavailableCommunity[] = [];
+
+	for (const view of localViews) if (view) views.set(view.did, view);
+
+	for (const result of remoteResults) {
+		if (result.kind === "view") views.set(result.view.did, result.view);
+		if (result.kind === "unavailable") {
+			unavailable.push({ did: asDid(result.did), managingApp: asDid(result.managingApp) });
+		}
+	}
+
+	const listed = candidates.flatMap((did) => {
+		const view = views.get(did);
+
+		return view ? [view] : [];
+	});
+
+	return unavailable.length > 0 ? { communities: listed, unavailable } : { communities: listed };
 };
 
 export const findSoleOwnedCommunities = async (

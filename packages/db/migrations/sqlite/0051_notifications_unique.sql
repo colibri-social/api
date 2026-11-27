@@ -1,0 +1,3 @@
+DELETE FROM `notifications` WHERE EXISTS (SELECT 1 FROM `notifications` AS `kept` WHERE `kept`.`recipient` = `notifications`.`recipient` AND `kept`.`space` = `notifications`.`space` AND `kept`.`message_author` = `notifications`.`message_author` AND `kept`.`message_rkey` = `notifications`.`message_rkey` AND (`kept`.`indexed_at` < `notifications`.`indexed_at` OR (`kept`.`indexed_at` = `notifications`.`indexed_at` AND `kept`.`id` < `notifications`.`id`)));
+--> statement-breakpoint
+CREATE UNIQUE INDEX `notifications_one_per_message_idx` ON `notifications` (`recipient`,`space`,`message_author`,`message_rkey`);

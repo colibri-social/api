@@ -325,12 +325,16 @@ const rowsToStore = async (
 	rows: readonly IndexedNotificationRow[],
 ): Promise<IndexedNotificationRow[]> => {
 	const plain = rows.filter((row) => row.kind === "message");
-	const devices = await withPushDevice(
-		deps,
-		plain.map((row) => row.recipient),
-	);
+	const recipients = plain.map((row) => row.recipient);
 
-	return rows.filter((row) => row.kind !== "message" || devices.has(row.recipient));
+	const [devices, elsewhere] = await Promise.all([
+		withPushDevice(deps, recipients),
+		deps.usesOtherAppviews?.(recipients) ?? new Set<string>(),
+	]);
+
+	return rows.filter(
+		(row) => row.kind !== "message" || devices.has(row.recipient) || elsewhere.has(row.recipient),
+	);
 };
 
 export const indexMessage = async (
@@ -394,6 +398,8 @@ export const indexMessage = async (
 		messageAuthor: message.author,
 		messageRkey: message.rkey,
 		mentionRole: recipient.mentionRole,
+		originAppview: null,
+		view: null,
 		indexedAt: now,
 		seenAt: null,
 	}));
@@ -401,7 +407,7 @@ export const indexMessage = async (
 	const stored = await rowsToStore(deps, rows);
 
 	if (stored.length > 0) {
-		await deps.db.insert(deps.tables.notifications).values(stored);
+		await deps.db.insert(deps.tables.notifications).values(stored).onConflictDoNothing();
 	}
 
 	return rows;

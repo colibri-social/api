@@ -103,6 +103,8 @@ let threadWrites: { community: string; space: string; record: Record<string, unk
 let bus: EventBus<EventMessage>;
 const busErrors: unknown[] = [];
 let voicePresence: Map<string, string>;
+let queuedDeliveries: { recipient: string; method: string; body: Record<string, unknown> }[];
+let deliveryRuns: number;
 let ctx: AppContext;
 
 const laggingReplica = (replica: TestDatabase, caughtUp: () => boolean) => {
@@ -227,6 +229,32 @@ const forwardedMessageChange = (rkey: string, mentioned: string): RepoChange => 
 	deletes: [],
 });
 
+const REMOTE_READER = "did:plc:remotereaderxxxxxxxxxxxx";
+
+const notifyRemoteReader = async (rkey: string, recipient = REMOTE_READER) => {
+	await database.db.insert(database.tables.notifications).values({
+		id: `n-${rkey}`,
+		recipient,
+		kind: "message",
+		community: COMMUNITY,
+		space: SPACE,
+		author: AUTHOR,
+		messageAuthor: AUTHOR,
+		messageRkey: rkey,
+		mentionRole: null,
+		originAppview: null,
+		view: null,
+		indexedAt: NOW,
+		seenAt: null,
+	});
+};
+
+const queuedOf = (method: string) => {
+	return queuedDeliveries.filter(
+		(entry) => entry.method === `social.colibri.beta.federation.${method}`,
+	);
+};
+
 const labelChange = (subjectRkey: string, val: string, neg: boolean): RepoChange => ({
 	space: SPACE,
 	author: LABELER,
@@ -261,6 +289,8 @@ beforeEach(async () => {
 	pushed.notified = [];
 	pushed.notifiedMessages = [];
 	voicePresence = new Map();
+	queuedDeliveries = [];
+	deliveryRuns = 0;
 
 	ctx = {
 		database,
@@ -303,6 +333,19 @@ beforeEach(async () => {
 			publish: (change: { community: string }) => authzChanges.push(change.community),
 		},
 		voice: { presenceOf: (did: string) => voicePresence.get(did) },
+		deliveries: {
+			enqueue: async (recipient: string, method: string, body: Record<string, unknown>) => {
+				queuedDeliveries.push({ recipient, method, body });
+
+				return 1;
+			},
+			run: async () => {
+				deliveryRuns += 1;
+
+				return 0;
+			},
+			elsewhere: async () => new Set<string>(),
+		},
 		projections: { now: () => new Date().toISOString() },
 		writer: {
 			put: async (community: string, write: { space: string; record: Record<string, unknown> }) => {
@@ -670,6 +713,35 @@ describe("connectPipeline", () => {
 		expect(stored).not.toContain(old);
 	});
 
+	it("queues each notification for the recipient's other AppViews", async () => {
+		const mentioned = "did:plc:mentionedmentionedment";
+
+		await database.db.insert(database.tables.members).values([
+			{ community: COMMUNITY, did: AUTHOR, roles: [], joinedAt: NOW },
+			{ community: COMMUNITY, did: mentioned, roles: [], joinedAt: NOW },
+		]);
+
+		const rkey = nextTid();
+		const change = messageChange(rkey);
+
+		(change.puts[0] as { value: Record<string, unknown> }).value.facets = [mentionFacet(mentioned)];
+		await putMessageRow(rkey, "hello");
+
+		emit(change);
+		await vi.waitFor(() => expect(deliveryRuns).toBeGreaterThan(0));
+
+		expect(queuedDeliveries).toEqual([
+			{
+				recipient: mentioned,
+				method: "social.colibri.beta.federation.deliverNotification",
+				body: expect.objectContaining({
+					recipient: mentioned,
+					notification: expect.objectContaining({ kind: "mention", community: COMMUNITY }),
+				}),
+			},
+		]);
+	});
+
 	it("never notifies a mention that only appears inside a forwarded snapshot", async () => {
 		const mentioned = "did:plc:mentionedmentionedment";
 		await database.db.insert(database.tables.members).values([
@@ -858,6 +930,41 @@ describe("connectPipeline", () => {
 			event: "delete",
 			subject: { did: AUTHOR, rkey },
 			subjectUri: `${SPACE}/${AUTHOR}/${COLLECTIONS.message}/${rkey}`,
+		});
+	});
+
+	it("asks the recipient's other AppViews to drop a deleted message's notification", async () => {
+		const rkey = nextTid();
+
+		await notifyRemoteReader(rkey);
+
+		emit({
+			space: SPACE,
+			author: AUTHOR,
+			puts: [],
+			deletes: [{ collection: COLLECTIONS.message, rkey }],
+		});
+
+		await vi.waitFor(() => expect(queuedOf("retract")).toHaveLength(1));
+
+		expect(queuedOf("retract")[0]?.body).toEqual({
+			recipient: REMOTE_READER,
+			message: `${SPACE}/${AUTHOR}/${COLLECTIONS.message}/${rkey}`,
+		});
+	});
+
+	it("asks the recipient's other AppViews to drop a hidden message's notification", async () => {
+		const rkey = nextTid();
+
+		await putMessageRow(rkey);
+		await notifyRemoteReader(rkey);
+
+		emit(labelChange(rkey, "hidden", false));
+
+		await vi.waitFor(() => expect(queuedOf("retract")).toHaveLength(1));
+
+		expect(queuedOf("retract")[0]?.body).toMatchObject({
+			recipient: REMOTE_READER,
 		});
 	});
 
@@ -1159,6 +1266,51 @@ describe("personal space events", () => {
 		await vi.waitFor(() => expect(framesOfType("preferencesEvent")).toHaveLength(1));
 
 		expect(framesOfType("preferencesEvent")[0]?.space).toBe(AUTHOR);
+	});
+
+	it("tells the reader's other AppViews about a read that covers their notifications", async () => {
+		await notifyRemoteReader("3lkaaaaaaaaa1", AUTHOR);
+		await notifyRemoteReader("3lkaaaaaaaaa9", AUTHOR);
+
+		emit({
+			space: PREFERENCES,
+			author: AUTHOR,
+			puts: [
+				{
+					collection: COLLECTIONS.channelRead,
+					rkey: COMMUNITY,
+					cid: "bafyreictestread",
+					value: {
+						$type: COLLECTIONS.channelRead,
+						community: COMMUNITY,
+						cursors: [{ channel: CHANNEL_SKEY, cursor: "3lkaaaaaaaaa2" }],
+					},
+				},
+			],
+			deletes: [],
+		});
+
+		await vi.waitFor(() => expect(queuedOf("deliverRead")).toHaveLength(1));
+
+		expect(queuedOf("deliverRead")[0]?.body).toEqual({
+			recipient: AUTHOR,
+			channel: SPACE,
+			through: "3lkaaaaaaaaa2",
+		});
+
+		await vi.waitFor(async () => {
+			const seen = (await database.db.select().from(database.tables.notifications)).map((row) => [
+				row.messageRkey,
+				row.seenAt !== null,
+			]);
+
+			expect(seen).toEqual(
+				expect.arrayContaining([
+					["3lkaaaaaaaaa1", true],
+					["3lkaaaaaaaaa9", false],
+				]),
+			);
+		});
 	});
 
 	it("tells the actor's own devices about read cursors that arrive through sync", async () => {

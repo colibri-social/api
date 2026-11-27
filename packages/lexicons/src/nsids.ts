@@ -31,6 +31,7 @@ export const COMMUNITY_SPACE_TYPES = [
 ] as const;
 
 export const COLLECTIONS = {
+	appview: "social.colibri.beta.actor.appview",
 	block: "social.colibri.beta.actor.block",
 	bridgeRegistration: "social.colibri.beta.bridge.registration",
 	category: "social.colibri.beta.category",
@@ -38,6 +39,7 @@ export const COLLECTIONS = {
 	channelRead: "social.colibri.beta.channel.read",
 	clientPreferences: "social.colibri.beta.actor.clientPreferences",
 	community: "social.colibri.beta.community",
+	communityHost: "social.colibri.beta.community.host",
 	communitySettings: "social.colibri.beta.community.settings",
 	composerState: "social.colibri.beta.actor.composerState",
 	emojiFollow: "social.colibri.beta.emoji.follow",
@@ -47,6 +49,7 @@ export const COLLECTIONS = {
 	moderation: "social.colibri.beta.moderation",
 	mute: "social.colibri.beta.actor.mute",
 	reaction: "social.colibri.beta.reaction",
+	remoteSpace: "social.colibri.beta.actor.remoteSpace",
 	role: "social.colibri.beta.role",
 	settings: "social.colibri.beta.actor.settings",
 	spaceModeration: "social.colibri.beta.actor.spaceModeration",

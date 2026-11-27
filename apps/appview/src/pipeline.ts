@@ -8,10 +8,13 @@ import {
 	type IndexedNotificationRow,
 	indexMessage,
 	type PushAttachment,
+	type PushPlace,
 	type PushRouting,
 	type PushSenderProfile,
 	pushSuppressedFor,
 	removeNotificationsForMessage,
+	resolvePlace,
+	resolveReadTarget,
 	unreadCount,
 } from "@colibri-social/notifications";
 import {
@@ -29,7 +32,7 @@ import {
 	trySpaceRecordUri,
 } from "@colibri-social/space";
 import type { RepoChange } from "@colibri-social/space-sync";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, lte } from "drizzle-orm";
 import {
 	categoryEvent,
 	communityEvent,
@@ -59,7 +62,10 @@ import { CommunityViews } from "./views/community.js";
 import { ThreadViews } from "./views/thread.js";
 import type { ServerFrame } from "./ws/events.js";
 
-type ServableNotification = { row: IndexedNotificationRow; routing: PushRouting };
+type ServableNotification = {
+	row: IndexedNotificationRow;
+	routing: PushRouting;
+};
 
 const SLOW_DELIVERY_MS = 2_000;
 const RECOVERED_LIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -181,6 +187,12 @@ const labelFrame = (
 	val: value.val,
 	src,
 });
+
+const DELIVER_NOTIFICATION = "social.colibri.beta.federation.deliverNotification";
+
+const DELIVER_READ = "social.colibri.beta.federation.deliverRead";
+
+const RETRACT = "social.colibri.beta.federation.retract";
 
 const readCursorsOf = (value: Record<string, unknown>): { channel: string; cursor: string }[] => {
 	const cursors = Array.isArray(value.cursors) ? value.cursors : [];
@@ -306,7 +318,10 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 		view.message && message
 			? {
 					...view,
-					message: { ...channels.forViewer(message, recipient), author: view.message.author },
+					message: {
+						...channels.forViewer(message, recipient),
+						author: view.message.author,
+					},
 				}
 			: view;
 
@@ -319,13 +334,39 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 		const views = await hydrateNotifications(notifications, rows, notificationAuthors);
 		const byId = new Map(rows.map((row) => [row.id, row]));
 		const servable: ServableNotification[] = [];
+		const federated: Promise<number>[] = [];
+		const places = new Map<string, Promise<PushPlace>>();
+
+		const placeOf = (space: string) => {
+			const known = places.get(space);
+
+			if (known) return known;
+
+			const resolved = resolvePlace(notifications, space);
+
+			places.set(space, resolved);
+
+			return resolved;
+		};
+
 		for (const view of views) {
 			const row = byId.get(view.id);
 			if (!row) continue;
-			ctx.announce.toUser(
-				row.recipient,
-				notificationEvent(withFullMessage(view, message, row.recipient)),
+			const rendered = withFullMessage(view, message, row.recipient);
+
+			ctx.announce.toUser(row.recipient, notificationEvent(rendered));
+
+			federated.push(
+				placeOf(row.space).then((place) =>
+					ctx.deliveries.enqueue(row.recipient, DELIVER_NOTIFICATION, {
+						recipient: row.recipient,
+						notification: rendered,
+						...(place.spaceName ? { spaceName: place.spaceName } : {}),
+						...(place.channelName ? { channelName: place.channelName } : {}),
+					}),
+				),
 			);
+
 			servable.push({
 				row,
 				routing: {
@@ -335,6 +376,13 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 				},
 			});
 		}
+
+		void Promise.all(federated)
+			.then((queued) => {
+				if (queued.some((count) => count > 0)) return ctx.deliveries.run();
+			})
+			.catch((error: unknown) => ctx.log.warn({ error }, "federation.enqueueFailed"));
+
 		await pushNotifications(servable, text, message);
 	};
 
@@ -385,7 +433,11 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 		const [[profile], [message]] = await Promise.all([
 			actors.hydrate([author]).then((profiles) => [...profiles.values()]),
 			ctx.database.db
-				.select({ author: table.author, community: table.community, bridged: table.bridged })
+				.select({
+					author: table.author,
+					community: table.community,
+					bridged: table.bridged,
+				})
 				.from(table)
 				.where(and(eq(table.space, space), eq(table.author, author), eq(table.rkey, rkey)))
 				.limit(1),
@@ -441,12 +493,111 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 
 				ctx.announce.toUser(
 					recipient,
-					seenEvent(unread, { seenAt, channel: space, message: { did: author, rkey } }),
+					seenEvent(unread, {
+						seenAt,
+						channel: space,
+						message: { did: author, rkey },
+					}),
 				);
 			}),
 		);
 
 		pushMessageDeleted(space, author, rkey, recipients);
+		federateRetraction(space, { did: author, rkey }, recipients);
+	};
+
+	const federateRetraction = (
+		space: string,
+		pointer: SpaceRecordPointer,
+		recipients: readonly string[],
+	): void => {
+		const message = messageUriOf(space, pointer);
+
+		if (!message || recipients.length === 0) return;
+
+		void Promise.all(
+			recipients.map((recipient) =>
+				ctx.deliveries.enqueue(recipient, RETRACT, {
+					recipient,
+					message,
+				}),
+			),
+		)
+			.then((queued) => {
+				if (queued.some((count) => count > 0)) return ctx.deliveries.run();
+			})
+			.catch((error: unknown) => ctx.log.warn({ error }, "federation.enqueueFailed"));
+	};
+
+	const retractHiddenMessage = async (
+		space: string,
+		pointer: SpaceRecordPointer,
+	): Promise<void> => {
+		const table = ctx.database.tables.notifications;
+
+		const rows = await ctx.database.db
+			.selectDistinct({ recipient: table.recipient })
+			.from(table)
+			.where(
+				and(
+					eq(table.space, space),
+					eq(table.messageAuthor, pointer.did),
+					eq(table.messageRkey, pointer.rkey),
+				),
+			);
+
+		federateRetraction(
+			space,
+			pointer,
+			rows.map((row) => row.recipient),
+		);
+	};
+
+	const federateRead = async (
+		did: string,
+		community: string,
+		cursors: readonly { channel: string; cursor: string }[],
+	): Promise<void> => {
+		const table = ctx.database.tables.notifications;
+		let queued = 0;
+
+		for (const { channel, cursor } of cursors) {
+			const target = await resolveReadTarget(notifications, community, channel);
+
+			if (!target) continue;
+
+			const space = target.thread ?? target.channel;
+
+			const covered = and(
+				eq(table.recipient, did),
+				eq(table.space, space),
+				lte(table.messageRkey, cursor),
+				isNull(table.seenAt),
+			);
+
+			const [unseen] = await ctx.database.db
+				.select({ id: table.id })
+				.from(table)
+				.where(covered)
+				.limit(1);
+
+			if (!unseen) continue;
+
+			const sent = await ctx.deliveries.enqueue(did, DELIVER_READ, {
+				recipient: did,
+				channel: target.channel,
+				...(target.thread ? { thread: target.thread } : {}),
+				through: cursor,
+			});
+
+			if (sent === 0) continue;
+
+			queued += sent;
+
+			await ctx.database.db.update(table).set({ seenAt: new Date().toISOString() }).where(covered);
+		}
+
+		if (queued > 0) await ctx.deliveries.run();
 	};
 
 	const publishMember = async (community: string, did: string): Promise<void> => {
@@ -485,7 +636,9 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 		options: { imported?: boolean; announced?: boolean } = {},
 	): Promise<MessageView | undefined> => {
 		const key = { author, rkey };
-		const message = await channels.message(space, null, key, space, { embedWaitMs: 0 });
+		const message = await channels.message(space, null, key, space, {
+			embedWaitMs: 0,
+		});
 		if (!message) return undefined;
 
 		if (!options.announced) {
@@ -511,7 +664,13 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 		community: string,
 		event: "create" | "update",
 	): Promise<void> => {
-		ctx.announce.thread({ community, space, event, whenHidden: "skip", bridges: true });
+		ctx.announce.thread({
+			community,
+			space,
+			event,
+			whenHidden: "skip",
+			bridges: true,
+		});
 	};
 
 	const reopenOnPost = async (space: string, community: string, postedAt: string) => {
@@ -548,7 +707,10 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 		if (view) {
 			ctx.announce.toUser(
 				did,
-				threadEvent("update", community, { channel: row.channel, thread: view }),
+				threadEvent("update", community, {
+					channel: row.channel,
+					thread: view,
+				}),
 			);
 		}
 	};
@@ -584,6 +746,9 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 				if (put.collection === COLLECTIONS.channelRead) {
 					await publishReadCursors(space.authority, put.rkey);
 					push.readMoved(space.authority, put.rkey, readCursorsOf(put.value));
+					void federateRead(space.authority, put.rkey, readCursorsOf(put.value)).catch(
+						(error: unknown) => ctx.log.warn({ error }, "federation.readFailed"),
+					);
 				}
 			}
 			const follows = [...change.puts, ...change.deletes].filter(
@@ -670,6 +835,20 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 					change.space,
 					labelFrame(value.neg ? "negate" : "create", change.space, change.author, value),
 				);
+
+				if (
+					!value.neg &&
+					value.val === LABEL_VALUES.hidden &&
+					value.subject?.collection === COLLECTIONS.message &&
+					value.subject.did &&
+					value.subject.rkey
+				) {
+					void retractHiddenMessage(change.space, {
+						did: value.subject.did,
+						rkey: value.subject.rkey,
+					}).catch((error: unknown) => ctx.log.warn({ error }, "federation.retractFailed"));
+				}
+
 				if (
 					value.neg &&
 					value.val === LABEL_VALUES.hidden &&
@@ -738,7 +917,9 @@ export const connectPipeline = ({ ctx: shared }: Deps): (() => void) => {
 			}
 
 			if (space.community && entry.collection === COLLECTIONS.thread) {
-				const frame = threadEvent("delete", space.community, { space: change.space });
+				const frame = threadEvent("delete", space.community, {
+					space: change.space,
+				});
 				ctx.announce.toCommunity(space.community, frame);
 				ctx.announce.toBridges(space.community, frame);
 			}

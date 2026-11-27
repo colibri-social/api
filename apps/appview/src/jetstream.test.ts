@@ -20,6 +20,7 @@ let requests: URL[];
 let jetstream: Jetstream;
 let upgradeServer: Server | null;
 let userFrames: Array<{ did: string; frame: Record<string, unknown> }> = [];
+let declaredUpdates: Array<{ did: string; appviews: string[] }> = [];
 
 const identityFrame = (seq: number, did = DID) =>
 	JSON.stringify({
@@ -105,6 +106,11 @@ const contextFor = (url: string): AppContext =>
 			toCommunity: () => {},
 		},
 		loader: { community: async () => null },
+		declaredAppviews: {
+			update: async (did: string, appviews: string[]) => {
+				declaredUpdates.push({ did, appviews });
+			},
+		},
 		artwork: createTtlCache<ArtworkEntry>(),
 		identity: { resolveDid: async () => ({ pds: null }) },
 		log: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} },
@@ -127,6 +133,7 @@ const storedCursor = async () => {
 };
 
 beforeEach(async () => {
+	declaredUpdates = [];
 	database = await openTestDatabase();
 	connections = [];
 	requests = [];
@@ -249,7 +256,7 @@ describe("endpoint", () => {
 });
 
 describe("subscription", () => {
-	it("asks for identity, account, profile, listening and emoji commits only", async () => {
+	it("asks for identity, account, profile, AppView, listening and emoji commits only", async () => {
 		await startAgainstServer();
 		const request = requests[0] as URL;
 
@@ -257,6 +264,7 @@ describe("subscription", () => {
 		expect(request.searchParams.getAll("kinds")).toEqual(["commit", "identity", "account"]);
 		expect(request.searchParams.getAll("collections")).toEqual([
 			"social.colibri.beta.actor.profile",
+			"social.colibri.beta.actor.appview",
 			"app.bsky.actor.profile",
 			"fm.teal.actor.status",
 			"fm.teal.alpha.actor.status",
@@ -390,6 +398,34 @@ describe("events", () => {
 
 		await jetstream.stop();
 		expect(await storedCursor()).toBe("24990989099");
+	});
+});
+
+describe("AppView declarations", () => {
+	const APPVIEW = "social.colibri.beta.actor.appview";
+
+	it("updates the declared AppViews from a commit and clears them on delete", async () => {
+		const socket = await startAgainstServer();
+
+		socket.send(
+			commitFrame(1, APPVIEW, "create", { $type: APPVIEW, appviews: ["did:web:home.example"] }),
+		);
+		socket.send(commitFrame(2, APPVIEW, "delete"));
+		await settle();
+
+		expect(declaredUpdates).toEqual([
+			{ did: DID, appviews: ["did:web:home.example"] },
+			{ did: DID, appviews: [] },
+		]);
+	});
+
+	it("ignores a record that isn't the self record", async () => {
+		const socket = await startAgainstServer();
+
+		socket.send(commitFrame(1, APPVIEW, "create", { appviews: [] }, DID, "other"));
+		await settle();
+
+		expect(declaredUpdates).toEqual([]);
 	});
 });
 

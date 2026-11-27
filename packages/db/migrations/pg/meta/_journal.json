@@ -337,6 +337,34 @@
 			"when": 1795712005223,
 			"tag": "0047_parked_repo_hosts",
 			"breakpoints": true
+		},
+		{
+			"idx": 48,
+			"version": "7",
+			"when": 1795712854141,
+			"tag": "0048_federation",
+			"breakpoints": true
+		},
+		{
+			"idx": 49,
+			"version": "7",
+			"when": 1795732419161,
+			"tag": "0049_remote_spaces",
+			"breakpoints": true
+		},
+		{
+			"idx": 50,
+			"version": "7",
+			"when": 1795761207175,
+			"tag": "0050_federation_deliveries",
+			"breakpoints": true
+		},
+		{
+			"idx": 51,
+			"version": "7",
+			"when": 1795767100119,
+			"tag": "0051_notifications_unique",
+			"breakpoints": true
 		}
 	]
 }

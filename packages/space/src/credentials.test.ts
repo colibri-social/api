@@ -110,6 +110,17 @@ const credentialsFor = (
 	});
 
 describe("space credentials", () => {
+	it("reports the expiry of a held credential and nothing before one is held", async () => {
+		const host = fakeSpaceHost(authorityKey);
+		const credentials = credentialsFor(host.fetchImpl);
+
+		await expect(credentials.expiry(SPACE)).resolves.toBeNull();
+
+		const credential = await credentials.acquire(SPACE);
+
+		await expect(credentials.expiry(SPACE)).resolves.toEqual(credential.expiresAt);
+	});
+
 	it("exchanges a delegation token for a credential bound to its own key", async () => {
 		const host = fakeSpaceHost(authorityKey);
 		const credential = await credentialsFor(host.fetchImpl).acquire(SPACE);

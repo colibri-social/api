@@ -15,12 +15,12 @@ export const $params = /*#__PURE__*/ l.params();
 
 export type $Params = l.InferOutput<typeof $params>;
 
-export const $output = /*#__PURE__*/ l.jsonPayload({"communities":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<CommunityDefs.CommunityView>((() => CommunityDefs.communityView) as any), )});
+export const $output = /*#__PURE__*/ l.jsonPayload({"communities":/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<CommunityDefs.CommunityView>((() => CommunityDefs.communityView) as any), ),"unavailable":/*#__PURE__*/ l.optional(/*#__PURE__*/ l.array(/*#__PURE__*/ l.ref<UnavailableCommunity>((() => unavailableCommunity) as any), ))});
 
 export type $Output<B = l.BinaryData> = l.InferPayload<typeof $output, B>;
 export type $OutputBody<B = l.BinaryData> = l.InferPayloadBody<typeof $output, B>;
 
-/** Gets the requesting user's communities, in their preferred order. */
+/** Gets the requesting user's communities, in their preferred order. Communities another AppView manages come from the user's social.colibri.beta.actor.remoteSpace records. */
 const main = /*#__PURE__*/ l.query($nsid, $params, $output, ["AuthRequired"]);
 
 export { main };
@@ -30,3 +30,23 @@ const $lxm = $nsid;
 type $lxm = typeof $lxm;
 
 export { $lxm };
+
+/** A community whose managing AppView didn't answer. */
+type UnavailableCommunity = { $type?: "social.colibri.beta.actor.listCommunities#unavailableCommunity";
+
+  /**
+   * The community's DID.
+   */
+  "did":l.DidString;
+
+  /**
+   * The AppView that manages the community.
+   */
+  "managingApp":l.DidString };
+
+export type { UnavailableCommunity };
+
+/** A community whose managing AppView didn't answer. */
+const unavailableCommunity = /*#__PURE__*/ l.typedObject<UnavailableCommunity>($nsid, "unavailableCommunity", /*#__PURE__*/ l.object({"did":/*#__PURE__*/ l.string({"format":"did"}),"managingApp":/*#__PURE__*/ l.string({"format":"did"})}));
+
+export { unavailableCommunity };

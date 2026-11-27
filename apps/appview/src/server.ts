@@ -5,6 +5,8 @@ import { isWrite } from "./cluster/write-proxy.js";
 import type { AppContext } from "./context.js";
 import { corsMiddleware, nodeHeaderMiddleware } from "./cors.js";
 import { didDocumentForHost } from "./did-web.js";
+import { createFederationRouter } from "./federation/router.js";
+import { localManagingApp } from "./federation/space-hosts.js";
 import { record, xrpcMethod } from "./metrics.js";
 import { registerPolyfillRoutes } from "./polyfill/routes.js";
 import { logRejectedUploads } from "./polyfill/upload-log.js";
@@ -21,6 +23,7 @@ import { registerCommunityWriteRoutes } from "./routes/community-write.js";
 import { registerEmbedRoutes } from "./routes/embed.js";
 import { mountEmbedMediaRoutes } from "./routes/embed-media.js";
 import { registerEmojiRoutes } from "./routes/emoji.js";
+import { registerFederationRoutes } from "./routes/federation.js";
 import { mountHostOAuthRoutes, registerHostingRoutes } from "./routes/hosting.js";
 import { mountIdentityRoutes } from "./routes/identity.js";
 import { registerModerationRoutes } from "./routes/moderation.js";
@@ -86,6 +89,17 @@ export const createAppServer = (
 	app.use(logRejectedUploads(ctx.log, ctx.config.NODE_ID ?? null));
 	app.use(nodeHeaderMiddleware(ctx.config.NODE_ID, ctx.config.NODE_REGION));
 	app.use(corsMiddleware(ctx.config.corsOrigins));
+	app.use(
+		createFederationRouter({
+			enabled: ctx.config.FEDERATION_ENABLED,
+			self: ctx.config.appviewDids,
+			localManagingApp: (authority) => localManagingApp(ctx.database)(authority),
+			hosts: ctx.spaceHosts,
+			forward: ctx.forwarder,
+			verifyUser: async (token, lxm) => (await ctx.serviceAuth.verify(token, lxm)).did,
+			log: ctx.log,
+		}),
+	);
 	app.use((req: Request, res: Response, next: (error?: unknown) => void) => {
 		const proxy = ctx.writeProxy;
 
@@ -185,6 +199,7 @@ const registerXrpcRoutes = (deps: Parameters<typeof registerProtocolRoutes>[0]):
 	registerEmbedRoutes(deps);
 	registerEmojiRoutes(deps);
 	registerNotificationRoutes(deps);
+	registerFederationRoutes(deps);
 	registerServerRoutes(deps);
 	registerPolyfillRoutes(deps);
 	// NOTE: Humming was dropped with the rebuild, implementation follows after reconsideration

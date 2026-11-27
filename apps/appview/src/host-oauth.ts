@@ -19,6 +19,7 @@ import {
 	type OAuthHosts,
 	type SecretBox,
 } from "@colibri-social/community";
+import { COLLECTIONS } from "@colibri-social/lexicons";
 import { type Auth, type HostSession, PdsClient } from "@colibri-social/space";
 import { eq, lt } from "drizzle-orm";
 
@@ -34,6 +35,7 @@ export const hostOAuthScope = (appviewDid: string): string =>
 	[
 		"atproto",
 		"blob:*/*",
+		`repo:${COLLECTIONS.communityHost}`,
 		`include:social.colibri.beta.permissionCommunity?aud=${appviewDid}#colibri_appview`,
 		`include:social.colibri.beta.permissionMessaging?aud=${appviewDid}#colibri_appview`,
 	].join(" ");

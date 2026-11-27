@@ -17,6 +17,7 @@ import { describeConfig, loadConfig } from "./config.js";
 import { type AppContext, createContext } from "./context.js";
 import { drainGraceMs, hasPeers, waitForConnections } from "./drain.js";
 import { eventDelivery } from "./event-delivery.js";
+import { backfillHostRecords } from "./federation/host-records.js";
 import { HandOverSweeper, hostIdentityChanged } from "./hand-overs.js";
 import { healOwnerRolePermissions } from "./heal.js";
 import { Jetstream } from "./jetstream.js";
@@ -27,6 +28,7 @@ import { migrationJobs } from "./migrations.js";
 import { NotificationPruner } from "./notification-prune.js";
 import { connectPipeline } from "./pipeline.js";
 import { PolyfillBlobSweeper } from "./polyfill/blobs.js";
+import { createPolyfillUsage } from "./polyfill/usage.js";
 import { resyncBrokenCids } from "./resync-broken-cids.js";
 import { resolveVersion } from "./routes/server.js";
 import { installFatalHandlers, startErrorReporting, stopErrorReporting } from "./sentry.js";
@@ -41,6 +43,8 @@ const SHUTDOWN_DEADLINE_MS = 15_000;
 const UPDATE_HOLD_MS = 15 * 60_000;
 
 const PRESENCE_RECONCILE_MS = 60_000;
+
+const DELIVERY_RUN_MS = 15_000;
 
 const EVENT_PAYLOAD_TTL_MS = 10 * 60_000;
 
@@ -105,6 +109,9 @@ const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<Main
 	void healCategoryOrders(ctx).catch((error: unknown) =>
 		ctx.log.warn({ err: error }, "heal.categoryOrdersSweepFailed"),
 	);
+	void backfillHostRecords(ctx).catch((error: unknown) =>
+		ctx.log.warn({ err: error }, "federation.hostRecordsSweepFailed"),
+	);
 	void resyncBrokenCids(ctx.database, ctx.sync, ctx.log).catch((error: unknown) =>
 		ctx.log.warn({ err: error }, "heal.brokenCidResyncFailed"),
 	);
@@ -132,9 +139,18 @@ const startMainJobs = async (ctx: AppContext, events: EventServer): Promise<Main
 
 	housekeeping.unref?.();
 
+	const deliveries = setInterval(() => {
+		void ctx.deliveries
+			.run()
+			.catch((error: unknown) => ctx.log.warn({ err: error }, "federation.deliveryRunFailed"));
+	}, DELIVERY_RUN_MS);
+
+	deliveries.unref?.();
+
 	return {
 		stop: async () => {
 			clearInterval(housekeeping);
+			clearInterval(deliveries);
 			notificationPruner.stop();
 			polyfillBlobSweeper.stop();
 			telemetry.stop();
@@ -175,6 +191,30 @@ const observeNode = (ctx: AppContext, events: EventServer, voice: VoiceServer): 
 	observe("drainState", () => [{ value: ctx.drain.parked ? 2 : ctx.drain.draining ? 1 : 0 }]);
 	observe("writeMode", () => [{ value: WRITE_MODES[ctx.writeProxy?.mode ?? "normal"] }]);
 	observe("writeQueue", () => [{ value: ctx.writeProxy?.waiting ?? 0 }]);
+
+	const polyfillUsage = createPolyfillUsage(ctx.database);
+
+	observe("polyfillUsers", async () =>
+		(await polyfillUsage.read()).users.map((row) => ({
+			value: row.count,
+			attributes: { mode: row.mode },
+		})),
+	);
+
+	observe("polyfillBlobs", async () => [
+		{
+			value: (await polyfillUsage.read()).blobs,
+		},
+	]);
+
+	observe("polyfillBytes", async () => {
+		const usage = await polyfillUsage.read();
+
+		return [
+			{ value: usage.blobBytes, attributes: { kind: "blobs" } },
+			{ value: usage.recordBytes, attributes: { kind: "records" } },
+		];
+	});
 
 	if (!ctx.voice) {
 		return;

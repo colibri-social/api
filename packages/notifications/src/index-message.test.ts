@@ -244,6 +244,24 @@ describe("indexMessage", () => {
 			expect(await rowsFor(recipient)).toHaveLength(0);
 		});
 
+		it("stores a plain message notification for someone who uses another AppView", async () => {
+			deps.usesOtherAppviews = async (dids) => {
+				return new Set(dids.filter((did) => did === recipient));
+			};
+
+			await indexMessage(deps, {
+				space: CHANNEL,
+				community: COMMUNITY,
+				author: AUTHOR,
+				rkey: "3lkmsg1",
+				facets: null,
+				parentAuthor: null,
+				parentRkey: null,
+			});
+
+			expect(await rowsFor(recipient)).toHaveLength(1);
+		});
+
 		it("still stores a mention", async () => {
 			await indexMessage(deps, {
 				space: CHANNEL,

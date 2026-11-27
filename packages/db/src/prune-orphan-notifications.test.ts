@@ -2,6 +2,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { type SQL, sql } from "drizzle-orm";
 import { migrate as migrateLibsql } from "drizzle-orm/libsql/migrator";
 import { migrate as migratePg } from "drizzle-orm/node-postgres/migrator";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -10,6 +11,8 @@ import { runMigrations } from "./migrate.js";
 import { openTestDatabase, type TestDatabase } from "./testing.js";
 
 type Journal = { entries: { tag: string }[] };
+type RawExecutor = { execute: (query: SQL) => Promise<unknown> };
+type RawRunner = { run: (query: SQL) => Promise<unknown> };
 
 const MIGRATION = "0043_prune_orphan_notifications";
 const COMMUNITY = "did:plc:communityxxxxxxxxxxxxxxxxxxx";
@@ -57,21 +60,24 @@ const insertMessage = (space: string, rkey: string) =>
 		indexedAt: NOW,
 	});
 
-const insertNotification = (id: string, space: string, messageAuthor: string, rkey: string) =>
-	database.db.insert(database.tables.notifications).values({
-		id,
-		recipient: RECIPIENT,
-		kind: "mention",
-		community: COMMUNITY,
-		space,
-		author: messageAuthor,
-		messageAuthor,
-		messageRkey: rkey,
-		indexedAt: NOW,
-	});
+const insertNotification = (id: string, space: string, messageAuthor: string, rkey: string) => {
+	const statement = sql`insert into notifications (id, recipient, kind, community, space, author, message_author, message_rkey, indexed_at) values (${id}, ${RECIPIENT}, 'mention', ${COMMUNITY}, ${space}, ${messageAuthor}, ${messageAuthor}, ${rkey}, ${NOW})`;
+
+	if (database.dialect === "postgres") {
+		return (database.primary as unknown as RawExecutor).execute(statement);
+	}
+
+	return (database.primary as unknown as RawRunner).run(statement);
+};
 
 const notificationIds = async () =>
-	(await database.db.select().from(database.tables.notifications)).map((row) => row.id).sort();
+	(
+		await database.db
+			.select({ id: database.tables.notifications.id })
+			.from(database.tables.notifications)
+	)
+		.map((row) => row.id)
+		.sort();
 
 beforeEach(async () => {
 	scratch = mkdtempSync(join(tmpdir(), "colibri-migrations-"));

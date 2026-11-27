@@ -13,7 +13,13 @@ import {
 	readPolyfillBucket,
 	slotName,
 } from "@colibri-social/appview/cluster";
-import { hostUrls, openDatabase, pickPrimary, probeHost } from "@colibri-social/appview-db";
+import {
+	createPeerStore,
+	hostUrls,
+	openDatabase,
+	pickPrimary,
+	probeHost,
+} from "@colibri-social/appview-db";
 import { S3BlobBucket } from "@colibri-social/blobs";
 import { SecretBox } from "@colibri-social/community";
 import {
@@ -25,6 +31,9 @@ import {
 	dbBackup,
 	dbStatus,
 	dbSwitchover,
+	federationBlock,
+	federationList,
+	federationUnblock,
 	hostsParked,
 	hostsUnpark,
 	monitoringDeploy,
@@ -103,6 +112,11 @@ Status page and monitoring
   status maintenance schedule <title> --start now|+30m|<ISO> --end +2h|<ISO> [--nodes a,b] [--message <text>]
   status maintenance end <id>
   monitoring deploy <node>
+
+Federation
+  federation list
+  federation block <did:web:...> [--note <text>]
+  federation unblock <did:web:...>
 
 PDS hosts
   hosts parked
@@ -299,6 +313,7 @@ const main = async (): Promise<void> => {
 			yes: { type: "boolean", default: false },
 			confirm: { type: "string" },
 			"no-wait": { type: "boolean", default: false },
+			note: { type: "string" },
 			help: { type: "boolean", default: false },
 		},
 	});
@@ -336,6 +351,7 @@ const main = async (): Promise<void> => {
 
 	const admin: Admin = {
 		registry: createRegistry(database),
+		peers: createPeerStore(database),
 		parkedHosts: createParkedHosts(database),
 		config: {
 			set: async (key, value) => (await configStore()).set(key, value),
@@ -588,6 +604,12 @@ const main = async (): Promise<void> => {
 				return rollout(admin, false);
 			case "rollout now":
 				return rolloutNow(admin, values.grace);
+			case "federation list":
+				return federationList(admin);
+			case "federation block":
+				return federationBlock(admin, required(first, "<did>"), values.note);
+			case "federation unblock":
+				return federationUnblock(admin, required(first, "<did>"));
 			case "hosts parked":
 				return hostsParked(admin);
 			case "hosts unpark":

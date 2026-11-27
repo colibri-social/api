@@ -1,10 +1,17 @@
 import { l } from "@atproto/lex-schema";
 import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db";
 import { CommunityLoader } from "@colibri-social/community";
-import { channelSpace, communitySpaces, SPACE_TYPES, social } from "@colibri-social/lexicons";
+import {
+	channelSpace,
+	communitySpaces,
+	preferencesSpace,
+	SPACE_TYPES,
+	social,
+} from "@colibri-social/lexicons";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { silentAnnouncer } from "../announce.js";
 import type { AppContext } from "../context.js";
+import type { RemoteCommunity } from "../federation/remote-communities.js";
 import { ActorViews } from "../views/actor.js";
 import { CommunityViews } from "../views/community.js";
 import type { ServerFrame } from "../ws/events.js";
@@ -22,6 +29,8 @@ let database: TestDatabase;
 let ctx: AppContext;
 let communities: CommunityViews;
 let didDocumentHandles: Map<string, string>;
+let remoteResults: RemoteCommunity[];
+let preferencesAccess: Map<string, Date>;
 
 const asListCommunitiesOutput = (body: unknown): void => {
 	const { output } = l.getMain(social.colibri.beta.actor.listCommunities);
@@ -72,8 +81,12 @@ beforeEach(async () => {
 	database = await openTestDatabase();
 
 	didDocumentHandles = new Map();
+	remoteResults = [];
 
 	const loader = new CommunityLoader({ db: database.db, tables: database.tables });
+
+	preferencesAccess = new Map();
+
 	ctx = {
 		announce: silentAnnouncer,
 		config: { PUBLIC_URL: "https://appview.test", APPVIEW_DID: "did:web:appview.test" },
@@ -87,6 +100,20 @@ beforeEach(async () => {
 			},
 			resolveVerifiedHandles: async (dids: readonly string[]) =>
 				new Map(dids.map((did) => [did, didDocumentHandles.get(did) ?? null])),
+		},
+		spaceCredentials: {
+			expiry: async (space: string) => preferencesAccess.get(space) ?? null,
+		},
+		remoteCommunities: {
+			fetch: async (_caller: string, rows: readonly { community: string }[]) =>
+				rows.map(
+					(row) =>
+						remoteResults.find(
+							(result) =>
+								(result.kind === "view" && result.view.did === row.community) ||
+								(result.kind === "unavailable" && result.did === row.community),
+						) ?? { kind: "gone" },
+				),
 		},
 	} as unknown as AppContext;
 
@@ -196,6 +223,25 @@ describe("getInvitation", () => {
 		expect(result.community.did).toBe(COMMUNITY);
 	});
 
+	it("refuses a code that belongs to another community than the link names", async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+		await insertInvitation(COMMUNITY, "welcome-code");
+
+		await expect(
+			handleGetInvitation(
+				ctx,
+				communities,
+				"welcome-code",
+				null,
+				"did:plc:otherxxxxxxxxxxxxxxxxxxxxx",
+			),
+		).rejects.toMatchObject({ customErrorName: "InvitationNotFound" });
+
+		const named = await handleGetInvitation(ctx, communities, "welcome-code", null, COMMUNITY);
+
+		expect(named.community.did).toBe(COMMUNITY);
+	});
+
 	it("reports an unknown code as InvitationNotFound", async () => {
 		await expect(handleGetInvitation(ctx, communities, "nope", null)).rejects.toMatchObject({
 			customErrorName: "InvitationNotFound",
@@ -241,6 +287,20 @@ describe("managingApp", () => {
 		expect(result.community.managingApp).toBe("did:web:appview.test");
 	});
 
+	it("tells the viewer until when this AppView can read their preferences", async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+
+		const without = await handleGetCommunity(ctx, communities, COMMUNITY, MEMBER);
+
+		expect(without.community.viewer.preferencesAccessUntil).toBeUndefined();
+
+		preferencesAccess.set(preferencesSpace(MEMBER), new Date("2026-08-23T01:00:00.000Z"));
+
+		const granted = await handleGetCommunity(ctx, communities, COMMUNITY, MEMBER);
+
+		expect(granted.community.viewer.preferencesAccessUntil).toBe("2026-08-23T01:00:00.000Z");
+	});
+
 	it("names the hub the record points at, so a client can dial it", async () => {
 		await insertCommunity(COMMUNITY, "Protocol Nerds", "did:web:hub.example");
 
@@ -272,6 +332,58 @@ describe("listCommunities", () => {
 
 		const result = await handleListCommunities(ctx, communities, MEMBER);
 		expect(result.communities.map((view) => view.did)).toEqual([C, A, B]);
+	});
+
+	it("merges communities other AppViews manage into the stored order", async () => {
+		const A = "did:plc:communityaaaaaaaaaaaaaaaaaaaa";
+		const REMOTE = "did:plc:remotexxxxxxxxxxxxxxxxxxxxx";
+		const DOWN = "did:plc:downxxxxxxxxxxxxxxxxxxxxxxx";
+		const GONE = "did:plc:gonexxxxxxxxxxxxxxxxxxxxxxx";
+
+		await insertCommunity(A, "A");
+		await insertMember(A, MEMBER, "2026-01-01T00:00:00.000Z");
+
+		await database.db.insert(database.tables.remoteSpaces).values([
+			{ did: MEMBER, community: REMOTE, managingApp: "did:web:other.example", joinedAt: NOW },
+			{ did: MEMBER, community: DOWN, managingApp: "did:web:down.example", joinedAt: NOW },
+			{ did: MEMBER, community: GONE, managingApp: "did:web:other.example", joinedAt: NOW },
+		]);
+
+		await database.db.insert(database.tables.actorSettings).values({
+			did: MEMBER,
+			notificationLevel: "all",
+			communityOrder: [REMOTE, A],
+			gifFavorites: [],
+		});
+
+		const remoteView = (await handleGetCommunity(ctx, communities, A, MEMBER)).community;
+
+		remoteResults = [
+			{ kind: "view", view: { ...remoteView, did: REMOTE, managingApp: "did:web:other.example" } },
+			{ kind: "unavailable", did: DOWN, managingApp: "did:web:down.example" },
+		];
+
+		const result = await handleListCommunities(ctx, communities, MEMBER);
+
+		expect(result.communities.map((view) => view.did)).toEqual([REMOTE, A]);
+		expect(result.unavailable).toEqual([{ did: DOWN, managingApp: "did:web:down.example" }]);
+		asListCommunitiesOutput(result);
+	});
+
+	it("lists a community once when the user is a local member and kept a remote record", async () => {
+		await insertCommunity(COMMUNITY, "Protocol Nerds");
+		await insertMember(COMMUNITY, MEMBER, "2026-01-01T00:00:00.000Z");
+		await database.db.insert(database.tables.remoteSpaces).values({
+			did: MEMBER,
+			community: COMMUNITY,
+			managingApp: "did:web:other.example",
+			joinedAt: NOW,
+		});
+
+		const result = await handleListCommunities(ctx, communities, MEMBER);
+
+		expect(result.communities.map((view) => view.did)).toEqual([COMMUNITY]);
+		expect(result.unavailable).toBeUndefined();
 	});
 });
 

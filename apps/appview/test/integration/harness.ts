@@ -40,6 +40,7 @@ import { registerProtocolRoutes } from "../../src/routes/protocol.js";
 export const pdsUrl = process.env.PDS_URL ?? "http://127.0.0.1:3001";
 export const adminPassword = process.env.PDS_ADMIN_PASSWORD ?? "admin";
 export const plcUrl = process.env.PLC_URL ?? "http://127.0.0.1:2582";
+export const handleDomain = process.env.PDS_HANDLE_DOMAIN ?? "test";
 
 export const unique = (prefix: string) => `${prefix}${randomBytes(4).toString("hex")}`;
 
@@ -172,6 +173,26 @@ const registerAppviewDid = async (options: {
 	return { did, keypair };
 };
 
+export const createTestUser = async (
+	{ pds, admin }: { pds: PdsClient; admin: PdsAdmin },
+	handlePrefix = unique("user"),
+) => {
+	const handle = `${handlePrefix}.${handleDomain}`;
+	const password = randomBytes(16).toString("hex");
+	const { code: inviteCode } = await admin.createInviteCode(1);
+
+	const account = await admin.createAccount({
+		handle,
+		email: `${handlePrefix}@test.invalid`,
+		password,
+		inviteCode,
+	});
+
+	const session = await pds.login({ identifier: handle, password });
+
+	return { did: account.did, handle, password, session };
+};
+
 export type Harness = Awaited<ReturnType<typeof createHarness>>;
 
 export const createHarness = async () => {
@@ -270,7 +291,8 @@ export const createHarness = async () => {
 		admin,
 		credentials,
 		spaces,
-		handleDomain: "test",
+		handleDomain,
+		requiresInviteCode: true,
 		emailDomain: "communities.test.invalid",
 		appviewService: serviceId(appviewDid, SERVICE_FRAGMENTS.appview),
 	});
@@ -289,16 +311,8 @@ export const createHarness = async () => {
 		keys: identity,
 	});
 
-	const createUser = async (handlePrefix = unique("user")) => {
-		const handle = `${handlePrefix}.test`;
-		const password = randomBytes(16).toString("hex");
-		const account = await admin.createAccount({
-			handle,
-			email: `${handlePrefix}@test.invalid`,
-			password,
-		});
-		const session = await pds.login({ identifier: handle, password });
-		return { did: account.did, handle, password, session };
+	const createUser = (handlePrefix = unique("user")) => {
+		return createTestUser({ pds, admin }, handlePrefix);
 	};
 
 	const syncSpace = async (space: string) => {
