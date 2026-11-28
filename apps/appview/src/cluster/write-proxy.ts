@@ -1,7 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WriteMode } from "@colibri-social/appview-db";
 import type { Logger } from "../logger.js";
-import { NODE_ID_HEADER, NODE_SECRET_HEADER, notMainSchema } from "./protocol.js";
+import {
+	databaseUnavailableSchema,
+	NODE_ID_HEADER,
+	NODE_SECRET_HEADER,
+	notMainSchema,
+} from "./protocol.js";
 
 export const MAX_WRITE_BYTES = 21 * 1024 * 1024;
 
@@ -407,12 +412,17 @@ export class WriteProxy {
 		const body = Buffer.from(await response.arrayBuffer());
 
 		if (response.status === 503) {
-			const notMain = notMainSchema.safeParse(parseJson(body));
+			const answer = parseJson(body);
+			const notMain = notMainSchema.safeParse(answer);
 
 			if (notMain.success) {
 				this.target = notMain.data.main;
 
 				throw new Unreachable("NotMain");
+			}
+
+			if (databaseUnavailableSchema.safeParse(answer).success) {
+				throw new Unreachable("DatabaseUnavailable");
 			}
 		}
 

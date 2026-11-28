@@ -23,7 +23,7 @@ import { ControlServer } from "./control-server.js";
 import { blocking, formatChecks } from "./db-status.js";
 import { checkSwitchover, type FailbackDeps, runFailback } from "./failback.js";
 import { askAlive, createFailoverWatch, FAILOVER_CHECK_MS, watchPrimary } from "./failover.js";
-import { createFencing, FENCE_CHECK_MS } from "./fencing.js";
+import { createFencing, FENCE_CHECK_MS, nodeDatabaseUrl } from "./fencing.js";
 import { createHandover, type DeferState, shouldDefer } from "./handover.js";
 import { resolveImage } from "./image-source.js";
 import { connectKuma, createKumaSync } from "./kuma.js";
@@ -129,6 +129,24 @@ const startCloudflare = (ctx: AppContext): Cloudflare | null => {
 		log.error({ err: error }, "cloudflare.misconfigured");
 
 		return null;
+	}
+};
+
+const isPrimaryAt = async (url: string): Promise<boolean> => {
+	const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 3_000 });
+
+	client.on("error", () => {});
+
+	try {
+		await client.connect();
+
+		const result = await client.query<{ recovery: boolean }>(
+			"select pg_is_in_recovery() as recovery",
+		);
+
+		return result.rows[0]?.recovery === false;
+	} finally {
+		await client.end().catch(() => {});
 	}
 };
 
@@ -360,6 +378,13 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 					drained,
 					active: () => deps.isMain() && !ctx.drain.draining,
 					yieldMain: deps.yieldMain,
+					...(ctx.database.dialect === "postgres"
+						? {
+								holdsPrimary: (node: NodeRow) => {
+									return isPrimaryAt(nodeDatabaseUrl(config.DATABASE_URL, node));
+								},
+							}
+						: {}),
 					log,
 				})
 			: null;
@@ -432,25 +457,7 @@ export const startClusterNode = async (deps: ClusterNodeDeps): Promise<ClusterNo
 	const localUrl = config.LOCAL_POSTGRES_URL ?? config.DATABASE_READ_URL ?? null;
 
 	const localIsPrimary = async (): Promise<boolean> => {
-		if (!localUrl) {
-			return false;
-		}
-
-		const client = new pg.Client({ connectionString: localUrl, connectionTimeoutMillis: 3_000 });
-
-		client.on("error", () => {});
-
-		try {
-			await client.connect();
-
-			const result = await client.query<{ recovery: boolean }>(
-				"select pg_is_in_recovery() as recovery",
-			);
-
-			return result.rows[0]?.recovery === false;
-		} finally {
-			await client.end().catch(() => {});
-		}
+		return localUrl ? isPrimaryAt(localUrl) : false;
 	};
 
 	const handover =

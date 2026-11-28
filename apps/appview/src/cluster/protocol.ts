@@ -90,6 +90,10 @@ export const notMainSchema = z.object({
 	main: z.string().nullable(),
 });
 
+export const databaseUnavailableSchema = z.object({
+	error: z.literal("DatabaseUnavailable"),
+});
+
 export const parseFrame = <T>(schema: z.ZodType<T>, raw: string): T | null => {
 	try {
 		const result = schema.safeParse(JSON.parse(raw));

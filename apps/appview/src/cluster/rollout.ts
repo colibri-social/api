@@ -49,6 +49,7 @@ export type RolloutDeps = {
 	drained: (nodeId: string, timeoutMs: number) => Promise<boolean>;
 	active: () => boolean;
 	yieldMain?: (target: string) => Promise<boolean>;
+	holdsPrimary?: (node: NodeRow) => Promise<boolean>;
 	log: Pick<Logger, "info" | "warn" | "error">;
 	pollMs?: number;
 	verifyTimeoutMs?: number;
@@ -214,14 +215,28 @@ export const createRollout = (deps: RolloutDeps): Rollout => {
 		return { ok: true };
 	};
 
+	const primaryAt = async (node: NodeRow): Promise<boolean> => {
+		if (!deps.holdsPrimary) {
+			return true;
+		}
+
+		return deps.holdsPrimary(node).catch(() => false);
+	};
+
 	const updateSelf = async (
 		node: NodeRow,
 		target: ResolvedImage,
 		options: TickOptions,
 	): Promise<StepResult> => {
-		const successor = deps.yieldMain
+		const candidate = deps.yieldMain
 			? takeoverCandidate(await deps.registry.list(), deps.self, target.version ?? "", now())
 			: null;
+
+		const successor = candidate && (await primaryAt(candidate)) ? candidate : null;
+
+		if (candidate && !successor) {
+			deps.log.info({ node: node.id, candidate: candidate.id }, "rollout.keepingMain");
+		}
 
 		if (successor && deps.yieldMain) {
 			const pulled = await playbook(node, {

@@ -233,6 +233,32 @@ describe("WriteProxy", () => {
 		expect(main.seen).toHaveLength(1);
 	});
 
+	it("holds writes while the main node's database is down", async () => {
+		let databaseDown = true;
+
+		const main = await startMain((request, response, body) => {
+			if (!databaseDown) {
+				ok(request, response, body);
+
+				return;
+			}
+
+			response.writeHead(503, { "content-type": "application/json" });
+			response.end(JSON.stringify({ error: "DatabaseUnavailable" }));
+		});
+
+		const { write, modes, proxy } = await startSub(main.url);
+		const held = write("a.b.c", { n: 1 });
+
+		await vi.waitFor(() => expect(proxy.waiting).toBe(1));
+		expect(modes).toEqual(["queued"]);
+
+		databaseDown = false;
+
+		expect((await held).status).toBe(200);
+		expect(modes).toEqual(["queued", "normal"]);
+	});
+
 	it("never repeats a write the main node may already have applied", async () => {
 		const main = await startMain((request) => request.socket.destroy());
 		const { write } = await startSub(main.url);

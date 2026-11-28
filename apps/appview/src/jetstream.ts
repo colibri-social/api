@@ -23,6 +23,7 @@ const REJECTION_BODY_MAX_BYTES = 4_096;
 const REJECTION_BODY_TIMEOUT_MS = 5_000;
 const HEARTBEAT_MS = 15_000;
 const IDLE_TIMEOUT_MS = 60_000;
+const MAX_IN_FLIGHT = 8;
 
 const EVENT_TYPE_PREFIX = "network.bsky.jetstream.subscribeEvents#";
 const WANTED_KINDS = ["commit", "identity", "account"] as const;
@@ -120,6 +121,7 @@ export type JetstreamOptions = {
 	onAccountGone?: (did: string) => void;
 	heartbeatMs?: number;
 	idleTimeoutMs?: number;
+	maxInFlight?: number;
 };
 
 export class Jetstream {
@@ -134,6 +136,7 @@ export class Jetstream {
 	private reconnectTimer: NodeJS.Timeout | null = null;
 	private heartbeat: NodeJS.Timeout | null = null;
 	private lastHeardAt = 0;
+	private inFlight = 0;
 
 	constructor(
 		private readonly ctx: AppContext,
@@ -225,9 +228,7 @@ export class Jetstream {
 
 		socket.on("message", (raw) => {
 			this.lastHeardAt = Date.now();
-			void this.receive(raw.toString()).catch((error) =>
-				this.ctx.log.warn({ error }, "jetstream.eventFailed"),
-			);
+			this.process(socket, raw.toString());
 		});
 
 		socket.on("unexpected-response", (request, response) => {
@@ -251,6 +252,22 @@ export class Jetstream {
 		});
 	}
 
+	private process(socket: WebSocket, raw: string): void {
+		const limit = this.options.maxInFlight ?? MAX_IN_FLIGHT;
+
+		this.inFlight += 1;
+
+		if (this.inFlight >= limit && !socket.isPaused) socket.pause();
+
+		void this.receive(raw)
+			.catch((error) => this.ctx.log.warn({ error }, "jetstream.eventFailed"))
+			.finally(() => {
+				this.inFlight -= 1;
+
+				if (this.inFlight < limit && socket.isPaused) socket.resume();
+			});
+	}
+
 	private startHeartbeat(socket: WebSocket): void {
 		this.stopHeartbeat();
 		this.lastHeardAt = Date.now();
@@ -270,6 +287,12 @@ export class Jetstream {
 
 	private checkLiveness(socket: WebSocket): void {
 		if (this.socket !== socket || socket.readyState !== WebSocket.OPEN) return;
+
+		if (socket.isPaused) {
+			this.lastHeardAt = Date.now();
+
+			return;
+		}
 
 		const silentMs = Date.now() - this.lastHeardAt;
 

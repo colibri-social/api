@@ -169,6 +169,51 @@ describe("createRollout", () => {
 		]);
 	});
 
+	it("restarts the main node in place while it holds the Postgres primary", async () => {
+		const { deps, runs } = setup([
+			row("hel-1", { roles: ["main", "api"] }),
+			row("fsn-1", { roles: ["failover", "api"], version: "2.0.0" }),
+		]);
+		const yieldMain = vi.fn(async () => true);
+
+		deps.yieldMain = yieldMain;
+		deps.holdsPrimary = async (node) => node.id === "hel-1";
+
+		expect(await createRollout(deps).tick()).toBe("restarting");
+		expect(yieldMain).not.toHaveBeenCalled();
+		expect(runs.at(-1)?.vars).toMatchObject({ detach: true });
+	});
+
+	it("hands main to a node that holds the Postgres primary", async () => {
+		const { deps } = setup([
+			row("hel-1", { roles: ["main", "api"] }),
+			row("fsn-1", { roles: ["failover", "api"], version: "2.0.0" }),
+		]);
+		const yieldMain = vi.fn(async () => true);
+
+		deps.yieldMain = yieldMain;
+		deps.holdsPrimary = async (node) => node.id === "fsn-1";
+
+		expect(await createRollout(deps).tick()).toBe("handedOver");
+		expect(yieldMain).toHaveBeenCalledWith("fsn-1");
+	});
+
+	it("restarts the main node in place when the primary check fails", async () => {
+		const { deps } = setup([
+			row("hel-1", { roles: ["main", "api"] }),
+			row("fsn-1", { roles: ["failover", "api"], version: "2.0.0" }),
+		]);
+		const yieldMain = vi.fn(async () => true);
+
+		deps.yieldMain = yieldMain;
+		deps.holdsPrimary = async () => {
+			throw new Error("connection refused");
+		};
+
+		expect(await createRollout(deps).tick()).toBe("restarting");
+		expect(yieldMain).not.toHaveBeenCalled();
+	});
+
 	it("pauses instead of restarting the main node when the failover node doesn't take over", async () => {
 		const { deps, runs, paused } = setup([
 			row("hel-1", { roles: ["main", "api"] }),

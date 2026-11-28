@@ -208,10 +208,12 @@ export class ControlServer {
 		}
 
 		if (request.method === "GET" && path === PING_PATH) {
-			if (this.deps.isMain()) {
-				respond(response, 200, { status: "main" });
-			} else {
+			if (!this.deps.isMain()) {
 				await this.notMain(response);
+			} else if (this.databaseDown()) {
+				respond(response, 503, { error: "DatabaseUnavailable" });
+			} else {
+				respond(response, 200, { status: "main" });
 			}
 
 			return;
@@ -274,6 +276,10 @@ export class ControlServer {
 		this.deps.onJoined?.(joined.id);
 	}
 
+	private databaseDown(): boolean {
+		return this.deps.isMain() && (this.deps.primaryDownSince?.() ?? null) !== null;
+	}
+
 	private async notMain(response: ServerResponse): Promise<void> {
 		const main = await this.deps.registry.mainNode().catch(() => null);
 
@@ -311,6 +317,12 @@ export class ControlServer {
 		response: ServerResponse,
 		app: (request: IncomingMessage, response: ServerResponse) => void,
 	): Promise<void> {
+		if (this.databaseDown()) {
+			respond(response, 503, { error: "DatabaseUnavailable" });
+
+			return;
+		}
+
 		if (!(await this.trusted(request))) {
 			respond(response, 401, { error: "Unauthorized" });
 

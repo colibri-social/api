@@ -11,6 +11,8 @@ import { type AdvisoryLock, grantedLock, postgresAdvisoryLock } from "./lock.js"
 import { schema as pgTables } from "./schema/pg.js";
 import { type Schema, schema as sqliteTables } from "./schema/sqlite.js";
 
+const POOL_WAIT_MS = 10_000;
+
 export type Dialect = "sqlite" | "postgres";
 
 export type Db = LibSQLDatabase<Schema>;
@@ -32,6 +34,7 @@ export type DatabaseOptions = {
 	url: string;
 	authToken?: string;
 	maxConnections?: number;
+	poolWaitMs?: number;
 	readUrl?: string;
 };
 
@@ -59,12 +62,34 @@ const openSqlite = ({ url, authToken }: DatabaseOptions): Database => {
 	};
 };
 
-const openPostgres = ({ url, maxConnections, readUrl }: DatabaseOptions): Database => {
+const openPostgres = ({
+	url,
+	maxConnections,
+	poolWaitMs = POOL_WAIT_MS,
+	readUrl,
+}: DatabaseOptions): Database => {
 	const max = maxConnections ?? 20;
-	const following = isMultiHost(url) ? new FollowingPool({ url, max }) : null;
-	const pool = following ?? new pg.Pool({ connectionString: url, max });
+
+	const following = isMultiHost(url) ? new FollowingPool({ url, max, waitMs: poolWaitMs }) : null;
+
+	const pool =
+		following ??
+		new pg.Pool({
+			connectionString: url,
+			max,
+			connectionTimeoutMillis: poolWaitMs,
+		});
+
 	const primary = drizzlePg(pool, { schema: pgTables });
-	const readPool = readUrl ? new pg.Pool({ connectionString: readUrl, max }) : null;
+
+	const readPool = readUrl
+		? new pg.Pool({
+				connectionString: readUrl,
+				max,
+				connectionTimeoutMillis: poolWaitMs,
+			})
+		: null;
+
 	const db = readPool
 		? withReplicas(primary, [drizzlePg(readPool, { schema: pgTables })])
 		: primary;

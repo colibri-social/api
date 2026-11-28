@@ -269,6 +269,79 @@ describe("liveness", () => {
 	});
 });
 
+describe("backpressure", () => {
+	let release: () => void = () => {};
+	let deletes = 0;
+
+	const gatedContext = (url: string): AppContext => {
+		const base = contextFor(url);
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+
+		const db = new Proxy(database.db, {
+			get: (target, key, receiver) => {
+				if (key !== "delete") return Reflect.get(target, key, receiver);
+
+				return () => ({
+					where: async () => {
+						deletes += 1;
+						await gate;
+					},
+				});
+			},
+		});
+
+		return { ...base, database: { ...database, db } } as AppContext;
+	};
+
+	const startGated = async (options = {}) => {
+		const { port } = server.address() as AddressInfo;
+
+		jetstream = new Jetstream(gatedContext(`ws://127.0.0.1:${port}`), options);
+		await jetstream.start();
+
+		return waitForConnection();
+	};
+
+	beforeEach(() => {
+		deletes = 0;
+	});
+
+	it("stops reading frames while the event limit is in flight", async () => {
+		const socket = await startGated({ maxInFlight: 2 });
+
+		for (let seq = 1; seq <= 5; seq += 1) {
+			socket.send(identityFrame(seq, `did:plc:subject${seq}aaaaaaaaaaaaaaaaaaa`));
+			await settle();
+		}
+
+		expect(deletes).toBe(2);
+
+		release();
+
+		expect(await waitFor(() => deletes === 10)).toBe(true);
+	});
+
+	it("keeps a paused connection open past the idle timeout", async () => {
+		await new Promise((resolve) => server.close(resolve));
+		await listen({ autoPong: false });
+
+		const socket = await startGated({
+			maxInFlight: 1,
+			heartbeatMs: 50,
+			idleTimeoutMs: 200,
+		});
+
+		socket.send(identityFrame(1));
+		await waitFor(() => false, 10);
+
+		expect(socket.readyState).toBe(socket.OPEN);
+
+		release();
+	});
+});
+
 describe("endpoint", () => {
 	it("appends the v2 subscription path to a bare host", () => {
 		expect(jetstreamEndpoint("wss://jetstream.us-west.bsky.network").toString()).toBe(

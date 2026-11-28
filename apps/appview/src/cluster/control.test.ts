@@ -266,13 +266,14 @@ describe("control link", () => {
 });
 
 describe("write forwarding on the main node", () => {
-	const startWithApp = async () => {
+	const startWithApp = async (primaryDownSince: () => number | null = () => null) => {
 		const reached: Record<string, unknown>[] = [];
 		const forwarding = new ControlServer({
 			registry,
 			log,
 			nodeId: "eu-1",
 			isMain: () => isMain,
+			primaryDownSince,
 			app: (request, response) => {
 				reached.push({ ...request.headers });
 				response.writeHead(200, { "content-type": "application/json" });
@@ -295,6 +296,40 @@ describe("write forwarding on the main node", () => {
 			expect(await (await fetch(`${url}/cluster/ping`)).json()).toMatchObject({
 				error: "NotMain",
 			});
+		} finally {
+			await forwarding.close();
+		}
+	});
+
+	it("turns pings and writes away while its database is down", async () => {
+		const { secret } = await join2();
+		let downSince: number | null = Date.now();
+		const { forwarding, reached, url } = await startWithApp(() => downSince);
+
+		try {
+			const write = () => {
+				return fetch(`${url}/xrpc/social.colibri.beta.channel.postMessage`, {
+					method: "POST",
+					headers: {
+						"content-type": "application/json",
+						"x-colibri-node": "eu-2",
+						"x-colibri-node-secret": secret,
+					},
+					body: "{}",
+				});
+			};
+
+			const ping = await fetch(`${url}/cluster/ping`);
+
+			expect(ping.status).toBe(503);
+			expect(await ping.json()).toEqual({ error: "DatabaseUnavailable" });
+			expect(await (await write()).json()).toEqual({ error: "DatabaseUnavailable" });
+			expect(reached).toHaveLength(0);
+
+			downSince = null;
+
+			expect((await fetch(`${url}/cluster/ping`)).status).toBe(200);
+			expect((await write()).status).toBe(200);
 		} finally {
 			await forwarding.close();
 		}

@@ -25,6 +25,7 @@ export type FollowingPoolOptions = {
 	url: string;
 	urls?: string[];
 	max: number;
+	waitMs?: number;
 	recheckMs?: number;
 	probe?: typeof probeHost;
 };
@@ -50,6 +51,7 @@ export const switchesPrimary = (error: unknown): boolean => {
 export class FollowingPool extends pg.Pool {
 	private readonly urls: string[];
 	private readonly max: number;
+	private readonly waitMs: number | undefined;
 	private readonly probe: typeof probeHost;
 	private readonly switchListeners = new Set<(url: string) => void>();
 	private readonly recheckTimer: ReturnType<typeof setInterval>;
@@ -62,6 +64,7 @@ export class FollowingPool extends pg.Pool {
 		super({ max: 1 });
 		this.urls = options.urls ?? hostUrls(options.url);
 		this.max = options.max;
+		this.waitMs = options.waitMs;
 		this.probe = options.probe ?? probeHost;
 		this.query = ((...args: unknown[]) => this.followQuery(...args)) as pg.Pool["query"];
 		this.recheckTimer = setInterval(() => void this.recheck(), options.recheckMs ?? RECHECK_MS);
@@ -215,7 +218,11 @@ export class FollowingPool extends pg.Pool {
 			throw Object.assign(new Error("no host in DATABASE_URL accepts writes"), { code: "57P03" });
 		}
 
-		const pool = new pg.Pool({ connectionString: primary.url, max: this.max });
+		const pool = new pg.Pool({
+			connectionString: primary.url,
+			max: this.max,
+			connectionTimeoutMillis: this.waitMs,
+		});
 
 		pool.on("error", (error) => this.emit("error", error));
 
