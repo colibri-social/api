@@ -34,6 +34,7 @@ import { resolveVersion } from "./routes/server.js";
 import { installFatalHandlers, startErrorReporting, stopErrorReporting } from "./sentry.js";
 import { createAppServer } from "./server.js";
 import { startTelemetry } from "./telemetry.js";
+import { createUserCount, type UserWindow } from "./user-count.js";
 import type { ParticipantRow } from "./voice-calls.js";
 import { EventServer } from "./ws/events.js";
 import { VoiceServer } from "./ws/voice.js";
@@ -213,6 +214,21 @@ const observeNode = (ctx: AppContext, events: EventServer, voice: VoiceServer): 
 		return [
 			{ value: usage.blobBytes, attributes: { kind: "blobs" } },
 			{ value: usage.recordBytes, attributes: { kind: "records" } },
+		];
+	});
+
+	const userCount = createUserCount(ctx.database);
+
+	observe("users", async () => {
+		const users = await userCount.read();
+
+		return [
+			{ value: users.total, attributes: { window: "all" } },
+			{ value: users.online, attributes: { window: "online" } },
+			...(Object.keys(users.active) as UserWindow[]).map((window) => ({
+				value: users.active[window],
+				attributes: { window },
+			})),
 		];
 	});
 

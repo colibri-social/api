@@ -30,7 +30,8 @@ export type GaugeName =
 	| "sfuTransports"
 	| "polyfillUsers"
 	| "polyfillBlobs"
-	| "polyfillBytes";
+	| "polyfillBytes"
+	| "users";
 
 export type CounterName = "pushDeliveries" | "turnCredentials" | "jetstreamEvents" | "syncFailures";
 
@@ -106,6 +107,10 @@ const GAUGES: Record<GaugeName, { name: string; description: string }> = {
 	polyfillBytes: {
 		name: "colibri_polyfill_bytes",
 		description: "Storage polyfilled users take on this AppView, by kind (blobs or records)",
+	},
+	users: {
+		name: "colibri_users",
+		description: "Accounts that have opened the client on this AppView, by window",
 	},
 };
 
