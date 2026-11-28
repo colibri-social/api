@@ -8,7 +8,7 @@ import { REPO_REMOVED_TYPE, SpaceCredentialError, XrpcError } from "@colibri-soc
 import { SpanStatusCode, trace } from "@opentelemetry/api";
 import { Emitter } from "./emitter.js";
 import { KeyedWorkQueue } from "./queue.js";
-import { RepoSync } from "./repo-sync.js";
+import { RepoSync, type RepoSyncOutcome } from "./repo-sync.js";
 import type {
 	ChangeTiming,
 	RepoChange,
@@ -94,6 +94,7 @@ export type SyncEngineOptions = {
 	registrationRenewMarginMs?: number;
 	canRenew?: (space: string) => Promise<boolean>;
 	maxChaseAttempts?: number;
+	chaseDelaysMs?: readonly number[];
 	workerThreads?: number;
 	verifier?: Verifier;
 	repos?: Pick<RepoSync, "sync">;
@@ -113,6 +114,8 @@ const REGISTRATION_RETRY_BASE_MS = 5_000;
 const REGISTRATION_RETRY_MAX_MS = 60_000;
 const DEFAULT_RENEW_MARGIN_MS = 120_000;
 const DEFAULT_CHASE_ATTEMPTS = 3;
+const DEFAULT_CHASE_DELAYS_MS = [250, 1_000, 3_000];
+const HINT_SATISFIED_WINDOW_MS = 1_000;
 const HOST_PARK_FAILURES = 3;
 
 const tracer = trace.getTracer("colibri-space-sync");
@@ -126,6 +129,8 @@ const laterRev = (a: string | null, b: string | null): string | null => {
 	if (!b) return a;
 	return a > b ? a : b;
 };
+
+type SyncedOutcome = Exclude<RepoSyncOutcome, { kind: "gone" }>;
 
 type PendingTarget = {
 	rev: string | null;
@@ -158,6 +163,8 @@ export class SpaceSyncEngine {
 	private readonly events = new Emitter<SyncEvents>();
 	private readonly targets = new Map<string, PendingTarget>();
 	private readonly appliedRevs = new Map<string, string>();
+	private readonly advancedAt = new Map<string, number>();
+	private readonly chaseTimers = new Map<string, NodeJS.Timeout>();
 	private readonly spaceRevs = new Map<string, string>();
 	private readonly catchingUp = new Set<string>();
 	private readonly registrations = new Map<string, RegistrationState>();
@@ -245,6 +252,7 @@ export class SpaceSyncEngine {
 		this.sweepTimer = null;
 		if (this.registrationTimer) clearInterval(this.registrationTimer);
 		this.registrationTimer = null;
+		this.clearChases();
 		this.queue.stop();
 	}
 
@@ -286,6 +294,7 @@ export class SpaceSyncEngine {
 			attempts: existing?.attempts ?? 0,
 		});
 
+		this.cancelChase(key);
 		this.queue.push(key);
 	}
 
@@ -382,6 +391,11 @@ export class SpaceSyncEngine {
 
 	async drain(): Promise<void> {
 		await this.queue.onIdle();
+
+		while (this.chaseTimers.size > 0) {
+			await new Promise((resolve) => setTimeout(resolve, this.longestChaseDelay()));
+			await this.queue.onIdle();
+		}
 	}
 
 	async sweep(): Promise<void> {
@@ -527,6 +541,8 @@ export class SpaceSyncEngine {
 		const key = encodeKey(space, author);
 		this.targets.delete(key);
 		this.appliedRevs.delete(key);
+		this.advancedAt.delete(key);
+		this.cancelChase(key);
 	}
 
 	private async loadParkedHosts(): Promise<void> {
@@ -806,6 +822,7 @@ export class SpaceSyncEngine {
 			if (outcome.appliedRev) this.appliedRevs.set(key, outcome.appliedRev);
 
 			if (outcome.kind === "advanced" || outcome.kind === "recovered") {
+				this.advancedAt.set(key, committedAt);
 				this.emit("changed", {
 					...outcome.change,
 					timing: this.timingFor(target, startedAt, committedAt),
@@ -826,7 +843,7 @@ export class SpaceSyncEngine {
 				"debug",
 			);
 
-			this.settleTarget(key, outcome.appliedRev);
+			this.settleTarget(key, outcome);
 		} catch (error) {
 			this.targets.delete(key);
 			await this.recordFailure(space, author, error);
@@ -847,14 +864,28 @@ export class SpaceSyncEngine {
 		};
 	}
 
-	private settleTarget(key: string, appliedRev: string | null): void {
+	private reached(key: string, target: PendingTarget, outcome: SyncedOutcome): boolean {
+		if (target.rev) {
+			return outcome.appliedRev !== null && outcome.appliedRev >= target.rev;
+		}
+
+		if (target.trigger !== "clientHint" || outcome.kind !== "unchanged") return true;
+
+		const advanced = this.advancedAt.get(key);
+
+		return advanced !== undefined && advanced >= target.notifiedAt - HINT_SATISFIED_WINDOW_MS;
+	}
+
+	private settleTarget(key: string, outcome: SyncedOutcome): void {
 		const target = this.targets.get(key);
 		if (!target) return;
 
-		if (!target.rev || (appliedRev !== null && appliedRev >= target.rev)) {
+		if (this.reached(key, target, outcome)) {
 			this.targets.delete(key);
 			return;
 		}
+
+		const appliedRev = outcome.appliedRev;
 
 		const { space, author } = decodeKey(key);
 		target.attempts += 1;
@@ -869,7 +900,44 @@ export class SpaceSyncEngine {
 			{ space, author, wanted: target.rev, appliedRev, attempt: target.attempts },
 			"debug",
 		);
-		this.queue.push(key);
+		this.scheduleChase(key, target.attempts);
+	}
+
+	private chaseDelays(): readonly number[] {
+		return this.options.chaseDelaysMs ?? DEFAULT_CHASE_DELAYS_MS;
+	}
+
+	private longestChaseDelay(): number {
+		return Math.max(0, ...this.chaseDelays());
+	}
+
+	private scheduleChase(key: string, attempt: number): void {
+		const delays = this.chaseDelays();
+		const delay = delays[Math.min(attempt, delays.length) - 1] ?? 0;
+
+		this.cancelChase(key);
+
+		const timer = setTimeout(() => {
+			this.chaseTimers.delete(key);
+			this.queue.push(key);
+		}, delay);
+
+		timer.unref?.();
+		this.chaseTimers.set(key, timer);
+	}
+
+	private cancelChase(key: string): void {
+		const timer = this.chaseTimers.get(key);
+
+		if (timer) clearTimeout(timer);
+
+		this.chaseTimers.delete(key);
+	}
+
+	private clearChases(): void {
+		for (const timer of this.chaseTimers.values()) clearTimeout(timer);
+
+		this.chaseTimers.clear();
 	}
 
 	private async recordFailure(space: string, author: string, error: unknown): Promise<void> {

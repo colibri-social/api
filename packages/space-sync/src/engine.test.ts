@@ -115,6 +115,7 @@ const engineFor = (
 		hosts: { hostFor: async () => "https://pds.test" },
 		keys: { kemKeyFor: async () => "did:key:z" },
 		concurrency: 4,
+		chaseDelaysMs: [0],
 		...(options.now ? { now: options.now } : {}),
 		...(options.engine ?? {}),
 	});
@@ -507,6 +508,89 @@ describe("chasing a notified revision", () => {
 
 		expect(pulls).toBe(2);
 		expect(events).toContain("repo.chaseExhausted");
+	});
+
+	it("waits before each chase attempt", async () => {
+		vi.useFakeTimers();
+
+		let pulls = 0;
+
+		const { engine } = engineFor(
+			[],
+			async () => {
+				pulls += 1;
+
+				return advanced(pulls === 1 ? "3l0" : "3l9");
+			},
+			{ engine: { chaseDelaysMs: [250] } },
+		);
+
+		engine.notifyWrite(SPACE, ALICE, { rev: "3l9" });
+		await vi.advanceTimersByTimeAsync(200);
+
+		expect(pulls).toBe(1);
+
+		await vi.advanceTimersByTimeAsync(100);
+
+		expect(pulls).toBe(2);
+
+		vi.useRealTimers();
+	});
+
+	it("pulls again when a client hint finds nothing new", async () => {
+		let pulls = 0;
+
+		const { engine } = engineFor([], async () => {
+			pulls += 1;
+
+			return pulls === 1 ? { kind: "unchanged", appliedRev: "3l0" } : advanced("3l1");
+		});
+
+		engine.notifyWrite(SPACE, ALICE, { trigger: "clientHint" });
+		await engine.drain();
+
+		expect(pulls).toBe(2);
+	});
+
+	it("stops chasing a client hint after the attempt cap", async () => {
+		let pulls = 0;
+		const events: string[] = [];
+
+		const { engine } = engineFor(
+			[],
+			async () => {
+				pulls += 1;
+
+				return { kind: "unchanged", appliedRev: "3l0" };
+			},
+			{ engine: { log: (event) => void events.push(event) } },
+		);
+
+		engine.notifyWrite(SPACE, ALICE, { trigger: "clientHint" });
+		await engine.drain();
+
+		expect(pulls).toBe(3);
+		expect(events).toContain("repo.chaseExhausted");
+	});
+
+	it("accepts a client hint once the PDS notification already pulled the write", async () => {
+		let pulls = 0;
+
+		const { engine } = engineFor([], async () => {
+			pulls += 1;
+
+			return pulls === 1 ? advanced("3l1") : { kind: "unchanged", appliedRev: "3l1" };
+		});
+
+		engine.notifyWrite(SPACE, ALICE, { rev: "3l1" });
+		await engine.drain();
+		engine.notifyWrite(SPACE, ALICE, {
+			trigger: "clientHint",
+			notifiedAt: Date.now(),
+		});
+		await engine.drain();
+
+		expect(pulls).toBe(2);
 	});
 
 	it("skips a notification for a revision that is already applied", async () => {
