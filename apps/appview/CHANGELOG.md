@@ -1,5 +1,14 @@
 # @colibri-social/appview
 
+## 2.47.3
+
+### Patch Changes
+
+- 7df0bf2: Fixes messages that stayed missing on the sender's other devices until their next write. A client write hint that finds nothing new now pulls the repo again after 250 ms, 1 s and 3 s, unless a PDS notification already pulled the write. Chasing a notified revision waits between attempts on the same schedule.
+- 7c6426b: Fixes the Jetstream consumer stalling on a connection that stays open but stops delivering events. It now pings the server every 15 seconds and reconnects from the last cursor after 60 seconds without a message or pong.
+- Updated dependencies [7df0bf2]
+  - @colibri-social/space-sync@0.10.5
+
 ## 2.47.2
 
 ### Patch Changes
