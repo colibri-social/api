@@ -21,6 +21,8 @@ const EVENTS_PER_CURSOR_SAVE = 500;
 const CURSOR_TOO_OLD = "CursorTooOld";
 const REJECTION_BODY_MAX_BYTES = 4_096;
 const REJECTION_BODY_TIMEOUT_MS = 5_000;
+const HEARTBEAT_MS = 15_000;
+const IDLE_TIMEOUT_MS = 60_000;
 
 const EVENT_TYPE_PREFIX = "network.bsky.jetstream.subscribeEvents#";
 const WANTED_KINDS = ["commit", "identity", "account"] as const;
@@ -116,6 +118,8 @@ const payloadKind = (payload: Payload): string | null => {
 export type JetstreamOptions = {
 	onIdentity?: (did: string) => void;
 	onAccountGone?: (did: string) => void;
+	heartbeatMs?: number;
+	idleTimeoutMs?: number;
 };
 
 export class Jetstream {
@@ -128,6 +132,8 @@ export class Jetstream {
 	private attempt = 0;
 	private stopped = false;
 	private reconnectTimer: NodeJS.Timeout | null = null;
+	private heartbeat: NodeJS.Timeout | null = null;
+	private lastHeardAt = 0;
 
 	constructor(
 		private readonly ctx: AppContext,
@@ -156,6 +162,7 @@ export class Jetstream {
 		this.stopLag = null;
 		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
 		this.reconnectTimer = null;
+		this.stopHeartbeat();
 		this.socket?.close();
 		this.socket = null;
 		await this.flushCursor();
@@ -208,10 +215,16 @@ export class Jetstream {
 		socket.on("open", () => {
 			if (this.socket !== socket) return;
 			this.attempt = 0;
+			this.startHeartbeat(socket);
 			this.ctx.log.info({ cursor: this.cursor }, "jetstream.connected");
 		});
 
+		socket.on("pong", () => {
+			this.lastHeardAt = Date.now();
+		});
+
 		socket.on("message", (raw) => {
+			this.lastHeardAt = Date.now();
 			void this.receive(raw.toString()).catch((error) =>
 				this.ctx.log.warn({ error }, "jetstream.eventFailed"),
 			);
@@ -224,6 +237,7 @@ export class Jetstream {
 		socket.on("close", () => {
 			if (this.socket !== socket) return;
 			this.socket = null;
+			this.stopHeartbeat();
 			void this.flushCursor().catch((error) =>
 				this.ctx.log.warn({ error }, "jetstream.cursorSaveFailed"),
 			);
@@ -235,6 +249,42 @@ export class Jetstream {
 			if (this.socket !== socket) return;
 			socket.close();
 		});
+	}
+
+	private startHeartbeat(socket: WebSocket): void {
+		this.stopHeartbeat();
+		this.lastHeardAt = Date.now();
+
+		this.heartbeat = setInterval(
+			() => this.checkLiveness(socket),
+			this.options.heartbeatMs ?? HEARTBEAT_MS,
+		);
+
+		this.heartbeat.unref?.();
+	}
+
+	private stopHeartbeat(): void {
+		if (this.heartbeat) clearInterval(this.heartbeat);
+		this.heartbeat = null;
+	}
+
+	private checkLiveness(socket: WebSocket): void {
+		if (this.socket !== socket || socket.readyState !== WebSocket.OPEN) return;
+
+		const silentMs = Date.now() - this.lastHeardAt;
+
+		if (silentMs < (this.options.idleTimeoutMs ?? IDLE_TIMEOUT_MS)) {
+			socket.ping();
+			return;
+		}
+
+		this.ctx.log.warn(
+			{ code: "JetstreamIdle", silentMs, cursor: this.cursor },
+			"jetstream.idleTimeout",
+		);
+
+		this.stopHeartbeat();
+		socket.terminate();
 	}
 
 	private async rejected(

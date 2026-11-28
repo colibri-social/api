@@ -4,7 +4,7 @@ import { openTestDatabase, type TestDatabase } from "@colibri-social/appview-db"
 import { createTtlCache } from "@colibri-social/embeds";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type WebSocket, WebSocketServer } from "ws";
+import { type ServerOptions, type WebSocket, WebSocketServer } from "ws";
 import type { ArtworkEntry } from "./activity-artwork.js";
 import type { AppContext } from "./context.js";
 import { eventTime, Jetstream } from "./jetstream.js";
@@ -132,19 +132,24 @@ const storedCursor = async () => {
 	return row?.value ?? null;
 };
 
+const listen = async (options: ServerOptions = {}) => {
+	server = new WebSocketServer({ port: 0, ...options });
+
+	server.on("connection", (socket, request) => {
+		requests.push(new URL(request.url ?? "/", "http://localhost"));
+		connections.push(socket);
+	});
+
+	await new Promise((resolve) => server.once("listening", resolve));
+};
+
 beforeEach(async () => {
 	declaredUpdates = [];
 	database = await openTestDatabase();
 	connections = [];
 	requests = [];
 	upgradeServer = null;
-
-	server = new WebSocketServer({ port: 0 });
-	server.on("connection", (socket, request) => {
-		requests.push(new URL(request.url ?? "/", "http://localhost"));
-		connections.push(socket);
-	});
-	await new Promise((resolve) => server.once("listening", resolve));
+	await listen();
 });
 
 afterEach(async () => {
@@ -235,6 +240,33 @@ describe("rejected handshakes", () => {
 		expect(requests).toHaveLength(2);
 		expect(connections).toHaveLength(1);
 	}, 12_000);
+});
+
+describe("liveness", () => {
+	const heartbeat = {
+		heartbeatMs: 50,
+		idleTimeoutMs: 200,
+	};
+
+	it("drops a connection that goes silent and resumes from the last cursor", async () => {
+		await new Promise((resolve) => server.close(resolve));
+		await listen({ autoPong: false });
+
+		const socket = await startAgainstServer(heartbeat);
+
+		socket.send(identityFrame(42));
+
+		expect(await waitFor(() => connections.length === 2)).toBe(true);
+		expect((requests[1] as URL).searchParams.get("cursor")).toBe("42");
+	}, 12_000);
+
+	it("keeps a quiet connection that answers pings", async () => {
+		await startAgainstServer(heartbeat);
+		await waitFor(() => false, 12);
+
+		expect(requests).toHaveLength(1);
+		expect(connections).toHaveLength(1);
+	});
 });
 
 describe("endpoint", () => {
